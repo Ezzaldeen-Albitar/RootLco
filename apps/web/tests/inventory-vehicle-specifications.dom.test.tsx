@@ -719,6 +719,8 @@ describe('P1-32-PRE-OD-INVF: an empty make catalogue is not a missing permission
 
     it(`${locale}: a catalogue read that answered with no makes says none are recorded`, async () => {
       listMakes.mockImplementation(async () => catalogue('ok'));
+      // No capacity listed, so the list names no make and the one read counted is the form's.
+      listVehicleSpecifications.mockImplementation(async () => listing([]));
       const form = await openForm(locale);
       await waitFor(() => expect(listMakes).toHaveBeenCalledTimes(1));
       expect(
@@ -789,4 +791,95 @@ describe('P1-32-PRE-OD-INVF: an empty make catalogue is not a missing permission
     expect(await within(table).findByText(AR['units.name.litre'] as string)).toBeVisible();
     expect(within(table).queryByText('litre')).toBeNull();
   });
+});
+
+describe('P1-32-PRE-OD-INVF: a listed capacity names its make and model, never their identifiers', () => {
+  function drawList(locale: 'en' | 'ar', canReadCatalogue: boolean) {
+    if (locale === 'en') {
+      renderScreen({ canReadCatalogue });
+    } else {
+      renderRtl(
+        <VehicleSpecificationsScreen
+          locale="ar"
+          messages={ar}
+          canManage={false}
+          canReadCatalogue={canReadCatalogue}
+        />
+      );
+    }
+    return screen.findByRole('table');
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: the make and model are named from the catalogue`, async () => {
+      const table = await drawList(locale, true);
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-make').textContent).toBe('A make')
+      );
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-model').textContent).toBe('A model')
+      );
+      expect(listModels).toHaveBeenCalledWith(MAKE_ID);
+      expect(table.textContent).not.toContain(MAKE_ID);
+      expect(table.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a catalogue that cannot name them says they are not available`, async () => {
+      listMakes.mockImplementation(async () => ({
+        status: 'denied' as const,
+        options: [],
+        truncated: false,
+        correlationId: 'corr',
+      }));
+      listModels.mockImplementation(async () => ({
+        status: 'ok' as const,
+        options: [],
+        truncated: false,
+        correlationId: 'corr',
+      }));
+      const table = await drawList(locale, true);
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-make').textContent).toBe(
+          messages['inventory.specifications.list.makeUnavailable']
+        )
+      );
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-model').textContent).toBe(
+          messages['inventory.specifications.list.modelUnavailable']
+        )
+      );
+      expect(table.textContent).not.toContain(MAKE_ID);
+      expect(table.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: without the vehicle read, nothing is read and neither identifier is shown`, async () => {
+      const table = await drawList(locale, false);
+      expect(within(table).getByTestId('specification-make').textContent).toBe(
+        messages['inventory.specifications.list.makeUnavailable']
+      );
+      expect(within(table).getByTestId('specification-model').textContent).toBe(
+        messages['inventory.specifications.list.modelUnavailable']
+      );
+      expect(listMakes).not.toHaveBeenCalled();
+      expect(listModels).not.toHaveBeenCalled();
+      expect(table.textContent).not.toContain(MAKE_ID);
+      expect(table.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a capacity for every model of its make says so in words`, async () => {
+      listVehicleSpecifications.mockImplementation(async () =>
+        listing([specification({ modelId: null })])
+      );
+      const table = await drawList(locale, true);
+      expect(within(table).getByTestId('specification-model').textContent).toBe(
+        messages['inventory.specifications.create.anyModel']
+      );
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-make').textContent).toBe('A make')
+      );
+      expect(listModels).not.toHaveBeenCalled();
+    });
+  }
 });

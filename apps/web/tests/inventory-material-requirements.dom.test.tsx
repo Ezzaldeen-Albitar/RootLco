@@ -105,8 +105,11 @@ vi.mock('@/features/inventory/api', () => ({
 
 // P1-32-PRE-OD-INVF: a listed confirmed capacity is named by its make, read from the make catalogue.
 const listMakes = vi.fn();
+// ...and by its model, read from that make's model catalogue.
+const listModels = vi.fn();
 vi.mock('@/features/vehicles/catalogue-api', () => ({
   listMakes: (...args: unknown[]) => listMakes(...args),
+  listModels: (...args: unknown[]) => listModels(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -306,6 +309,12 @@ beforeEach(() => {
   listItemCategoryPage.mockImplementation(async () =>
     okRead({ items: categoryRows, nextCursor: null, hasMore: false })
   );
+  listModels.mockImplementation(async () => ({
+    status: 'denied' as const,
+    options: [],
+    truncated: false,
+    correlationId: 'corr',
+  }));
 });
 
 describe('the allowance is the server figure', () => {
@@ -1718,5 +1727,124 @@ describe('P1-32-PRE-OD-INVF: a listed capacity names its make, never its identif
     expect(make.textContent).toBe(EN['inventory.material.create.matchMakeUnavailable']);
     expect(listMakes).not.toHaveBeenCalled();
     expect(form.textContent).not.toContain(MAKE_ID);
+  });
+});
+
+describe('P1-32-PRE-OD-INVF: a listed capacity names its model, never its identifier', () => {
+  const MODEL_NAME = 'Model Alpha';
+
+  function models(options: readonly { id: string; name: string }[]) {
+    return {
+      status: 'ok' as const,
+      options: options.map((option) => ({
+        ...option,
+        scope: 'platform',
+        code: option.name.toUpperCase().replace(/\s+/g, '_'),
+        status: 'active',
+      })),
+      truncated: false,
+      correlationId: 'corr',
+    };
+  }
+
+  async function openMatches(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const messages = locale === 'en' ? EN : AR;
+    const user = userEvent.setup();
+    const props = {
+      locale,
+      messages: locale === 'en' ? en : ar,
+      workOrderId: WORK_ORDER_ID,
+      target: { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      currentUserId: USER_ID,
+      canRequest: true,
+      canApprove: false,
+      canDecideException: false,
+      canReadWorkOrder: true,
+      canReadItems: true,
+      chosenId: null,
+      onChoose: vi.fn(),
+      onChanged: vi.fn(),
+      ...over,
+    } as const;
+    if (locale === 'en') renderLtr(<MaterialRequirementsPanel {...props} />);
+    else renderRtl(<MaterialRequirementsPanel {...props} />);
+    await user.click(
+      screen.getByRole('button', { name: messages['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: messages['inventory.material.create.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(messages['inventory.material.create.serviceCondition'] as string)}`)
+      ),
+      'oil_change'
+    );
+    const model = await within(form).findByTestId('material-match-model');
+    return { form, model, messages };
+  }
+
+  beforeEach(() => {
+    listMakes.mockImplementation(async () => ({
+      status: 'ok' as const,
+      options: [],
+      truncated: false,
+      correlationId: 'corr',
+    }));
+    listModels.mockImplementation(async () => models([{ id: MODEL_ID, name: MODEL_NAME }]));
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: the model is named from the model catalogue of its make`, async () => {
+      const { form, model } = await openMatches(locale, { canReadVehicleCatalogue: true });
+      await waitFor(() => expect(model.textContent).toBe(MODEL_NAME));
+      expect(listModels).toHaveBeenCalledTimes(1);
+      expect(listModels).toHaveBeenCalledWith(MAKE_ID);
+      expect(form.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a model the catalogue cannot name is said to be not available`, async () => {
+      listModels.mockImplementation(async () => ({
+        status: 'unavailable' as const,
+        options: [],
+        truncated: false,
+        correlationId: 'corr',
+      }));
+      const { form, model, messages } = await openMatches(locale, {
+        canReadVehicleCatalogue: true,
+      });
+      await waitFor(() =>
+        expect(model.textContent).toBe(messages['inventory.material.create.matchModelUnavailable'])
+      );
+      expect(form.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a capacity for every model of its make says so in words`, async () => {
+      listVehicleSpecifications.mockImplementation(async () =>
+        listing([specification({ modelId: null })])
+      );
+      const { model, messages } = await openMatches(locale, { canReadVehicleCatalogue: true });
+      expect(model.textContent).toBe(messages['inventory.specifications.create.anyModel']);
+      expect(listModels).not.toHaveBeenCalled();
+    });
+  }
+
+  it('a model missing from the catalogue of its make is said to be not available', async () => {
+    listModels.mockImplementation(async () =>
+      models([{ id: '35353535-3535-4353-8353-353535353535', name: 'Model Beta' }])
+    );
+    const { form, model } = await openMatches('en', { canReadVehicleCatalogue: true });
+    await waitFor(() =>
+      expect(model.textContent).toBe(EN['inventory.material.create.matchModelUnavailable'])
+    );
+    expect(form.textContent).not.toContain(MODEL_ID);
+    expect(form.textContent).not.toContain('Model Beta');
+  });
+
+  it('without the vehicle read, no model read is made and the model is said to be not available', async () => {
+    const { form, model } = await openMatches('en');
+    expect(model.textContent).toBe(EN['inventory.material.create.matchModelUnavailable']);
+    expect(listModels).not.toHaveBeenCalled();
+    expect(form.textContent).not.toContain(MODEL_ID);
   });
 });

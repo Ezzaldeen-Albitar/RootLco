@@ -114,6 +114,7 @@ import { pathText, useAllItemCategories, type CategoryList } from './CategoryTre
 import {
   useItemNames,
   useMakeNames,
+  useModelNames,
   useServiceLineNames,
   type NameAnswer,
 } from './requirement-names';
@@ -168,6 +169,9 @@ function failureOf(state: { readonly status: string; readonly correlationId?: st
   }
   return { status: 'unavailable', messageKey: 'inventory.material.unavailable', correlationId };
 }
+
+/** No capacity listed: the model names read nothing. */
+const NO_SPECIFICATIONS: readonly VehicleSpecification[] = [];
 
 /**
  * The confirmed capacities on file for the service kind being asked about.
@@ -1419,6 +1423,11 @@ function CreateRequirementForm({
   const makeName = useMakeNames(
     canReadVehicleCatalogue && match.phase === 'listed' && match.rows.length > 0
   );
+  // A capacity's model is named from its make's model catalogue, under the same code.
+  const modelName = useModelNames(
+    match.phase === 'listed' ? match.rows : NO_SPECIFICATIONS,
+    canReadVehicleCatalogue
+  );
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -1690,14 +1699,18 @@ function CreateRequirementForm({
                           unavailableKey="inventory.material.create.matchMakeUnavailable"
                         />
                       </span>
-                      {row.modelId ? (
-                        <>
-                          {' · '}
-                          <code className="font-mono text-caption" dir="ltr">
-                            {row.modelId}
-                          </code>
-                        </>
-                      ) : null}
+                      {' · '}
+                      <span data-testid="material-match-model">
+                        {row.modelId ? (
+                          <NamedValue
+                            messages={messages}
+                            answer={modelName(row.makeId, row.modelId)}
+                            unavailableKey="inventory.material.create.matchModelUnavailable"
+                          />
+                        ) : (
+                          translate(messages, 'inventory.specifications.create.anyModel')
+                        )}
+                      </span>
                       {row.engineVariant ? (
                         <>
                           {' · '}

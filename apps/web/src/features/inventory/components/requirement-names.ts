@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { listMakes } from '@/features/vehicles/catalogue-api';
+import { listMakes, listModels } from '@/features/vehicles/catalogue-api';
 import { listServiceLines } from '@/features/work-orders/api';
 
 import { readItemDetail } from '../api';
@@ -143,5 +143,62 @@ export function useMakeNames(enabled: boolean): (makeId: string) => NameAnswer {
       return names === null ? UNAVAILABLE : named(names.get(makeId));
     },
     [enabled, names]
+  );
+}
+
+/**
+ * The name of each vehicle model, by its make and model ids, for the vehicle
+ * capacities the inventory screens list (P1-32-PRE-OD-INVF). A capacity names
+ * its model by identifier only; the name comes from the model catalogue of its
+ * make (`veh.catalogue-model-list`, `veh.vehicle.read`) — the read the
+ * specification form already offers its model picker from, and no new one.
+ * One read per distinct make that has a model to name, and only when `enabled`.
+ * A model its make's catalogue does not hold (the read answers an empty page
+ * for a make it cannot see), a truncated catalogue that stops before it, or a
+ * refused or failed read is `unavailable`, never the identifier.
+ */
+export function useModelNames(
+  rows: readonly { readonly makeId: string; readonly modelId: string | null }[],
+  enabled: boolean
+): (makeId: string, modelId: string) => NameAnswer {
+  // The distinct makes with a model to name, as one stable key.
+  const key = useMemo(
+    () =>
+      [...new Set(rows.filter((row) => row.modelId !== null).map((row) => row.makeId))]
+        .sort()
+        .join(','),
+    [rows]
+  );
+  const [answers, setAnswers] = useState<ReadonlyMap<string, ReadonlyMap<string, string> | null>>(
+    new Map()
+  );
+  useEffect(() => {
+    if (!enabled || key === '') return;
+    let live = true;
+    for (const makeId of key.split(',')) {
+      void listModels(makeId).then((result) => {
+        if (!live) return;
+        setAnswers((known) =>
+          new Map(known).set(
+            makeId,
+            result.status === 'ok'
+              ? new Map(result.options.map((model) => [model.id, model.name]))
+              : null
+          )
+        );
+      });
+    }
+    return () => {
+      live = false;
+    };
+  }, [enabled, key]);
+  return useCallback(
+    (makeId: string, modelId: string) => {
+      if (!enabled) return UNAVAILABLE;
+      const known = answers.get(makeId);
+      if (known === undefined) return PENDING;
+      return known === null ? UNAVAILABLE : named(known.get(modelId));
+    },
+    [answers, enabled]
   );
 }

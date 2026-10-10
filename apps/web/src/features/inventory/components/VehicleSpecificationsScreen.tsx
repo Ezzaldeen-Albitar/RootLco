@@ -85,6 +85,7 @@ import {
 import { RecordedMoment, useSingleFlight } from './catalogue-pieces';
 import { useAllItemCategories } from './CategoryTree';
 import { CategoryTreePicker } from './CategoryTreePicker';
+import { useMakeNames, useModelNames, type NameAnswer } from './requirement-names';
 import { OutcomeNote, Qty } from './shared';
 import { LINK, PANEL } from './stock-operations';
 import { useUnitList } from './unit-list';
@@ -124,6 +125,15 @@ export function VehicleSpecificationsScreen({
   const units = useUnitList();
 
   const reload = useCallback(() => setEpoch((n) => n + 1), []);
+  /*
+   * A capacity names its make and model by identifier only; the list names them
+   * from the make and model catalogue, under the same `veh.vehicle.read` the form
+   * offers it under (P1-32-PRE-OD-INVF). Without it, or when the catalogue cannot
+   * name one, the row says so in words — never the identifier.
+   */
+  const listedRows = listing.phase === 'listed' ? listing.rows : NO_SPECIFICATIONS;
+  const makeName = useMakeNames(canReadCatalogue && listedRows.length > 0);
+  const modelName = useModelNames(listedRows, canReadCatalogue);
 
   useEffect(() => {
     let live = true;
@@ -266,6 +276,8 @@ export function VehicleSpecificationsScreen({
                       locale={locale}
                       messages={messages}
                       row={row}
+                      make={makeName(row.makeId)}
+                      model={row.modelId === null ? null : modelName(row.makeId, row.modelId)}
                       units={units}
                       canManage={canManage}
                       onChanged={reload}
@@ -286,10 +298,35 @@ export function VehicleSpecificationsScreen({
   );
 }
 
+/** No capacity listed: neither name read is made. */
+const NO_SPECIFICATIONS: readonly VehicleSpecification[] = [];
+
+/** A make or model in words: its name, a wait, or that it is not available. */
+function CatalogueName({
+  messages,
+  answer,
+  unavailableKey,
+  testId,
+}: {
+  readonly messages: Messages;
+  readonly answer: NameAnswer;
+  readonly unavailableKey: keyof Messages;
+  readonly testId: string;
+}) {
+  if (answer.phase === 'named') return <bdi data-testid={testId}>{answer.name}</bdi>;
+  return (
+    <span data-testid={testId} className="text-text-muted">
+      {translate(messages, answer.phase === 'pending' ? 'state.loading' : unavailableKey)}
+    </span>
+  );
+}
+
 function SpecificationRow({
   locale,
   messages,
   row,
+  make,
+  model,
   units,
   canManage,
   onChanged,
@@ -297,6 +334,10 @@ function SpecificationRow({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly row: VehicleSpecification;
+  /** The row's make in words, from the make catalogue. */
+  readonly make: NameAnswer;
+  /** The row's model in words, or `null` when the capacity holds for every model of the make. */
+  readonly model: NameAnswer | null;
   /** The units the code is named from; `null` until read, and the code is then shown. */
   readonly units: readonly NamedUnit[] | null;
   readonly canManage: boolean;
@@ -322,17 +363,25 @@ function SpecificationRow({
   return (
     <TableRow>
       <TableCell>
-        <code className="font-mono text-caption" dir="ltr">
-          {row.makeId}
-        </code>
-        {row.modelId ? (
-          <>
-            {' · '}
-            <code className="font-mono text-caption" dir="ltr">
-              {row.modelId}
-            </code>
-          </>
-        ) : null}
+        <CatalogueName
+          messages={messages}
+          answer={make}
+          unavailableKey="inventory.specifications.list.makeUnavailable"
+          testId="specification-make"
+        />
+        {' · '}
+        {model === null ? (
+          <span data-testid="specification-model">
+            {translate(messages, 'inventory.specifications.create.anyModel')}
+          </span>
+        ) : (
+          <CatalogueName
+            messages={messages}
+            answer={model}
+            unavailableKey="inventory.specifications.list.modelUnavailable"
+            testId="specification-model"
+          />
+        )}
         {row.modelYearFrom !== null || row.modelYearTo !== null ? (
           <>
             {' · '}
