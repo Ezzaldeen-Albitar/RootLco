@@ -8,7 +8,12 @@ import {
   isActive,
   type NavigationItem,
 } from '../src/config/navigation';
-import { NO_CAPABILITIES, hasPermission, visibleNavigation } from '../src/lib/permissions';
+import {
+  NO_CAPABILITIES,
+  hasPermission,
+  isVisible,
+  visibleNavigation,
+} from '../src/lib/permissions';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import accountManifest from './e2e/authenticated/account-manifest.json';
@@ -244,7 +249,7 @@ describe('the navigation model', () => {
     expect(gated.length, 'no gated navigation entry was examined').toBeGreaterThan(0);
     for (const entry of gated) {
       expect(CATALOGUE.has(entry.permission!), `${entry.key} → ${entry.permission}`).toBe(true);
-      for (const code of entry.alsoRequires ?? []) {
+      for (const code of [...(entry.alsoRequires ?? []), ...(entry.orPermissions ?? [])]) {
         expect(CATALOGUE.has(code), `${entry.key} → ${code}`).toBe(true);
       }
     }
@@ -399,6 +404,75 @@ describe('permission filtering — unknown means denied', () => {
     expect(shown(['a.b.c', 'd.e.f'])).toBe(false);
     expect(shown(['d.e.f', 'g.h.i'])).toBe(false);
     expect(shown(['a.b.c'])).toBe(false);
+  });
+
+  it('reads `orPermissions` as standing in for `permission`, beside `alsoRequires`', () => {
+    const gated = item({
+      permission: 'a.b.c',
+      orPermissions: ['x.y.z'],
+      alsoRequires: ['d.e.f'],
+    });
+    const shown = (permissions: readonly string[]) => isVisible({ permissions }, gated);
+    expect(shown(['a.b.c', 'd.e.f'])).toBe(true);
+    expect(shown(['x.y.z', 'd.e.f'])).toBe(true);
+    expect(shown(['a.b.c', 'x.y.z'])).toBe(false);
+    expect(shown(['d.e.f'])).toBe(false);
+    expect(shown([])).toBe(false);
+  });
+
+  /*
+   * P1-32-PRE-OD-ADM5: Numbering rules and Taxes are read only, showing the
+   * company settings to `org.company.read` and the branch settings to
+   * `org.branch.read`; Currencies shows the platform's list to `org.tenant.read`
+   * and the company's enabled codes to `org.company.read`. Each entry is offered
+   * on exactly those codes — no longer on `org.settings.manage`, which a reader
+   * does not hold and none of these pages needs to show anything.
+   */
+  describe('the settings screens are offered on the codes their pages read with', () => {
+    const entry = (key: string) => {
+      const found = ALL.find((candidate) => candidate.key === key);
+      if (!found) throw new Error(`${key} is not in the navigation`);
+      return found;
+    };
+    const SETTINGS_MANAGE = 'org.settings.manage';
+
+    it.each(['settings.numberingRules', 'settings.taxes'])(
+      '%s: shown to a reader of companies or of branches, and to nobody else',
+      (key) => {
+        const shown = (permissions: readonly string[]) => isVisible({ permissions }, entry(key));
+        expect(shown(['org.company.read'])).toBe(true);
+        expect(shown(['org.branch.read'])).toBe(true);
+        expect(shown([SETTINGS_MANAGE])).toBe(false);
+        expect(shown(['org.tenant.read', SETTINGS_MANAGE])).toBe(false);
+        expect(shown(['org.tax.manage'])).toBe(false);
+      }
+    );
+
+    it('settings.currencies: shown to a reader of the workspace or of companies, and to nobody else', () => {
+      const shown = (permissions: readonly string[]) =>
+        isVisible({ permissions }, entry('settings.currencies'));
+      expect(shown(['org.tenant.read'])).toBe(true);
+      expect(shown(['org.company.read'])).toBe(true);
+      expect(shown([SETTINGS_MANAGE])).toBe(false);
+      expect(shown(['org.branch.read', SETTINGS_MANAGE])).toBe(false);
+    });
+
+    it('a reader without settings management sees all three in the sidebar', () => {
+      const reader = { permissions: ['org.tenant.read', 'org.company.read', 'org.branch.read'] };
+      const keys = flattenNavigation(visibleNavigation(NAVIGATION, reader)).map((e) => e.key);
+      expect(keys).toEqual(
+        expect.arrayContaining(['settings.numberingRules', 'settings.taxes', 'settings.currencies'])
+      );
+      expect(keys).not.toContain('settings.systemSettings');
+    });
+
+    it('a settings manager who may read nothing on them sees none of the three', () => {
+      const manager = { permissions: ['org.settings.manage'] };
+      const keys = flattenNavigation(visibleNavigation(NAVIGATION, manager)).map((e) => e.key);
+      expect(keys).not.toContain('settings.numberingRules');
+      expect(keys).not.toContain('settings.taxes');
+      expect(keys).not.toContain('settings.currencies');
+    });
   });
 
   it('offers credit notes to the first administrator of a provisioned organisation, and moves nothing else', () => {

@@ -19,6 +19,7 @@ import { pageMetadata } from '@/lib/page-metadata';
  * reads as a working product that happens to be empty.
  *
  * Each card is shown only when the actor holds the permission its screen needs —
+ * or, for a screen that shows something to any one of several, one of them —
  * the same rule the sidebar uses, and for the same reason. An entry an operator
  * cannot open is a door with no handle.
  */
@@ -27,6 +28,11 @@ interface Entry {
   readonly href: string;
   readonly labelKey: string;
   readonly permission: string;
+  /**
+   * Codes that each stand in for `permission`, exactly as the sidebar entry's
+   * `orPermissions`: for a screen that shows something to any one of them.
+   */
+  readonly orPermissions?: readonly string[];
 }
 
 const SECTIONS: readonly {
@@ -69,19 +75,25 @@ const SECTIONS: readonly {
       {
         href: '/administration/numbering-rules',
         labelKey: 'nav.numberingRules',
-        permission: PERMISSIONS.settingsManage,
+        // See navigation.ts: read only, the company settings or the branch
+        // settings, whichever the session may read.
+        permission: PERMISSIONS.companyRead,
+        orPermissions: [PERMISSIONS.branchRead],
       },
       {
         href: '/administration/taxes',
         labelKey: 'nav.taxes',
-        // See navigation.ts: the screen's operations require settings
-        // management, not `org.tax.manage` (P1-26-F-029).
-        permission: PERMISSIONS.settingsManage,
+        // See navigation.ts: read only, as Numbering rules; never
+        // `org.tax.manage` (P1-26-F-029).
+        permission: PERMISSIONS.companyRead,
+        orPermissions: [PERMISSIONS.branchRead],
       },
       {
         href: '/administration/currencies',
         labelKey: 'nav.currencies',
-        permission: PERMISSIONS.settingsManage,
+        // The company's enabled codes, or the platform's currency list.
+        permission: PERMISSIONS.companyRead,
+        orPermissions: [PERMISSIONS.tenantRead],
       },
       {
         href: '/administration/languages',
@@ -128,7 +140,9 @@ export default async function AdministrationPage({
   const sections = SECTIONS.map((section) => ({
     ...section,
     entries: section.entries.filter((entry) =>
-      holds(session.permissions, entry.permission as AdministrationPermission)
+      [entry.permission, ...(entry.orPermissions ?? [])].some((code) =>
+        holds(session.permissions, code as AdministrationPermission)
+      )
     ),
   })).filter((section) => section.entries.length > 0);
 

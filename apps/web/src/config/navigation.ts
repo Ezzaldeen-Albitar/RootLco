@@ -58,6 +58,18 @@ export interface NavigationItem {
    * which `tests/navigation.test.ts` checks the same way it checks `permission`.
    */
   readonly alsoRequires?: readonly PermissionCode[];
+  /**
+   * Codes that each stand in for `permission`: the entry is shown when
+   * `permission` OR any one of these is held (and, as always, every code in
+   * `alsoRequires`).
+   *
+   * Used only where the destination's page itself shows something for any one
+   * of several codes — a screen with a company panel and a branch panel, each
+   * behind its own read — so the sidebar offers it to exactly the sessions the
+   * page serves. Each code must exist in the catalogue, which
+   * `tests/navigation.test.ts` checks beside `permission` and `alsoRequires`.
+   */
+  readonly orPermissions?: readonly PermissionCode[];
   readonly status: NavigationStatus;
   readonly scope: NavigationScope;
   /** Optional numeric badge, e.g. unread notifications. */
@@ -940,7 +952,11 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             labelKey: 'nav.numberingRules',
             icon: 'settings',
             href: '/administration/numbering-rules',
-            permission: 'org.settings.manage',
+            // Read only since P1-32-PRE-OD-ADM5: the page shows the company
+            // settings to `org.company.read` and the branch settings to
+            // `org.branch.read`, and refuses only a session holding neither.
+            permission: 'org.company.read',
+            orPermissions: ['org.branch.read'],
             status: 'available',
             scope: 'company',
           },
@@ -949,11 +965,14 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             labelKey: 'nav.taxes',
             icon: 'settings',
             href: '/administration/taxes',
-            // The screen calls the company-settings operations, which require
-            // `org.company.read` and `org.settings.manage`. Gating it on
-            // `org.tax.manage` — which no operation it calls requires — is the
-            // same defect P1-26-F-011 recorded, repeated (P1-26-F-029).
-            permission: 'org.settings.manage',
+            // Read only since P1-32-PRE-OD-ADM5: the screen reads the company
+            // and branch settings, which require `org.company.read` and
+            // `org.branch.read`, and shows whichever the session may read. Never
+            // `org.tax.manage`, which no operation it calls requires — the
+            // defect P1-26-F-011 recorded, repeated (P1-26-F-029) — and no
+            // longer `org.settings.manage`, which it no longer writes with.
+            permission: 'org.company.read',
+            orPermissions: ['org.branch.read'],
             status: 'available',
             scope: 'company',
           },
@@ -962,7 +981,12 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             labelKey: 'nav.currencies',
             icon: 'settings',
             href: '/administration/currencies',
-            permission: 'org.settings.manage',
+            // The platform's currency list is read with `org.tenant.read` and
+            // the company's enabled codes with `org.company.read`; the page
+            // shows either one alone. Writing the enabled codes needs
+            // `org.settings.manage`, which the page checks for the form.
+            permission: 'org.company.read',
+            orPermissions: ['org.tenant.read'],
             status: 'available',
             scope: 'company',
           },
