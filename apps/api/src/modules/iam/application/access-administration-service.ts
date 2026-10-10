@@ -664,7 +664,8 @@ export class AccessAdministrationService extends ApplicationService {
    * `userDisplayName` names a person's limit through the identity directory,
    * which publishes a name only to a caller holding `iam.user.read` and an
    * empty answer to anyone else — so without that code every name is `null`,
-   * and the caller learns nothing it could not already read. `roleName` is
+   * and the caller learns nothing it could not already read; and only an
+   * account the user list shows is named (`listedOnly`). `roleName` is
    * resolved by the list's own statement under `iam.role.read` the same way.
    * Both are additive: the references are published as before, and a `null`
    * is the screen's cue to say a name is not available, never to print an id.
@@ -675,9 +676,12 @@ export class AccessAdministrationService extends ApplicationService {
   ): Promise<readonly ApprovalLimitListItem[]> {
     const rows = await this.authorization.listApprovalLimits(db, filters, 200);
     const people = [...new Set(rows.flatMap((row) => (row.userId === null ? [] : [row.userId])))];
+    // `listedOnly`: a limit names its CURRENT subject, so an account the user
+    // list no longer shows (soft-deleted) is not named here either.
     const names = await new IdentityDirectoryService(this.identities).resolveDisplayIdentities(
       db,
-      people
+      people,
+      { listedOnly: true }
     );
     return rows.map((row) => ({
       ...row,
