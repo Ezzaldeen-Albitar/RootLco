@@ -562,6 +562,11 @@ const UserAccessPage = (
 ).default as unknown as AnyPage;
 const LanguagesPage = (await import('@/app/[locale]/(dashboard)/administration/languages/page'))
   .default as unknown as AnyPage;
+const RosterPage = (await import('@/app/[locale]/(dashboard)/technicians/page'))
+  .default as unknown as AnyPage;
+const ProfilePage = (
+  await import('@/app/[locale]/(dashboard)/technicians/[technicianProfileId]/page')
+).default as unknown as AnyPage;
 
 /**
  * Walks an element tree for the first node whose props carry `marker`. A render
@@ -792,5 +797,69 @@ describe('organisation administration routes grant each control from its OWN per
     for (const [page, params, marker] of routes) {
       expect(await screenProps(page, params, writesOnly, marker)).toBeNull();
     }
+  });
+});
+
+describe('the technician administration routes grant each control from its OWN permission', () => {
+  // P1-32-PRE-OD-ADM2B. Each code below is the one the operation behind the
+  // control declares: the list and the detail read `tech.technician.read`, every
+  // roster write `tech.technician.manage`, the person picker `iam.user.read`, and
+  // the certificate number `tech.technician.manage` AND `iam.sensitive.view`.
+  const READ = 'tech.technician.read';
+  const MANAGE = 'tech.technician.manage';
+  const PROFILE_ID = 'a1b2c3d4-0000-4000-8000-0000000000bb';
+
+  it('the roster offers Add for the manage code, the picker for the user read, and nothing else', async () => {
+    const granted = await screenProps(RosterPage, {}, [READ, MANAGE, ADMIN.userRead], 'canManage');
+    expect(granted, 'the route did not render its screen').not.toBeNull();
+    expect(granted?.['canManage']).toBe(true);
+    expect(granted?.['canReadUsers']).toBe(true);
+
+    const reader = await screenProps(RosterPage, {}, [READ, ADMIN.sensitiveView], 'canManage');
+    expect(reader?.['canManage']).toBe(false);
+    expect(reader?.['canReadUsers']).toBe(false);
+  });
+
+  it('the profile records a certificate number only with BOTH codes that operation declares', async () => {
+    const both = await screenProps(
+      ProfilePage,
+      { technicianProfileId: PROFILE_ID },
+      [READ, MANAGE, ADMIN.sensitiveView],
+      'canRecordSensitive'
+    );
+    expect(both?.['canManage']).toBe(true);
+    expect(both?.['canRecordSensitive']).toBe(true);
+    expect(both?.['technicianProfileId']).toBe(PROFILE_ID);
+
+    const sensitiveAlone = await screenProps(
+      ProfilePage,
+      { technicianProfileId: PROFILE_ID },
+      [READ, ADMIN.sensitiveView],
+      'canRecordSensitive'
+    );
+    expect(sensitiveAlone?.['canManage']).toBe(false);
+    expect(sensitiveAlone?.['canRecordSensitive']).toBe(false);
+
+    const manageAlone = await screenProps(
+      ProfilePage,
+      { technicianProfileId: PROFILE_ID },
+      [READ, MANAGE],
+      'canRecordSensitive'
+    );
+    expect(manageAlone?.['canRecordSensitive']).toBe(false);
+  });
+
+  it('renders the denial instead of either screen without the read code', async () => {
+    const writesOnly = [MANAGE, ADMIN.userRead, ADMIN.sensitiveView];
+    expect(await screenProps(RosterPage, {}, writesOnly, 'canManage')).toBeNull();
+    expect(
+      await screenProps(ProfilePage, { technicianProfileId: PROFILE_ID }, writesOnly, 'canManage')
+    ).toBeNull();
+  });
+
+  it('refuses an address that names no profile', async () => {
+    await expect(
+      screenProps(ProfilePage, { technicianProfileId: 'not-a-profile' }, [READ], 'canManage')
+    ).rejects.toThrow();
   });
 });

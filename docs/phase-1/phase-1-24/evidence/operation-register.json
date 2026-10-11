@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 525,
-    "openapiPaths": 414,
-    "openapiOperations": 525,
+    "operations": 526,
+    "openapiPaths": 415,
+    "openapiOperations": 526,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 306
   },
   "counts": {
-    "Covered": 525
+    "Covered": 526
   },
   "operations": [
     {
@@ -17727,6 +17727,44 @@
       "file": "apps/api/src/app/api/v1/labor-sessions/[sessionId]/stop/route.ts"
     },
     {
+      "id": "tech.skill-list",
+      "domain": "technician",
+      "method": "GET",
+      "route": "/api/v1/technician-skills",
+      "permissions": ["tech.technician.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/technician-skills",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant",
+        "isolation"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-technician-administration.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/technician-skills/route.ts"
+    },
+    {
       "id": "tech.technician-availability-record",
       "domain": "technician",
       "method": "POST",
@@ -17952,7 +17990,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-03-technician-capabilities.test.ts"],
+      "tests": [
+        "tests/backend/br-03-technician-capabilities.test.ts",
+        "tests/backend/od-technician-administration.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/route.ts"
     },
@@ -18030,7 +18071,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-03-technician-roster.test.ts"],
+      "tests": [
+        "tests/backend/br-03-technician-roster.test.ts",
+        "tests/backend/od-technician-administration.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/technicians/[technicianProfileId]/route.ts"
     },
@@ -18052,7 +18096,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
       "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-03-technician-roster.test.ts"],
+      "tests": [
+        "tests/backend/br-03-technician-roster.test.ts",
+        "tests/backend/od-technician-administration.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/technicians/route.ts"
     },
@@ -18171,7 +18218,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-03-technician-capabilities.test.ts"],
+      "tests": [
+        "tests/backend/br-03-technician-capabilities.test.ts",
+        "tests/backend/od-technician-administration.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route.ts"
     },
