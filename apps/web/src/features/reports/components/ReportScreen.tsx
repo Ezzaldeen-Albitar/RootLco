@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import Link from 'next/link';
 import Button from '@mui/material/Button';
 import Table from '@mui/material/Table';
@@ -197,6 +197,15 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * and a refused moment takes the cursor (`useLocalRefusal`). Pressing Apply twice
  * with the same choice reads nothing again: an unchanged choice is not a new one.
  *
+ * ## Show on the selection already shown reads it again
+ *
+ * Show is the operator asking for the report, so pressing it on the selection
+ * already on screen reads that page again (`readAgain`) — as the screen did
+ * before it moved to Material UI — with the facts above the rows, a typed
+ * export reason and the pinned moment kept, exactly as a page move keeps them.
+ * A press made while a read is still open reads nothing more: that read is the
+ * answer to both presses.
+ *
  * ## Showing another answer asks before it drops typed work
  *
  * The results are keyed on the submitted selection and the as-of choice, so
@@ -269,6 +278,8 @@ export function ReportScreen({
   const unsaved = useUnsavedWork();
   // The answer the operator asked for while the shown one held unsaved work.
   const [pendingResults, setPendingResults] = useState<RequestedResults | null>(null);
+  // The mounted results, so Show on the selection already shown can read again.
+  const results = useRef<ReportResultsHandle | null>(null);
 
   const applyResults = (next: RequestedResults) => {
     setChosen(next.chosen);
@@ -276,8 +287,13 @@ export function ReportScreen({
       JSON.stringify(current) === JSON.stringify(next.asOfChoice) ? current : next.asOfChoice
     );
   };
-  /** The one way the shown answer changes — see "Showing another answer asks first". */
-  const requestResults = (next: RequestedResults) => {
+  /**
+   * The one way the shown answer changes — see "Showing another answer asks
+   * first". `same` says what a request for the answer ALREADY shown does:
+   * `'reread'` for Show, which reads it again; `'keep'` for Apply, where an
+   * unchanged choice is not a new one and nothing is read.
+   */
+  const requestResults = (next: RequestedResults, same: 'reread' | 'keep') => {
     const changes =
       resultsKey(next.chosen ?? followed, next.asOfChoice) !== resultsKey(submitted, asOfChoice);
     if (changes && unsaved.any()) {
@@ -285,6 +301,7 @@ export function ReportScreen({
       return;
     }
     applyResults(next);
+    if (!changes && same === 'reread') results.current?.readAgain();
   };
 
   const title = reportTitle(messages, definition);
@@ -348,7 +365,9 @@ export function ReportScreen({
         options={scopeOptions.data}
         initial={followed ?? initialReportScope(scopeOptions.data, named)}
         submitKey="reports.run.show"
-        onSubmit={(selection) => requestResults({ chosen: selection, asOfChoice: { mode: 'end' } })}
+        onSubmit={(selection) =>
+          requestResults({ chosen: selection, asOfChoice: { mode: 'end' } }, 'reread')
+        }
       />
 
       {submitted === null ? (
@@ -363,12 +382,13 @@ export function ReportScreen({
         // cursors issued against a different selection.
         <ReportResults
           key={resultsKey(submitted, asOfChoice)}
+          ref={results}
           locale={locale}
           messages={messages}
           reportCode={definition.reportCode}
           submitted={submitted}
           asOfChoice={asOfChoice}
-          onAsOfChange={(next) => requestResults({ chosen, asOfChoice: next })}
+          onAsOfChange={(next) => requestResults({ chosen, asOfChoice: next }, 'keep')}
           companyName={chosenCompany?.legalName ?? null}
           branchName={chosenBranch?.name ?? null}
           canExport={canExport}
@@ -432,12 +452,22 @@ function ReportHeading({ title, code }: { readonly title: string | null; readonl
   );
 }
 
+/** What the screen may ask of the results it has mounted. */
+interface ReportResultsHandle {
+  /**
+   * Reads the page in hand again, with the cursor that opened it and the moment
+   * the first answer pinned. Does nothing while a read is still open.
+   */
+  readonly readAgain: () => void;
+}
+
 const runSignals = (run: ReportRun) => ({
   nextCursor: run.rows.nextCursor,
   hasMore: run.rows.hasMore,
 });
 
 function ReportResults({
+  ref,
   locale,
   messages,
   reportCode,
@@ -449,6 +479,7 @@ function ReportResults({
   canExport,
   canSnapshot,
 }: {
+  readonly ref?: Ref<ReportResultsHandle> | undefined;
   readonly locale: Locale;
   readonly messages: Messages;
   readonly reportCode: string;
@@ -488,6 +519,17 @@ function ReportResults({
     [reportCode, companyId, branchId, from, to, asOfChoice]
   );
   const trail = useCursorTrail<ReportRun>(read, runSignals);
+  const { loading: reading, refresh: readPageAgain } = trail;
+  useImperativeHandle(
+    ref,
+    () => ({
+      readAgain: () => {
+        // A read still open is the answer to this press too.
+        if (!reading) readPageAgain();
+      },
+    }),
+    [reading, readPageAgain]
+  );
   const answered =
     trail.outcome !== null && trail.outcome.status === 'ok' ? trail.outcome.data : null;
   /*

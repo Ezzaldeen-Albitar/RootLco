@@ -619,6 +619,57 @@ describe('the report screen requests nothing until it has a branch and a period'
     expect(runReport).toHaveBeenCalledTimes(1);
   });
 
+  it('reads the report again when the button is pressed on the selection already shown', async () => {
+    // Show is the operator asking for the report: pressed on the selection
+    // already on screen, once that answer has been drawn, it reads again, as the
+    // screen did before it moved to Material UI (P1-32-PRE-OD-REPA-03).
+    await showReport();
+    // The first answer is on screen — its row is drawn — before the next press.
+    await screen.findByRole('link', { name: 'W-000123' });
+    expect(runReport).toHaveBeenCalledTimes(1);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(2));
+    expect(runReport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reportCode: CODE,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+        cursor: null,
+      })
+    );
+    // The answer is drawn again, and a third press reads a third time.
+    await screen.findByRole('link', { name: 'W-000123' });
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(3));
+    await screen.findByRole('link', { name: 'W-000123' });
+  });
+
+  it('keeps a typed export reason when the same selection is read again, and asks nothing', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    readReport.mockResolvedValue({
+      status: 'ok',
+      data: { ...BASELINE, exportPermissionCode: 'rpt.export', source: 'tenant', versionNumber: 1 },
+      correlationId: null,
+    });
+    await showReport();
+    await screen.findByRole('link', { name: 'W-000123' });
+    const user = userEvent.setup();
+    const reason = () => screen.getByRole('textbox', { name: labelled('reports.export.reason') });
+    await user.type(reason(), 'Month-end figures');
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(2));
+    // Nothing would be lost, so nothing is asked; the reason is still there
+    // while the page is read and after it answers.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(reason()).toHaveValue('Month-end figures');
+    await screen.findByRole('link', { name: 'W-000123' });
+    expect(reason()).toHaveValue('Month-end figures');
+    expect(exportReport).not.toHaveBeenCalled();
+  });
+
   it('moves the cursor to the first control to correct, and withdraws its complaint once it changes (route sweep B3)', async () => {
     await renderReportPage();
     const user = userEvent.setup();
