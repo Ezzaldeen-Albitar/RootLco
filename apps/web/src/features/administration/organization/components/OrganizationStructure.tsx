@@ -1,49 +1,71 @@
 'use client';
 
-import { useActionState, useState, useTransition } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { SelectField, TextField, type SelectOption } from '@/components/forms/Field';
-import { ReferenceListRetry, useUnavailableListGuard } from '@/components/forms/ReferenceList';
-import { Dialog, ReasonConfirmDialog } from '@/components/overlays/Overlays';
-import { EmptyState } from '@/components/states/States';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
+import type { FormSelectOption } from '@/components/forms/mui/FormSelectField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateWithValues } from '@/i18n/get-messages';
+import {
+  formatMessage,
+  translate,
+  translateDynamic,
+  translateWithValues,
+} from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { currencyLabel, intlLocale, timeZoneLabel } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
-import { FormFeedback } from '@/features/authentication/components/FormFeedback';
-import { SubmitButton } from '@/features/authentication/components/SubmitButton';
-import { ReadBoundary } from '../../shared/components/ScreenStates';
-import {
-  CapacityNotice,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  StatusPill,
-  TableFrame,
-  Th,
-} from '../../shared/components/StructureParts';
-import {
-  changeBranchStatusAction,
-  createBranchAction,
-  createCompanyAction,
-  setCompanyStatusAction,
-} from '../actions';
+import { changeBranchStatusAction, setCompanyStatusAction } from '../actions';
 import { readBranchStatus } from '../api';
-import type { BranchView, CapacityView, CompanyView, ReferenceValues } from '../types';
-import { useActionRefusal } from '@/lib/forms/use-action-refusal';
+import {
+  isCapacityFull,
+  type BranchView,
+  type CapacityAllowance,
+  type CapacityKind,
+  type CapacityView,
+  type CompanyView,
+  type ReferenceValues,
+} from '../types';
+import { OrgReadBoundary } from './OrgReadBoundary';
+import {
+  AddBranchDialog,
+  AddCompanyDialog,
+  EditBranchDialog,
+  EditCompanyDialog,
+} from './StructureDialogs';
+import { useSingleFlight } from './use-single-flight';
 
 /**
- * Companies and branches, on the Organization screen.
+ * Companies and branches, on the Organization screen — on Material UI
+ * (ADR-022, P1-32-PRE-OD-ADM1).
  *
  * ## Which controls appear
  *
  * Each control is shown only to a session holding the code its operation
- * declares: Add company and a company's status change take
- * `org.company.manage`, Add branch takes `org.branch.manage`, and a branch's
- * status change takes `org.settings.manage`. The visibility is courtesy — the
- * server checks every request and its refusal is the one that counts.
+ * declares: Add company, Edit company and a company's status change take
+ * `org.company.manage`; Add branch and Edit branch take `org.branch.manage`;
+ * and a branch's status change takes `org.settings.manage`. The visibility is
+ * courtesy — the server checks every request against the record's own company
+ * and branch, and its refusal is the one that counts.
+ *
+ * ## The lists are Material's table
+ *
+ * `org.company-list` and `org.branch-list` each answer one bounded list with no
+ * cursor and no "more exist" flag, so there is nothing for the operational
+ * grid's pager to walk (planner ruling of 2026-10-09). A list that reached the
+ * service's ceiling is not said to be cut short, because the read does not say
+ * so; that is recorded as a known limitation in the route checklist.
  *
  * ## A full allowance keeps its button
  *
@@ -51,12 +73,13 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * A hidden button reads as "you may not", which is the wrong reason, and a seat
  * may have been released since the page was read.
  *
- * ## The branch status needs the branch's current version
+ * ## Versions
  *
- * The transition is version-guarded and the branch list publishes no version,
- * so the version is read from the branch's own status read at the moment the
- * operator confirms — never remembered from an earlier page read, and never
- * guessed.
+ * Editing sends the version each list publishes beside its row
+ * (`StructureDialogs.tsx`). The branch status transition reads the branch's
+ * current version from its own status read at the moment the operator confirms,
+ * as before — it is not a form the operator edits, so there is nothing typed for
+ * a stale version to protect.
  *
  * ## Currency and time zone are chosen, never typed (P1-32-PRE-OD-REF)
  *
@@ -65,21 +88,20 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * currencies of `org.reference-values-read`. The branch time zone offers the
  * active zones of that read, and falls back to the zones the tenant and its
  * branches already use when the read was not permitted or failed. Neither ever
- * falls back to free text.
- *
- * ## Names, and a list that could not be loaded (P1-32-PRE-OD-QAF)
- *
- * A currency reads as its name in the reader's language with its code beside it,
- * and a zone as its generic name with its identifier; the value sent is still the
- * code (D-1). When the reference read FAILED (`referenceUnavailable`), the field
- * says so and offers Try again, which renders the page again. A select left with
- * nothing to choose refuses the submission on its own field, and a select left
- * with only the zones already in use says that its list is partial.
+ * falls back to free text. A currency reads as its name in the reader's
+ * language with its code beside it, a zone as its generic name with its
+ * identifier (P1-32-PRE-OD-QAF).
  */
 
 type StatusTarget =
   | { readonly kind: 'company'; readonly company: CompanyView }
   | { readonly kind: 'branch'; readonly branch: BranchView };
+
+type OpenDialog =
+  | { readonly kind: 'add-company' }
+  | { readonly kind: 'add-branch' }
+  | { readonly kind: 'edit-company'; readonly id: string }
+  | { readonly kind: 'edit-branch'; readonly id: string };
 
 export function OrganizationStructure({
   locale,
@@ -114,12 +136,14 @@ export function OrganizationStructure({
 }) {
   const router = useRouter();
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const [dialog, setDialog] = useState<'company' | 'branch' | null>(null);
+  const [dialog, setDialog] = useState<OpenDialog | null>(null);
   const [target, setTarget] = useState<StatusTarget | null>(null);
   const [failure, setFailure] = useState<ActionState>(IDLE);
-  const [running, startTransition] = useTransition();
+  const statusFlight = useSingleFlight();
+  const attempts = useRef(0);
 
   const companyRows = companies?.status === 'ok' ? companies.data : [];
+  const branchRows = branches?.status === 'ok' ? branches.data : [];
   const collator = new Intl.Collator(intlLocale(locale));
   const registerName = new Map(
     (referenceValues?.currencies ?? []).map((currency) => [currency.code, currency.name])
@@ -128,14 +152,14 @@ export function OrganizationStructure({
     currencyChoices.length > 0
       ? currencyChoices
       : (referenceValues?.currencies ?? []).map((currency) => currency.code);
-  const currencyOptions: readonly SelectOption[] = currencyCodes
+  const currencyOptions: readonly FormSelectOption[] = currencyCodes
     .map((code) => ({ value: code, label: currencyLabel(code, locale, registerName.get(code)) }))
     .sort((a, b) => collator.compare(a.label, b.label));
   // A reference list with no active zone falls back to the zones in use, the
   // same as a list that could not be loaded.
   const referenceZones = (referenceValues?.timezones ?? []).map((zone) => zone.zoneName);
   const timezoneFromFallback = referenceZones.length === 0;
-  const timezoneOptions: readonly SelectOption[] = (
+  const timezoneOptions: readonly FormSelectOption[] = (
     timezoneFromFallback ? timezoneChoices : referenceZones
   ).map((zone) => ({ value: zone, label: timeZoneLabel(zone, locale) }));
   const timezonePartial = timezoneFromFallback && referenceUnavailable;
@@ -161,18 +185,19 @@ export function OrganizationStructure({
 
   const confirmStatus = (reason: string) => {
     if (!target) return;
-    startTransition(async () => {
+    const chosen = target;
+    statusFlight.run(async () => {
       let result: ActionState;
-      if (target.kind === 'company') {
-        const next = target.company.status === 'active' ? 'inactive' : 'active';
-        result = await setCompanyStatusAction(target.company.id, next, reason);
+      if (chosen.kind === 'company') {
+        const next = chosen.company.status === 'active' ? 'inactive' : 'active';
+        result = await setCompanyStatusAction(chosen.company.id, next, reason);
       } else {
-        const next = target.branch.status === 'active' ? 'inactive' : 'active';
-        const current = await readBranchStatus(target.branch.id);
+        const next = chosen.branch.status === 'active' ? 'inactive' : 'active';
+        const current = await readBranchStatus(chosen.branch.id);
         result =
           current.status === 'ok' && current.data !== null
             ? await changeBranchStatusAction(
-                target.branch.id,
+                chosen.branch.id,
                 next,
                 reason,
                 current.data.recordVersion
@@ -185,7 +210,8 @@ export function OrganizationStructure({
                 attempt: 1,
               };
       }
-      setFailure({ ...result, attempt: (failure.attempt ?? 0) + 1 });
+      attempts.current += 1;
+      setFailure({ ...result, attempt: attempts.current });
       notifyActionResult(result, messages);
       if (result.status === 'success') {
         setTarget(null);
@@ -196,26 +222,32 @@ export function OrganizationStructure({
 
   const statusVerb = (status: string) =>
     status === 'active' ? 'organization.structure.deactivate' : 'organization.structure.activate';
+  const closeDialog = () => {
+    setDialog(null);
+    router.refresh();
+  };
+  const editingCompany =
+    dialog?.kind === 'edit-company' ? companyRows.find((row) => row.id === dialog.id) : undefined;
+  const editingBranch =
+    dialog?.kind === 'edit-branch' ? branchRows.find((row) => row.id === dialog.id) : undefined;
+  const branchActions = canManageBranches || canChangeBranchStatus;
 
   return (
     <div className="flex flex-col gap-6">
       {companies ? (
         <section aria-labelledby="org-companies" className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 id="org-companies" className="text-section-title font-semibold text-text-heading">
-                {t('organization.company.title')}
-              </h2>
-              <p className="mt-1 text-supporting text-text-secondary">
-                {t('organization.company.description')}
-              </p>
-            </div>
-            {canManageCompanies ? (
-              <button type="button" className={PRIMARY_BUTTON} onClick={() => setDialog('company')}>
-                {t('organization.company.add')}
-              </button>
-            ) : null}
-          </div>
+          <SectionHeading
+            id="org-companies"
+            title={t('organization.company.title')}
+            description={t('organization.company.description')}
+            action={
+              canManageCompanies ? (
+                <Button variant="contained" onClick={() => setDialog({ kind: 'add-company' })}>
+                  {t('organization.company.add')}
+                </Button>
+              ) : null
+            }
+          />
           {canManageCompanies ? (
             <CapacityNotice
               kind="companies"
@@ -223,76 +255,87 @@ export function OrganizationStructure({
               messages={messages}
             />
           ) : null}
-          <ReadBoundary state={companies} messages={messages}>
+          <OrgReadBoundary state={companies} messages={messages} locale={locale}>
             {(rows) =>
               rows.length === 0 ? (
-                <EmptyState
+                <MuiEmptyState
                   messages={messages}
                   titleKey="organization.company.emptyTitle"
                   descriptionKey="organization.company.emptyBody"
                 />
               ) : (
-                <TableFrame caption={t('organization.company.title')}>
-                  <thead className="border-b border-table-border bg-table-header">
-                    <tr>
-                      <Th>{t('organization.structure.code')}</Th>
-                      <Th>{t('organization.company.legalName')}</Th>
-                      <Th>{t('organization.status')}</Th>
-                      {canManageCompanies ? <Th>{t('admin.actions')}</Th> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((company) => (
-                      <tr key={company.id} className="border-t border-border-subtle">
-                        <td className="px-3 py-2 font-mono text-caption text-text-secondary">
-                          {company.companyCode}
-                        </td>
-                        <td className="px-3 py-2 text-text-primary">{company.legalName}</td>
-                        <td className="px-3 py-2">
-                          <StatusPill status={company.status} messages={messages} />
-                        </td>
-                        {canManageCompanies ? (
-                          <td className="px-3 py-2">
-                            <button
-                              type="button"
-                              className={SECONDARY_BUTTON}
-                              aria-label={`${t(statusVerb(company.status))}: ${company.legalName}`}
-                              onClick={() => {
-                                setFailure(IDLE);
-                                setTarget({ kind: 'company', company });
-                              }}
-                            >
-                              {t(statusVerb(company.status))}
-                            </button>
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))}
-                  </tbody>
-                </TableFrame>
+                <TableContainer className="rounded-lg border border-border-subtle">
+                  <Table size="small" aria-labelledby="org-companies">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{t('organization.structure.code')}</TableCell>
+                        <TableCell>{t('organization.company.legalName')}</TableCell>
+                        <TableCell>{t('organization.status')}</TableCell>
+                        {canManageCompanies ? <TableCell>{t('admin.actions')}</TableCell> : null}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {rows.map((company) => (
+                        <TableRow key={company.id}>
+                          <TableCell className="font-mono text-caption">
+                            <span dir="ltr">{company.companyCode}</span>
+                          </TableCell>
+                          <TableCell>{company.legalName}</TableCell>
+                          <TableCell>
+                            <StatusChip status={company.status} messages={messages} />
+                          </TableCell>
+                          {canManageCompanies ? (
+                            <TableCell>
+                              <div className="flex flex-nowrap gap-2">
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  aria-label={`${t('admin.edit')}: ${company.legalName}`}
+                                  onClick={() =>
+                                    setDialog({ kind: 'edit-company', id: company.id })
+                                  }
+                                >
+                                  {t('admin.edit')}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  aria-label={`${t(statusVerb(company.status))}: ${company.legalName}`}
+                                  onClick={() => {
+                                    setFailure(IDLE);
+                                    setTarget({ kind: 'company', company });
+                                  }}
+                                >
+                                  {t(statusVerb(company.status))}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          ) : null}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )
             }
-          </ReadBoundary>
+          </OrgReadBoundary>
         </section>
       ) : null}
 
       {branches ? (
         <section aria-labelledby="org-branches" className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 id="org-branches" className="text-section-title font-semibold text-text-heading">
-                {t('organization.branch.title')}
-              </h2>
-              <p className="mt-1 text-supporting text-text-secondary">
-                {t('organization.branch.description')}
-              </p>
-            </div>
-            {canManageBranches ? (
-              <button type="button" className={PRIMARY_BUTTON} onClick={() => setDialog('branch')}>
-                {t('organization.branch.add')}
-              </button>
-            ) : null}
-          </div>
+          <SectionHeading
+            id="org-branches"
+            title={t('organization.branch.title')}
+            description={t('organization.branch.description')}
+            action={
+              canManageBranches ? (
+                <Button variant="contained" onClick={() => setDialog({ kind: 'add-branch' })}>
+                  {t('organization.branch.add')}
+                </Button>
+              ) : null
+            }
+          />
           {canManageBranches ? (
             <CapacityNotice
               kind="branches"
@@ -300,417 +343,276 @@ export function OrganizationStructure({
               messages={messages}
             />
           ) : null}
-          <ReadBoundary state={branches} messages={messages}>
+          <OrgReadBoundary state={branches} messages={messages} locale={locale}>
             {(rows) =>
               rows.length === 0 ? (
-                <EmptyState
+                <MuiEmptyState
                   messages={messages}
                   titleKey="organization.branch.emptyTitle"
                   descriptionKey="organization.branch.emptyBody"
                 />
               ) : (
-                <TableFrame caption={t('organization.branch.title')}>
-                  <thead className="border-b border-table-border bg-table-header">
-                    <tr>
-                      <Th>{t('organization.structure.code')}</Th>
-                      <Th>{t('organization.branch.name')}</Th>
-                      <Th>{t('organization.branch.company')}</Th>
-                      <Th>{t('organization.branch.city')}</Th>
-                      <Th>{t('organization.branch.timezone')}</Th>
-                      <Th>{t('organization.status')}</Th>
-                      {canChangeBranchStatus ? <Th>{t('admin.actions')}</Th> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((branch) => (
-                      <tr key={branch.id} className="border-t border-border-subtle">
-                        <td className="px-3 py-2 font-mono text-caption text-text-secondary">
-                          {branch.branchCode}
-                        </td>
-                        <td className="px-3 py-2 text-text-primary">{branch.name}</td>
-                        <td className="px-3 py-2 text-text-secondary">
-                          {companyName.get(branch.companyId) ?? '—'}
-                        </td>
-                        <td className="px-3 py-2 text-text-secondary">
-                          {[branch.city, branch.countryCode].filter(Boolean).join(', ') || '—'}
-                        </td>
-                        <td className="px-3 py-2 text-text-secondary">{branch.timezoneName}</td>
-                        <td className="px-3 py-2">
-                          <StatusPill status={branch.status} messages={messages} />
-                        </td>
-                        {canChangeBranchStatus ? (
-                          <td className="px-3 py-2">
-                            <button
-                              type="button"
-                              className={SECONDARY_BUTTON}
-                              aria-label={`${t(statusVerb(branch.status))}: ${branch.name}`}
-                              onClick={() => {
-                                setFailure(IDLE);
-                                setTarget({ kind: 'branch', branch });
-                              }}
-                            >
-                              {t(statusVerb(branch.status))}
-                            </button>
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))}
-                  </tbody>
-                </TableFrame>
+                <TableContainer className="rounded-lg border border-border-subtle">
+                  <Table size="small" aria-labelledby="org-branches">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{t('organization.structure.code')}</TableCell>
+                        <TableCell>{t('organization.branch.name')}</TableCell>
+                        <TableCell>{t('organization.branch.company')}</TableCell>
+                        <TableCell>{t('organization.branch.city')}</TableCell>
+                        <TableCell>{t('organization.branch.timezone')}</TableCell>
+                        <TableCell>{t('organization.status')}</TableCell>
+                        {branchActions ? <TableCell>{t('admin.actions')}</TableCell> : null}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {rows.map((branch) => (
+                        <TableRow key={branch.id}>
+                          <TableCell className="font-mono text-caption">
+                            <span dir="ltr">{branch.branchCode}</span>
+                          </TableCell>
+                          <TableCell>{branch.name}</TableCell>
+                          <TableCell>{companyName.get(branch.companyId) ?? '—'}</TableCell>
+                          <TableCell>{placeOf(branch, locale)}</TableCell>
+                          <TableCell>{timeZoneLabel(branch.timezoneName, locale)}</TableCell>
+                          <TableCell>
+                            <StatusChip status={branch.status} messages={messages} />
+                          </TableCell>
+                          {branchActions ? (
+                            <TableCell>
+                              <div className="flex flex-nowrap gap-2">
+                                {canManageBranches ? (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    aria-label={`${t('admin.edit')}: ${branch.name}`}
+                                    onClick={() =>
+                                      setDialog({ kind: 'edit-branch', id: branch.id })
+                                    }
+                                  >
+                                    {t('admin.edit')}
+                                  </Button>
+                                ) : null}
+                                {canChangeBranchStatus ? (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    aria-label={`${t(statusVerb(branch.status))}: ${branch.name}`}
+                                    onClick={() => {
+                                      setFailure(IDLE);
+                                      setTarget({ kind: 'branch', branch });
+                                    }}
+                                  >
+                                    {t(statusVerb(branch.status))}
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                          ) : null}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )
             }
-          </ReadBoundary>
+          </OrgReadBoundary>
         </section>
       ) : null}
 
-      {dialog === 'company' ? (
-        <CompanyDialog
+      {dialog?.kind === 'add-company' ? (
+        <AddCompanyDialog
           messages={messages}
           currencyChoices={currencyOptions}
           currencyHint={currencyHint}
           offerRetry={currencyOptions.length === 0}
-          onClose={() => {
-            setDialog(null);
-            router.refresh();
-          }}
+          onClose={closeDialog}
         />
       ) : null}
 
-      {dialog === 'branch' ? (
-        <BranchDialog
+      {dialog?.kind === 'add-branch' ? (
+        <AddBranchDialog
           messages={messages}
           companies={companyRows}
           timezoneChoices={timezoneOptions}
           timezoneHint={timezoneHint}
           offerRetry={timezoneOptions.length === 0 || timezonePartial}
-          onClose={() => {
-            setDialog(null);
-            router.refresh();
-          }}
+          onClose={closeDialog}
         />
       ) : null}
 
-      {target ? (
-        <ReasonConfirmDialog
-          open
+      {editingCompany ? (
+        <EditCompanyDialog
           messages={messages}
-          destructive={
-            (target.kind === 'company' ? target.company.status : target.branch.status) === 'active'
-          }
-          pending={running}
-          title={t(
-            target.kind === 'company'
-              ? target.company.status === 'active'
-                ? 'organization.company.confirmDeactivate'
-                : 'organization.company.confirmActivate'
-              : target.branch.status === 'active'
-                ? 'organization.branch.confirmDeactivate'
-                : 'organization.branch.confirmActivate'
-          )}
-          description={target.kind === 'company' ? target.company.legalName : target.branch.name}
-          confirmLabel={t(
-            statusVerb(target.kind === 'company' ? target.company.status : target.branch.status)
-          )}
-          reasonLabel={t('admin.reason')}
-          error={
-            failure.status !== 'idle' && failure.status !== 'success'
-              ? translateWithValues(
-                  messages,
-                  failure.messageKey ?? 'admin.actionFailed',
-                  failure.messageValues
-                )
-              : undefined
-          }
-          onCancel={() => setTarget(null)}
-          onConfirm={confirmStatus}
+          company={editingCompany}
+          onClose={() => setDialog(null)}
+          onSaved={closeDialog}
         />
       ) : null}
+
+      {editingBranch ? (
+        <EditBranchDialog
+          messages={messages}
+          branch={editingBranch}
+          timezoneChoices={
+            timezoneOptions.some((option) => option.value === editingBranch.timezoneName)
+              ? timezoneOptions
+              : [
+                  {
+                    value: editingBranch.timezoneName,
+                    label: timeZoneLabel(editingBranch.timezoneName, locale),
+                  },
+                  ...timezoneOptions,
+                ]
+          }
+          timezoneHint={
+            timezonePartial ? 'form.referenceList.partial' : 'organization.branch.timezoneHint'
+          }
+          offerRetry={timezonePartial}
+          onClose={() => setDialog(null)}
+          onSaved={closeDialog}
+        />
+      ) : null}
+
+      <ReasonDialog
+        open={target !== null}
+        messages={messages}
+        destructive={
+          target !== null &&
+          (target.kind === 'company' ? target.company.status : target.branch.status) === 'active'
+        }
+        pending={statusFlight.pending}
+        title={
+          target === null
+            ? ''
+            : t(
+                target.kind === 'company'
+                  ? target.company.status === 'active'
+                    ? 'organization.company.confirmDeactivate'
+                    : 'organization.company.confirmActivate'
+                  : target.branch.status === 'active'
+                    ? 'organization.branch.confirmDeactivate'
+                    : 'organization.branch.confirmActivate'
+              )
+        }
+        description={
+          target === null
+            ? undefined
+            : target.kind === 'company'
+              ? target.company.legalName
+              : target.branch.name
+        }
+        confirmLabel={
+          target === null
+            ? ''
+            : t(
+                statusVerb(target.kind === 'company' ? target.company.status : target.branch.status)
+              )
+        }
+        reasonLabel={t('admin.reason')}
+        reasonError={failure.fieldErrors?.['reason'] ? t(failure.fieldErrors['reason']) : undefined}
+        error={
+          failure.status !== 'idle' &&
+          failure.status !== 'success' &&
+          !failure.fieldErrors?.['reason']
+            ? translateWithValues(
+                messages,
+                failure.messageKey ?? 'admin.actionFailed',
+                failure.messageValues
+              )
+            : undefined
+        }
+        onCancel={() => setTarget(null)}
+        onConfirm={confirmStatus}
+      />
     </div>
+  );
+}
+
+function SectionHeading({
+  id,
+  title,
+  description,
+  action,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly action: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h2 id={id} className="text-section-title font-semibold text-text-heading">
+          {title}
+        </h2>
+        <p className="mt-1 text-supporting text-text-secondary">{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/** `active` or `inactive`, in words; anything else is shown as inactive. */
+function StatusChip({
+  status,
+  messages,
+}: {
+  readonly status: string;
+  readonly messages: Messages;
+}) {
+  const active = status === 'active';
+  return (
+    <Chip
+      size="small"
+      variant="outlined"
+      color={active ? 'success' : 'default'}
+      label={translate(
+        messages,
+        active ? 'organization.structure.status.active' : 'organization.structure.status.inactive'
+      )}
+    />
   );
 }
 
 /**
- * Add company.
- *
- * Mounted only while open, so a second company starts from an empty form. It
- * does not close itself on success: the confirmation stays until the operator
- * closes it, and closing re-reads the page.
+ * The explanation shown beside an Add button when the allowance is spent. The
+ * button stays: the server is the enforcement, and a seat may have been
+ * released a moment ago.
  */
-function CompanyDialog({
+function CapacityNotice({
+  kind,
+  allowance,
   messages,
-  currencyChoices,
-  currencyHint,
-  offerRetry,
-  onClose,
 }: {
+  readonly kind: CapacityKind;
+  readonly allowance: CapacityAllowance | undefined;
   readonly messages: Messages;
-  readonly currencyChoices: readonly SelectOption[];
-  readonly currencyHint: string;
-  /** The currency list is empty: the dialog offers Try again and refuses to send. */
-  readonly offerRetry: boolean;
-  readonly onClose: () => void;
 }) {
-  const [state, formAction] = useActionState<ActionState, FormData>(createCompanyAction, IDLE);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const t = (key: string) => translate(messages, key as keyof Messages);
-  // Question f: the cursor goes to the refused field, and its complaint goes
-  // once the operator edits it (route sweep B3).
-  const {
-    edited: refusalEdited,
-    errorKey: refusalErrorKey,
-    formRef: refusalFormRef,
-  } = useActionRefusal(state);
-  const retain = (name: string) => (event: { target: { value: string } }) => {
-    refusalEdited(name);
-    setDraft((current) => ({ ...current, [name]: event.target.value }));
-  };
-  const fieldError = (name: string) => {
-    const key = refusalErrorKey(name);
-    return key ? t(key) : undefined;
-  };
-  // Nothing to choose from: the submission is refused on the field itself.
-  const listGuard = useUnavailableListGuard(currencyChoices.length === 0 ? ['baseCurrency'] : []);
-
+  if (allowance === undefined || !isCapacityFull(allowance)) return null;
   return (
-    <Dialog
-      open
-      onClose={onClose}
-      messages={messages}
-      title={t('organization.company.add')}
-      description={t('organization.company.addDescription')}
-    >
-      <form
-        ref={refusalFormRef}
-        action={formAction}
-        onSubmit={(event) => {
-          listGuard.stop(event);
-        }}
-        className="flex flex-col gap-4"
-        noValidate
-      >
-        <FormFeedback state={state} messages={messages} />
-        <TextField
-          key={`code-${state.attempt ?? 0}`}
-          name="code"
-          onChange={retain('code')}
-          error={fieldError('code')}
-          defaultValue={draft['code'] ?? ''}
-          label={t('organization.structure.code')}
-          description={t('organization.structure.codeHint')}
-          required
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <TextField
-          key={`legalName-${state.attempt ?? 0}`}
-          name="legalName"
-          onChange={retain('legalName')}
-          error={fieldError('legalName')}
-          defaultValue={draft['legalName'] ?? ''}
-          label={t('organization.company.legalName')}
-          required
-          autoComplete="off"
-        />
-        <SelectField
-          key={`baseCurrency-${state.attempt ?? 0}`}
-          name="baseCurrency"
-          onChange={retain('baseCurrency')}
-          error={
-            fieldError('baseCurrency') ??
-            (listGuard.refused('baseCurrency') ? t('form.referenceList.blocked') : undefined)
-          }
-          defaultValue={draft['baseCurrency'] ?? ''}
-          label={t('organization.company.baseCurrency')}
-          description={t(currencyHint)}
-          required
-          placeholder={t('field.selectPlaceholder')}
-          options={currencyChoices}
-        />
-        {offerRetry ? <ReferenceListRetry label={t('form.retry')} /> : null}
-        <TextField
-          key={`registrationNumber-${state.attempt ?? 0}`}
-          name="registrationNumber"
-          onChange={retain('registrationNumber')}
-          error={fieldError('registrationNumber')}
-          defaultValue={draft['registrationNumber'] ?? ''}
-          label={t('organization.company.registrationNumber')}
-          optionalHint={t('field.optional')}
-          autoComplete="off"
-        />
-        <TextField
-          key={`taxRegistrationNumber-${state.attempt ?? 0}`}
-          name="taxRegistrationNumber"
-          onChange={retain('taxRegistrationNumber')}
-          error={fieldError('taxRegistrationNumber')}
-          defaultValue={draft['taxRegistrationNumber'] ?? ''}
-          label={t('organization.company.taxRegistrationNumber')}
-          optionalHint={t('field.optional')}
-          autoComplete="off"
-        />
-        <DialogActions state={state} messages={messages} onClose={onClose} />
-      </form>
-    </Dialog>
+    <Alert severity="warning" role="note" variant="outlined">
+      {formatMessage(translateDynamic(messages, `capacity.reached.${kind}`), {
+        limit: String(allowance.limit),
+        used: String(allowance.used),
+      })}
+    </Alert>
   );
 }
 
-/** Add branch. Same lifecycle as Add company. */
-function BranchDialog({
-  messages,
-  companies,
-  timezoneChoices,
-  timezoneHint,
-  offerRetry,
-  onClose,
-}: {
-  readonly messages: Messages;
-  readonly companies: readonly CompanyView[];
-  readonly timezoneChoices: readonly SelectOption[];
-  readonly timezoneHint: string;
-  /** The zone list is missing or partial, so the dialog offers Try again. */
-  readonly offerRetry: boolean;
-  readonly onClose: () => void;
-}) {
-  const [state, formAction] = useActionState<ActionState, FormData>(createBranchAction, IDLE);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const t = (key: string) => translate(messages, key as keyof Messages);
-  // Question f: the cursor goes to the refused field, and its complaint goes
-  // once the operator edits it (route sweep B3).
-  const {
-    edited: refusalEdited,
-    errorKey: refusalErrorKey,
-    formRef: refusalFormRef,
-  } = useActionRefusal(state);
-  const retain = (name: string) => (event: { target: { value: string } }) => {
-    refusalEdited(name);
-    setDraft((current) => ({ ...current, [name]: event.target.value }));
-  };
-  const fieldError = (name: string) => {
-    const key = refusalErrorKey(name);
-    return key ? t(key) : undefined;
-  };
-  // Nothing to choose from: the submission is refused on the field itself.
-  const listGuard = useUnavailableListGuard(timezoneChoices.length === 0 ? ['timezone'] : []);
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      messages={messages}
-      title={t('organization.branch.add')}
-      description={t('organization.branch.addDescription')}
-    >
-      <form
-        ref={refusalFormRef}
-        action={formAction}
-        onSubmit={(event) => {
-          listGuard.stop(event);
-        }}
-        className="flex flex-col gap-4"
-        noValidate
-      >
-        <FormFeedback state={state} messages={messages} />
-        <SelectField
-          key={`companyId-${state.attempt ?? 0}`}
-          name="companyId"
-          onChange={retain('companyId')}
-          error={fieldError('companyId')}
-          defaultValue={draft['companyId'] ?? ''}
-          label={t('organization.branch.company')}
-          required
-          placeholder={t('admin.scope.pickCompany')}
-          options={companies.map((company) => ({ value: company.id, label: company.legalName }))}
-        />
-        <TextField
-          key={`code-${state.attempt ?? 0}`}
-          name="code"
-          onChange={retain('code')}
-          error={fieldError('code')}
-          defaultValue={draft['code'] ?? ''}
-          label={t('organization.structure.code')}
-          description={t('organization.structure.codeHint')}
-          required
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <TextField
-          key={`name-${state.attempt ?? 0}`}
-          name="name"
-          onChange={retain('name')}
-          error={fieldError('name')}
-          defaultValue={draft['name'] ?? ''}
-          label={t('organization.branch.name')}
-          required
-          autoComplete="off"
-        />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <TextField
-            key={`city-${state.attempt ?? 0}`}
-            name="city"
-            onChange={retain('city')}
-            error={fieldError('city')}
-            defaultValue={draft['city'] ?? ''}
-            label={t('organization.branch.city')}
-            optionalHint={t('field.optional')}
-            autoComplete="off"
-          />
-          <TextField
-            key={`countryCode-${state.attempt ?? 0}`}
-            name="countryCode"
-            onChange={retain('countryCode')}
-            error={fieldError('countryCode')}
-            defaultValue={draft['countryCode'] ?? ''}
-            label={t('organization.branch.country')}
-            description={t('organization.branch.countryHint')}
-            optionalHint={t('field.optional')}
-            autoComplete="off"
-            maxLength={2}
-          />
-        </div>
-        <SelectField
-          key={`timezone-${state.attempt ?? 0}`}
-          name="timezone"
-          onChange={retain('timezone')}
-          error={
-            fieldError('timezone') ??
-            (listGuard.refused('timezone') ? t('form.referenceList.blocked') : undefined)
-          }
-          defaultValue={draft['timezone'] ?? ''}
-          label={t('organization.branch.timezone')}
-          description={t(timezoneHint)}
-          required
-          placeholder={t('field.selectPlaceholder')}
-          options={timezoneChoices}
-        />
-        {offerRetry ? <ReferenceListRetry label={t('form.retry')} /> : null}
-        <DialogActions state={state} messages={messages} onClose={onClose} />
-      </form>
-    </Dialog>
-  );
+/** "Amman, Jordan": the city and the country's name in the reader's language. */
+function placeOf(branch: BranchView, locale: Locale): string {
+  const country = branch.countryCode ? countryName(branch.countryCode, locale) : null;
+  return [branch.city, country].filter(Boolean).join(', ') || '—';
 }
 
-function DialogActions({
-  state,
-  messages,
-  onClose,
-}: {
-  readonly state: ActionState;
-  readonly messages: Messages;
-  readonly onClose: () => void;
-}) {
-  const t = (key: string) => translate(messages, key as keyof Messages);
-  return (
-    <div className="flex justify-end gap-2">
-      {state.status === 'success' ? (
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-border bg-surface px-4 py-2 text-button text-text-secondary hover:bg-surface-subtle"
-        >
-          {t('admin.close')}
-        </button>
-      ) : (
-        <SubmitButton label={t('admin.create')} pendingLabel={t('admin.creating')} full={false} />
-      )}
-    </div>
-  );
+function countryName(code: string, locale: Locale): string {
+  try {
+    return (
+      new Intl.DisplayNames([intlLocale(locale)], { type: 'region', fallback: 'code' }).of(code) ??
+      code
+    );
+  } catch {
+    return code;
+  }
 }

@@ -1,6 +1,8 @@
 import {
   STATE_TRANSITION_CODE,
   VIOLATION_FALLBACK_KEY,
+  controlNameFor,
+  namesRouteParameter,
   refusalMessageKey,
   failureMessageValues,
   violationKeysOf,
@@ -107,6 +109,14 @@ export interface ActionState {
    * vehicle screens. They were right and this sentence was wrong.
    */
   readonly fieldErrors?: Readonly<Record<string, string>>;
+  /**
+   * Set by `fromFailure` only, and only on a conflict whose every violation is a
+   * duplicate value on a named control (see `DUPLICATE_VALUE_RULES`). It is what
+   * `isFieldConflict` reads, so no other state — one that happens to share the
+   * generic `form.formError` banner and carry field errors — can be taken for a
+   * duplicate and lose its toast.
+   */
+  readonly duplicateField?: true;
   /** Safe to display. The only diagnostic a user ever sees. */
   readonly correlationId?: string | null;
   /**
@@ -134,6 +144,46 @@ const STATUS_BY_KIND: Record<ApiFailure['kind'], ActionStatus> = {
   cancelled: 'cancelled',
   network: 'unavailable',
 };
+
+/**
+ * The neutral banner a conflict about one named field carries (see `fromFailure`):
+ * the form was not saved, and the field says why.
+ */
+export const FIELD_CONFLICT_KEY = 'form.formError';
+
+/**
+ * The violation rules that say a value is already taken by another record —
+ * nothing else. `duplicate_code` is what the catalogue, intake, service
+ * catalogue, price list, report configuration, warranty policy and checklist
+ * template services answer for a code that is already used; `duplicate_sku` is
+ * the inventory catalogue's answer for a stock code already used. A conflict
+ * carrying any other rule — a stale version, a state rule, a rule the catalogue
+ * does not carry — is not a duplicate and keeps its own banner and toast.
+ */
+export const DUPLICATE_VALUE_RULES: ReadonlySet<string> = new Set([
+  'duplicate_code',
+  'duplicate_sku',
+]);
+
+/**
+ * Whether every violation a conflict carries is a duplicate value on a named
+ * control. At least one violation is required, and one that names no control
+ * (the whole request, a route parameter) or carries any other rule makes the
+ * answer false, so a mix keeps the failure's own message.
+ */
+function isDuplicateValueConflict(failure: ApiFailure): boolean {
+  if (failure.kind !== 'conflict') return false;
+  const violations = failure.problem?.violations;
+  if (!Array.isArray(violations) || violations.length === 0) return false;
+  return violations.every(
+    (violation) =>
+      typeof violation?.path === 'string' &&
+      typeof violation?.rule === 'string' &&
+      DUPLICATE_VALUE_RULES.has(violation.rule) &&
+      !namesRouteParameter(violation.path) &&
+      controlNameFor(violation.path) !== null
+  );
+}
 
 /**
  * Maps a client failure onto an action state.
@@ -196,12 +246,39 @@ export function fromFailure(
   const { fieldErrors, formKeys } = violationKeysOf(failure);
   const stated = formKeys.find((key) => key !== VIOLATION_FALLBACK_KEY);
   const own = messageKeyOverride === undefined && stated === undefined;
-  const values = own ? failureMessageValues(failure) : undefined;
+  /*
+   * A conflict that names the FIELD it is about (P1-32-PRE-OD-INVF,
+   * SETUP-cat-errors / SETUP-item-errors).
+   *
+   * A unique index refusing a duplicate — a category code, a stock code, a
+   * location code — arrives as a conflict carrying a violation on the field
+   * (`body.code` + `duplicate_code`). The field already says the true reason
+   * ("This code is already used."), but the banner beside it fell through to the
+   * kind's key and said "Someone else changed this", and the explanation and the
+   * toast added "Reload to see the current record" — sending the operator to
+   * look for a person and a reload that change nothing. So the banner says only
+   * that the form could not be saved, beside the field that says why, and
+   * `isFieldConflict` keeps the toast off it as for any refused input.
+   *
+   * The status stays `conflict`: a screen that re-reads on a conflict still
+   * does. Only a conflict whose EVERY violation is a duplicate value on a named
+   * control qualifies (`isDuplicateValueConflict`). A conflict that names no
+   * field — a stale record version, the genuine race — one carrying any other
+   * rule, and a mix of a duplicate with anything else are untouched and keep the
+   * kind's sentence, its values and its toast.
+   */
+  const namesField =
+    own && Object.keys(fieldErrors).length > 0 && isDuplicateValueConflict(failure);
+  const values = own && !namesField ? failureMessageValues(failure) : undefined;
   return {
     status,
-    messageKey: messageKeyOverride ?? stated ?? refusalMessageKey(failure),
+    messageKey:
+      messageKeyOverride ??
+      stated ??
+      (namesField ? FIELD_CONFLICT_KEY : refusalMessageKey(failure)),
     ...(values !== undefined ? { messageValues: values } : {}),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
+    ...(namesField ? { duplicateField: true as const } : {}),
     correlationId: failure.correlationId,
     attempt,
   };
@@ -235,6 +312,22 @@ export function fromStateRefusal(failure: ApiFailure, attempt: number): ActionSt
     return { ...state, messageKey: 'state.conflict.transition.title' };
   }
   return state;
+}
+
+/**
+ * Whether a state is a conflict about a field the operator can correct — a
+ * duplicate on a named field — rather than about the record having moved on.
+ * It reads the marker `fromFailure` sets, never the shared banner key alone.
+ * Such a refusal belongs beside the field, like any refused input: no toast,
+ * and no advice to reload.
+ */
+export function isFieldConflict(state: ActionState): boolean {
+  return (
+    state.status === 'conflict' &&
+    state.duplicateField === true &&
+    state.messageKey === FIELD_CONFLICT_KEY &&
+    Object.keys(state.fieldErrors ?? {}).length > 0
+  );
 }
 
 export function invalid(

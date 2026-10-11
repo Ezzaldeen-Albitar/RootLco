@@ -8,11 +8,21 @@ import { pageMetadata } from '@/lib/page-metadata';
 /**
  * Numbering rules.
  *
- * `sal.invoice_numbering_configs` exists in the schema and **no route handler
- * exposes it** (`P1-26-F-003`), so this screen edits organization settings and
- * says so. Two further statements are on the page because their absence would be
- * read as a gap rather than a boundary: there is no preview operation, and
- * numbers are always allocated by the service — nothing here produces one.
+ * `sal.invoice_numbering_configs` and `shared.number_sequences` exist in the
+ * schema and **no route handler exposes either** (`P1-26-F-003`): there is no
+ * operation that reads or changes how a document number is formed. Number
+ * sequences already exist for the documents the platform numbers — invoices,
+ * quotations and receipts are configured per branch when the branch is created —
+ * and the service assigns those numbers itself. What waits on an Owner decision
+ * is narrower: a credit note's own number (DOC01, ADR-023 D10).
+ *
+ * So this screen changes nothing (P1-32-PRE-OD-ADM5). A numbering setting
+ * written to the company or branch settings would be applied by nothing — the
+ * service allocates every number from its own sequences — so an edit form here
+ * would be a control for an operation that does not exist. The screen shows the
+ * settings the company and branch settings operations genuinely hold under
+ * `numbering.`, and says plainly what is not available and why. There is no
+ * preview operation either, and numbers are always allocated by the service.
  */
 export default async function NumberingRulesPage({
   params,
@@ -32,7 +42,9 @@ export default async function NumberingRulesPage({
       navLabelKey="nav.numberingRules"
       keyPrefix={NUMBERING_PREFIX}
       suggestions={NUMBERING_KEYS}
-      noticeKeys={['numbering.noPreview', 'numbering.noGeneration']}
+      noticeKeys={['numbering.gap.formats', 'numbering.noPreview', 'numbering.noGeneration']}
+      writable={false}
+      scopes={['company', 'branch']}
     />
   );
 }

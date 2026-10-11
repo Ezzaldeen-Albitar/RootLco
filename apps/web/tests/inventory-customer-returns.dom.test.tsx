@@ -105,7 +105,10 @@ const listSalesReturns = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
 const listIssuedParts = vi.fn();
+// P1-32-PRE-OD-INVF: units named through the list (UNIT-names).
+const listUnitsOfMeasure = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
   listIssuedParts: (...args: unknown[]) => listIssuedParts(...args),
   readReturnable: (...args: unknown[]) => readReturnable(...args),
   createSalesReturn: (...args: unknown[]) => createSalesReturn(...args),
@@ -256,6 +259,12 @@ function received(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // P1-32-PRE-OD-INVF: the screen names a unit by code through the unit list.
+  listUnitsOfMeasure.mockResolvedValue({
+    status: 'ok',
+    data: { items: [] },
+    correlationId: 'corr',
+  });
   PERMISSIONS = ['inv.stock.read', 'inv.stock.operate', 'sal.finance.view', 'org.branch.read'];
   readReturnable.mockResolvedValue(returnable());
   listSalesReturns.mockResolvedValue(okPage([received()]));

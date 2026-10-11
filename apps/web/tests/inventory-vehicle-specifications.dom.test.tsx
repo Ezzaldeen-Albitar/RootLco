@@ -672,3 +672,214 @@ describe('one write per press, held by the screen while it is answered', () => {
     expect(confirmVehicleSpecification).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * P1-32-PRE-OD-INVF, SPEC-no-makes: with no vehicle make recorded the form said
+ * "Ask for access to the vehicle catalogue" to an operator who already held it.
+ * An empty catalogue that was READ now says it is empty and that makes are not
+ * added here; only a refusal speaks of access. Nothing is added or invented.
+ *
+ * UNIT-names: a capacity names its unit by code, and the list names it.
+ */
+describe('P1-32-PRE-OD-INVF: an empty make catalogue is not a missing permission', () => {
+  const catalogue = (status: 'ok' | 'denied' | 'unavailable') => ({
+    status,
+    options: [],
+    truncated: false,
+    correlationId: 'corr',
+  });
+
+  async function openForm(locale: 'en' | 'ar' = 'en') {
+    const user = userEvent.setup();
+    const messages = locale === 'en' ? EN : AR;
+    if (locale === 'en') {
+      renderScreen({ canManage: true, canReadCatalogue: true });
+    } else {
+      renderRtl(
+        <VehicleSpecificationsScreen
+          locale="ar"
+          messages={ar}
+          canManage={true}
+          canReadCatalogue={true}
+        />
+      );
+    }
+    await user.click(
+      await screen.findByRole('button', {
+        name: messages['inventory.specifications.create.open'] as string,
+      })
+    );
+    return screen.findByRole('form', {
+      name: messages['inventory.specifications.create.heading'] as string,
+    });
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: a catalogue read that answered with no makes says none are recorded`, async () => {
+      listMakes.mockImplementation(async () => catalogue('ok'));
+      // No capacity listed, so the list names no make and the one read counted is the form's.
+      listVehicleSpecifications.mockImplementation(async () => listing([]));
+      const form = await openForm(locale);
+      await waitFor(() => expect(listMakes).toHaveBeenCalledTimes(1));
+      expect(
+        await within(form).findByText(
+          messages['inventory.specifications.create.noMakesRecorded'] as string
+        )
+      ).toBeVisible();
+      expect(
+        within(form).queryByText(messages['inventory.specifications.create.noMakes'] as string)
+      ).toBeNull();
+      expect(
+        within(form).queryByLabelText(
+          new RegExp(`^${escape(messages['inventory.specifications.create.make'] as string)}`)
+        )
+      ).toBeNull();
+    });
+
+    it(`${locale}: a refused catalogue read (403) still says to ask for access`, async () => {
+      listMakes.mockImplementation(async () => catalogue('denied'));
+      const form = await openForm(locale);
+      expect(
+        await within(form).findByText(messages['inventory.specifications.create.noMakes'] as string)
+      ).toBeVisible();
+      expect(
+        within(form).queryByText(
+          messages['inventory.specifications.create.noMakesRecorded'] as string
+        )
+      ).toBeNull();
+    });
+  }
+
+  it('a catalogue read that did not answer says so, and claims neither emptiness nor a refusal', async () => {
+    listMakes.mockImplementation(async () => catalogue('unavailable'));
+    const form = await openForm();
+    expect(
+      await within(form).findByText(
+        EN['inventory.specifications.create.makesUnavailable'] as string
+      )
+    ).toBeVisible();
+    expect(
+      within(form).queryByText(EN['inventory.specifications.create.noMakes'] as string)
+    ).toBeNull();
+    expect(
+      within(form).queryByText(EN['inventory.specifications.create.noMakesRecorded'] as string)
+    ).toBeNull();
+  });
+
+  it('ar: a capacity names its standard unit in Arabic', async () => {
+    listUnitsOfMeasure.mockImplementation(async () =>
+      okRead({
+        items: [
+          { id: UOM_ID, scope: 'platform', code: 'litre', name: 'Litre', dimension: 'volume' },
+        ],
+      })
+    );
+    listVehicleSpecifications.mockImplementation(async () =>
+      listing([specification({ uomCode: 'litre' })])
+    );
+    renderRtl(
+      <VehicleSpecificationsScreen
+        locale="ar"
+        messages={ar}
+        canManage={false}
+        canReadCatalogue={false}
+      />
+    );
+    const table = await screen.findByRole('table');
+    expect(await within(table).findByText(AR['units.name.litre'] as string)).toBeVisible();
+    expect(within(table).queryByText('litre')).toBeNull();
+  });
+});
+
+describe('P1-32-PRE-OD-INVF: a listed capacity names its make and model, never their identifiers', () => {
+  function drawList(locale: 'en' | 'ar', canReadCatalogue: boolean) {
+    if (locale === 'en') {
+      renderScreen({ canReadCatalogue });
+    } else {
+      renderRtl(
+        <VehicleSpecificationsScreen
+          locale="ar"
+          messages={ar}
+          canManage={false}
+          canReadCatalogue={canReadCatalogue}
+        />
+      );
+    }
+    return screen.findByRole('table');
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: the make and model are named from the catalogue`, async () => {
+      const table = await drawList(locale, true);
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-make').textContent).toBe('A make')
+      );
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-model').textContent).toBe('A model')
+      );
+      expect(listModels).toHaveBeenCalledWith(MAKE_ID);
+      expect(table.textContent).not.toContain(MAKE_ID);
+      expect(table.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a catalogue that cannot name them says they are not available`, async () => {
+      listMakes.mockImplementation(async () => ({
+        status: 'denied' as const,
+        options: [],
+        truncated: false,
+        correlationId: 'corr',
+      }));
+      listModels.mockImplementation(async () => ({
+        status: 'ok' as const,
+        options: [],
+        truncated: false,
+        correlationId: 'corr',
+      }));
+      const table = await drawList(locale, true);
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-make').textContent).toBe(
+          messages['inventory.specifications.list.makeUnavailable']
+        )
+      );
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-model').textContent).toBe(
+          messages['inventory.specifications.list.modelUnavailable']
+        )
+      );
+      expect(table.textContent).not.toContain(MAKE_ID);
+      expect(table.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: without the vehicle read, nothing is read and neither identifier is shown`, async () => {
+      const table = await drawList(locale, false);
+      expect(within(table).getByTestId('specification-make').textContent).toBe(
+        messages['inventory.specifications.list.makeUnavailable']
+      );
+      expect(within(table).getByTestId('specification-model').textContent).toBe(
+        messages['inventory.specifications.list.modelUnavailable']
+      );
+      expect(listMakes).not.toHaveBeenCalled();
+      expect(listModels).not.toHaveBeenCalled();
+      expect(table.textContent).not.toContain(MAKE_ID);
+      expect(table.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a capacity for every model of its make says so in words`, async () => {
+      listVehicleSpecifications.mockImplementation(async () =>
+        listing([specification({ modelId: null })])
+      );
+      const table = await drawList(locale, true);
+      expect(within(table).getByTestId('specification-model').textContent).toBe(
+        messages['inventory.specifications.create.anyModel']
+      );
+      await waitFor(() =>
+        expect(within(table).getByTestId('specification-make').textContent).toBe('A make')
+      );
+      expect(listModels).not.toHaveBeenCalled();
+    });
+  }
+});

@@ -244,8 +244,8 @@ hand-built form moves the cursor to the refused field and withdraws a corrected 
 | `/administration/users/[userId]`                           | `apps/web/src/features/administration/users/components/UserAccessScreen.tsx`             | n/a — one account, reached by address; its grants name companies and branches from the reads | pass                                                                                                | pass                                                                                                                                                                                                  | n/a                                                          | n/a                                | fixed (B3-04) — the grant dialog's role                                                                                                                     | pass                                                                                                          | pass | pass |
 | `/administration/roles`                                    | `apps/web/src/features/administration/access/components/RolesScreen.tsx`                 | n/a — roles are the tenant's                                                                 | pass                                                                                                | pass                                                                                                                                                                                                  | n/a — the role read publishes no free-text parameter         | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/permissions`                              | `apps/web/src/features/administration/access/components/PermissionsScreen.tsx`           | n/a                                                                                          | pass — the first role's mappings are read on arrival                                                | pass — roles by name; each permission by its code and description                                                                                                                                     | n/a                                                          | n/a                                | n/a — a click per permission, no form                                                                                                                       | fixed (B3-02) — a refused or failed catalogue read is drawn through the shared states, never as an empty role | pass | pass |
-| `/administration/approval-limits`                          | `apps/web/src/features/administration/access/components/ApprovalLimitsScreen.tsx`        | pass — the company is named from the working context                                         | pass — the complete list is read on arrival                                                         | fixed (B3-02) — the person is found by name or email through `iam.user-list`; without `iam.user.read` the labelled reference stays; blocked — a listed limit names its person by reference, see below | n/a                                                          | n/a                                | fixed (B3-02, B3-03) — a missing role or person is refused on its own control                                                                               | pass                                                                                                          | pass | pass |
-| `/administration/audit-log`                                | `apps/web/src/features/administration/audit/components/AuditLogScreen.tsx`               | n/a — the log is tenant-wide; a named company and branch may narrow it                       | pass — a seven-day window, read on arrival                                                          | fixed (B3-02) — "who" is found by name or email; without `iam.user.read` the labelled, shape-checked reference stays; blocked — a row names its actor by reference, see below                         | n/a — the read takes exact criteria, applied on submit       | pass — the window and the criteria | pass — a malformed reference is said on its box                                                                                                             | pass                                                                                                          | pass | pass |
+| `/administration/approval-limits`                          | `apps/web/src/features/administration/access/components/ApprovalLimitsScreen.tsx`        | pass — the company is named from the working context                                         | pass — the complete list is read on arrival                                                         | fixed (B3-02) — the person is found by name or email through `iam.user-list`; without `iam.user.read` the labelled reference stays; fixed (ADM4) — a listed limit names its person and role, in words | n/a                                                          | n/a                                | fixed (B3-02, B3-03) — a missing role or person is refused on its own control                                                                               | pass                                                                                                          | pass | pass |
+| `/administration/audit-log`                                | `apps/web/src/features/administration/audit/components/AuditLogScreen.tsx`               | n/a — the log is tenant-wide; a named company and branch may narrow it                       | pass — a seven-day window, read on arrival                                                          | fixed (B3-02) — "who" is found by name or email; without `iam.user.read` the labelled, shape-checked reference stays; fixed (ADM6) — a row names its actor from the read                              | n/a — the read takes exact criteria, applied on submit       | pass — the window and the criteria | pass — a malformed reference is said on its box                                                                                                             | pass                                                                                                          | pass | pass |
 | `/administration/departments`                              | `apps/web/src/features/administration/departments/components/DepartmentsScreen.tsx`      | fixed (B3-02) — opens on and follows the working branch; another branch is chosen by name    | fixed (B3-02) — read on arrival                                                                     | pass                                                                                                                                                                                                  | n/a                                                          | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/employees`                                | `apps/web/src/features/administration/employees/components/EmployeesScreen.tsx`          | fixed (B3-02) — as departments                                                               | fixed (B3-02)                                                                                       | pass — the login account is chosen by name                                                                                                                                                            | n/a                                                          | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/organization`                             | `apps/web/src/features/administration/organization/components/OrganizationStructure.tsx` | n/a — the organisation's companies and branches                                              | pass                                                                                                | fixed (P1-32-PRE-OD-REF) — currency, time zone and language are chosen from `org.reference-values-read`                                                                                               | n/a                                                          | n/a                                | fixed (B3-03) — the company and branch dialogs, the tenant form                                                                                             | pass                                                                                                          | pass | pass |
@@ -1054,10 +1054,10 @@ interface's to make. Nothing below is worked around on the client.
    `svc.service.read`; `/quotations` and `/quotations/[quotationId]` the line builder's service
    likewise (prerequisite 7).
 6. `/warranty/[warrantyId]` — the job is a link in words, not its number (prerequisite 8).
-7. `/administration/approval-limits` — a listed limit names its person by reference
-   (prerequisite 9).
-8. `/administration/audit-log` — a row names its actor by reference; `/platform/audit` shows a
-   shortened actor reference (prerequisite 10).
+7. Resolved (`P1-32-PRE-OD-ADM4`). `/administration/approval-limits` — a listed limit names its
+   person and its role from the list itself (prerequisite 9).
+8. `/platform/audit` shows a shortened actor reference (prerequisite 10; the tenant audit log names
+   its actors since `P1-32-PRE-OD-ADM6`).
 9. `/work-orders/quality` — each row prints its job's reference beside the link in words
    (prerequisite 11).
 10. `/work-orders/[workOrderId]` and `/work-orders/[workOrderId]/closure` — a technician is named by
@@ -1109,12 +1109,19 @@ nothing below is invented on the client.
    and `svc.price.manage` can reach.
 8. **A work order's number on a warranty.** `wty.warranty-list` and `wty.warranty-detail` publish
    `workOrderId` and nothing else about the job.
-9. **A person's and a role's name on an approval limit.** `iam.approval-limit-list` publishes
-   `userId` and `roleId` only, so the approval-limits list and the quotation's discount-limits panel
-   name the subject by reference. The names, resolved in the same statement and withheld without
-   `iam.user.read` and `iam.role.read`, would close both.
-10. **An actor's name on an audit record.** `iam.audit-event-list` and the console's audit read
-    publish the actor's identifier only.
+9. **Resolved (`P1-32-PRE-OD-ADM4`) for the approval-limits list. A person's and a role's name on
+   an approval limit.** `iam.approval-limit-list` now publishes `userDisplayName` (through the
+   identity directory, `null` without `iam.user.read`) and `roleName` (in the list's own statement,
+   `null` without `iam.role.read`) beside `userId` and `roleId`; read-only, no migration. The
+   approval-limits screen shows them and says "Name not available" for a `null`. The quotation's
+   discount-limits panel does not read them yet and still says only whether a person or a role
+   holds each limit.
+10. **Resolved for the tenant audit log (`P1-32-PRE-OD-ADM6`). An actor's name on an audit
+    record.** `iam.audit-event-list` and `iam.audit-event-detail` now name the actor, and the account
+    a user-account record is about, in the same read (`actorDisplayName`, `subjectDisplayName`), one
+    lookup per page, withheld without `iam.user.read` and never across tenants. The console's audit
+    read (`platform.audit-search`, cross-tenant) still publishes the actor's identifier only; it was
+    out of this slice's scope.
 11. **A work order's number on a quality check.** The quality-control list publishes `workOrderId`
     only; the queue links to the job in words and prints the reference to tell rows apart.
 12. **The documents of a quotation.** No read lists the documents attached to a quotation or its
@@ -1171,9 +1178,9 @@ Line numbers are those of the call on the branch head that last changed this tab
 | features/inventory/components/pickers.tsx (ReferenceBox)                         | 238                     | a       | controlled by its host form: InventoryScreen ReserveForm (a, below); the parts draw forms (a, below); Movements passes `countsAsUnsaved={false}`                                                                                                      |
 | features/inventory/components/PartsScreen.tsx (IssueForm)                        | 909                     | a       | new in round three: a typed quantity (changed from the value it opened with) is unsaved work; the form is keyed on the working-context version, so a confirmed switch remounts it empty                                                               |
 | features/inventory/components/PartsScreen.tsx (ReserveForm)                      | 1339                    | a       | new in round three: a typed quantity is unsaved work; `key={reserve-${version}}` remounts it empty                                                                                                                                                    |
-| features/administration/departments/…/DepartmentsScreen.tsx (create)             | 302                     | b       | `onDiscard` → `setCreating(false)`. `useWorkingBranch` closes it only for a branch in the register, and "all my branches" is not one                                                                                                                  |
-| features/administration/departments/…/DepartmentsScreen.tsx (rename)             | 394                     | b       | `useUnsavedGuard(name !== department.name, onCancel)`                                                                                                                                                                                                 |
-| features/administration/employees/…/EmployeesScreen.tsx (create)                 | 303                     | b       | `onDiscard` → `setCreating(false)` (the same gap as departments)                                                                                                                                                                                      |
+| features/administration/departments/…/DepartmentsScreen.tsx (create)             | 449                     | a / b   | inside `<BranchDepartments key={companyId:branchId}>`, which "all my branches" unmounts (ADM2); the guard counts the code and the name, and `onDiscard` empties both and closes                                                                       |
+| features/administration/departments/…/DepartmentsScreen.tsx (rename)             | 580                     | a / b   | `useUnsavedGuard(edit.dirty, onClose)` (`useEditBaseline`), inside the same keyed `BranchDepartments` (ADM2)                                                                                                                                          |
+| features/administration/employees/…/EmployeesScreen.tsx (create)                 | 491                     | a / b   | inside `<BranchEmployees key={companyId:branchId}>`, which "all my branches" unmounts (ADM2); the guard counts the name, the chosen login account and the reference, and `onDiscard` empties all three and closes                                     |
 | features/appointments/components/AppointmentBookingScreen.tsx                    | 163                     | b       | follows the header for the branch but holds the customer, vehicle, type, channel and window itself; `onDiscard` remounts `<BookingForm key={opened}>`; lowered once the booking is stored                                                             |
 | features/appointments/components/AppointmentDetailScreen.tsx (RescheduleSection) | 449                     | c→b     | the appointment is addressed to its own branch; typed confirmed times are unsaved work, and `onDiscard` is `useEditBaseline`'s `discard`, which empties them (appointments slice)                                                                     |
 | features/billing/components/CreditNoteRequestForm.tsx                            | 106                     | a / c→b | keyed under `BranchCreditNotes` in CreditNotesScreen (a); on an invoice's own page nothing is keyed, so `onDiscard` empties amount and reason and renews the transport key                                                                            |
@@ -1742,100 +1749,100 @@ route reaches `DataTable`, `CursorPager` or `useServerTable`; `EntityPicker` whe
 `MoneyField`, `RecordForm` or `SearchBox`; states where it reaches `States.tsx` or `SearchStates`.
 The preserved-behaviour cell names the contract items above that a migration must keep.
 
-| Route                                                 | Applicable MUI components                                                                     | Preserved behaviour                              | Implementation status                                               | Verification                              |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------- |
-| `/activate-account`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/forgot-password`                                    | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/login`                                              | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/reset-password`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators" | focused suites, en and ar                 |
-| `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/administration/currencies`                          | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/departments`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/administration/employees`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/organization`                        | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration`                                     | none found                                                                                    | —                                                | not migrated                                                        | not run — nothing migrated                |
-| `/administration/permissions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/administration/roles`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/administration/system-settings`                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/taxes`                               | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/users/[userId]`                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/administration/users`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/appointments/[appointmentId]`                       | form fields, `ZonedDateTimeField`, `DecisionDialog`, states                                   | F1–F6; E1–E4; D1–D4; S1–S4                       | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/appointments/new`                                   | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, states                  | F1–F6; G1–G9, G11; P1–P10; E1–E4; S1–S4          | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/appointments`                                       | `FilterToolbar`, `OperationalGrid`, states                                                    | G1–G11; S1–S5; T1, T7                            | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/credit-notes`                                       | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12, G13; P1–P10; T1; D1–D4; S1–S4 | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/crm/customer-duplicates`                            | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/crm/customers/new/[kind]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/adjustments`                              | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                          | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                          | focused suites, en and ar — see below     |
-| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/counts`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV5)                               | focused suites, en and ar — see below     |
-| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/goods-receipts`                           | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (MUI7A1; item header INV2A)          | focused suites, en and ar — see below     |
-| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (INV1B, INV1C)                       | focused suites, en and ar — see below     |
-| `/inventory/opening-stock`                            | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table (INV1B, INV1C)                       | focused suites, en and ar — see below     |
-| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, `TreePicker`, states                          | F1–F6; G1–G9, G12; P1–P10; H1–H5; S1–S4          | migrated — see below the table (INV5)                               | focused suites, en and ar — see below     |
-| `/inventory/setup`                                    | form fields, `TreePicker`, states                                                             | F1–F7; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                              | focused suites, en and ar — see below     |
-| `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/unit-conversions`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV2A)                              | focused suites, en and ar — see below     |
-| `/inventory/vehicle-specifications`                   | form fields, `TreePicker`, states                                                             | F1–F6; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                              | focused suites, en and ar — see below     |
-| `/invoices`                                           | form fields, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                          | F1–F6; P1–P10; D1–D5; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/`                                                   | `FilterToolbar`, `MetricCard`, `ChartPanel`, states                                           | S1–S4; T1–T6, T8; M1–M6                          | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/payments`                                           | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12; P1–P10; D1–D4; S1–S4          | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/pricing/[priceListId]`                              | form fields, `EntityPicker`, `DateField`, states                                              | F1–F6; P1–P10; E1–E4; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/pricing`                                            | form fields, `OperationalGrid`, `EntityPicker`, `DateField`, states                           | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/profile`                                            | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/quotations/[quotationId]`                           | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, `ConfirmDialog`, states | F1–F6; G1–G9, G12; P1–P10; E1–E4; D1–D4; S1–S4   | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/quotations`                                         | form fields, `OperationalGrid`, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states       | F1–F6; G1–G9; P1–P10; D1–D5; S1–S4               | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/reception/walk-in`                                  | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9, G11; P1–P10; S1–S4                 | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/receptions/check-in/[receptionId]/acknowledgement`  | `PrintToolbar`, states                                                                        | S1–S4                                            | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/receptions/check-in/[receptionId]`                  | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, `ReasonDialog`, states  | F1–F7; G1–G9, G11; P1–P10; E1–E4; D1–D5; S1–S4   | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F7; G1–G9, G11, G12; P1–P10; S1–S4            | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states                                                    | F6; G1–G11; S1–S5; T1–T6                         | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, states                                    | G1–G9; P1–P10; S1–S4                             | built on Material UI (P1-32-PRE-OD-FD2B, ADR-023 D2)                | `refunds.dom.test.tsx`, en and ar         |
-| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                     | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated (REPA), not the snapshots panel: REP-B (#557) migrates it  | focused suites, en and ar — see below     |
-| `/reports/overview`                                   | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table (REPA)                               | focused suites, en and ar — see below     |
-| `/reports`                                            | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | migrated — see below the table (REPA)                               | focused suites, en and ar — see below     |
-| `/services/[serviceId]`                               | form fields, `TreePicker`, `DateField`, `ConfirmDialog`, states                               | F1–F6; H1–H5; E1–E4; D1–D4; S1–S4                | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/services`                                           | `FilterToolbar`, `OperationalGrid`, `TreePicker`, `DateField`, form fields, states            | F1–F6; G1–G10; H1–H5; E1–E4; S1–S5; T1           | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/technicians/me`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/vehicles/[vehicleId]`                               | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/vehicles/duplicates`                                | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/vehicles/new`                                       | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/vehicles`                                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/work-orders/[workOrderId]/closure`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/work-orders/[workOrderId]`                          | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/work-orders/diagnostics/[templateId]`               | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/work-orders/diagnostics`                            | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/work-orders`                                        | `FilterToolbar`, `OperationalGrid`, states                                                    | F6; G1–G11; S1–S5; T1–T7                         | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/delivery`                                           | `OperationalGrid`, states                                                                     | G1–G9, G11; S1–S4                                | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/delivery/[deliveryId]`                              | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/warranty`                                           | `FilterToolbar`, `OperationalGrid`, states                                                    | G1–G10; S1–S5; T1, T7                            | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/warranty/[warrantyId]`                              | states                                                                                        | S1–S4                                            | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/warranty/policies`                                  | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/warranty/policies/[policyId]`                       | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/attention`                                          | states                                                                                        | S1–S4                                            | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/work-orders/quality`                                | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/gallery`                                            | all four                                                                                      | G, P, F, S                                       | shown in the gallery, not a screen                                  | `gallery-and-print.dom.test.tsx` (en, ar) |
-| `/platform/account`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/platform/audit`                                     | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/platform/organizations/[tenantId]`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/platform/organizations/new`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/platform/organizations`                             | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/platform`                                           | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/platform/plans`                                     | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| Route                                                 | Applicable MUI components                                                                     | Preserved behaviour                              | Implementation status                                                        | Verification                              |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------- |
+| `/activate-account`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/forgot-password`                                    | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/login`                                              | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/reset-password`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators"          | focused suites, en and ar                 |
+| `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, `FormDialog`, `DateField`, states             | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table (ADM4); the person picker moved in ADM3 first | focused suites, en and ar — see below     |
+| `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, `DateField`, drawer, states                   | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (ADM6)                                        | focused suites, en and ar — see below     |
+| `/administration/currencies`                          | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — catalogue read-only; enabled codes editable; see below     | focused suites, en and ar — see below     |
+| `/administration/departments`                         | form fields, `FormDialog`, `ConfirmDialog`, states                                            | F1–F4; D1–D4; S1–S4                              | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below     |
+| `/administration/discount-threshold`                  | form fields, Material table, states                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM4)                                        | focused suites, en and ar — see below     |
+| `/administration/employees`                           | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, drawer, states                 | F1–F6; G1–G9, G11; D1–D4; S1–S4                  | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below     |
+| `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below     |
+| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — read-only; F-003 open; credit notes: DOC01; see below      | focused suites, en and ar — see below     |
+| `/administration/organization`                        | form fields, `ConfirmDialog`, `ReasonDialog`, states                                          | F1–F7; D1–D5; S1–S4                              | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below     |
+| `/administration`                                     | none found                                                                                    | —                                                | migrated — no wrapper applies; see below the table (ADM6)                    | focused suites, en and ar — see below     |
+| `/administration/permissions`                         | form fields, Material table, `ConfirmDialog`, states                                          | F1–F6; D1–D4; S1–S4                              | migrated — see below the table (ADM4)                                        | focused suites, en and ar — see below     |
+| `/administration/roles`                               | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, states                         | F1–F6; G1–G9; D1–D4; S1–S4                       | migrated — see below the table (ADM4)                                        | focused suites, en and ar — see below     |
+| `/administration/system-settings`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — company and branch only; F-007 open; see below             | focused suites, en and ar — see below     |
+| `/administration/taxes`                               | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — read-only; F-004 open (ACC01); see below                   | focused suites, en and ar — see below     |
+| `/administration/users/[userId]`                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see "Users and a person's access on Material UI" below the table  | focused suites, en and ar — see below     |
+| `/administration/users`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see "Users and a person's access on Material UI" below the table  | focused suites, en and ar — see below     |
+| `/appointments/[appointmentId]`                       | form fields, `ZonedDateTimeField`, `DecisionDialog`, states                                   | F1–F6; E1–E4; D1–D4; S1–S4                       | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/appointments/new`                                   | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, states                  | F1–F6; G1–G9, G11; P1–P10; E1–E4; S1–S4          | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/appointments`                                       | `FilterToolbar`, `OperationalGrid`, states                                                    | G1–G11; S1–S5; T1, T7                            | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/credit-notes`                                       | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12, G13; P1–P10; T1; D1–D4; S1–S4 | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/crm/customer-duplicates`                            | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
+| `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                                 | not run — nothing migrated                |
+| `/crm/customers/new/[kind]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
+| `/inventory/adjustments`                              | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                          | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                                   | focused suites, en and ar — see below     |
+| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/inventory/counts`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV5)                                        | focused suites, en and ar — see below     |
+| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/inventory/goods-receipts`                           | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (MUI7A1; item header INV2A)                   | focused suites, en and ar — see below     |
+| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (INV1B, INV1C)                                | focused suites, en and ar — see below     |
+| `/inventory/opening-stock`                            | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table (INV1B, INV1C)                                | focused suites, en and ar — see below     |
+| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, `TreePicker`, states                          | F1–F6; G1–G9, G12; P1–P10; H1–H5; S1–S4          | migrated — see below the table (INV5)                                        | focused suites, en and ar — see below     |
+| `/inventory/setup`                                    | form fields, `TreePicker`, states                                                             | F1–F7; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                                       | focused suites, en and ar — see below     |
+| `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/inventory/unit-conversions`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV2A)                                       | focused suites, en and ar — see below     |
+| `/inventory/vehicle-specifications`                   | form fields, `TreePicker`, states                                                             | F1–F6; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                                       | focused suites, en and ar — see below     |
+| `/invoices`                                           | form fields, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                          | F1–F6; P1–P10; D1–D5; S1–S4                      | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/`                                                   | `FilterToolbar`, `MetricCard`, `ChartPanel`, states                                           | S1–S4; T1–T6, T8; M1–M6                          | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/payments`                                           | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12; P1–P10; D1–D4; S1–S4          | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/pricing/[priceListId]`                              | form fields, `EntityPicker`, `DateField`, states                                              | F1–F6; P1–P10; E1–E4; S1–S4                      | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/pricing`                                            | form fields, `OperationalGrid`, `EntityPicker`, `DateField`, states                           | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/profile`                                            | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/quotations/[quotationId]`                           | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, `ConfirmDialog`, states | F1–F6; G1–G9, G12; P1–P10; E1–E4; D1–D4; S1–S4   | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/quotations`                                         | form fields, `OperationalGrid`, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states       | F1–F6; G1–G9; P1–P10; D1–D5; S1–S4               | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/reception/walk-in`                                  | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9, G11; P1–P10; S1–S4                 | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/receptions/check-in/[receptionId]/acknowledgement`  | `PrintToolbar`, states                                                                        | S1–S4                                            | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/receptions/check-in/[receptionId]`                  | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, `ReasonDialog`, states  | F1–F7; G1–G9, G11; P1–P10; E1–E4; D1–D5; S1–S4   | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F7; G1–G9, G11, G12; P1–P10; S1–S4            | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states                                                    | F6; G1–G11; S1–S5; T1–T6                         | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, states                                    | G1–G9; P1–P10; S1–S4                             | built on Material UI (P1-32-PRE-OD-FD2B, ADR-023 D2)                         | `refunds.dom.test.tsx`, en and ar         |
+| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                     | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated (REPA), not the snapshots panel: REP-B (#557) migrates it           | focused suites, en and ar — see below     |
+| `/reports/overview`                                   | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table (REPA)                                        | focused suites, en and ar — see below     |
+| `/reports`                                            | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | migrated — see below the table (REPA)                                        | focused suites, en and ar — see below     |
+| `/services/[serviceId]`                               | form fields, `TreePicker`, `DateField`, `ConfirmDialog`, states                               | F1–F6; H1–H5; E1–E4; D1–D4; S1–S4                | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/services`                                           | `FilterToolbar`, `OperationalGrid`, `TreePicker`, `DateField`, form fields, states            | F1–F6; G1–G10; H1–H5; E1–E4; S1–S5; T1           | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/technicians/me`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/vehicles/[vehicleId]`                               | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                                 | not run — nothing migrated                |
+| `/vehicles/duplicates`                                | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/vehicles/new`                                       | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/vehicles`                                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
+| `/work-orders/[workOrderId]/closure`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/work-orders/[workOrderId]`                          | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/work-orders/diagnostics/[templateId]`               | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/work-orders/diagnostics`                            | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/work-orders`                                        | `FilterToolbar`, `OperationalGrid`, states                                                    | F6; G1–G11; S1–S5; T1–T7                         | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/delivery`                                           | `OperationalGrid`, states                                                                     | G1–G9, G11; S1–S4                                | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/delivery/[deliveryId]`                              | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/warranty`                                           | `FilterToolbar`, `OperationalGrid`, states                                                    | G1–G10; S1–S5; T1, T7                            | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/warranty/[warrantyId]`                              | states                                                                                        | S1–S4                                            | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/warranty/policies`                                  | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/warranty/policies/[policyId]`                       | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/attention`                                          | states                                                                                        | S1–S4                                            | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/work-orders/quality`                                | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below     |
+| `/gallery`                                            | all four                                                                                      | G, P, F, S                                       | shown in the gallery, not a screen                                           | `gallery-and-print.dom.test.tsx` (en, ar) |
+| `/platform/account`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/platform/audit`                                     | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
+| `/platform/organizations/[tenantId]`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
+| `/platform/organizations/new`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
+| `/platform/organizations`                             | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
+| `/platform`                                           | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                |
+| `/platform/plans`                                     | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                |
 
 ### `/receptions` on Material UI
 
@@ -4516,6 +4523,404 @@ Known limitations, one line each:
 - A transfer's dispatch form and the inventory forms outside INV4 were not touched for focus.
 - No browser spec covers these routes; the Playwright tiers run only in hosted CI.
 
+### Departments and employees on Material UI (`P1-32-PRE-OD-ADM2`)
+
+`/administration/departments` and `/administration/employees` moved onto the shared wrappers, and
+the employee register gained a detail view. Nothing about how either reads, authorizes or scopes
+changed: the same page refusals before any read (`org.department.read` with `org.branch.read`;
+`org.employee.read` with `org.branch.read`), the same per-control codes (`org.department.manage`
+for create, rename, retire and reinstate; `org.employee.manage` for add, deactivate and reactivate;
+`iam.user.read` for the login-account picker; `org.company.read` for company names), the same
+reads and writes with the same arguments (`org.department-list`, `org.department-create`,
+`org.department-update`; `org.employee-list`, `org.employee-create`, `org.employee-status-set`,
+`iam.user-list?status=active`), the same navigation gates, and the same route branch scope,
+unchanged in `route-branch-scope.ts` (`concrete`). One operation gained its first web caller:
+`org.employee-detail` (`GET /api/v1/org/employees/{employeeId}`, `org.employee.read`), which the
+detail view reads. No backend file, migration, permission or catalogue entry changed.
+
+What moved to which wrapper:
+
+- `/administration/departments` (`DepartmentsScreen.tsx`) — the list is Material's table:
+  `org.department-list` answers one bounded list with no cursor (planner ruling 2026-10-09), named
+  first, its code left to right beside it. When exactly 500 rows come back — the operation's limit —
+  a notice above the table says only the first 500 are shown and more may exist (planner ruling
+  2026-10-09; see the recorded gaps below). Loading, empty, refused, outage (with a retry that reads
+  again) and ended session are the shared states (`MuiStates`). Create and rename are `FormDialog`
+  forms of `FormTextField`s (F1–F4); retire and reinstate ask first through `ConfirmDialog`
+  (D1–D4), which names the department. Every button is Material's.
+- `/administration/employees` (`EmployeesScreen.tsx`) — the register is `OperationalGrid` over
+  `useServerTable` (G1–G9, G11): the server's cursor pages, no count, Previous and Next, the
+  product's page sizes with the first page at 50 as before, and the grid's own refused,
+  unavailable, ended-session and failed states; "nothing yet" is the register's own sentence. The
+  add form is a `FormDialog` of `FormTextField`s and the native `FormSelectField` (F6) for the
+  login account; deactivate and reactivate ask through `ConfirmDialog`. Each row offers "Details",
+  named with the employee.
+- The detail view is Material's drawer at the logical end of the page. It reads
+  `org.employee-detail` when opened and says the employee's name, branch and company, login account,
+  employment reference and status in words — never a reference — with the shared states for a read
+  that failed (a retry) or a record no longer there. Focus moves into it and returns to "Details" on
+  Escape or Close; a closed drawer leaves the page at once.
+- `FormDialog` (`features/administration/shared/components/FormDialog.tsx`, new) is a form in an
+  ordinary Material dialog. `DecisionDialog` is an ALERT dialog, and the working context's "discard
+  your changes?" question asked over a form would then be a second alert dialog awaited at once. It
+  keeps D1–D4: named and described, Tab kept inside, the first field focused, Escape cancels and a
+  click outside does not, both buttons disabled while the write is out, focus returned on close.
+- `useWorkingBranch` now derives the register's branch on every render instead of remembering the
+  last one it was called back with.
+
+Scope and unsaved work (the rows for these two screens in the unsaved-work table above, and the gap
+this slice closes): everything addressed to the branch — the list, Add and every form — lives in a
+child keyed on the branch pair, so a switch to another branch remounts it and a switch to "All my
+branches" unmounts it. Before, "All my branches" left the previous branch's list, its Add button
+and any untouched form in place, still writing to a branch the header no longer named, and the
+create forms' guard only closed the dialog. Every field of each create form is now unsaved work —
+the department's code and name; the employee's name, chosen login account and reference — and a
+confirmed discard empties them all and closes the form, towards another branch or towards "All my
+branches".
+
+Preserved, each held by a case in `departments-employees.dom.test.tsx`, every case in English and in
+Arabic:
+
+- Scope: nothing is read until a branch is named; the read names both halves of it; the register
+  states the working branch and offers no chooser of its own, and follows a switch.
+- Permissions: without `org.department.manage` / `org.employee.manage` there is no Add, rename,
+  retire or status control (the employee details are still offered); the page refusals before any
+  read are unchanged (`route-permission-binding.test.ts`).
+- States: loading, empty, refused (never drawn as an empty branch), outage with a retry that reads
+  again; a detail read that failed offers a retry.
+- Field errors: a malformed code and an empty name are refused on their own field (`aria-invalid`
+  only while refused), the cursor moves to the first, what was typed stays, and the complaint goes
+  once the field is edited; the reference box holds no more than the column's 64 characters.
+- Conflicts: a stale rename is said in the form with "Load the latest version", which brings the
+  stored name and version, and the next save sends that version; a stale retirement or
+  deactivation is said beside the list with the same way out; a refused create keeps every field.
+- Versions: rename, retire and deactivate send the row's version as `If-Match`.
+- Duplicate submits: create (both registers), rename, retire, reinstate, deactivate and reactivate
+  send once for two presses made inside one render frame (`sending` guards, pressed twice inside one
+  `act()`); each of these cases fails with its guard removed.
+- Names: a linked login account is named from the picker's list or, for one outside it, from its
+  own read (`iam.user.read`); the detail view names the branch, the company and the account.
+- Focus: the first field takes the cursor when a form opens and Add (Add department, Add employee)
+  takes it back on Cancel; the detail drawer takes it and returns it to "Details" on Escape.
+- Arabic and English, right to left.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render goes under `UiFoundationProvider`, as the locale layout mounts it, and the suite runs
+  each case in both languages.
+- The stand-in branch switches are found among hidden elements (`hidden: true`) while a form is open,
+  because a Material dialog hides the rest of the page from assistive technology; the suite carries
+  its own two switch helpers for that and uses the shared stay and discard helpers unchanged.
+- A row action of the grid is named by its label and the employee (`Deactivate Handover Clerk`), the
+  grid's `about`, instead of `Deactivate: Handover Clerk`; the department buttons keep their names.
+
+Assertions changed, with the reason:
+
+- "creates a department" and "adds an employee" asserted the success sentence inside the dialog;
+  they now assert the dialog closes, the same sentence (`departments.created`, `employees.created`)
+  appears in the notification, mounted as the locale layout mounts it, and the list is read again,
+  because a stored entry now closes its form (below). The request bodies asserted are unchanged (the
+  employee case adds the reference).
+- "lists the branch register and pages on request" pressed "Show more" and asserted both pages on
+  screen; it now presses "Next page" and asserts the next page and the cursor sent, because the
+  grid pages instead of appending (G3).
+- "refuses a malformed code beside the field" asserted the hint text appears; it now asserts the
+  field is marked invalid, takes the cursor and keeps the value (the B3 case it duplicated is merged
+  into it).
+- "refuses an empty name" adds the cursor and the kept reference.
+- "the registers open on the working branch": the employee case's "no combobox anywhere" is scoped to
+  the branch statement, because the grid's page-size select is a combobox of its own.
+- The "all my branches" cases now also assert the register closes (no list, no Add), and a new case
+  holds that an untouched form closes towards "All my branches" without a question.
+- Two cases of develop that the first head of this slice dropped are restored, asserting the same
+  behaviour with only the selectors adapted to the Material dialog: "departments: an untouched
+  dialog is closed by the switch without a question" (towards another branch) and "employees: a
+  typed new employee makes the switch ask, and "stay" keeps it" (then a discard towards another
+  branch closes it).
+
+Deliberate behaviour changes:
+
+- A stored department or employee closes its form and is announced by a notification; the list is
+  read again. Before, the form stayed open with a sentence and a Close button.
+- The employee register pages with Previous and Next over the server's cursor, with the product's
+  page sizes, instead of "Show more" appending to one long list.
+- Under "All my branches" both registers close and ask for one branch, as their `concrete` route
+  already declared.
+- A stale retirement, reinstatement or status change closes the question and is said beside the
+  list with "Load the latest version"; before, the conflict was said inside the question.
+- The confirmation questions name the department or employee they are about.
+
+Recorded gaps (no control is drawn for any of them):
+
+- No operation changes an employee's name, login account or employment reference
+  (`org.employee-update` does not exist). The register offers no edit; the detail view says in words
+  that this screen cannot change them.
+- The API's fourteen `tech.technician-*` operations — create, update, availability record and
+  withdrawal, skill set and withdrawal, certification record, update and detail record, and the
+  list, detail, availability and queue reads — have no administration screen. They are left for the
+  separate technician-administration slice and are not built here.
+- `org.department-list` answers at most 500 departments with no cursor and no "more exist" flag. The
+  register infers from the length alone: exactly 500 rows draw the notice that only the first 500
+  are shown and more may exist (`DEPARTMENT_LIST_CAP` in `DepartmentsScreen.tsx`, the
+  `departments.listCapped` sentence). A branch with exactly 500 departments draws it too; no control
+  reaches a 501st.
+
+Known limitations of this slice, one line each:
+
+- The detail view is a drawer, not a route: a deep link reaches the register, not one employee.
+- While a form is open the header's branch selector is behind the dialog; a switch can still
+  arrive from another tab or a held change, which the cases stand in for.
+- The login-account picker still offers the first hundred active accounts.
+- The page-level refusal before any read is still the shared `PermissionDeniedState`, as on every
+  administration page.
+- No browser spec changed: the authenticated accessibility sweep already visits both routes in the
+  English and the Arabic projects. The Playwright tiers run only in hosted CI.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. No web test file was added or removed; the suite gains cases.
+
+### Users and a person's access on Material UI (`P1-32-PRE-OD-ADM3`)
+
+`/administration/users` and `/administration/users/[userId]` moved onto the shared wrappers, and
+the shared person picker (`features/administration/users/components/AccountPicker.tsx`) moved from
+`SearchPicker` to `EntityPicker`, which takes the same props, so its two other callers — the
+approval limits dialog and the audit log's "Who" filter — moved with it without an edit. Nothing
+about how either route reads, authorizes or scopes changed: the same reads (`iam.user-list` with
+`search` and `status`; `iam.user-detail`, `iam.grant-scope-list`, `iam.role-list`,
+`org.company-list`, `org.branch-list`, `org.department-list`) and writes (`iam.invitation-create`,
+`iam.invitation-cancel`, `iam.invitation-activate`, `iam.user-status-change`,
+`iam.user-session-revoke-all`, `iam.grant-issue`, `iam.grant-scope-add`, `iam.grant-scope-remove`,
+`iam.grant-revoke`) with the same arguments, the same page refusal before any read
+(`iam.user.read`), the same per-control codes, and the same route branch scope (`none`, unchanged
+in `route-branch-scope.ts`). The navigation entry and its gate are unchanged. No backend source
+file changed.
+
+One write gained its first caller: `iam.user-update` (`PATCH /api/v1/iam/users/{userId}`,
+`iam.user.manage`, version-guarded) — the account's display name and its two-factor requirement,
+offered on the person's page as "Edit details" only to a session holding `iam.user.manage`
+(`canManageUser`, decided by the page before it renders; `route-permission-binding.test.ts`). Only
+the fields that differ from what the page displayed are sent, with the displayed version as
+`If-Match`.
+
+What moved to which wrapper:
+
+- `/administration/users`: the list is `OperationalGrid` driven by `useServerTable` — the read is
+  cursor-paged with no total, so Previous and Next walk the server's cursor and nothing counts the
+  people (G1–G9). The search and the status are `FilterToolbar` (T1, T5): the term and the status go
+  to the server in the request and never into the address. Every row action is a real link or
+  button whose name includes the person (G9): "Roles and access" to the person's page, and the
+  status changes legal from the row's status. The invitation is `DecisionDialog` with
+  `FormTextField` for the address and the name, `FormCheckboxField` for the two-factor requirement,
+  and one `FormCheckboxField` per role (the native multiple select it replaces has no Material
+  wrapper). Every confirmation (lock, unlock, archive, cancel or activate an invitation, sign out
+  everywhere) is `ReasonDialog`.
+- `/administration/users/[userId]`: the account card names the person, the address, the status and
+  whether two-factor authentication is required; "Edit details" is `DecisionDialog` with
+  `FormTextField` and `FormCheckboxField`. The grant and add-place dialog is `DecisionDialog` with
+  `FormSelectField` for the role and for the department's branch (grouped by company),
+  `FormRadioGroupField` for where the role applies, and `FormCheckboxField` per company, branch or
+  department; removing a place is `ConfirmDialog`, taking a role away is `ReasonDialog`, the empty
+  and the department-read states are `MuiStates`. The grants stay a list of cards: they arrive
+  whole in the account read, so there is no page for a grid to walk.
+
+**The whole organisation is said before it is sent.** `iam.grant-issue` reads an empty scope list as
+the whole organisation (`users/actions.ts`, `issueGrantAction`). With "Whole organisation" and a
+role chosen, the grant button now opens a confirmation (`ConfirmDialog`, Cancel focused) titled
+"Grant this role across the whole organisation?", which names the role and the effect — every
+company, branch and department, including ones added later — and nothing is sent until it is
+confirmed; Cancel returns to the dialog with the choice kept. The request is unchanged (no `scopes`
+key), and a narrower choice with nothing selected is still refused rather than widened.
+
+Preserved, each held by a case in `user-access.dom.test.tsx` (en and ar where marked):
+
+- ADR-023 D8: no grant, scope or status path changed in this slice. The twelve closed paths stay
+  closed — they are server rules on the requester's own threshold, limit and price-list changes,
+  outside these two routes and untouched. The three open paths (VL-P132-001) keep today's
+  behaviour and stay recorded as open: a role grant and its places are issued as before
+  (organisation-wide, by company, by branch, by department), and a locked account is reactivated
+  with a written reason through `iam.user-status-change` (`status: 'active'`) as before. The service
+  still refuses an administrator changing their own status and revoking their own grant; neither is
+  pre-empted here.
+- Scope: every place a grant sends carries the company that owns it — a branch with its company, a
+  department with its company and branch — so a grant names no place apart from the company it
+  belongs to; the service's authority checks (`tests/backend/iam-access-administration.test.ts`,
+  the foreign-company scope cases) are unchanged.
+- Suspension, reactivation, archive and invitation: only the transitions legal from the row's
+  status are offered (an archived account offers none); each takes a written reason, refused when
+  empty, said on the reason box when the service refuses it, and counted as unsaved work while
+  typed.
+- Invitation: a missing address or name is said on its box before anything is sent (en and ar); a
+  duplicate address is said on the address box and every entry — the address, the name, the
+  two-factor requirement and the roles — is kept (en and ar); Enter in the address or the name box
+  sends it through the same path as Send, once (en and ar); every entry counts as unsaved work until
+  the invitation is sent.
+- Edit details: only what changed is sent, with the displayed version (en and ar); an empty name is
+  refused on its box (en and ar); a conflict keeps what was typed, says so and offers "Load the
+  latest version", after which the next save carries the newer version as `If-Match` (en and ar);
+  nothing changed is said and nothing is sent; both entries count as unsaved work; closing returns
+  the cursor to "Edit details".
+- Duplicate submits: a status change, an invitation, an edit and a grant confirmed across the whole
+  organisation each send one request when pressed twice inside one `act()`, held by a ref while the
+  answer is awaited.
+- Audit records keep actor and subject: every write goes through the same operation, which writes
+  its own record server-side; `tests/backend/iam-admin-writes.test.ts` now also asserts that the
+  `iam.user.updated` record names the administrator who made the change and the account changed.
+- Permissions: no account action and no invitation without `iam.user.manage`; no grant control
+  without `iam.grant.manage`; no edit without `iam.user.manage`; a refused list read is a refusal,
+  never an empty list.
+- Names: roles by name (`roleDisplayName`), places by company, branch and department name, people
+  by name; a role or place the session may not read says so instead of showing a reference.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render of these two screens goes under `UiFoundationProvider`, as the locale layout mounts
+  it.
+- The grant and add-place dialog is the shared decision dialog, an `alertdialog` named by its
+  title; the cases find it by that name instead of `dialog`.
+- A row action's name now carries the person ("Activate account Workshop Supervisor"), and "Add a
+  place" carries the role ("Add a place: Supervisor"); the cases name them so, and the negative
+  checks on "Add a place" use the new name, so they still match the control they are about.
+- The three grants made across the whole organisation press the new confirmation before the
+  request is asserted.
+- A disabled Material button refuses the pointer, so the "no reason, nothing sent" case dispatches
+  the press directly.
+- The person pickers of the approval limits dialog and the audit log are a combobox now: the person
+  is chosen as an option (`role="option"`) from the listbox popup instead of a match button inside
+  the dialog or the form.
+- `tests/form-reset-class.test.ts`: the users status-filter exemption is removed — the control it
+  named no longer exists, and the invitation no longer submits through a Server Action form.
+- `tests/e2e/authenticated/administration.spec.ts`: the users case reads the grid (`role="grid"`,
+  named by the page title) instead of `table tbody`, waits for the grid frame's busy flag to clear
+  instead of the table body's `aria-busy="false"`, and runs in the project's language (English in
+  `authenticated-en`; Arabic and right to left in `authenticated-ar`) instead of English only; a new
+  case opens a person's access page from the grid in either language.
+  `tests/e2e/authenticated/accessibility.spec.ts` finds the invitation as an `alertdialog`.
+- `tests/e2e/authenticated/shared-ux.spec.ts`: the shared table's own region case measures
+  `/en/administration/roles`, still drawn by `DataTable`, with its assertions unchanged; a new case
+  scrolls the users grid's pager into view and finds the document unmoved.
+- `tests/ci/p1-31-version-sourcing.test.ts`: the versioned sends outside the P1-31 subject move
+  from 44 to 45 with "Edit details".
+
+Deliberate behaviour changes:
+
+- The whole-organisation confirmation above.
+- "Edit details" (`iam.user-update`), the operation's first caller.
+- The account card says whether two-factor authentication is required; the list's two-factor column
+  says "Required" or "Not required" instead of "Active" or a dash, and the date column is headed
+  "Added" (it is the day the account was created) instead of "Updated".
+- The invitation is sent from component state rather than a Server Action form, so a refusal keeps
+  every entry without the remount the form reset needed.
+
+Known limitations and recorded gaps, one line each:
+
+- Recorded gap: the live sessions of a person (`iam.user-session-list`, `iam.session.view_all`) are
+  not read on the person's page — no screen calls the operation, although `capability-status.md`
+  says the detail screen reads them. No control was added for it.
+- The grants on a person's page are drawn whole from the account read; a person holding very many
+  grants is one long list.
+- The forms are the shared decision dialog (`alertdialog`), as the appointment setup rename is,
+  rather than a plain dialog.
+- Every role the session can see that is not a system role is offered on the invitation and the
+  grant, as before; the service bounds the choice by the inviter's delegable authority.
+- `/administration/approval-limits` and `/administration/audit-log` are otherwise not migrated;
+  only their person picker moved.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in
+  hosted CI. The web tier gains cases in existing files (no web test file added or removed).
+
+### Roles, permissions, approval limits and the discount threshold on Material UI (`P1-32-PRE-OD-ADM4`)
+
+`/administration/roles`, `/administration/permissions`, `/administration/approval-limits` and
+`/administration/discount-threshold` moved onto the shared wrappers. The page refusals before any
+read (`iam.role.read`, `iam.role.read`, `iam.approval.manage`, `svc.price.read`), the per-control
+codes, the navigation entries and the route branch scope (`none`, `none`, `none`, `concrete`) are
+unchanged. No migration, no new route, no new operation and no new permission code.
+
+One write gained its first caller: `iam.role-permission-update`
+(`PATCH /api/v1/iam/roles/{roleId}/permissions/{mappingId}`, `iam.role.manage`, version-guarded)
+— "Change to deny" and "Change to allow" on an existing mapping, sent with the mapping's
+`recordVersion` as `If-Match`. A change to allow is delegation-checked by the service exactly as an
+add is.
+
+One read gained two fields (prerequisite 9): `iam.approval-limit-list` publishes `userDisplayName`
+and `roleName` beside `userId` and `roleId`. The person's name comes from the identity directory
+(`IdentityDirectoryService.resolveDisplayIdentities`), which answers nothing to a caller without
+`iam.user.read`; the role's name is resolved in the list's own statement under
+`iam.has_permission('iam.role.read')`. Both are `null` when withheld; the references are published
+as before. `tests/backend/iam-access-administration.test.ts` holds both cases (hosted CI).
+
+What moved to which wrapper:
+
+- `/administration/roles`: `OperationalGrid` over the cursor-paged `iam.role-list` (G1–G9); create
+  and a new "Edit" (name and description, only what changed, the displayed version as `If-Match`)
+  are `FormDialog`; archive is `ConfirmDialog`. A system role offers no action.
+- `/administration/permissions`: the role is `FormSelectField`; each area is a Material table; a
+  mapping is added (allow or deny), changed between allow and deny, or removed after
+  `ConfirmDialog`. A refused or failed read of the catalogue OR of the role's mappings is the
+  shared refusal or failure state with its reference — the mapping read used to fall back to an
+  empty list, drawn as a role that holds nothing.
+- `/administration/approval-limits`: `OperationalGrid` over the complete list (paged in the
+  loader, "complete" or "may be incomplete" said as before); the create and end forms are
+  `FormDialog` with `FormSelectField`, `FormTextField`, `EntityPicker` (`AccountPicker`) and
+  `DateField`; days are written on the working branch's clock.
+- `/administration/discount-threshold`: `FormSelectField` and `FormTextField`; the read's loading,
+  refusal (no retry) and outage (with retry) are `MuiStates`; the history is a Material table;
+  days and the recorded moment are on the working branch's clock, the moment with its clock's name.
+
+Form dialogs are `FormDialog` (`role="dialog"`), confirmations stay `DecisionDialog`
+(`alertdialog`) — planner ruling. The ADM-3 forms that were `DecisionDialog` — the invitation,
+"Edit details" and the grant and add-place dialog — moved onto `FormDialog` too. `FormDialog`
+gained two things for them: Enter in a one-line text box submits the form through the same path
+as the submit button (a combobox, a multi-line box and an input method still composing are left
+alone), and `completed` — a done sentence with only Close, which the invitation uses so its outcome
+stays on screen.
+
+Preserved and added, each held by a case (en and ar where marked):
+
+- Money: the approval-limit amount and the threshold value stay decimal strings from the box to
+  the request, checked by pattern; a value with more than four decimal places is refused on its
+  box and nothing is sent (en and ar).
+- ADR-023 D8 and D13: `assertApprovalLimitNotForSelf`, `assertApprovalLimitNotForHeldRole` and
+  `assertNotSelf` are unchanged; the screens offer no control that exempts anyone, and a limit for
+  yourself or for a role you hold is said as that refusal, never as a missing permission (en and
+  ar), with every entry kept. A credit-note limit is its own type with its own currency and must be
+  above zero (en and ar). VL-P132-001 and VL-P132-002 (FIN02) stay open; no policy changed.
+- Names: a person and a role on a limit are named from the list; a withheld name says "Name not
+  available" (en and ar), or that the caller may not see who it is without `iam.user.read`; no
+  reference is printed. The screen no longer reads each person one by one.
+- Conflicts: a stale role edit, mapping change, threshold save or limit end is the server's
+  conflict, said with "Load the latest version"; nothing is retried on the operator's behalf.
+- Duplicate submits: role create, mapping change, limit create and threshold save each send one
+  request when pressed twice inside one `act()`.
+- Unsaved work: every typed entry in the role, limit and threshold forms counts as unsaved work;
+  a confirmed discard empties the form.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- The approval-limit cases render under `UiFoundationProvider`, as the locale layout mounts it
+  (the date pickers need it), and type a day into the picker's parts instead of a text box; the
+  end-date invalid mark is read on the picker's group.
+- The labelled reference box's description is read on its input, which the test id's wrapper
+  holds.
+- The DF-B6 cases answer the person's name in the list itself, as the service now does, and
+  without the user read the list answers `null`.
+- The invitation, "Edit details" and grant dialogs are found as `dialog` instead of `alertdialog`.
+- `tests/form-reset-class.test.ts`: the approval-limits screen no longer owns a Server Action form,
+  so it leaves the scan's required list, as the appointment screens did.
+- `tests/e2e/authenticated/administration.spec.ts`: the roles case reads the grid in the project's
+  language; a new case reads the permissions catalogue and the approval-limits grid in either
+  language. `shared-ux.spec.ts` measured the shared table's region on `/en/administration/audit-log`,
+  then drawn by `DataTable`; the audit log has since moved onto the operational grid
+  (`P1-32-PRE-OD-ADM6`, below), and the case now measures `/en/crm/customer-duplicates`.
+  `accessibility.spec.ts` finds the invitation as a `dialog`.
+- `tests/ci/p1-31-version-sourcing.test.ts`: the versioned sends outside the P1-31 subject move by
+  one with the mapping change.
+
+Known limitations and recorded gaps, one line each:
+
+- The quotation's discount-limits panel does not yet read the new names (prerequisite 9, consumer
+  half).
+- The role list has no assigned-user count and no role detail; neither is offered.
+- Not run locally: the backend and database tiers and the browser tiers; they run in hosted CI.
+
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
 From the read-only finance contract review of 2026-09-30 (items M-01, M-07, M-09, GAP-04, GAP-05,
@@ -5935,3 +6340,367 @@ Known limitations, one line each:
   named-QA backfill are operator steps (CC-OD-58, README question 22).
 - The DB and backend tiers were run on the development machine on a disposable database only for the
   files named in the pull request; the full tiers run on hosted CI.
+
+### Organisation and languages on Material UI, and editing a company or a branch (`P1-32-PRE-OD-ADM1`)
+
+`/administration/organization` and `/administration/languages` moved onto the shared wrappers, and
+the Organisation screen gained the journey it never had: a company or a branch could be added and
+switched on or off, but not renamed or corrected, because `org.company-update`
+(`PATCH /org/companies/{companyId}`) and `org.branch-update` (`PATCH /org/branches/{branchId}`) had no
+caller. Both are now called from an Edit dialog. Nothing about how the screens read, authorize or
+scope changed: the same reads (`iam.tenant-settings-read`, `org.capacity-read`,
+`org.reference-values-read`, `org.company-list`, `org.branch-list`, `iam.company-settings-read`,
+`iam.branch-settings-read`, `shared.branch-status-read`), each made only for a holder of the code it
+declares; the same writes with the same arguments; the same page gate and navigation entries; and
+the same route branch scope (`none` for both, unchanged in `route-branch-scope.ts`). No migration,
+route, operation, permission code or audit action was added.
+
+One response detail is added, in the API: `org.company-list` and `org.branch-list` publish each row's
+`recordVersion` (`CompanyReachRow` and `BranchReachRow` in
+`modules/iam/data/organization-administration-repository.ts`). Both updates refuse a request without
+`If-Match`, and no read published a company's version at all, so without it the screen had nothing
+honest to send. The version sent is the one the list published for the row the operator opened —
+never one read again at the moment of saving. `pre-p1-29-wave-c-company-rbac.test.ts` W37 holds the
+listed versions against the rows and an update sent with the listed version.
+
+What moved to which wrapper:
+
+- Companies and branches (`OrganizationStructure.tsx`) — both lists are Material's table:
+  `org.company-list` and `org.branch-list` each answer one bounded list with no cursor, so there is
+  no pager to drive (planner ruling of 2026-10-09). A status is a chip in words, the place is the
+  city and the country's name in the reader's language ("Amman, Jordan"), and the time zone its
+  name with its identifier. The allowance notice is an outlined warning; an empty list is
+  `MuiEmptyState` with the screen's sentences; a list that did not answer is `MuiReadFailureState`
+  (Try again re-renders the route, which repeats the read; a refusal is offered nothing). Add company
+  and Add branch are Material dialogs with `FormTextField` and `FormSelectField` (native, F6),
+  controlled from a draft; the status change is the shared `ReasonDialog`.
+- Edit company and Edit branch (`StructureDialogs.tsx`, new) — Edit company sends the legal name;
+  Edit branch sends only the fields the operator changed among the name, the city, the country and
+  the time zone, and a city or a country the operator emptied is sent as "remove it". A conflict
+  (`ERR-CON-001`, someone else changed the record first) is said in the dialog, the typed values
+  stay, and Save waits for **Load the latest version**, which re-reads the page; when the record's
+  version has moved, the dialog puts the latest saved values in front of the operator, says so, and
+  saves against the new version. Saving with nothing changed says so and sends nothing.
+- The dialog frame (`StructureDialog.tsx`, new) — named by its title, described by its sentence;
+  focus goes into it (on the first field) and returns to the button that opened it; Tab stays
+  inside. A click outside does nothing; Escape, Close and Cancel close at once when nothing is typed
+  and otherwise ask the shared question ("Discard your changes?"), keeping everything on Cancel.
+  While a write is in flight it cannot be dismissed. Under "reduce motion" there is no fade.
+- Workspace (`TenantForm.tsx`, on both routes) — already on `FormTextField` and `FormSelectField`;
+  Save and Try again are now Material's buttons.
+- Subscription and capacity (`CapacityPanel.tsx`) — each bar is Material's determinate
+  `LinearProgress`, named by the kind and the numbers.
+- Company and branch settings (`SettingsEditor.tsx`, shared with system settings, numbering rules,
+  taxes and currencies) — the scope, the setting, its kind and its value are the Material fields, the
+  sensitive mark `FormCheckboxField`, the stored settings Material's table, the read's failure the
+  shared state with Try again where it can help, and the wait for the read `MuiLoadingState`. The
+  kind is said in words ("Text", "Number", "Yes or no", "Structured value"); before, the select and
+  the table printed the stored type names. The props are unchanged, so the four other screens render
+  the migrated editor without a change of their own; their page frames move with ADM-5.
+- `/administration/languages` — a workspace read that did not answer is the shared state (a
+  refusal, an ended session, or an outage with Try again) instead of one line that said
+  "unavailable" for every failure.
+
+Preserved, each held by a case in `organization-structure.dom` (en and ar where marked) or
+`unsaved-navigation.dom` (en and ar):
+
+| Property                                                                                           | Case                                                                   |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Each control only with the code its operation declares (`org.company.manage`, `org.branch.manage`) | "offers Edit only with the code…", "offers no branch Edit…" (en, ar)   |
+| An edit sends the listed version as `If-Match`, and only what changed                              | "renames a company…", "sends only the branch fields that changed…"     |
+| A refusal on its field, the cursor there, nothing typed lost                                       | "refuses a blank legal name…", "puts a time zone the platform…"        |
+| A conflict holds Save until the latest version is loaded, then saves against the new version       | "says a conflict, keeps the typed name…" (en, ar)                      |
+| No published version: the dialog asks for the latest one and sends nothing                         | "asks for the latest version when the list published none…"            |
+| Typed work asks before Escape or Cancel discards it, and is declared to the shell                  | "asks before Escape or Cancel…", "declares typed work to the shell…"   |
+| Focus into the dialog and back to the opener                                                       | "renames a company…", "asks before Escape or Cancel…"                  |
+| Two presses inside one `act()` send once                                                           | edit, Add company, status change, workspace form, a setting (en, ar)   |
+| A list read that did not answer: the shared state, a retry only for the outage                     | "draws a list that could not be read…"                                 |
+| Country and time zone said as names                                                                | "names a branch's country and time zone…"                              |
+| A setting's kind in words; a typed setting is unsaved work; a failed settings read retries         | the settings-editor cases (en, ar); "leaving a typed setting" (en, ar) |
+
+Test changes forced by the new structure, the asserted behaviour unchanged: none. Every existing
+case of both suites passes as it stood; the new cases are added to the two existing files (no web
+test file added). In `unsaved-navigation.dom` the mocked client also answers `get`, which the
+settings editor reads; no existing assertion changed. In the authenticated browser tier,
+`administration.spec.ts` gains two read-only Arabic cases (Organisation and Languages, right to
+left, headings from the catalogue, no refusal in either language), because its loop reads the
+refusal sentence in English only.
+
+Deliberate behaviour changes:
+
+- Companies and branches can be edited (above).
+- Add company and Add branch gain a Cancel button, and Escape, Close and Cancel ask before
+  discarding typed values; a click outside no longer closes them.
+- The branch list names the country and the time zone instead of printing their codes.
+- A list or workspace read that did not answer offers Try again where it can help.
+- A setting's kind is said in words, and a typed setting asks before leaving the page.
+
+Known limitations and recorded gaps of this slice, one line each:
+
+- Recorded gap: a company's base currency is not offered for editing. The API accepts it, but
+  changing the currency a company's records are kept in is a money decision this slice does not
+  take.
+- Recorded gap: a company's registration numbers are not offered for editing. The list does not
+  publish them, and the `org.company.updated` audit detail names only the legal name and the base
+  currency, so an edit would be recorded without its change.
+- Recorded gap: a branch's address lines, region and postal code are not offered for editing, for
+  the same two reasons (not in the list; not in the `org.branch.updated` audit detail).
+- Recorded gap: `org.company-list` and `org.branch-list` stop at 500 rows (`ORG_REACH_LIMIT`) and
+  publish no "more exist" flag, so the screen cannot say a list was cut short.
+- "Load the latest version" replaces the typed values with the latest saved ones (said on screen);
+  the operator makes the change again if it is still needed.
+- The branch status change still reads the branch's version at confirmation, as before; it is not a
+  form the operator edits.
+- `Panel`, `Fact` and `ContractNotice` (layout only) still come from the administration
+  `ScreenStates` module, `DirectoryEmptyNotice` from the working-context module, and the result
+  banner is the shared `FormFeedback`.
+- The Languages screen still renders the whole workspace form (name, language and time zone), as
+  before.
+- Focus return and the reduced-motion fade are proven in jsdom only; the two Arabic browser cases
+  run only in the authenticated tier and were not run locally.
+- Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
+  W37 needs a database and was not run locally. They run in hosted CI.
+
+### The audit log with names, and the administration hub (`P1-32-PRE-OD-ADM6`)
+
+`/administration/audit-log` moved onto the shared wrappers, and its rows name people. Until now a
+row printed the actor's account identifier in the column headed "Who" (prerequisite 10), because
+`iam.audit_records` stores an `actor_id` and no name. The hub (`/administration`) gained the
+departments and employees entries, and every entry is now shown on exactly the codes its page
+needs.
+
+**Backend.** `iam.audit-event-list` (`GET /audit-events`) and `iam.audit-event-detail`
+(`GET /audit-events/{recordId}`), both `iam.audit.view`, publish two new fields on every record,
+both required and nullable on the published type (`NamedAuditRecord` in
+`apps/api/src/modules/iam/application/audit-view-service.ts`): `actorDisplayName`, and
+`subjectDisplayName` for a record whose `entityType` is `iam.user_account`. They are resolved in
+the same read through the module's own `IdentityDirectoryService` — one capability check and one
+tenant-scoped statement for the whole page, never one per row — and are `null` without
+`iam.user.read`, for a record with no actor, and for an id that is not this organisation's. The
+fields are additive: `actorId`, `actorKind` and `entityId` are unchanged. The operations' ids,
+paths, permissions, audit actions, rate-limit policies and the OpenAPI document are unchanged
+(the document publishes a generic object for both responses). No migration; the console's
+`platform.audit-search` is untouched. `tests/backend/iam-operations.test.ts` gains four cases:
+names with `iam.user.read`, `null` without it (identifiers kept), another tenant's account never
+named, and the detail read on the same terms.
+
+What moved to which wrapper on `/administration/audit-log`:
+
+- The list is `OperationalGrid` driven by `useServerTable` — the read is cursor-paged with no
+  total, so Previous and Next walk the server's cursor (G1–G9); the row action "Open" names the
+  action and the time it opens.
+- The two days are `DateField` (E1–E4), checked before a read: both whole, the last not before the
+  first, and no wider than the service takes, each refusal said on its box; a pair being edited
+  never reaches the read. The width is measured as the service's `resolveRange` measures it — the
+  instants the read sends, the first day's start to the last day's end on the clock in force, at
+  most 92 × 24 hours apart — so 92 calendar days that cross a daylight-saving fall back are refused
+  on the last day instead of failing as a refused read (`audit/range.ts`).
+- The screen opens on seven whole days with today the last (`openingWindow`; the route page's UTC
+  fallback likewise), where it used to open on eight.
+- Apply filters is held while a read is in flight, and a submit then makes no second read.
+- The criteria are `FormSelectField` (company and branch, native) and `FormTextField` (action,
+  record type, and the "Who" reference without `iam.user.read`); "Who" by name stays the
+  `EntityPicker` it became in ADM3. They still apply on submit only.
+- "Nothing on these days" and "nothing matches these filters" are two `MuiEmptyState` sentences,
+  the second with Clear filters; a refused, ended or failed read is the grid's own state.
+- One record opens in a Material drawer that reads `iam.audit-event-detail`, with
+  `MuiLoadingState` and `MuiReadFailureState` (a retry only where it can help); Tab stays inside,
+  Escape and Close close it.
+
+Names and clocks:
+
+- The action, the record type and each detail's field are named from the catalogue in English and
+  Arabic (`audit/labels.ts`): every identity, access and organisation action and record type the
+  service writes has a label of its own, a code from another part of the product reads "Another
+  change in inventory" or "A record in inventory", and a code from no known part reads "Another
+  recorded action" or "Another record". A code is printed only in the drawer, under "Action code,
+  for support", "Record type code, for support" or, for an unnamed detail field, "Code, for
+  support"; the correlation identifier is the "Support reference" column and drawer row.
+- "Who" is the actor's name. Where the read names nobody, the row says why instead of printing an
+  identifier: "Name not available" for an actor the session may not have named, "The system" or
+  "An automated service" for a record with no actor by design, "No person recorded" otherwise. A
+  session without `iam.user.read` is told that names appear only for accounts allowed to see the
+  list of users. A user-account record also names the account it is about.
+- Times are written on the working branch's clock when one branch with a known zone is in force,
+  and on UTC under "All my branches" — never the browser's — with the clock named above the table
+  and beside every time (`useWorkingDisplayZone`, `StockMoment`, `momentText` from the
+  inventory slice). The two days are that clock's whole days, and the route page now passes its
+  moment of opening, so a branch ahead of UTC opens on its own today rather than on the server's
+  UTC day.
+- The screen made no client-side name lookup before this slice (`usePersonNames` was never used
+  here), so there was no fan-out to remove; it makes none now.
+
+The hub (`/administration`): departments (`org.department.read`) and employees
+(`org.employee.read`) join "People and access", each also requiring `org.branch.read`, which both
+pages refuse without. Numbering rules, taxes, currencies and system settings take the sidebar's
+codes: `org.company.read`, or instead `org.branch.read` (numbering rules, taxes, system settings)
+or `org.tenant.read` (currencies); never `org.settings.manage` alone. The hub cases render those
+six pages for every subset of the codes they read and hold the hub to them: it never offers a page
+that would refuse, and with the entry's code or one of its alternatives held it offers the page
+exactly when the page draws something else.
+
+Preserved, each held by a case in `audit-log.dom.test.tsx` (which also holds the hub cases):
+
+- The route page refuses before it reads without `iam.audit.view`; the window, the criteria and
+  the branch target reach the adapter under the same names; a malformed reference is refused on its
+  box before any read; clearing returns to the unfiltered read; no export is offered; the company
+  and branch pair is rechecked by the adapter; one read's ceiling without a branch, two with one.
+- The audited read is still made only on arrival, on a change of days, and on submit.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render of the audit screen goes under `UiFoundationProvider`, as the locale layout mounts
+  it.
+- `tests/e2e/authenticated/audit-log-p1-31.spec.ts` types the two days into the pickers' spin
+  buttons instead of filling text boxes, and reads the grid (`role="grid"`, `gridcell`) instead of
+  a table. It is skipped without the P1-31 acceptance handoff and was not run locally.
+
+Deliberate behaviour changes:
+
+- Names instead of identifiers in the grid and the drawer; the record's own identifier is no longer
+  printed beside its type (the user-account subject is named instead), and "Copy it from a row" is
+  replaced by "Enter the account reference exactly as it was given to you", because no row prints a
+  reference any more.
+- Days and times on the working branch's clock, or UTC, instead of the browser's clock for the times
+  and UTC days for the window.
+- The hub's People and access card says "Who works here, who has an account, …", with the two new
+  entries.
+
+Known limitations and recorded gaps, one line each:
+
+- Recorded gap: the console's audit read (`platform.audit-search`) still shows a shortened actor
+  reference (prerequisite 10, console half).
+- A record about something other than a user account (a role, a grant, a company) names its type
+  only; resolving every entity type to a name is not part of this slice.
+- Recorded gap: the sidebar's departments and employees entries are gated on their own code only,
+  not also on `org.branch.read`; the hub is stricter than the sidebar for those two entries. The
+  numbering rules, taxes, currencies and system settings entries carry the sidebar's codes and
+  `orPermissions` (`P1-32-PRE-OD-ADM5`).
+- Recorded gap: the detail drawer imports Material's `Drawer` directly in the screen rather than
+  through a shared RootLco wrapper; no drawer wrapper exists in `components/` yet.
+- The range rule is unit logic (`audit/range.ts`, with UTC, fall-back and spring-forward cases on
+  America/New_York); one case types a too-wide last day into the picker under jsdom, and the
+  backend still refuses a range wider than 92 × 24 hours.
+- `tests/e2e/authenticated/shared-ux.spec.ts`: the shared table's region case measured the audit
+  log, which no longer draws a `table`, so it now measures the customer duplicate queue
+  (`/en/crm/customer-duplicates`), which is still drawn by `DataTable`, reads on arrival and draws
+  its one table even when empty. Its assertions are unchanged.
+- Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
+  they run in hosted CI. The web tier gains cases in an existing file (no web test file added or
+  removed): the hub cases live in `audit-log.dom.test.tsx`.
+
+### Numbering rules, taxes, currencies and system settings on Material UI (`P1-32-PRE-OD-ADM5`)
+
+`/administration/currencies`, `/administration/numbering-rules`, `/administration/taxes` and
+`/administration/system-settings` moved onto the shared Material wrappers, showing only what the
+existing operations support. No migration, route, operation, permission code or audit action was
+added, and nothing new is written. The reads are the ones that already existed, each made only for
+a holder of the code it declares: `org.reference-values-read` (`org.tenant.read`),
+`iam.company-settings-read` (`org.company.read`) and `iam.branch-settings-read` (`org.branch.read`).
+The writes are the existing `iam.company-settings-write` (`org.settings.manage`), on the
+Currencies and System settings screens, and `iam.branch-settings-write` (`org.settings.manage`), on
+System settings only.
+
+What each screen now shows:
+
+- Currencies (`SettingsBackedScreen.tsx` with `CurrencyCatalogue.tsx`, new) — the platform's
+  currency list, exactly as `org.reference-values-read` answered it: the code, the name in the
+  page's language and the decimal places (the register's minor unit), in the order of the read.
+  The register publishes one name per currency, so the name in the reader's language comes from the
+  ISO code through the runtime's currency names, and the registered name is shown where the runtime
+  has none. A read that did not answer is `MuiReadFailureState` (Try again for an outage only); an
+  empty list is `MuiEmptyState` with its own sentence. Below it, the company's enabled codes
+  (`currency.enabled_codes`), written through the company settings write: a value that is not a
+  list, a code that is not three capitals, a repeated code, or (when the list was read) a code the
+  platform does not hold is refused beside the value before anything is sent.
+- Numbering rules and Taxes (`SettingsBackedScreen.tsx`) — the settings the company and branch
+  settings reads hold under `numbering.` and `tax.`, each panel only for a holder of its read code,
+  and no form, even for a holder of `org.settings.manage`: nothing in the platform applies a
+  numbering or tax setting to a document, so an edit form would be a control for an operation that
+  does not exist. The notice names what is not available and says that it waits on a decision; the
+  decision's id (DOC01, ACC01) is kept in the code comments and in these records, not in the copy.
+- System settings (page frame) — the notice and a page the operator may not read are the shared
+  Material states; the editor stays scoped to the company and branch settings it serves.
+- All four — the notice is an outlined Material information alert (`MuiContractNotice`, announced as
+  a note, not an alert); a page the operator may read nothing of is `MuiRefusedState` and makes no
+  read.
+
+Carried from the `P1-32-PRE-OD-ADM1` review (`StructureDialogs.tsx`): "Load the latest version" now
+lasts one load. Its request used to be cleared only when the loaded version differed from the one
+seen, so a load that brought back the same version, or none, left it standing, and a later Try
+again that rendered a newer version replaced the typed draft. The request now ends when its refresh
+ends, whatever it brought, and the draft is replaced only when that refresh delivered a newer
+version. A load is in flight only once a render with the refresh pending has been seen, and what it
+brought is read on the first render after the pending state ends, so a newer version already on the
+page from an unrelated render cannot end the request on the click's own render and drop what the
+refresh brings. This rests on `router.refresh()` inside `startTransition` staying pending until the
+refreshed props are committed (the App Router's behaviour; the hook comment says so). If the pending
+state ended first, the load ends as "nothing newer": the draft is kept, "latest loaded" is not said
+(it is withdrawn when a load brings nothing newer), a save is refused as the ordinary conflict, and
+a second load brings the newer values — pinned as such.
+
+Navigation (`config/navigation.ts`) and the Administration hub offer each of these screens on
+exactly the codes its page shows something for, no longer on `org.settings.manage`: Numbering rules
+and Taxes on `org.company.read` or `org.branch.read`, Currencies on `org.company.read` or
+`org.tenant.read`. A navigation entry gains `orPermissions`, codes that each stand in for
+`permission` (a disjunction, beside the `alsoRequires` conjunction); `tests/navigation.test.ts`
+checks those codes against the catalogue. `scripts/ci/check-permission-parity.mjs` reads
+`permission` and `alsoRequires` only and was not changed in this slice, so it does not yet read
+`orPermissions`. The Settings parent entry stays on `org.tenant.read`, and a child never widens a
+hidden parent, so a session without `org.tenant.read` does not see these entries in the sidebar
+(recorded, not changed here); the hub lists them for it.
+
+The currency check sends the trimmed setting key, the key its rule is looked up by. It is the
+screen's check only: the company settings write (`iam.company-settings-write`) stores any
+well-formed value for `currency.enabled_codes` without validating it, and an empty list (`[]`, no
+enabled currency) is accepted by the screen and by the write alike. No rule is invented for either;
+both are recorded here as they are.
+
+Preserved and added, each held by a case in `organization-structure.dom`, in English and Arabic (the
+settings-screen cases are a new block of that file; no web test file is added):
+
+| Property                                                                                    | Case                                                                                                 |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| The currency list is the read's rows, in order, named in the page's language                | "lists exactly the currencies the read published…"                                                   |
+| No catalogue read without `org.tenant.read`; no settings panel without its read code        | "makes no catalogue read without the code…", "shows only the branch…"                                |
+| A page with nothing readable is refused and reads nothing                                   | "refuses the page…" (each screen)                                                                    |
+| A catalogue read that did not answer is the shared state; an empty list says so             | "draws a catalogue read that did not answer…", "says so when the platform…"                          |
+| Enabled codes written through the company settings write; bad values refused before sending | "writes the enabled codes…", "refuses … beside the value and sends nothing"                          |
+| Someone else's write first is a conflict, and the typed value stays                         | "says a conflict when someone else wrote first…"                                                     |
+| Numbering and taxes name the gap and its decision, show stored settings, and offer no form  | "names what is not available…", "shows the stored settings…"                                         |
+| System settings says platform settings are unreachable and keeps both editors               | "says platform settings are unreachable…"                                                            |
+| Load the latest version: same version or none keeps the draft, also after a later Try again | "keeps the typed draft when the latest load brings…" (two cases)                                     |
+| Load the latest version: a newer version puts the saved values back                         | "puts the saved values back when the latest load brings a newer version"                             |
+| The same, with the refresh resolving later: newer replaces, same version keeps and ends     | "…when a later-resolving load brings a newer version / the same version"                             |
+| A newer version already on the page does not end the load before its refresh delivers       | "waits for what the load brings when a newer version was already on…"                                |
+| The pending state ending before the props arrive needs a second load and claims nothing     | "needs a second load when the pending state ends before…"                                            |
+| The currency rule applies to a key typed with spaces, and the key is sent trimmed           | "is checked by its rule and sent trimmed"                                                            |
+| Numbering, Taxes and Currencies are offered on their read codes, sidebar and hub            | `navigation.test.ts` "…offered on the codes their pages read with"; "the administration hub offers…" |
+
+Test changes forced by the fix, the asserted behaviour unchanged: in `organization-structure.dom`,
+"says a conflict, keeps the typed name…" now delivers the newer version from inside the mocked
+refresh, as the router does, instead of re-rendering after it; every assertion is as it was. The
+two same-version and no-version cases fail against the previous guard. `p1-28-reception-media.test.ts`
+declares `numbering.gap.formats` (DOC01) and `taxes.gap.catalogue` (ACC01) as the fifth and sixth
+catalogue strings that defer to an Owner decision, in both languages; its pin is retitled from four
+to six. It matches the wording ("Owner decision", "بانتظار قرار"), not the ids, so removing the ids
+from the copy leaves it as it was.
+
+Known limitations and recorded gaps of this slice, one line each:
+
+- Recorded gap: numbering formats — `sal.invoice_numbering_configs` and `shared.number_sequences`
+  have no route (`P1-26-F-003`, open), so no screen views or changes how numbers are formed. Number
+  sequences exist for invoices, quotations and receipts (set up per branch when it is created); a
+  credit note's own number waits on DOC01 (ADR-023 D10).
+- Recorded gap: tax classes and rates — `org.tax_classes` and `org.tax_rates` have no read or write
+  (`P1-26-F-004`, open); tax policy waits on ACC01.
+- Recorded gap: platform settings — `shared.system_settings` has no route (`P1-26-F-007`, open).
+- Recorded gap: which currencies the platform holds is the Owner's decision (OIR-04); the screen
+  shows the list and adds none. No base currency is chosen and no exchange rate is held.
+- The numbering and tax settings already stored stay visible and remain writable from System
+  settings, the general editor; nothing applies them.
+- The enabled codes are still typed as a list; a pick-from-the-list control is not part of this
+  slice.
+- The server write does not validate `currency.enabled_codes`, and `[]` is accepted; see above.
+- Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds.
+  They run in hosted CI.

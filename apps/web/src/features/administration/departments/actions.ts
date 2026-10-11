@@ -28,16 +28,23 @@ const createSchema = z.object({
   name: z.string().trim().min(1, 'field.required').max(200, 'field.tooLong'),
 });
 
-export async function createDepartmentAction(
-  previous: ActionState,
-  form: FormData
-): Promise<ActionState> {
-  const attempt = (previous.attempt ?? 0) + 1;
+/**
+ * Creates a department. The screen checks the same rules first and marks each
+ * field; this check is the one that decides, and a refusal comes back keyed by
+ * the same field names.
+ */
+export async function createDepartment(input: {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly departmentCode: string;
+  readonly name: string;
+}): Promise<ActionState> {
+  const attempt = 1;
   const parsed = createSchema.safeParse({
-    companyId: String(form.get('companyId') ?? ''),
-    branchId: String(form.get('branchId') ?? ''),
-    departmentCode: String(form.get('departmentCode') ?? '').trim(),
-    name: String(form.get('name') ?? ''),
+    companyId: input.companyId,
+    branchId: input.branchId,
+    departmentCode: input.departmentCode.trim(),
+    name: input.name,
   });
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 

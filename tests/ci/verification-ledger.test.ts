@@ -285,6 +285,200 @@ const gitHistory: History = {
   },
 };
 
+/** git for the history reads below: stdout as bytes, an optional stdin. */
+function git(
+  args: string[],
+  input?: string,
+  maxBuffer = 64 * 1024 * 1024,
+  env?: NodeJS.ProcessEnv
+): Buffer {
+  return execFileSync('git', args, { cwd: ROOT, input, maxBuffer, env });
+}
+
+/**
+ * The remotes this checkout may fetch missing objects from — none in an
+ * ordinary clone, which holds every object it names.
+ */
+function promisorRemotes(): string[] {
+  let listed: string;
+  try {
+    listed = git([
+      'config',
+      '--get-regexp',
+      '^(remote\\..+\\.promisor|extensions\\.partialclone)$',
+    ]).toString('utf8');
+  } catch (error) {
+    // Exit 1 is git's "no such key", which is the ordinary clone.
+    if ((error as { status?: number }).status === 1) return [];
+    throw error;
+  }
+  const names = new Set<string>();
+  for (const line of listed.split('\n')) {
+    const remote = /^remote\.(.+)\.promisor (true|yes|on|1)$/i.exec(line)?.[1];
+    const extension = /^extensions\.partialclone (.+)$/.exec(line)?.[1];
+    if (remote) names.add(remote);
+    if (extension) names.add(extension);
+  }
+  return [...names];
+}
+
+/**
+ * In a partial clone, bring every blob the read below needs and the checkout
+ * does not hold in ONE fetch, before anything reads them.
+ *
+ * The hosted checkouts are such a clone: the bootstrap checkout fetches with
+ * `--filter=blob:none`, which registers the remote as a promisor, and the
+ * full-history fetch that follows inherits that filter — so history arrives
+ * as commits and trees, and git fetches each historical blob from the network
+ * the moment something reads it, one fetch per blob. That, not the number of
+ * local processes, is what made this read cost seconds per run and grow with
+ * every pull request that touched the file.
+ *
+ * An ordinary clone has no promisor remote: this returns before resolving
+ * anything and no network is touched. A failure here is never the verdict:
+ * it leaves the blobs missing, the read below asks git for them as it always
+ * did, and a blob that cannot be had fails there, by name.
+ */
+function fetchMissingBlobsAtOnce(specs: string[]): void {
+  const remotes = promisorRemotes();
+  if (remotes.length === 0) return;
+  try {
+    // Trees are held locally, so naming the blobs fetches nothing. In slices,
+    // because the names travel as arguments and a command line is bounded.
+    const blobs = new Set<string>();
+    for (let i = 0; i < specs.length; i += 200) {
+      const names = git(['rev-parse', ...specs.slice(i, i + 200)]).toString('utf8');
+      for (const blob of names.split('\n').filter(Boolean)) blobs.add(blob);
+    }
+    // Asked with lazy fetching off, git reports an absent blob as missing
+    // instead of going to fetch it.
+    const missing = git(['cat-file', '--batch-check'], `${[...blobs].join('\n')}\n`, undefined, {
+      ...process.env,
+      GIT_NO_LAZY_FETCH: '1',
+    })
+      .toString('utf8')
+      .split('\n')
+      .filter((line) => line.endsWith(' missing'))
+      .map((line) => line.slice(0, -' missing'.length));
+    if (missing.length === 0) return;
+    for (const remote of remotes) {
+      try {
+        // The request git itself makes for a missing object, with every
+        // missing blob in it. No `--filter`: the remote's own is inherited,
+        // so nothing is written to the configuration.
+        git(
+          [
+            '-c',
+            'fetch.negotiationAlgorithm=noop',
+            'fetch',
+            remote,
+            '--no-tags',
+            '--no-write-fetch-head',
+            '--recurse-submodules=no',
+            '--stdin',
+          ],
+          `${missing.join('\n')}\n`
+        );
+        return;
+      } catch {
+        // git has already said why on stderr; the next remote may hold them.
+      }
+    }
+  } catch {
+    // Left to the read below, which fetches lazily and fails if it cannot.
+  }
+}
+
+/**
+ * Every committed version of a file, oldest first: one entry per commit that
+ * `git log -- <path>` lists, each resolved as `<commit>:<path>` — the commits
+ * and the object expression a `git show` per commit would use.
+ *
+ * In an ordinary clone that is four git processes whatever the history holds:
+ * the log, the promisor lookup, one `cat-file --batch-check` that resolves
+ * every commit to its blob, and one `cat-file --batch` that reads each
+ * DISTINCT blob once. A commit whose tree does not hold the file as a blob is
+ * an error here, as it was for `git show`.
+ */
+function committedVersions(path: string): string[] {
+  const commits = git(['log', '--format=%H', '--', path])
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean)
+    .reverse();
+  if (commits.length === 0) return [];
+
+  const specs = commits.map((sha) => `${sha}:${path}`);
+  fetchMissingBlobsAtOnce(specs);
+  const resolved = git(['cat-file', '--batch-check'], `${specs.join('\n')}\n`)
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean);
+  if (resolved.length !== specs.length) {
+    throw new Error(`git resolved ${resolved.length} of ${specs.length} versions of ${path}`);
+  }
+  const sizeByBlob = new Map<string, number>();
+  const blobs = resolved.map((line, i) => {
+    const match = /^([0-9a-f]{40,64}) blob (\d+)$/.exec(line);
+    if (!match) throw new Error(`git holds no blob for ${specs[i]}: ${line}`);
+    const [, blob = '', size = ''] = match;
+    sizeByBlob.set(blob, Number.parseInt(size, 10));
+    return blob;
+  });
+
+  // The sizes are known, so the buffer is sized to what will be read rather
+  // than to a ceiling the file's history would one day outgrow.
+  const distinct = [...sizeByBlob.keys()];
+  const expectedBytes = [...sizeByBlob.values()].reduce((sum, size) => sum + size, 0);
+  const out = git(
+    ['cat-file', '--batch'],
+    `${distinct.join('\n')}\n`,
+    expectedBytes + distinct.length * 256
+  );
+  const textByBlob = new Map<string, string>();
+  let offset = 0;
+  for (const blob of distinct) {
+    const size = sizeByBlob.get(blob) ?? 0;
+    const headerEnd = out.indexOf(0x0a, offset);
+    const header = headerEnd === -1 ? '' : out.subarray(offset, headerEnd).toString('utf8');
+    if (header !== `${blob} blob ${size}`) {
+      throw new Error(`git answered "${header}" where blob ${blob} of ${path} was asked for`);
+    }
+    const start = headerEnd + 1;
+    textByBlob.set(blob, out.subarray(start, start + size).toString('utf8'));
+    offset = start + size + 1;
+  }
+  // Nothing unread, nothing invented: the stream ends where the last blob
+  // does, and every commit gets the text of its own blob.
+  if (offset !== out.length) {
+    throw new Error(
+      `git wrote ${out.length} bytes for ${distinct.length} blob(s) of ${path}, ` +
+        `of which ${offset} are accounted for`
+    );
+  }
+  const texts = blobs.map((blob) => {
+    const text = textByBlob.get(blob);
+    if (text === undefined) throw new Error(`no text was read for blob ${blob} of ${path}`);
+    return text;
+  });
+  if (texts.length !== commits.length) {
+    throw new Error(`${texts.length} version(s) were read for ${commits.length} commit(s)`);
+  }
+  return texts;
+}
+
+/** What the checkout holds of history, for a guard that has to say so. */
+function describeHistory(): string {
+  const answer = (...args: string[]) => git(args).toString('utf8').trim();
+  const commits = answer('rev-list', '--count', 'HEAD');
+  return answer('rev-parse', '--is-shallow-repository') === 'true'
+    ? `This checkout is shallow (${commits} commit(s) reachable from HEAD), so the history this ` +
+        'case reads was not fetched. It needs the full history: fetch-depth 0, or ' +
+        '`git fetch --unshallow`.'
+    : `This checkout is not shallow (${commits} commit(s) reachable from HEAD), so the history ` +
+        'itself holds no earlier version.';
+}
+
 describe('the TDP-2026-10 verification ledger', () => {
   const ledger = tableUnder(source, 'Verification ledger');
   const register = tableUnder(source, 'Hosted checkpoint register');
@@ -316,15 +510,9 @@ describe('the TDP-2026-10 verification ledger', () => {
      * may only gain a value in a blank cell. This covers the pull request's base
      * and everything before it, so a rewrite cannot slip in across two commits.
      */
-    const git = (...args: string[]) =>
-      execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    const versions = git('log', '--format=%H', '--', LEDGER_FILE)
-      .split('\n')
-      .filter(Boolean)
-      .reverse()
-      .map((sha) => git('show', `${sha}:${LEDGER_FILE}`))
-      .filter((text) => text.includes('### Hosted checkpoint register'));
-    versions.push(source);
+    const committed = committedVersions(LEDGER_FILE);
+    const earlier = committed.filter((text) => text.includes('### Hosted checkpoint register'));
+    const versions = [...earlier, source];
     const problems: string[] = [];
     for (let i = 1; i < versions.length; i += 1) {
       problems.push(
@@ -334,6 +522,25 @@ describe('the TDP-2026-10 verification ledger', () => {
         )
       );
     }
+    /*
+     * The loop above reports no problem when it compared nothing, which would
+     * read as a kept promise. A depth-1 checkout is that case: its one
+     * committed version IS the working copy, so the only pair compared is a
+     * file with itself. The guard therefore counts the earlier versions that
+     * differ from the working copy, line endings aside, and fails when there
+     * is none — naming what the checkout holds of history rather than passing.
+     */
+    const lf = (text: string) => text.replace(/\r\n/g, '\n');
+    const workingCopy = lf(source);
+    const compared = earlier.filter((text) => lf(text) !== workingCopy);
+    expect(
+      compared.length,
+      compared.length > 0
+        ? ''
+        : `git listed ${committed.length} committed version(s) of ${LEDGER_FILE}; ` +
+            `${earlier.length} hold the register and none of those differs from the working ` +
+            `copy, so nothing earlier was compared. ${describeHistory()}`
+    ).toBeGreaterThan(0);
     expect(versions.length, 'the working copy holds no register').toBeGreaterThanOrEqual(1);
     expect(problems).toEqual([]);
   });

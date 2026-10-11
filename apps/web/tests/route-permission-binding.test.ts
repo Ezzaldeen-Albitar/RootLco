@@ -748,6 +748,16 @@ describe('organisation administration routes grant each control from its OWN per
       permission: ADMIN.grantManage,
       others: [ADMIN.userManage, ADMIN.roleManage],
     },
+    {
+      // The account's own details (`iam.user-update`, P1-32-PRE-OD-ADM3).
+      name: 'user access, edit details',
+      page: UserAccessPage,
+      params: { userId: USER_ID },
+      base: [ADMIN.userRead, ADMIN.roleRead],
+      prop: 'canManageUser',
+      permission: ADMIN.userManage,
+      others: [ADMIN.grantManage, ADMIN.roleManage, ADMIN.sessionViewAll],
+    },
   ];
 
   for (const entry of CASES) {

@@ -58,14 +58,18 @@ export function hasPermission(
 /**
  * Whether an item should be visible. Children do not widen a hidden parent.
  *
- * `permission` and every code in `alsoRequires` must be held: a conjunction,
- * so an entry is never offered to a caller its page can only refuse.
+ * `permission` — or any one of `orPermissions`, which each stand in for it —
+ * and every code in `alsoRequires` must be held: so an entry is never offered
+ * to a caller its page can only refuse.
  */
 export function isVisible(
   capabilities: ActorCapabilities | null | undefined,
   item: NavigationItem
 ): boolean {
-  if (!hasPermission(capabilities, item.permission)) return false;
+  const entitled =
+    hasPermission(capabilities, item.permission) ||
+    (item.orPermissions ?? []).some((code) => hasPermission(capabilities, code));
+  if (!entitled) return false;
   return (item.alsoRequires ?? []).every((code) => hasPermission(capabilities, code));
 }
 
