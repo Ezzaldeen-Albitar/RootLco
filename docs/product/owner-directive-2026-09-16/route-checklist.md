@@ -6311,11 +6311,11 @@ Names and clocks:
 
 The hub (`/administration`): departments (`org.department.read`) and employees
 (`org.employee.read`) join "People and access", each also requiring `org.branch.read`, which both
-pages refuse without. Numbering rules, taxes and currencies, on `org.settings.manage`, also require
-`org.company.read`, which their shared settings-backed screen refuses without; system settings
-requires `org.company.read` or `org.branch.read`, since its page refuses only without both. The hub
-cases render those six pages for every subset of the codes they read and hold the hub to them: it
-never offers a page that would refuse, and with the entry's own code held it offers the page
+pages refuse without. Numbering rules, taxes, currencies and system settings take the sidebar's
+codes: `org.company.read`, or instead `org.branch.read` (numbering rules, taxes, system settings)
+or `org.tenant.read` (currencies); never `org.settings.manage` alone. The hub cases render those
+six pages for every subset of the codes they read and hold the hub to them: it never offers a page
+that would refuse, and with the entry's code or one of its alternatives held it offers the page
 exactly when the page draws something else.
 
 Preserved, each held by a case in `audit-log.dom.test.tsx` (which also holds the hub cases):

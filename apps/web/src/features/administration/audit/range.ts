@@ -39,8 +39,7 @@ export function rangeProblem(range: DayRange, zone: string): RangeProblem | null
 
 /**
  * The window the screen opens on: `DEFAULT_WINDOW_DAYS` whole days on `zone`'s
- * clock, ending with the day it is there at `openedAt`. Today counts as one of
- * them, so the first day is `DEFAULT_WINDOW_DAYS - 1` days earlier.
+ * clock, ending with the day it is there at `openedAt`.
  */
 export function openingWindow(zone: string, openedAt: Date): DayRange {
   const today = dayIn(zone, openedAt);

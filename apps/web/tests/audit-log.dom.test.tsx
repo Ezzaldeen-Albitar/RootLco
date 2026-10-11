@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
@@ -311,13 +312,18 @@ describe('one read at a time from the filter form (P1-32-PRE-OD-ADM6)', () => {
     });
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalledTimes(1));
     expect(applyButton).toBeDisabled();
-    // Enter in a box does not submit around the held button either.
+    // Enter in a box does not submit around the held button either: a changed
+    // criterion would otherwise be applied, and read, at once.
+    fireEvent.change(within(filterForm()).getByLabelText(labelled('audit.filter.action')), {
+      target: { value: 'iam.audit.viewed' },
+    });
     fireEvent.submit(filterForm());
     expect(listAuditEvents).toHaveBeenCalledTimes(1);
     await act(async () => {
       first.release();
     });
     await waitFor(() => expect(applyButton).toBeEnabled());
+    expect(listAuditEvents).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1067,8 +1073,10 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
   });
 
   it('names only codes the service writes, under the record type it writes them with', () => {
+    // Located from this file, not from the directory the run started in.
+    const here = dirname(fileURLToPath(import.meta.url));
     const catalogue = readFileSync(
-      join(process.cwd(), '..', 'api', 'src', 'server', 'auth', 'audit-actions.ts'),
+      join(here, '..', '..', 'api', 'src', 'server', 'auth', 'audit-actions.ts'),
       'utf8'
     );
     const written = new Map<string, string>();
@@ -1229,27 +1237,17 @@ describe('paging, empty and refused reads on the grid (P1-32-PRE-OD-ADM6)', () =
 });
 
 /**
- * Codes a page refuses without, beyond its navigation entry's own — read from
- * the pages themselves: departments and employees list one branch's records and
- * refuse without the branch read; numbering rules, taxes and currencies are the
- * one settings-backed screen, which refuses without the company settings read.
+ * Codes a page refuses without — ALL of them — beyond what its navigation entry
+ * already asks for, read from the pages themselves: departments and employees
+ * list one branch's records and refuse without the branch read. The settings
+ * pages need no entry here: each needs any one of its entry's `permission` and
+ * `orPermissions`, which the navigation entry already states.
  * `the administration hub never offers a page that refuses` below renders those
  * pages, so an entry missing here or in the hub fails against the page itself.
  */
 const PAGE_ALSO_REQUIRES: Record<string, readonly string[]> = {
   '/administration/departments': ['org.branch.read'],
   '/administration/employees': ['org.branch.read'],
-  '/administration/numbering-rules': ['org.company.read'],
-  '/administration/taxes': ['org.company.read'],
-  '/administration/currencies': ['org.company.read'],
-};
-
-/**
- * Codes of which a page needs at least one: system settings draws the company
- * panel, the branch panel, or both, and refuses only without either read.
- */
-const PAGE_REQUIRES_ANY_OF: Record<string, readonly string[]> = {
-  '/administration/system-settings': ['org.company.read', 'org.branch.read'],
 };
 
 /** The route pages whose refusals the hub is checked against, rendered for real. */
@@ -1311,10 +1309,15 @@ describe('the administration hub: departments and employees (P1-32-PRE-OD-ADM6)'
   });
 
   it('hides each without its own code, and both without the branch read their pages refuse without', async () => {
-    expect(await hubHrefs(['org.employee.read', 'org.branch.read'])).toEqual([
+    // The branch read also opens the settings pages; only these two are asked about.
+    const people = async (permissions: readonly string[]) =>
+      (await hubHrefs(permissions)).filter(
+        (href) => href === '/administration/departments' || href === '/administration/employees'
+      );
+    expect(await people(['org.employee.read', 'org.branch.read'])).toEqual([
       '/administration/employees',
     ]);
-    expect(await hubHrefs(['org.department.read', 'org.branch.read'])).toEqual([
+    expect(await people(['org.department.read', 'org.branch.read'])).toEqual([
       '/administration/departments',
     ]);
     expect(await hubHrefs(['org.department.read', 'org.employee.read'])).toEqual([]);
@@ -1344,43 +1347,52 @@ describe('the administration hub: every entry is gated as its route is (P1-32-PR
     for (const href of offered) {
       const item = navigation.find((entry) => entry.href === href);
       expect(item, `${href} has a navigation entry`).toBeDefined();
-      const code = item?.permission as string;
+      // Any one of these opens the entry (the sidebar's `permission` or an
+      // `orPermissions` code); every one of `allOf` is needed besides.
+      const anyOf = [item?.permission as string, ...(item?.orPermissions ?? [])];
       const allOf = [...(item?.alsoRequires ?? []), ...(PAGE_ALSO_REQUIRES[href] ?? [])];
-      const anyOf = PAGE_REQUIRES_ANY_OF[href] ?? [];
-      const minimal = [code, ...allOf, ...anyOf.slice(0, 1)];
-      expect(await hubHrefs(minimal), `${href} is shown on ${minimal.join(', ')}`).toContain(href);
       for (const alternative of anyOf) {
-        const held = [code, ...allOf, alternative];
+        const held = [alternative, ...allOf];
         expect(await hubHrefs(held), `${href} is shown on ${held.join(', ')}`).toContain(href);
       }
-      for (const needed of [code, ...allOf]) {
+      for (const needed of allOf) {
         expect(
           await hubHrefs(all.filter((held) => held !== needed)),
           `${href} is hidden without ${needed}`
         ).not.toContain(href);
       }
-      if (anyOf.length > 0) {
-        expect(
-          await hubHrefs(all.filter((held) => !anyOf.includes(held))),
-          `${href} is hidden without any of ${anyOf.join(', ')}`
-        ).not.toContain(href);
+      expect(
+        await hubHrefs(all.filter((held) => !anyOf.includes(held))),
+        `${href} is hidden without any of ${anyOf.join(', ')}`
+      ).not.toContain(href);
+      if (anyOf.length > 1) {
+        for (const missing of anyOf) {
+          expect(
+            await hubHrefs(all.filter((held) => held !== missing)),
+            `${href} is still shown without ${missing} alone`
+          ).toContain(href);
+        }
       }
     }
   });
 
-  it('hides numbering rules, taxes and currencies without the company read, and system settings without company or branch read', async () => {
-    const settings = [
+  it('offers the settings pages on the reads they show, never on settings management alone', async () => {
+    expect(await hubHrefs(['org.settings.manage'])).toEqual([]);
+    expect(await hubHrefs(['org.company.read'])).toEqual([
       '/administration/numbering-rules',
       '/administration/taxes',
       '/administration/currencies',
-    ];
-    expect(await hubHrefs(['org.settings.manage'])).toEqual([]);
-    expect(await hubHrefs(['org.settings.manage', 'org.company.read'])).toEqual([
-      ...settings,
       '/administration/system-settings',
     ]);
-    expect(await hubHrefs(['org.settings.manage', 'org.branch.read'])).toEqual([
+    expect(await hubHrefs(['org.branch.read'])).toEqual([
+      '/administration/numbering-rules',
+      '/administration/taxes',
       '/administration/system-settings',
+    ]);
+    expect(await hubHrefs(['org.tenant.read'])).toEqual([
+      '/administration/organization',
+      '/administration/currencies',
+      '/administration/languages',
     ]);
   });
 });
@@ -1388,8 +1400,9 @@ describe('the administration hub: every entry is gated as its route is (P1-32-PR
 /**
  * The hub against the pages themselves: every subset of the codes a gated page
  * reads is rendered twice — the page, and the hub — and the hub never offers a
- * page that would draw a refusal; with the entry's own navigation code held, it
- * offers the page exactly when the page draws something else.
+ * page that would draw a refusal; with the entry's navigation code or one of its
+ * `orPermissions` held, it offers the page exactly when the page draws something
+ * else.
  */
 describe('the administration hub never offers a page that refuses (P1-32-PRE-OD-ADM6)', () => {
   const navigation = flattenNavigation();
@@ -1420,9 +1433,11 @@ describe('the administration hub never offers a page that refuses (P1-32-PRE-OD-
     const item = navigation.find((entry) => entry.href === href);
     expect(item, `${href} has a navigation entry`).toBeDefined();
     const code = item?.permission as string;
+    const opensOn = [code, ...(item?.orPermissions ?? [])];
     const read = [
       'org.company.read',
       'org.branch.read',
+      'org.tenant.read',
       'org.department.read',
       'org.employee.read',
     ];
@@ -1431,7 +1446,7 @@ describe('the administration hub never offers a page that refuses (P1-32-PRE-OD-
       const refused = await pageRefuses(href, held);
       const offered = (await hubHrefs(held)).includes(href);
       if (offered) expect(refused, `${href} offered on [${held.join(', ')}] refuses`).toBe(false);
-      if (held.includes(code)) {
+      if (held.some((other) => opensOn.includes(other))) {
         expect(offered, `${href} on [${held.join(', ')}] matches its page`).toBe(!refused);
       }
     }

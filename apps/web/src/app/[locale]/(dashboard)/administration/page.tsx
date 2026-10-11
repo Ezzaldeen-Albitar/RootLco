@@ -18,22 +18,24 @@ import { pageMetadata } from '@/lib/page-metadata';
  * no operation that returns those numbers, and a screen full of plausible zeros
  * reads as a working product that happens to be empty.
  *
- * Each card is shown only when the actor holds the permission its screen needs —
- * or, for a screen that shows something to any one of several, one of them —
- * the same rule the sidebar uses, and for the same reason. An entry an operator
- * cannot open is a door with no handle.
+ * Each card is shown only when the actor holds what its screen needs, so an
+ * entry an operator cannot open is never offered: a door with no handle.
  *
  * ## Every code its page asks for (`P1-32-PRE-OD-ADM6`)
  *
- * `permission` is the navigation entry's own code (`config/navigation.ts`), so
- * the hub and the sidebar offer the same screens. Where the page refuses
- * without a further code as well, that code is in `alsoRequires` — all of them,
- * never "any of" — so an entry is shown exactly when its page would draw
- * something other than a refusal. The hub cases in
- * `tests/audit-log.dom.test.tsx` hold both halves.
+ * `permission` and `orPermissions` are taken from the entry's navigation item
+ * (`config/navigation.ts`). Each `orPermissions` code stands in for
+ * `permission`: holding any one of them is enough. `alsoRequires` is all-of:
+ * every code in it is needed besides. An entry may ask for more than its
+ * navigation item where its page refuses without a further code (departments
+ * and employees list one branch's records and need the branch read), so the hub
+ * is not claimed to match the sidebar entry for entry. The hub cases in
+ * `tests/audit-log.dom.test.tsx` render the gated pages and hold the hub to
+ * what they draw.
  *
- * No technician roster entry: no `/technicians` roster route exists, only the
- * technician's own workspace (`/technicians/me`), which is not administration.
+ * No technician roster entry: technicians sit in the sidebar outside
+ * `/administration`, where the entry opens the technician's own workspace
+ * (`/technicians/me`); no roster page exists yet (`config/navigation.ts`).
  */
 
 interface Entry {
