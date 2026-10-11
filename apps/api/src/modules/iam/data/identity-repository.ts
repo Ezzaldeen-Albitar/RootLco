@@ -118,24 +118,32 @@ export class IdentityRepository extends Repository {
    * employee record is current" rather than "who did this" — going wrong for
    * exactly the historical rows a ledger exists to preserve.
    *
-   * A soft-deleted account still resolves. The alternative is that every record
-   * written by somebody who has since left becomes anonymous, which is the
-   * opposite of what an audit trail is for.
+   * A soft-deleted account still resolves by default. The alternative is that
+   * every record written by somebody who has since left becomes anonymous,
+   * which is the opposite of what an audit trail is for.
+   *
+   * `listedOnly` is for a screen that names a CURRENT subject rather than a
+   * past actor — an approval limit's person (`P1-32-PRE-OD-ADM4`). It applies
+   * the user list's own visibility (`iam.user-list`: `deleted_at IS NULL`, any
+   * status, archived included), so such a screen never names an account the
+   * user list would not show.
    */
   async findDisplayIdentities(
     db: DbHandle,
-    userIds: readonly string[]
+    userIds: readonly string[],
+    options: { readonly listedOnly?: boolean | undefined } = {}
   ): Promise<ReadonlyMap<string, UserDisplayIdentity>> {
     const unique = [...new Set(userIds)];
     // No ids means no statement. Sending an empty array would be a round trip
     // that can only return nothing.
     if (unique.length === 0) return new Map();
 
+    const listed = options.listedOnly === true ? ' AND deleted_at IS NULL' : '';
     const result = await this.run<{ id: string; display_name: string }>(
       db,
       `SELECT id, display_name
          FROM iam.user_accounts
-        WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[])${listed}`,
       [db.context.principal.tenantId, unique]
     );
 
