@@ -20,7 +20,10 @@
  * without erroring and shows nothing, which is the worst available failure.
  */
 
-/** `AuditRecordRow` in `apps/api/src/modules/iam/data/audit-repository.ts`. */
+/**
+ * `NamedAuditRecord` in `apps/api/src/modules/iam/application/audit-view-service.ts`:
+ * `AuditRecordRow` from the audit repository, with its people named by the read.
+ */
 export interface AuditRow {
   readonly id: string;
   readonly seq: string;
@@ -34,6 +37,18 @@ export interface AuditRow {
   readonly correlationId: string | null;
   readonly requestRef: string | null;
   readonly occurredAt: string;
+  /**
+   * The actor's display name, resolved by the read (`P1-32-PRE-OD-ADM6`).
+   * `null` when the record has no actor, when the session does not hold
+   * `iam.user.read`, or when the account is not this organisation's.
+   */
+  readonly actorDisplayName: string | null;
+  /**
+   * The name of the account a user-account record (`entityType`
+   * `iam.user_account`) is about, on the same terms; `null` for every other
+   * record.
+   */
+  readonly subjectDisplayName: string | null;
 }
 
 /** `AuditDetailRow`, likewise. Masked server-side before it is published. */

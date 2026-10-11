@@ -67,15 +67,27 @@ export interface ReferenceValues {
 
 // --- organisation structure ----------------------------------------------------
 
-/** A legal company as `org.company-list` publishes it. */
+/**
+ * A legal company as `org.company-list` publishes it.
+ *
+ * `recordVersion` is what `org.company-update` needs as `If-Match`; the list
+ * publishes it since P1-32-PRE-OD-ADM1. It is optional here because the screens
+ * that only NAME companies (departments, employees, a user's access) never
+ * send it, and an edit without it asks for the latest version instead of
+ * guessing one.
+ */
 export interface CompanyView {
   readonly id: string;
   readonly companyCode: string;
   readonly legalName: string;
   readonly status: string;
+  readonly recordVersion?: number;
 }
 
-/** A branch as `org.branch-list` publishes it. */
+/**
+ * A branch as `org.branch-list` publishes it, with the version
+ * `org.branch-update` needs as `If-Match` (optional for the same reason).
+ */
 export interface BranchView {
   readonly id: string;
   readonly companyId: string;
@@ -85,6 +97,7 @@ export interface BranchView {
   readonly countryCode: string | null;
   readonly timezoneName: string;
   readonly status: string;
+  readonly recordVersion?: number;
 }
 
 /** One allowance. `limit` is null when the plan declares no ceiling. */

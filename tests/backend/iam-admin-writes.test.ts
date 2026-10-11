@@ -478,6 +478,35 @@ describe('iam.user-update', () => {
     ).toBe(auditBefore + 1);
   });
 
+  /*
+   * P1-32-PRE-OD-ADM3 gives this operation its first web caller ("Edit details"
+   * on a person's access page). The record it writes must still say who made
+   * the change and whose account it was, whichever field the screen sent.
+   */
+  it('records who changed the account and whose account it is', async () => {
+    const version = await currentUserVersion(U_TARGET);
+    await withTransaction(asAdmin(), (db) =>
+      users.updateProfile(db, U_TARGET, version, { displayName: 'Renamed Target Again' })
+    );
+    const latest = await admin.query<{
+      actor_id: string | null;
+      actor_kind: string;
+      entity_id: string | null;
+      tenant_id: string;
+    }>(
+      `SELECT actor_id, actor_kind, entity_id, tenant_id FROM iam.audit_records
+        WHERE action = 'iam.user.updated' AND entity_id = $1
+        ORDER BY seq DESC LIMIT 1`,
+      [U_TARGET]
+    );
+    expect(latest.rows[0]).toEqual({
+      actor_id: U_WADMIN,
+      actor_kind: 'user',
+      entity_id: U_TARGET,
+      tenant_id: TENANT_A,
+    });
+  });
+
   it('denial: a principal without iam.user.manage cannot update a profile', async () => {
     const version = await currentUserVersion(U_TARGET);
     const error = await withTransaction(asUnpriv(), (db) =>

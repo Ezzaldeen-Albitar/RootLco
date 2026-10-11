@@ -40,6 +40,7 @@ import { randomUUID } from 'node:crypto';
 import {
   COMPANY_A1,
   TENANT_A,
+  TENANT_B,
   USER_A,
   adminPool,
   cleanBackendFixtures,
@@ -54,6 +55,7 @@ import { withTransaction } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
 import { AccessAdministrationService } from '@/modules/iam/application/access-administration-service';
 import { AuthorizationRepository } from '@/modules/iam/data/authorization-repository';
+import { IdentityDirectoryService } from '@/modules/iam/application/identity-directory-service';
 import { IdentityRepository } from '@/modules/iam/data/identity-repository';
 import { OrganizationRepository } from '@/modules/iam/data/organization-repository';
 import { DelegationPolicy } from '@/modules/iam/domain/delegation-policy';
@@ -575,5 +577,289 @@ describe('approval limits', () => {
     );
     expect(error).toBeInstanceOf(AppFailure);
     expect((error as AppFailure).code).toBe('ERR-VAL-001');
+  });
+});
+
+/*
+ * `P1-32-PRE-OD-ADM4` — route checklist prerequisite 9. The approval-limit list
+ * names the person and the role behind each limit, and publishes each name only
+ * to a caller holding the code that reads it: `iam.user.read` for a person,
+ * `iam.role.read` for a role. Without them the names are `null` — never a
+ * substitute — and the references are published exactly as before.
+ */
+describe('listApprovalLimits — names are published only with the codes that read them', () => {
+  const U_READER = 'a0000000-0000-4000-8000-0000000ae0a1';
+  const ROLE_READER = 'd0000000-0000-4000-8000-00000000a0a1';
+  const GRANT_READER = 'c0000000-0000-4000-8000-00000000a0a1';
+  const created: string[] = [];
+
+  beforeEach(async () => {
+    await admin.query(
+      `INSERT INTO iam.user_accounts (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,'test_harness','fx_ae_reader','fx_ae_reader@example.test','fx_ae_reader','active',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [U_READER, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_ae_reader','AE reader',$3) ON CONFLICT (id) DO NOTHING`,
+      [ROLE_READER, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, id, 'allow', $3 FROM iam.permissions
+        WHERE permission_code = ANY(ARRAY['iam.approval.manage','iam.user.read','iam.role.read'])
+       ON CONFLICT DO NOTHING`,
+      [TENANT_A, ROLE_READER, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'unrestricted','active',$5,$5) ON CONFLICT (id) DO NOTHING`,
+      [GRANT_READER, TENANT_A, U_READER, ROLE_READER, USER_A]
+    );
+    // One limit held by a person and one held by a role, written on the
+    // BYPASSRLS connection: the subject of this case is the read, not the write.
+    const limits = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, role_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+       VALUES ($1,$2,NULL,$3,'discount','10.00','USD','2026-01-01',$5),
+              ($1,$2,$4,NULL,'discount','20.00','USD','2026-01-01',$5)
+       RETURNING id`,
+      [TENANT_A, COMPANY_A1, U_GRANTEE, ROLE_TARGET, USER_A]
+    );
+    created.push(...limits.rows.map((row) => row.id));
+  });
+
+  afterEach(async () => {
+    await admin.query('DELETE FROM iam.approval_limits WHERE id = ANY($1::uuid[])', [created]);
+    created.length = 0;
+  });
+
+  const listAs = (userId: string) =>
+    withTransaction(
+      contextFor({ operation: 'iam.approval-limit-list', module: 'iam', userId }),
+      (db) => access.listApprovalLimits(db, { companyId: COMPANY_A1 })
+    );
+
+  it('without iam.user.read and iam.role.read, every name is null and the references stay', async () => {
+    const rows = await listAs(U_UNRESTRICTED);
+    const person = rows.find((row) => row.userId === U_GRANTEE);
+    const role = rows.find((row) => row.roleId === ROLE_TARGET);
+    expect(person).toBeDefined();
+    expect(role).toBeDefined();
+    expect(person?.userDisplayName).toBeNull();
+    expect(role?.roleName).toBeNull();
+    expect(rows.every((row) => row.userDisplayName === null && row.roleName === null)).toBe(true);
+  });
+
+  it('with iam.user.read and iam.role.read, the person and the role are named', async () => {
+    const rows = await listAs(U_READER);
+    const person = rows.find((row) => row.userId === U_GRANTEE);
+    const role = rows.find((row) => row.roleId === ROLE_TARGET);
+    expect(person?.userDisplayName).toBe('fx_ae_grantee');
+    expect(person?.roleName).toBeNull();
+    expect(role?.roleName).toBe('AE target');
+    expect(role?.userDisplayName).toBeNull();
+  });
+});
+
+/*
+ * `P1-32-PRE-OD-ADM4` review — the same names, at their edges: a caller holding
+ * only ONE of the two codes is told only that one name; a deny mapping withdraws
+ * a name an allow would have given (deny precedence, BR-IAM-001); an account
+ * the user list no longer shows (soft-deleted) is never named, while an
+ * archived one — which the list still shows — is; and nothing of another tenant
+ * is ever named, by the list or by the name resolution asked for it directly.
+ */
+describe('listApprovalLimits — each name only with its own code, never past a deny or a tenant', () => {
+  const U_USERS_ONLY = 'a0000000-0000-4000-8000-0000000ae0b1';
+  const U_ROLES_ONLY = 'a0000000-0000-4000-8000-0000000ae0b2';
+  const U_DENIED = 'a0000000-0000-4000-8000-0000000ae0b3';
+  const U_GONE = 'a0000000-0000-4000-8000-0000000ae0b4';
+  const U_ARCHIVED = 'a0000000-0000-4000-8000-0000000ae0b5';
+  const ROLE_USERS_ONLY = 'd0000000-0000-4000-8000-00000000a0b1';
+  const ROLE_ROLES_ONLY = 'd0000000-0000-4000-8000-00000000a0b2';
+  const ROLE_BOTH = 'd0000000-0000-4000-8000-00000000a0b3';
+  const ROLE_DENY_USERS = 'd0000000-0000-4000-8000-00000000a0b4';
+  const GRANT_USERS_ONLY = 'c0000000-0000-4000-8000-00000000a0b1';
+  const GRANT_ROLES_ONLY = 'c0000000-0000-4000-8000-00000000a0b2';
+  const GRANT_DENIED_BOTH = 'c0000000-0000-4000-8000-00000000a0b3';
+  const GRANT_DENIED_DENY = 'c0000000-0000-4000-8000-00000000a0b4';
+  // Tenant B: its own company, role and account, each with a name that must
+  // never reach a tenant-A caller.
+  const COMPANY_B1 = 'b1000000-0000-4000-8000-0000000ae0b1';
+  const ROLE_B = 'd0000000-0000-4000-8000-00000000b0b1';
+  const U_B = 'b0000000-0000-4000-8000-0000000ae0b1';
+  const created: string[] = [];
+
+  async function account(
+    id: string,
+    tenant: string,
+    subject: string,
+    { status = 'active', deleted = false }: { status?: string; deleted?: boolean } = {}
+  ): Promise<void> {
+    await admin.query(
+      `INSERT INTO iam.user_accounts (id, tenant_id, identity_provider, provider_subject, email, display_name, status, deleted_at, created_by)
+       VALUES ($1,$2,'test_harness',$3,$4,$3,$5,CASE WHEN $6::boolean THEN now() END,$7)
+       ON CONFLICT (id) DO NOTHING`,
+      [id, tenant, subject, `${subject}@example.test`, status, deleted, USER_A]
+    );
+  }
+
+  async function role(id: string, tenant: string, code: string, name: string): Promise<void> {
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+      [id, tenant, code, name, USER_A]
+    );
+  }
+
+  async function mapping(roleId: string, codes: readonly string[], effect: 'allow' | 'deny') {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, id, $4, $3 FROM iam.permissions
+        WHERE permission_code = ANY($5::text[])
+       ON CONFLICT DO NOTHING`,
+      [TENANT_A, roleId, USER_A, effect, codes]
+    );
+  }
+
+  async function grant(id: string, userId: string, roleId: string): Promise<void> {
+    await admin.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'unrestricted','active',$5,$5) ON CONFLICT (id) DO NOTHING`,
+      [id, TENANT_A, userId, roleId, USER_A]
+    );
+  }
+
+  beforeEach(async () => {
+    await account(U_USERS_ONLY, TENANT_A, 'fx_ae_users_only');
+    await account(U_ROLES_ONLY, TENANT_A, 'fx_ae_roles_only');
+    await account(U_DENIED, TENANT_A, 'fx_ae_denied');
+    // Soft-deleted: gone from the user list. Archived: still in it.
+    await account(U_GONE, TENANT_A, 'fx_ae_gone', { status: 'archived', deleted: true });
+    await account(U_ARCHIVED, TENANT_A, 'fx_ae_archived', { status: 'archived' });
+
+    await role(ROLE_USERS_ONLY, TENANT_A, 'fx_ae_users_only', 'AE users only');
+    await role(ROLE_ROLES_ONLY, TENANT_A, 'fx_ae_roles_only', 'AE roles only');
+    await role(ROLE_BOTH, TENANT_A, 'fx_ae_both', 'AE both');
+    await role(ROLE_DENY_USERS, TENANT_A, 'fx_ae_deny_users', 'AE deny users');
+    await mapping(ROLE_USERS_ONLY, ['iam.approval.manage', 'iam.user.read'], 'allow');
+    await mapping(ROLE_ROLES_ONLY, ['iam.approval.manage', 'iam.role.read'], 'allow');
+    await mapping(ROLE_BOTH, ['iam.approval.manage', 'iam.user.read', 'iam.role.read'], 'allow');
+    await mapping(ROLE_DENY_USERS, ['iam.user.read'], 'deny');
+    await grant(GRANT_USERS_ONLY, U_USERS_ONLY, ROLE_USERS_ONLY);
+    await grant(GRANT_ROLES_ONLY, U_ROLES_ONLY, ROLE_ROLES_ONLY);
+    // Allowed both codes by one role, and denied the user read by another.
+    await grant(GRANT_DENIED_BOTH, U_DENIED, ROLE_BOTH);
+    await grant(GRANT_DENIED_DENY, U_DENIED, ROLE_DENY_USERS);
+
+    await admin.query(
+      `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'company_ae_b1','Company AE B1','USD',$3) ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_B1, TENANT_B, USER_A]
+    );
+    await role(ROLE_B, TENANT_B, 'fx_ae_tenant_b', 'AE tenant B role');
+    await account(U_B, TENANT_B, 'fx_ae_tenant_b');
+
+    // Written on the BYPASSRLS connection: the subject of these cases is the read.
+    const limits = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, role_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+       VALUES ($1,$2,NULL,$3,'discount','10.00','USD','2026-01-01',$9),
+              ($1,$2,$4,NULL,'discount','20.00','USD','2026-01-01',$9),
+              ($1,$2,NULL,$5,'discount','30.00','USD','2026-01-01',$9),
+              ($1,$2,NULL,$6,'discount','40.00','USD','2026-01-01',$9),
+              ($7,$8,NULL,$10,'discount','50.00','USD','2026-01-01',$9),
+              ($7,$8,$11,NULL,'discount','60.00','USD','2026-01-01',$9)
+       RETURNING id`,
+      [
+        TENANT_A,
+        COMPANY_A1,
+        U_GRANTEE,
+        ROLE_TARGET,
+        U_GONE,
+        U_ARCHIVED,
+        TENANT_B,
+        COMPANY_B1,
+        USER_A,
+        U_B,
+        ROLE_B,
+      ]
+    );
+    created.push(...limits.rows.map((row) => row.id));
+  });
+
+  afterEach(async () => {
+    await admin.query('DELETE FROM iam.approval_limits WHERE id = ANY($1::uuid[])', [created]);
+    created.length = 0;
+  });
+
+  const listAs = (userId: string, filters: { companyId?: string } = {}) =>
+    withTransaction(
+      contextFor({ operation: 'iam.approval-limit-list', module: 'iam', userId }),
+      (db) => access.listApprovalLimits(db, filters)
+    );
+
+  it('with only iam.user.read, the person is named and the role is not', async () => {
+    const rows = await listAs(U_USERS_ONLY, { companyId: COMPANY_A1 });
+    expect(rows.find((row) => row.userId === U_GRANTEE)?.userDisplayName).toBe('fx_ae_grantee');
+    const target = rows.find((row) => row.roleId === ROLE_TARGET);
+    expect(target).toBeDefined();
+    expect(target?.roleName).toBeNull();
+    expect(rows.every((row) => row.roleName === null)).toBe(true);
+  });
+
+  it('with only iam.role.read, the role is named and no person is', async () => {
+    const rows = await listAs(U_ROLES_ONLY, { companyId: COMPANY_A1 });
+    expect(rows.find((row) => row.roleId === ROLE_TARGET)?.roleName).toBe('AE target');
+    const person = rows.find((row) => row.userId === U_GRANTEE);
+    expect(person).toBeDefined();
+    expect(person?.userDisplayName).toBeNull();
+    expect(rows.every((row) => row.userDisplayName === null)).toBe(true);
+  });
+
+  it('a deny mapping on iam.user.read withdraws every person name an allow would have given', async () => {
+    const rows = await listAs(U_DENIED, { companyId: COMPANY_A1 });
+    const person = rows.find((row) => row.userId === U_GRANTEE);
+    expect(person).toBeDefined();
+    expect(person?.userDisplayName).toBeNull();
+    expect(rows.every((row) => row.userDisplayName === null)).toBe(true);
+    // The role read is not denied, so the role is still named.
+    expect(rows.find((row) => row.roleId === ROLE_TARGET)?.roleName).toBe('AE target');
+  });
+
+  it('never names an account the user list would not show, and names an archived one it does', async () => {
+    const rows = await listAs(U_USERS_ONLY, { companyId: COMPANY_A1 });
+    const gone = rows.find((row) => row.userId === U_GONE);
+    // The limit itself is still listed, by reference; only the name is withheld.
+    expect(gone).toBeDefined();
+    expect(gone?.userDisplayName).toBeNull();
+    expect(rows.find((row) => row.userId === U_ARCHIVED)?.userDisplayName).toBe('fx_ae_archived');
+  });
+
+  it('names nothing of another tenant: neither its limits nor its people and roles', async () => {
+    const rows = await listAs(U_USERS_ONLY);
+    const roleRows = await listAs(U_ROLES_ONLY);
+    for (const row of [...rows, ...roleRows]) {
+      expect(row.companyId).not.toBe(COMPANY_B1);
+      expect(row.userId).not.toBe(U_B);
+      expect(row.roleId).not.toBe(ROLE_B);
+      expect(row.userDisplayName).not.toBe('fx_ae_tenant_b');
+      expect(row.roleName).not.toBe('AE tenant B role');
+    }
+    // Asked directly for the tenant-B account, by a caller who may read users,
+    // the name resolution answers nothing.
+    const names = await withTransaction(
+      contextFor({ operation: 'iam.approval-limit-list', module: 'iam', userId: U_USERS_ONLY }),
+      (db) =>
+        new IdentityDirectoryService(new IdentityRepository()).resolveDisplayIdentities(
+          db,
+          [U_B, U_GRANTEE],
+          { listedOnly: true }
+        )
+    );
+    expect(names.has(U_B)).toBe(false);
+    expect(names.get(U_GRANTEE)?.displayName).toBe('fx_ae_grantee');
   });
 });
