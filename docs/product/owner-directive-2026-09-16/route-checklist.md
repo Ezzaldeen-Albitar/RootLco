@@ -4784,8 +4784,10 @@ Test changes forced by the new structure, the asserted behaviour unchanged:
   so it leaves the scan's required list, as the appointment screens did.
 - `tests/e2e/authenticated/administration.spec.ts`: the roles case reads the grid in the project's
   language; a new case reads the permissions catalogue and the approval-limits grid in either
-  language. `shared-ux.spec.ts` measures the shared table's region on `/en/administration/audit-log`,
-  still drawn by `DataTable`. `accessibility.spec.ts` finds the invitation as a `dialog`.
+  language. `shared-ux.spec.ts` measured the shared table's region on `/en/administration/audit-log`,
+  then drawn by `DataTable`; the audit log has since moved onto the operational grid
+  (`P1-32-PRE-OD-ADM6`, below), and the case now measures `/en/crm/customer-duplicates`.
+  `accessibility.spec.ts` finds the invitation as a `dialog`.
 - `tests/ci/p1-31-version-sourcing.test.ts`: the versioned sends outside the P1-31 subject move by
   one with the mapping change.
 
@@ -6456,6 +6458,10 @@ Known limitations and recorded gaps, one line each:
 - The range rule is unit logic (`audit/range.ts`, with UTC, fall-back and spring-forward cases on
   America/New_York); one case types a too-wide last day into the picker under jsdom, and the
   backend still refuses a range wider than 92 × 24 hours.
+- `tests/e2e/authenticated/shared-ux.spec.ts`: the shared table's region case measured the audit
+  log, which no longer draws a `table`, so it now measures the customer duplicate queue
+  (`/en/crm/customer-duplicates`), which is still drawn by `DataTable`, reads on arrival and draws
+  its one table even when empty. Its assertions are unchanged.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in an existing file (no web test file added or
   removed): the hub cases live in `audit-log.dom.test.tsx`.
