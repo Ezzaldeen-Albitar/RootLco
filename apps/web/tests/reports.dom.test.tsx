@@ -2594,6 +2594,77 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
   });
 
+  it('writes no time for a snapshot when the reported zone is not one the browser knows', async () => {
+    // The snapshots panel takes the report's zone. Under a zone that is no
+    // clock it says the time is not shown in its list, in a frozen snapshot's
+    // banner and rows, and in the save confirmation — never a time on UTC or
+    // on any other clock (P1-32-PRE-OD-REPA-03; this case P1-32-PRE-OD-REPA-04).
+    PERMISSIONS = [READ, CONFIGURE];
+    runReport.mockResolvedValue(
+      runOk({ ...SNAP_ENVELOPE, period: { ...PERIOD, timezone: 'Not/A_Zone' } })
+    );
+    await showReport();
+    const user = userEvent.setup();
+    const notShown = EN['reports.time.notShown'] as string;
+
+    const list = await screen.findByTestId('report-snapshot-list');
+    const items = within(list).getAllByTestId('report-snapshot-item');
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      // The moment it is as of, and the moment it was saved.
+      expect(within(item).getAllByText(notShown)).toHaveLength(2);
+    }
+
+    await user.click(
+      within(items[1] as HTMLElement).getByRole('button', {
+        name: EN['reports.snapshots.view'] as string,
+      })
+    );
+    expect(await screen.findByTestId('report-snapshot-banner')).toHaveTextContent(
+      fill(EN['reports.snapshots.banner'] as string, {
+        moment: notShown,
+        savedAt: notShown,
+        person: 'Rana Haddad',
+      })
+    );
+    expect(screen.getByTestId('report-snapshot-restated')).toHaveTextContent(notShown);
+    // The frozen row's instant, in the report's own table.
+    expect(
+      within(
+        screen.getByRole('table', { name: EN['reports.snapshots.rowsCaption'] as string })
+      ).getByText(notShown)
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: EN['reports.snapshots.save'] as string }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      fill(EN['reports.snapshots.saveSummary'] as string, {
+        company: 'Workshop company',
+        branch: 'Named by the run',
+        from: '2026-09-01',
+        to: '2026-09-08',
+        moment: notShown,
+      })
+    );
+
+    // No instant is written anywhere on the page, on UTC or on Amman's clock.
+    const utc = (instant: string) =>
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'UTC',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(instant));
+    for (const instant of [
+      AS_OF,
+      ORIGINAL.generatedAt,
+      RESTATEMENT.generatedAt,
+      '2026-09-03T07:15:00.000Z',
+    ]) {
+      expect(document.body).not.toHaveTextContent(utc(instant));
+      expect(document.body).not.toHaveTextContent(at(instant));
+    }
+    expect(document.body).not.toHaveTextContent('Not/A_Zone');
+  });
+
   it('restates only the latest snapshot, and only with a reason', async () => {
     PERMISSIONS = [READ, CONFIGURE];
     saveReportSnapshot.mockResolvedValue({
