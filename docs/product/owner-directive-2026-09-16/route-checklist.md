@@ -1825,8 +1825,8 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/receptions/check-in/[receptionId]`                  | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, `ReasonDialog`, states             | F1–F7; G1–G9, G11; P1–P10; E1–E4; D1–D5; S1–S4   | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F7; G1–G9, G11, G12; P1–P10; S1–S4            | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states                                                               | F6; G1–G11; S1–S5; T1–T6                         | migrated — see below the table                                               | focused suites, en and ar — see below       |
-| `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, states                                               | G1–G9; P1–P10; S1–S4                             | built on Material UI (P1-32-PRE-OD-FD2B, ADR-023 D2)                         | `refunds.dom.test.tsx`, en and ar           |
-| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                                | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated (REPA, REPA-03), not the snapshots panel: REP-B (#557) migrates it  | focused suites, en and ar — see below       |
+| `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `DateField`, states                     | G1–G12; P1–P10; F1–F5; E1–E4; S1–S5; D1–D5       | on Material UI (P1-32-PRE-OD-FD2B, then P1-32-PRE-OD-REPB)                   | `refunds.dom`, `invoices.dom`, en and ar    |
+| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, a form dialog, states                 | F1–F7; E1–E4; G1–G12; S1–S5                      | migrated (REPA, REPA-03); snapshots panel (P1-32-PRE-OD-REPB)                | focused suites, en and ar — see below       |
 | `/reports/overview`                                   | form fields, `DateField`, states                                                                         | F1–F6; E1–E4; S1–S4                              | migrated — see below the table (REPA)                                        | focused suites, en and ar — see below       |
 | `/reports`                                            | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | migrated — see below the table (REPA)                                        | focused suites, en and ar — see below       |
 | `/services/[serviceId]`                               | form fields, `TreePicker`, `DateField`, `ConfirmDialog`, states                                          | F1–F6; H1–H5; E1–E4; D1–D4; S1–S4                | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -4643,6 +4643,245 @@ Known limitations of this slice, one line each:
   `verify:workspaces`; they run in hosted CI. The web tier gains cases in existing files (no web
   test file added or removed).
 
+### Report snapshots and refunds on Material UI (`P1-32-PRE-OD-REPB`)
+
+The saved-snapshots panel of the invoice and payment report (`ReportSnapshotsPanel`, on
+`/reports/[reportCode]`), the refunds list (`/refunds`) and the invoice's refunds panel
+(`RefundsPanel`, on `/invoices`) moved onto the shared wrappers in one slice. Nothing about how any
+of them authorizes, scopes or reads changed: the same operations, the same permission gates, the
+same route branch scope in `route-branch-scope.ts` (`/refunds` and `/reports/[reportCode]`
+`concrete`), and no API, migration, permission code or role bundle in the diff. The rest of
+`/reports/[reportCode]` (the scope form, the as-of choice, the export panel and the row tables) and
+`/reports/overview` are not part of this slice: REP-A (`P1-32-PRE-OD-REPA`, above) moved them.
+
+What moved to which wrapper:
+
+- Saved snapshots — the list is `OperationalGrid` over `useServerTable`, reading the snapshot list
+  operation's cursor pages (`rowCount` -1, the cursor footer); before, the panel read the first page
+  only. "View" is a pressed row action (G12) named with the moment it opens. An empty period says
+  "No snapshots yet" (`MuiEmptyState`); an unreadable list is the shared outage with its reference
+  and a retry, never "no snapshots". Saving is a form dialog (`role="dialog"`, the form-dialog
+  pattern of the administration slices, local to the panel as `ReportFormDialog`), naming the
+  company, the branch, the period and the moment; the focus goes to its action and returns to "Save
+  snapshot" when it closes; Escape cancels and a click outside does not; while it is answered both
+  buttons are held and Escape does nothing. Restating is the same dialog with the reason a
+  multi-line `FormTextField` (required, at most 500 characters, refused on the field with
+  `aria-invalid` and the cursor put back in it, the typed reason kept); a typed reason is unsaved
+  work (`useUnsavedGuard`). The opened snapshot's banner, restatement notes, difference and frozen
+  rows are as before; its pager and actions are Material buttons, the difference table is a Material
+  table with its caption, and a snapshot that cannot be read is `MuiReadFailureState` with a retry
+  that reads it again.
+- `/refunds` — the branch is the working context's, named by `WorkingBranchField` (with its chooser
+  while none is chosen) as the payments desk names it; the screen no longer imports the inventory
+  `BranchTargetForm`. The list stays `OperationalGrid` with the `FilterToolbar` state chips and the
+  `CustomerPicker` and `InvoicePicker` choosers on `EntityPicker` (`material`). An empty list says
+  which empty it is: "No refund requests yet" in the branch, or "No matches" with the choices that
+  narrowed it and "Clear the choices". A request's moment is written on the branch's clock with the
+  clock named (UTC, named, when the branch's clock is not known), no longer the browser's.
+- The invoice's refunds panel — already on `forms/mui/*`, `ConfirmDialog` and `ReasonDialog`; it now
+  sends one request, decision or payout per press (a hold set before the write, so two presses in one
+  tick send once), keeps typed entries as unsaved work, moves the cursor to the first field to fix
+  on a refusal, writes the payout day on the invoice branch's calendar (`DateField` with that
+  branch's zone, no day after its today offered or accepted, a day typed only in part refused on the
+  field), writes the history's moments on the branch's clock and its payout days as days, and offers
+  "Load the latest version" when a decision finds the request moved on.
+
+Wrapper extensions: none. `ReportFormDialog` is the panel's own and is not a shared wrapper; no
+component folder is newly imported by a scanned tree, so `MODULE_DISPOSITION` is unchanged.
+`ReportFormDialog` stays feature-local (`apps/web/src/features/reports/components/`) pending the
+shared form-dialog consolidation planned for administration wave 2.
+
+Preserved, each held by a case in `reports.dom.test.tsx`, `refunds.dom.test.tsx` or
+`invoices.dom.test.tsx`:
+
+- Snapshots: save and restate are offered only with `rpt.report.configure` (never with the export
+  switch alone); the panel appears only on a run the backend answered, which already required
+  `rpt.report.read` and the dataset's codes, and the server checks all three again. A snapshot is
+  never edited: there is no edit affordance and the frozen note stands. A duplicate original is
+  refused in its own words, and the refusal now names the latest snapshot of the period — when it
+  was saved, by whom, as of which moment, never by identifier — read afresh, with "Open the latest
+  snapshot"; the server's D12 refusal record is unchanged (no backend file in the diff). A
+  restatement needs a reason, shows the difference, and the original stays readable from it ("Show
+  the earlier snapshot"); only the head of a chain offers Restate, now decided by the snapshot read
+  itself (`restatedBy`) rather than by the list's first page. A restatement refused because the
+  snapshot was restated meanwhile names the latest snapshot the same way.
+- Refunds (ADR-023 D2): asking (amount, method, reason, one transport key), approving and rejecting
+  by another holder of `sal.refund.approve` (the requester is offered Withdraw and never Approve),
+  withdrawing by the requester, the payout with its reference, day and the approved method,
+  recorded once; the obligation's figures are the server's. `sal.finance.view` still gates the page
+  before any read; the customer and invoice choosers still need their reads' codes; amounts are
+  shown only behind that gate. Refusals by rule are said in their own words, en and ar. Open
+  decisions stay as they are: cancelling an approved, unpaid refund
+  ([FIN03](decision-pack-2026-10-08.md#fin03-cancelling-an-approved-refund-that-is-not-yet-paid-out))
+  and who may record a payout
+  ([FIN04](decision-pack-2026-10-08.md#fin04-who-may-record-a-refund-payout)).
+- Reports: the export permission and CSV export are unchanged and withheld under CC-04
+  ([RPT01](decision-pack-2026-10-08.md#rpt01-who-may-export-a-report-as-csv-vl-p132-008)); a
+  dedicated snapshot permission stays open
+  ([RPT02](decision-pack-2026-10-08.md#rpt02-a-separate-permission-for-saving-report-snapshots-vl-p132-010)),
+  as does `rpt.report.configure` for organisations provisioned before 2026-09-09
+  ([RPT03](decision-pack-2026-10-08.md#rpt03-report-configuration-in-organisations-provisioned-earlier));
+  [AUTH01](decision-pack-2026-10-08.md#auth01-signing-other-devices-out-after-a-password-change) is
+  untouched. No permission code was minted or granted, and no test grants `rpt.export` to pass.
+- English and Arabic, right to left, dialogs included; D16's one fixed moment per report and the
+  database clock for "now" are the report screen's and are untouched.
+
+Deliberate behaviour changes:
+
+- Saving and restating a snapshot are form dialogs (`role="dialog"`), not an alert dialog and an
+  inline form; the save's submit says "Saving…" while it is answered.
+- The snapshot list pages with the server's cursor instead of showing the first page only.
+- A refused duplicate save, and a restatement of a snapshot already restated, name the latest
+  snapshot and offer to open it.
+- An empty refunds list says "No refund requests yet" when nothing narrows it; "No refund requests
+  match these choices." is said only when a choice does, with a way to clear them.
+- The refunds list's branch control is labelled "Working branch" (the header's words) instead of
+  "Branch".
+- Refund moments are written on the branch's clock with the clock named; payout days are written as
+  days ("2 Oct 2026") instead of the stored `2026-10-02`.
+- The payout day refuses a day after the branch's today, and a day typed only in part, before
+  sending; the server's own refusal (`refund_payout_date_invalid`) is unchanged.
+- A second press while a request, decision or payout is out sends nothing.
+- A refund request that is accepted now also clears the chosen method, with the amount and the
+  reason, so the next request starts with no method chosen; before, the method stayed chosen.
+
+Assertions changed, each with its reason:
+
+- `reports.dom.test.tsx`: the save confirmation is found as `dialog` named by its title instead of
+  `alertdialog` (the ruling: a form dialog is not an alert dialog); the snapshot rows are the grid's
+  rows instead of `report-snapshot-item` table rows, and "View" is matched by its leading word
+  because its name now carries the moment it opens; the snapshot cases render under the Material
+  provider the grid needs.
+- `refunds.dom.test.tsx`: the history's payout day is expected as a written day, not the stored
+  text; the Arabic empty-list case expects "No refund requests yet" (`refunds.list.empty`) because
+  that list was not narrowed — "match these choices" is asserted by narrowed cases in English and
+  Arabic, each with its "Clear the choices" action.
+- No assertion was deleted, weakened or skipped, and no timeout was raised.
+
+Known limitations and recorded gaps, one line each:
+
+- The rest of `/reports/[reportCode]` and `/reports/overview` are not migrated here: REP-A
+  (`P1-32-PRE-OD-REPA`) migrated them.
+- `WorkingBranchField` still draws its chooser with the legacy `SelectField`; it is shared by 24
+  files and moves with the working-context pieces.
+- The refunds and snapshot reads are still Server Actions: a superseded read is dropped, not
+  cancelled.
+- The refunds list refreshes nothing after a decision on the invoice (decisions happen there);
+  returning to the list reads it again.
+- The latest snapshot named in a refusal is the newest of the period; with snapshots of the same
+  period saved under different filters (none can be today) it could name another chain's head.
+- Snapshots of a period are listed for the branch; a snapshot whose saver is hidden is named "a
+  person whose name is not shown to you", as before.
+- No browser spec covers the snapshot panel or the refund screens; the area's specs
+  (`reports-p1-31.spec.ts`) already run in both language projects, so no English-only spec needed an
+  Arabic case. The Playwright tiers run only in hosted CI.
+- Desktop, tablet and phone widths were not reviewed in a browser; the grid hides the refund method
+  below `md` and the snapshot saver below `md` and row count below `sm` (G8: each is also on the
+  record it opens).
+- Run locally at the implementation head: the web type check, lint and formatting, the style,
+  token, theme, boundary, topology and plain-language gates, the reports, refunds and invoices
+  suites (their English and Arabic cases) and the neighbour suites (form reset, i18n, unsaved
+  navigation, route branch scope, cancellable reads, route permission binding, session); ten
+  falsification probes (each hold, the form dialog's role, the named snapshot, the unsaved guard,
+  the two payout-day checks, the two empty states) each failed its case. Not run locally: the full
+  web tier, the browser tiers and the builds; no backend or database file changed, so no backend
+  or database tier was run. Hosted CI runs them.
+- The root unit tier, run locally, found one real defect, fixed before the push: folding the three
+  refund decisions into one sender hid each guarded call's re-read from the version-sourcing gate
+  (`tests/ci/p1-28-version-sourcing.test.ts`), so each decision keeps its own sender. Of the other
+  files that failed under the full tier's load, four passed when run alone; one case
+  (`p1-28-evidence-manifest.test.ts`, "fails on an executable successor that is not named") timed
+  out at 240 s walking the repository's history on this machine, alone as well. Hosted CI carries
+  the tier.
+- No web test file was added or removed; the web tier gains cases in existing files.
+
+Merged with REP-A (`P1-32-PRE-OD-REPB-04`). REP-A landed first and gave the old snapshots panel
+its rule for a reported zone this browser does not know: no time is written, on UTC or on any other
+clock. The grid panel keeps that rule. The list's "Saved" and "Amounts as of" cells are the shared
+`ReportTime` (the words "Time not shown", marked `data-zone-unknown`, and no `<time>` element);
+"View" is named with the same words; the opened snapshot's banner, its restatement notes and the
+latest snapshot named in a refusal say them inside their sentences; and the save dialog says them
+where the moment would be. No moment is typed in either dialog — the save dialog states the moment
+the report already answered with, and the report screen's as-of choice, where a moment is typed,
+is REP-A's and refuses an unknown zone itself — so neither dialog holds a day or a moment field.
+REP-A's DOM case for this ("writes no time for a snapshot when the reported zone is not one the
+browser knows") is kept and reads the grid's rows and the form dialog instead of
+`report-snapshot-item` table rows and the alert dialog; it still requires that no instant of the
+page is written on UTC or on the branch's clock, and it now also requires that no list row holds a
+`<time>`. A snapshot measure this build has no word for is still shown by its key in the
+difference table, as REP-A records for the report's own tables.
+
+Review round (`P1-32-PRE-OD-REPB-04`) — the checks REP-A's review made, made on this slice's
+screens (`/refunds`, the invoice's refunds panel, the snapshots panel and `ReportFormDialog`):
+
+- Day and moment fields. The slice has one: the payout day (`PayoutForm` in `RefundsPanel.tsx`).
+  Its zone is the invoice branch's, read from the working context, which can be read again while
+  the form is open — so the picker's zone could change under it — and where that zone was not known
+  the picker was handed none and fell back to the working branch's clock or the browser's. Those
+  are the two things that moved a typed day by one in the report scope form (REPA-04), and they did
+  here: a typed 01/09/2026 was shown, and sent, as 31/08/2026. The picker is now keyed on its clock,
+  so another clock is a new picker — a whole day already typed is kept, a half-typed one goes with
+  its complaint — and it is always handed a zone: the branch's, or a fixed reference (UTC, for the
+  calendar's arithmetic only) where the branch's is not known, with no "today" bound offered then
+  and a sentence saying that the calendar may mark another day as today and that the day is used
+  as entered (`refunds.execute.zoneUnknownNote`, en and ar). `refunds.dom.test.tsx` gains "the
+  payout day is the day typed, on any clock": 21 cases on literal days — a known zone, an unknown
+  one, a change in each direction and from clocks far to the east and far to the west, with the
+  branch on Asia/Riyadh, Pacific/Auckland and Pacific/Honolulu. Run against the form as it was, 10
+  of them failed with the process on UTC and 13 with it on Asia/Riyadh; without the key alone, 10
+  and 9; with the fallback alone, none on UTC and 6 on Asia/Riyadh.
+- One write per press. `ReportFormDialog` holds no in-flight guard of its own and has two callers,
+  both in `ReportSnapshotsPanel.tsx`, each holding its own, set before the write: the save dialog
+  (`saving`) and the restatement dialog (`sending`). Each has its two-presses case in
+  `reports.dom.test.tsx`, and each case failed with its guard taken out.
+- No identifier shown. The refunds list and panel name an invoice by its number, a method by its
+  name and the requester only as "by you", each with a plain "not shown" where the read withholds
+  it; the snapshots panel names a saver by name, or as a person whose name is not shown, and a
+  refusal names the latest snapshot by its moments and its saver. Nothing was changed.
+- Instants. The snapshots panel follows REP-A's rule (above). Refund moments (`RefundMoment`, in
+  the list and in the invoice's history) are written on the branch's clock with the clock named,
+  and on UTC, named as UTC, where the branch's zone is not known — the way the invoice's printed
+  copy and the reception board write theirs — while REP-A's reports write no time at all there.
+  This slice leaves that as it is; which of the two the refund screens follow is not decided here.
+
+Review round (`P1-32-PRE-OD-REPB-05`) — what the independent review of the round above asked for:
+
+- One write per press, the refund writes. All five hold an in-flight guard, but only asking and
+  approving had a case that fails without it; the statements above and in the test file's header
+  that every hold was proven were not true for rejecting, withdrawing and recording the payout.
+  `refunds.dom.test.tsx` gains one case for each. Each was run with its hold line taken out of
+  `RefundsPanel.tsx` and failed with two requests sent where one is required, and the line was put
+  back. For a decision the two presses arrive before React has rendered the dialog's held action:
+  after that render the action is disabled and a press cannot reach the sender, so two presses
+  made as separate interactions pass with both decision holds taken out (run, and so not used as
+  the proof); each case also presses once more, on its own, with the request still open. The
+  payout's case is two separate interactions — a press of the button, then a submission of the
+  form itself — read at the transport: one request, carrying `If-Match` (the version the request
+  was read at) and `Idempotency-Key`.
+- Instants on the refund screens. Ruled: a time on UTC that says it is on UTC is acceptable where
+  the branch's zone is not known; a time with no clock named is not. `refunds.dom.test.tsx` pins
+  it — the time followed by the visible label `UTC`, in English and in Arabic, in the list and in
+  the invoice's history; all four cases failed with the label dropped.
+- The payout-day cases no longer depend on the date of the machine that runs them: "now" is pinned
+  (the `Date` only; timers stay real), so the field's "no day after the branch's today" bound is
+  the same everywhere. Moved to before the typed day, the pin fails the 15 cases that end on a
+  known zone and leaves the 6 that end on an unknown one, which have no bound.
+- `reports.snapshots.column.open`, the heading of the old table's "View" column, had no user left
+  once the list became the grid; it is removed from `en.json` and `ar.json`.
+
+Open after this round, none of them decided here: the payout is offered to any holder of
+`sal.payment.record` in the branch, the requester and the approver included, and the server
+requires no separate person for it
+([FIN03](decision-pack-2026-10-08.md#fin03-cancelling-an-approved-refund-that-is-not-yet-paid-out),
+[FIN04](decision-pack-2026-10-08.md#fin04-who-may-record-a-refund-payout)); saving a snapshot
+sends a new `Idempotency-Key` with every send, so a press repeated after a lost answer is not a
+replay and the server's duplicate refusal is what covers it (as on develop); the fixed-height grid
+row holding a refund's moment with the `UTC` label was not looked at in a browser.
+
+Checklist correction (WP00 scan): the FD16B table further down said the save and Restate need
+`rpt.export`; both rows now say `rpt.report.configure`, the gate since FD16C, and the operation row
+says `rpt.export` gates CSV export only, so it cannot be read as still gating the save.
+
 ### Review follow-ups on the inventory slices (`P1-32-PRE-OD-INVR`)
 
 Closes the review minors left on the merged inventory slices (INV1C, INV2A, INV3, INV4, INV6). One
@@ -6469,14 +6708,14 @@ correction of it is a distinguished restatement. One forward migration
 (`rpt.report.snapshot_created`), no new permission code (a dedicated snapshot code is an open Owner
 question).
 
-| Route                                                   | Operation                    | Who                                                                               | What changed                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /reports/{reportCode}/snapshots`                  | `rpt.report-snapshot-create` | `rpt.export` and `rpt.report.read` in the branch, and the report's own codes      | Saves a frozen copy of the report as of the moment shown (idempotent; one consistent read; capped like the export); with `restatesSnapshotId` and a reason, restates the latest snapshot of the period. Refusals by rule are recorded (D12).                         |
-| `GET /reports/{reportCode}/snapshots`                   | `rpt.report-snapshot-list`   | `rpt.report.read` and the report's own codes                                      | The branch's snapshots of the report, newest first, for one period: saved when and by whom, the moment, the rows, the restatement chain. No rows.                                                                                                                    |
-| `GET /reports/{reportCode}/snapshots/{snapshotId}/rows` | `rpt.report-snapshot-read`   | `rpt.report.read` and every code the snapshot froze, in the snapshot's own branch | The frozen rows a page at a time, the snapshot it restates and the one that restated it, and a restatement's difference. Another tenant, branch or a reader without the codes gets not-found. The party name is withheld without `crm.customer.read`.                |
-| `GET /reports/{reportCode}/rows`                        | `rpt.report-run`             | unchanged                                                                         | `asOf=now` is read on the database clock; the cursor carries the moment, so a later page without `asOf` keeps it and a different moment beside it is refused (`query.cursor`, `as_of_mismatch`); the envelope says whether the report keeps snapshots (`snapshots`). |
-| `POST /reports/{reportCode}:export`                     | `rpt.report-export`          | unchanged                                                                         | A refused moment names `body.asOf`.                                                                                                                                                                                                                                  |
-| `/reports/[reportCode]` ("Invoices and payments")       | the five above               | as above; Save snapshot and Restate only with `rpt.export`                        | "Saved snapshots": save with a confirmation naming scope, period and moment; the list with names, never identifiers; a snapshot's banner, restatement notes and difference; Restate on the latest only, with a required reason; en and ar, right to left.            |
+| Route                                                   | Operation                    | Who                                                                                                                                | What changed                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /reports/{reportCode}/snapshots`                  | `rpt.report-snapshot-create` | gated by `rpt.report.configure` since FD16C; `rpt.export` gates CSV export only; also `rpt.report.read` and the report's own codes | Saves a frozen copy of the report as of the moment shown (idempotent; one consistent read; capped like the export); with `restatesSnapshotId` and a reason, restates the latest snapshot of the period. Refusals by rule are recorded (D12).                         |
+| `GET /reports/{reportCode}/snapshots`                   | `rpt.report-snapshot-list`   | `rpt.report.read` and the report's own codes                                                                                       | The branch's snapshots of the report, newest first, for one period: saved when and by whom, the moment, the rows, the restatement chain. No rows.                                                                                                                    |
+| `GET /reports/{reportCode}/snapshots/{snapshotId}/rows` | `rpt.report-snapshot-read`   | `rpt.report.read` and every code the snapshot froze, in the snapshot's own branch                                                  | The frozen rows a page at a time, the snapshot it restates and the one that restated it, and a restatement's difference. Another tenant, branch or a reader without the codes gets not-found. The party name is withheld without `crm.customer.read`.                |
+| `GET /reports/{reportCode}/rows`                        | `rpt.report-run`             | unchanged                                                                                                                          | `asOf=now` is read on the database clock; the cursor carries the moment, so a later page without `asOf` keeps it and a different moment beside it is refused (`query.cursor`, `as_of_mismatch`); the envelope says whether the report keeps snapshots (`snapshots`). |
+| `POST /reports/{reportCode}:export`                     | `rpt.report-export`          | unchanged                                                                                                                          | A refused moment names `body.asOf`.                                                                                                                                                                                                                                  |
+| `/reports/[reportCode]` ("Invoices and payments")       | the five above               | as above; Save and Restate only with `rpt.report.configure` (FD16C)                                                                | "Saved snapshots": save with a confirmation naming scope, period and moment; the list with names, never identifiers; a snapshot's banner, restatement notes and difference; Restate on the latest only, with a required reason; en and ar, right to left.            |
 
 Web: "Now" is sent as the word `now`; a seeded unit code shows the catalogue's word only while the
 line still carries the seeded English name (`apps/web/src/lib/unit-name.ts`). No new web route.
