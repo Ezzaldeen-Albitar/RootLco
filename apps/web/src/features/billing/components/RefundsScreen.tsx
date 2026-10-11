@@ -2,7 +2,8 @@
 
 /**
  * Refunds (ADR-023 D2, part 2, P1-32-PRE-OD-FD2B) — one branch's refund requests,
- * newest first, in the finance navigation.
+ * newest first, in the finance navigation; on the Material UI wrappers
+ * (P1-32-PRE-OD-REPB).
  *
  * Who asked for what, by which method, what was decided and what was paid out —
  * narrowed by state, by customer and by invoice, in the working branch. Each row
@@ -13,10 +14,17 @@
  * before anything is read. The customer filter is offered to a reader of customers
  * (`crm.customer.read`) and the invoice filter to a reader of invoices
  * (`sal.invoice.manage`), the codes their pickers' own reads declare. Every figure
- * is the server's; nothing is computed here.
+ * is the server's; nothing is computed here. A request's moment is written on the
+ * branch's clock, with the clock named.
+ *
+ * The branch is the working context's (`useBranchTarget`), named by
+ * `WorkingBranchField` with its chooser while none is chosen, exactly as the
+ * payments desk names it. An empty list says which empty it is: nothing asked for
+ * in the branch yet, or nothing matching the choices — with the way to clear them.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
 
 import {
   OperationalGrid,
@@ -27,11 +35,12 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
+import { MuiEmptyState } from '@/components/states/MuiStates';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { BranchTargetForm, PANEL } from '@/features/inventory/components/stock-operations';
-import type { StockTarget } from '@/features/inventory/inventory-contract';
 import { formatMoney } from '@/lib/money';
 
 import { listRefundRequests } from '../api';
@@ -42,7 +51,15 @@ import {
   type RefundRequestState,
 } from '../billing-contract';
 import { InvoicePicker } from './InvoicePicker';
-import { When } from './shared';
+import { RefundMoment, useBranchClock } from './RefundsPanel';
+
+/** The branch a refund list reads, as the working context names it. */
+interface RefundTarget {
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
+const PANEL = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-4';
 
 export function RefundsScreen({
   locale,
@@ -59,16 +76,11 @@ export function RefundsScreen({
   /** `sal.invoice.manage` — the invoice filter's picker, and opening the invoice. */
   readonly canSearchInvoices: boolean;
 }) {
-  const [target, setTarget] = useState<StockTarget | null>(null);
+  const [target, setTarget] = useState<RefundTarget | null>(null);
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <p className="text-caption text-text-muted">{translate(messages, 'refunds.page.explain')}</p>
-      <BranchTargetForm
-        messages={messages}
-        formLabelKey="refunds.targetLabel"
-        explainKey="refunds.targetExplain"
-        onChosen={setTarget}
-      />
+      <TargetPanel messages={messages} onChosen={setTarget} />
       {target === null ? null : (
         <BranchRefunds
           key={`${target.companyId}:${target.branchId}`}
@@ -84,6 +96,37 @@ export function RefundsScreen({
   );
 }
 
+/**
+ * The branch the list is read for: the working context's single branch, stated
+ * rather than asked. It reports `null` while the selection is not one branch, so
+ * the list is never left reading one branch under another branch's name.
+ */
+function TargetPanel({
+  messages,
+  onChosen,
+}: {
+  readonly messages: Messages;
+  readonly onChosen: (next: RefundTarget | null) => void;
+}) {
+  const branch = useBranchTarget();
+  const chosen = branch.kind === 'ready' ? branch.target : null;
+  const reported = useRef<string | null>(null);
+
+  useEffect(() => {
+    const key = chosen === null ? '' : `${chosen.companyId}:${chosen.branchId}`;
+    if (reported.current === key) return;
+    reported.current = key;
+    onChosen(chosen);
+  }, [chosen, onChosen]);
+
+  return (
+    <section aria-label={translate(messages, 'refunds.targetLabel')} className={PANEL}>
+      <p className="text-caption text-text-muted">{translate(messages, 'refunds.targetExplain')}</p>
+      <WorkingBranchField messages={messages} testId="refunds-branch-target" />
+    </section>
+  );
+}
+
 type StateFilter = RefundRequestState | '';
 
 function BranchRefunds({
@@ -96,7 +139,7 @@ function BranchRefunds({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly target: StockTarget;
+  readonly target: RefundTarget;
   readonly currentUserId: string;
   readonly canReadCustomers: boolean;
   readonly canSearchInvoices: boolean;
@@ -104,6 +147,8 @@ function BranchRefunds({
   const [state, setState] = useState<StateFilter>('');
   const [customer, setCustomer] = useState<ChosenCustomer | null>(null);
   const [invoice, setInvoice] = useState<InvoiceListEntry | null>(null);
+  const zone = useBranchClock(target.branchId);
+  const narrowed = state !== '' || customer !== null || invoice !== null;
 
   const load = useCallback(
     async (request: TableRequest, cursor: string | null): Promise<ServerPage<RefundRequest>> => {
@@ -150,7 +195,7 @@ function BranchRefunds({
           <span className="flex flex-col">
             <bdi>{row.reason}</bdi>
             <span className="text-caption text-text-muted">
-              <When value={row.requestedAt} locale={locale} />
+              <RefundMoment value={row.requestedAt} locale={locale} zone={zone} />
               {row.requestedBy === currentUserId
                 ? ` · ${translate(messages, 'refunds.history.byYou')}`
                 : ''}
@@ -180,6 +225,8 @@ function BranchRefunds({
       {
         id: 'method',
         headerKey: 'refunds.column.method',
+        // The approved method is on the invoice's refunds panel too (G8).
+        hideBelow: 'md',
         cell: (row) => (
           <bdi>
             {row.paymentMethod?.displayName ?? translate(messages, 'refunds.methodNotShown')}
@@ -200,7 +247,7 @@ function BranchRefunds({
         ),
       },
     ],
-    [currentUserId, locale, messages]
+    [currentUserId, locale, messages, zone]
   );
 
   // The invoice screen opens by its work order: a row links there for a reader of
@@ -219,6 +266,14 @@ function BranchRefunds({
         : [],
     [canSearchInvoices, locale, messages]
   );
+
+  const clearChoices = () => {
+    setState('');
+    setCustomer(null);
+    setInvoice(null);
+  };
+  const empty =
+    table.status === 'idle' && table.response !== null && table.response.rows.length === 0;
 
   return (
     <section aria-labelledby="refunds-heading" className={PANEL}>
@@ -287,10 +342,27 @@ function BranchRefunds({
         }}
         testId="refunds-grid"
       />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-4 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'refunds.list.none')}
-        </p>
+      {empty && narrowed ? (
+        // The choices narrowed the list to nothing: clearing them may widen it.
+        <MuiEmptyState
+          messages={messages}
+          titleKey="state.noResults.title"
+          descriptionKey="refunds.list.none"
+          testId="refunds-no-matches"
+          action={
+            <Button type="button" variant="outlined" size="small" onClick={clearChoices}>
+              {translate(messages, 'refunds.list.clearChoices')}
+            </Button>
+          }
+        />
+      ) : null}
+      {empty && !narrowed ? (
+        <MuiEmptyState
+          messages={messages}
+          titleKey="refunds.list.emptyTitle"
+          descriptionKey="refunds.list.empty"
+          testId="refunds-empty"
+        />
       ) : null}
     </section>
   );
