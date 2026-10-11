@@ -18,10 +18,24 @@ import { pageMetadata } from '@/lib/page-metadata';
  * no operation that returns those numbers, and a screen full of plausible zeros
  * reads as a working product that happens to be empty.
  *
- * Each card is shown only when the actor holds the permission its screen needs —
- * or, for a screen that shows something to any one of several, one of them —
- * the same rule the sidebar uses, and for the same reason. An entry an operator
- * cannot open is a door with no handle.
+ * Each card is shown only when the actor holds what its screen needs, so an
+ * entry an operator cannot open is never offered: a door with no handle.
+ *
+ * ## Every code its page asks for (`P1-32-PRE-OD-ADM6`)
+ *
+ * `permission` and `orPermissions` are taken from the entry's navigation item
+ * (`config/navigation.ts`). Each `orPermissions` code stands in for
+ * `permission`: holding any one of them is enough. `alsoRequires` is all-of:
+ * every code in it is needed besides. An entry may ask for more than its
+ * navigation item where its page refuses without a further code (departments
+ * and employees list one branch's records and need the branch read), so the hub
+ * is not claimed to match the sidebar entry for entry. The hub cases in
+ * `tests/audit-log.dom.test.tsx` render the gated pages and hold the hub to
+ * what they draw.
+ *
+ * No technician roster entry: technicians sit in the sidebar outside
+ * `/administration`, where the entry opens the technician's own workspace
+ * (`/technicians/me`); no roster page exists yet (`config/navigation.ts`).
  */
 
 interface Entry {
@@ -50,6 +64,20 @@ const SECTIONS: readonly {
     bodyKey: 'admin.section.identityBody',
     entries: [
       { href: '/administration/users', labelKey: 'nav.users', permission: PERMISSIONS.userRead },
+      {
+        href: '/administration/departments',
+        labelKey: 'nav.departments',
+        permission: PERMISSIONS.departmentRead,
+        // The page lists one branch's departments and refuses without the
+        // branch read (`administration/departments/page.tsx`).
+        alsoRequires: [PERMISSIONS.branchRead],
+      },
+      {
+        href: '/administration/employees',
+        labelKey: 'nav.employees',
+        permission: PERMISSIONS.employeeRead,
+        alsoRequires: [PERMISSIONS.branchRead],
+      },
       { href: '/administration/roles', labelKey: 'nav.roles', permission: PERMISSIONS.roleRead },
       {
         href: '/administration/permissions',

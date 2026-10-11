@@ -874,6 +874,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       'components/forms/Field.tsx',
       'features/vehicles/components/VehicleRelationsSections.tsx',
       'features/vehicles/components/VehicleCreateScreen.tsx',
+      // Still opened by the scan, so a form there that returned to a Server
+      // Action would be inventoried again (see below).
+      'features/administration/access/components/ApprovalLimitsScreen.tsx',
     ]) {
       expect(
         files.some((f) => f.replace(/\\/g, '/') === required),
@@ -892,7 +895,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       // The three appointment files left this list with the Material UI slice:
       // their forms submit through their own handler, so no reset reaches them
       // and they hold no guarded control — the case below holds them to that.
-      'features/administration/access/components/ApprovalLimitsScreen.tsx',
+      // The approval-limits screen left it the same way (P1-32-PRE-OD-ADM4): its
+      // create and end forms are held in component state and sent from their
+      // own handler, and it is still required in the scan above.
     ]) {
       expect(
         guarded.some((c) => c.file === required),

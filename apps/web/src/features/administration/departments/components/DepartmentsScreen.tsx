@@ -496,10 +496,11 @@ function CreateDepartmentDialog({
     } catch {
       // No answer came back: what was typed stays, and the button works again.
       outcome = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
-    } finally {
-      sending.current = false;
-      setRunning(false);
     }
+    // Held after a success until the dialog closes: an Enter or a press in the
+    // moment before it does would otherwise send the same values again.
+    if (outcome.status !== 'success') sending.current = false;
+    setRunning(false);
     notifyActionResult(outcome, messages);
     if (outcome.status === 'success') {
       setDraft(EMPTY_DEPARTMENT);
@@ -613,10 +614,11 @@ function RenameDialog({
       result = await renameDepartmentAction(department.id, name, edit.version);
     } catch {
       result = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
-    } finally {
-      sending.current = false;
-      setRunning(false);
     }
+    // Held after a success until the dialog closes: an Enter or a press in the
+    // moment before it does would otherwise send the same values again.
+    if (result.status !== 'success') sending.current = false;
+    setRunning(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
       edit.rebase({ name });
