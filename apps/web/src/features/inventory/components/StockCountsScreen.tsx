@@ -198,14 +198,23 @@ function BranchCounts({
    */
   const returnTo = useRef<string | null>(null);
 
+  /*
+   * Closing the panel ALWAYS gives the cursor back (P1-32-PRE-OD-INVF,
+   * COUNT-focus). This used to give it back only when the cursor had fallen to
+   * the document's body, and the browser does not always drop it there: the
+   * acceptance run found it on `<main>` once, after a reconciliation and Close,
+   * and the guard then left it there. Closing is the operator's own act, so
+   * there is nothing of theirs to preserve: the cursor goes to the count's Open
+   * button when that button is on the page, and otherwise to the list heading,
+   * which takes it (`tabIndex={-1}`) and is always there.
+   */
   useEffect(() => {
     const id = returnTo.current;
     if (id === null || list.phase === 'loading') return;
     returnTo.current = null;
-    const now = document.activeElement;
-    if (now !== null && now !== document.body) return;
     const button = sectionRef.current?.querySelector<HTMLElement>(`[data-count-open="${id}"]`);
-    (button ?? headingRef.current)?.focus();
+    const usable = button?.isConnected === true && !button.hasAttribute('disabled');
+    (usable ? button : headingRef.current)?.focus();
   });
 
   const open = async (row: StockCountSummary) => {

@@ -49,7 +49,6 @@ import Button from '@mui/material/Button';
 
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
-import { PrintDocument } from '@/components/print/PrintDocument';
 import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -58,13 +57,10 @@ import type { ReadFailureStatus } from '@/lib/api/read-operation';
 
 import { readItemLabel, resolveBarcode } from '../api';
 import { type InventoryItem, type ItemLabel } from '../inventory-contract';
-import { BarcodeImage } from './BarcodeImage';
+import { LABEL_PRESETS, LabelRun, type LabelPreset } from './LabelRun';
 import { ScanBox } from './ScanBox';
 import { ItemFinder, PANEL, StockOperationLinks } from './stock-operations';
-
-/** The label sizes on offer. The value is what the print stylesheet keys on. */
-export const LABEL_PRESETS = ['50x25', '70x40', 'a4'] as const;
-export type LabelPreset = (typeof LABEL_PRESETS)[number];
+import { useUnitList } from './unit-list';
 
 /** How many labels one print run may produce. A bound, so a typo cannot empty a roll. */
 export const MAX_COPIES = 60;
@@ -256,6 +252,8 @@ function LabelSheet({
   >({ phase: 'loading' });
   /* Moves on with every "Try again", which reads the label again. */
   const [round, setRound] = useState(0);
+  // The label names its unit by code; the list names it in the label's language (UNIT-names).
+  const units = useUnitList();
 
   /*
    * No loading state is set here: the sheet is keyed on the item at its call
@@ -308,36 +306,14 @@ function LabelSheet({
     );
   }
 
-  const { label } = state;
-  const printed = label.primaryBarcode;
   return (
-    <PrintDocument title={translate(messages, 'inventory.labels.documentTitle')}>
-      {printed === null ? (
-        <p className="text-body text-error">{translate(messages, 'inventory.labels.noCode')}</p>
-      ) : (
-        <div data-label-sheet={preset}>
-          {Array.from({ length: copies }, (_unused, index) => (
-            <div key={index} data-label="cell" lang={locale}>
-              <BarcodeImage
-                messages={messages}
-                symbology={printed.symbology}
-                value={printed.normalizedValue}
-                readable={printed.value}
-              />
-              <p className="text-caption font-medium text-text-primary">{label.name}</p>
-              <p className="text-caption text-text-secondary" dir="ltr">
-                {label.sku}
-              </p>
-              <p className="text-caption text-text-muted" dir="ltr">
-                {label.packQuantity} {label.unit.code}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-      <p data-print="hide" className="mt-4 text-caption text-text-muted">
-        {translate(messages, 'inventory.labels.noPriceNote')}
-      </p>
-    </PrintDocument>
+    <LabelRun
+      locale={locale}
+      messages={messages}
+      label={state.label}
+      preset={preset}
+      copies={copies}
+      units={units}
+    />
   );
 }
