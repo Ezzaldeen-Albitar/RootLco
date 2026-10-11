@@ -50,8 +50,9 @@ import {
  *
  * The administration hub, the audit log's parent route, is held here too: its
  * departments and employees entries, and that every entry is shown exactly on
- * the codes its page needs — its navigation entry's code, plus any further code
- * the page refuses without — and hidden without them.
+ * the codes its page needs and hidden without them: any ONE of its navigation
+ * entry's `permission` and `orPermissions` codes, and besides it EVERY code in
+ * its `alsoRequires` and every further code the page refuses without.
  */
 
 const EN = en as Record<string, string>;
@@ -574,6 +575,21 @@ describe('who: found by name for a caller holding the user read (route sweep B3)
   });
 });
 
+/** The props the route page hands `AuditLogScreen`, found in the tree it returns. */
+function screenProps(tree: unknown): Record<string, unknown> | undefined {
+  if (tree === null || typeof tree !== 'object') return undefined;
+  if (Array.isArray(tree)) {
+    for (const child of tree) {
+      const found = screenProps(child);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const element = tree as { type?: unknown; props?: { children?: unknown } };
+  if (element.type === AuditLogScreen) return element.props as Record<string, unknown>;
+  return screenProps(element.props?.children);
+}
+
 describe('the /administration/audit-log route page decides before it reads', () => {
   it('refuses without the audit code, and issues no read', async () => {
     PERMISSIONS = [];
@@ -586,17 +602,34 @@ describe('the /administration/audit-log route page decides before it reads', () 
   });
 
   it('reads a seven-day window with the code held, computed on the server', async () => {
-    PERMISSIONS = ['iam.audit.view'];
-    renderLtr(
-      withMui((await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never)
-    );
-    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
-    const { from, to } = lastRange();
-    // Seven whole days on the clock in force (UTC here), today the last: the
-    // read runs from the first day's start to the last millisecond of today.
-    expect(Date.parse(to) + 1 - Date.parse(from)).toBe(DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    expect(to.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
-    expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
+    // A fixed moment, so the case cannot straddle a midnight; only the clock is
+    // faked, not the timers the render waits on.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-09-08T23:59:59.500Z'));
+      PERMISSIONS = ['iam.audit.view'];
+      const page = (await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never;
+      // The window the server hands the screen: seven days, today the last.
+      expect(screenProps(page)).toMatchObject({
+        initialFrom: '2026-09-02',
+        initialTo: '2026-09-08',
+        openedAt: '2026-09-08T23:59:59.500Z',
+      });
+      renderLtr(withMui(page));
+      await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+      // Seven whole days on the clock in force (UTC here), today the last: the
+      // read runs from the first day's start to the last millisecond of today.
+      expect(lastRange()).toEqual({
+        from: '2026-09-02T00:00:00.000Z',
+        to: '2026-09-08T23:59:59.999Z',
+      });
+      expect(Date.parse(lastRange().to) + 1 - Date.parse(lastRange().from)).toBe(
+        DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000
+      );
+      expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -1080,13 +1113,21 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
       join(here, '..', '..', '..', 'apps', 'api', 'src', 'server', 'auth', 'audit-actions.ts'),
       'utf8'
     );
+    // Each definition from its `code` to the next one, so a comment between its
+    // fields cannot hide it; every definition must name its record type.
+    const starts = [...catalogue.matchAll(/^\s*code: '([^']+)',$/gm)];
     const written = new Map<string, string>();
-    for (const match of catalogue.matchAll(
-      /code: '([^']+)',\s*class: '[a-z]+',\s*entityType: '([^']+)'/g
-    )) {
-      written.set(match[1] as string, match[2] as string);
-    }
-    expect(written.size).toBeGreaterThan(100);
+    const untyped: string[] = [];
+    starts.forEach((start, index) => {
+      const body = catalogue.slice(start.index, starts[index + 1]?.index ?? catalogue.length);
+      const type = /entityType: '([^']+)'/.exec(body)?.[1];
+      if (type === undefined) untyped.push(start[1] as string);
+      else written.set(start[1] as string, type);
+    });
+    expect(untyped, 'every definition names its record type').toEqual([]);
+    expect(written.size, 'no code is defined twice').toBe(starts.length);
+    expect(written.has('svc.discount.authorized')).toBe(true);
+    expect(written.size).toBeGreaterThan(300);
     const entities = new Set(written.values());
     for (const code of NAMED_AUDIT_ACTIONS) {
       expect(written.has(code), `${code} is a code the service writes`).toBe(true);
@@ -1191,16 +1232,38 @@ describe('the clock the log is read and drawn on (P1-32-PRE-OD-ADM6)', () => {
 
 describe('paging, empty and refused reads on the grid (P1-32-PRE-OD-ADM6)', () => {
   it('walks the server cursor with Next and Previous, and never counts the records', async () => {
-    listAuditEvents
-      .mockResolvedValueOnce({ ...okPage([row]), nextCursor: 'cursor-2', hasMore: true })
-      .mockResolvedValue(okPage([{ ...row, id: '77777777-7777-4777-8777-777777777777' }]));
+    const first = { ...row, actorDisplayName: 'Hana First' };
+    const second = {
+      ...row,
+      id: '77777777-7777-4777-8777-777777777777',
+      actorDisplayName: 'Omar Second',
+    };
+    listAuditEvents.mockImplementation(async (_request: unknown, cursor: string | null) =>
+      cursor === 'cursor-2'
+        ? { ...okPage([second]), hasMore: false }
+        : { ...okPage([first]), nextCursor: 'cursor-2', hasMore: true }
+    );
     const user = userEvent.setup();
     renderScreen();
-    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    const table = await screen.findByRole('grid');
+    expect(await within(table).findByText('Hana First')).toBeVisible();
+    const firstCursor = listAuditEvents.mock.calls[0]?.[1];
+    expect(firstCursor).not.toBe('cursor-2');
+
+    const next = screen.getByRole('button', { name: EN['table.nextPage'] as string });
     await waitFor(() => expect(next).toBeEnabled());
     await user.click(next);
-    await waitFor(() => expect(listAuditEvents.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(await within(table).findByText('Omar Second')).toBeVisible();
+    expect(within(table).queryByText('Hana First')).toBeNull();
     expect(listAuditEvents.mock.calls.at(-1)?.[1]).toBe('cursor-2');
+
+    const previous = screen.getByRole('button', { name: EN['table.previousPage'] as string });
+    await waitFor(() => expect(previous).toBeEnabled());
+    await user.click(previous);
+    expect(await within(table).findByText('Hana First')).toBeVisible();
+    expect(within(table).queryByText('Omar Second')).toBeNull();
+    // The first page is asked for again from the start, not from the cursor.
+    expect(listAuditEvents.mock.calls.at(-1)?.[1]).toBe(firstCursor);
     expect(screen.queryByText(/\bof\b \d+/)).toBeNull();
   });
 
