@@ -14,8 +14,8 @@ Where this page and one of those files disagree, the canonical file wins and thi
 
 ## 2. Baseline
 
-- `develop` is at `b934ae712c946550b26d776f54632de4a6d99f67`, the merge of PR #563, which follows
-  the merges of PR #564 and PR #562 (all below), on top of `c765ed8ccfc83906bcd0da65ce527ddf0152ac7d`, where
+- `develop` is at `ed21a7df48462c8b9ed56253380dcdc4f2290638`, the merge of PR #566, which follows
+  the merges of PR #563, PR #564 and PR #562 (all below), on top of `c765ed8ccfc83906bcd0da65ce527ddf0152ac7d`, where
   administration wave 1 is merged (PR #554, PR #552, PR #553).
 - `main` is at `1262de74` and is frozen. No promotion to `main` is authorised.
 
@@ -42,6 +42,21 @@ Where this page and one of those files disagree, the canonical file wins and thi
   is success; the review records are comments on the pull request, one from the cloud session
   (`issuecomment-6107080213`) and one from the landing owner (`issuecomment-6107551799`); and
   `develop-merge-integrity` run `38128219754` is success.
+- **PR #566 (ADM-6, the audit log and the administration hub)** landed on 2026-10-11. Approved
+  head `72ef338536c2b119d81161c4d324b5809a6b736b`; merge commit
+  `ed21a7df48462c8b9ed56253380dcdc4f2290638`, with parents `b934ae71` and `72ef3385`. The
+  `independent-review` status on the approved head is success, and `develop-merge-integrity` run
+  `38132930217` is success. The review records are comments on the pull request
+  (`issuecomment-6107991119` and `issuecomment-6108184991`); the earlier CHANGES REQUIRED on
+  `239aaaa1` is `issuecomment-6107933011`.
+  - Last fix round: once #563 had landed, the shared table check in `shared-ux.spec.ts` pointed at
+    the audit log page, which #566 moved onto the operational grid. Commit `72ef3385` pointed that
+    check at `/en/crm/customer-duplicates` instead, with no assertion changed. The hosted
+    signed-in browser tier reported 407 passed, 73 skipped, 0 failed.
+  - Recorded and still open: the shared-ux case is named for the pager but does not check it;
+    without `iam.user.read`, the audit log's "Who" column shows a typed account reference;
+    `audit-log-p1-31.spec.ts` skips itself when the acceptance handoff is absent; and the shared-ux
+    table case must be pointed elsewhere again when the duplicate queue moves off `DataTable`.
 - **Follow-ups tracked from #564 and #563**, for a separate pull request: the chapter 07 sentence that quotes
   the notice's message key (`admin.contractGap.noDirectory`); unused catalogue keys for numbering,
   taxes and currencies; the chapter 07 wording that lists appointments as out of reach for the
@@ -99,6 +114,8 @@ Landing order: #562, #564, #563, #566, #565; then #558, #557, #560, #556.
 
 - Head `b6a2205a73e7953c0e1a71eb66f986b5f8afa6af`, with six review findings fixed. Hosted CI green
   at that head.
+- Landed on 2026-10-11 at approved head `72ef3385` (section 2, "Landed"). The entry below is kept
+  as it stood on 2026-10-10.
 - Delta review: CHANGES REQUIRED, waiting on #564. After #564 lands: merge `develop`; use #564's
   hub predicate (`orPermissions` / `alsoRequires`) in place of #566's four settings-entry gates;
   realign the hub tests; add `org.tenant.read` to the real-page suite; correct the header comment
@@ -166,7 +183,7 @@ new approved head before it can land.
 
 ## 5. Checkpoint CP-20261009-1
 
-The canonical local result is 93 rows: 77 PASS, 10 FAIL, 6 NOT RUN. That is the figure as the Owner
+The canonical local result is 93 rows: 77 PASS, 10 FAIL, 6 NOT RUN, unchanged at 2026-10-11. That is the figure as the Owner
 corrected it; an earlier narrative of 72 / 10 / 7 was wrong.
 
 **What the remote repository does not hold.** On 2026-10-10 neither the 93-row local result
@@ -206,11 +223,10 @@ The six NOT RUN case ids, with the reason each could not run:
 1. Done: #562 landed at `eb0a21fc` on 2026-10-11 (section 2, "Landed").
 2. Done: #564 landed at `8efb403a` on 2026-10-11 (section 2, "Landed").
 3. Done: #563 landed at `b934ae71` on 2026-10-11 (section 2, "Landed").
-4. In progress: #566's final merge of `develop` and a docblock fix; then delta review, CI, a new
-   review record, and landing.
-5. #565 has been brought up to date with `develop` ahead of time; after #566 lands it needs further
-   small merges of `develop`, then delta review and CI on the new head, a new review record, and
-   landing.
+4. Done: #566 landed at `ed21a7df` on 2026-10-11 (section 2, "Landed").
+5. In progress: #565 (ADM-2b) is being merged with `develop` at `ed21a7df`, including a correction
+   to the hub's "no technician roster" sentence. It then needs a fresh delta review and CI on the
+   new head, a new review record, and landing. After it: #558, #557, #560, #556.
 6. Open the separate follow-up pull request for the points tracked from #564 and #563 (section 2); the two
    test-count points wait for the checkpoint.
 7. Merge `develop` into #558, #557, #560 and #556 (the `route-checklist.md` conflict), re-review
