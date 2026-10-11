@@ -269,22 +269,85 @@ function pickerZone(zone: string | undefined): string {
   return zone ?? 'system';
 }
 
+const MS_PER_MINUTE = 60_000;
+
+/**
+ * The instant a wall clock names on `zone`, and the zone's offset there in
+ * minutes east of UTC — `null` when the wall clock is not one. The wall clock
+ * is `YYYY-MM-DD` (that day's midnight) or `YYYY-MM-DDTHH:mm:ss`.
+ *
+ * ## Why only the offset is taken from `dayjs.tz(wall, zone)`
+ *
+ * `dayjs.tz('2026-09-27', zone)` resolves the wall clock by the zone's own
+ * rules, and the OFFSET it settles on is a plain number, the same on every
+ * machine. Nothing else it holds is:
+ *
+ *  - its PARTS. It stores the instant as a machine-local date moved by the
+ *    difference between the two clocks, and every part — the year, the day,
+ *    the hour — is read from that moved date on the MACHINE's clock. When the
+ *    machine's own zone changes offset between the instant and the moved date
+ *    the reading is an hour out, and an hour before midnight is the day
+ *    before: on an Auckland machine 2026-09-27, the day Auckland's clocks go
+ *    forward, was drawn as the 26th on a Riyadh branch while the form went on
+ *    holding the 27th (measured);
+ *  - its INSTANT. To give the instant back it undoes that move with the
+ *    machine offset it recorded — and takes a recorded offset of zero for
+ *    "none recorded", measuring the machine again at the moved date. On a
+ *    machine that is on UTC at the instant and not at the moved date the
+ *    instant comes back an hour off: on a Europe/London machine 02:30 typed on
+ *    a Riyadh branch for 29/03/2026 was sent as 03:30, and on an
+ *    Atlantic/Azores machine 2026-03-29 on a New York branch was drawn as the
+ *    28th (measured).
+ *
+ * So the instant is built here from the wall clock's own digits and that
+ * offset, by UTC arithmetic, in which no machine clock takes part.
+ *
+ * A wall clock the zone skips — its clocks went forward over it — is answered
+ * as dayjs answers it: the offset AFTER the change, and the instant that many
+ * minutes on (02:30 on the morning New York's clocks go forward is 03:30 on
+ * the summer offset). The digits less that offset fall before the change,
+ * where the zone is still on the earlier offset, and the earlier offset is
+ * the one the instant is counted from. Where the zone keeps the wall clock the
+ * two offsets are the same one.
+ */
+export function wallClockOnZone(
+  wall: string,
+  zone: string
+): { readonly at: number; readonly offset: number } | null {
+  const resolved = dayjs.tz(wall, zone);
+  if (!resolved.isValid()) return null;
+  const offset = resolved.utcOffset();
+  // The digits read as UTC's own: parts only, no clock.
+  const digits = dayjs.utc(wall).valueOf();
+  const before = dayjs(digits - offset * MS_PER_MINUTE)
+    .tz(zone)
+    .utcOffset();
+  return { at: digits - before * MS_PER_MINUTE, offset };
+}
+
+/** An offset in minutes east of UTC as `±HH:MM`. */
+function offsetText(minutes: number): string {
+  const size = Math.abs(minutes);
+  const hours = String(Math.floor(size / 60)).padStart(2, '0');
+  const rest = String(size % 60).padStart(2, '0');
+  return `${minutes < 0 ? '-' : '+'}${hours}:${rest}`;
+}
+
 /**
  * A calendar day as the picker's value: that day's midnight on `zone`'s clock.
  *
- * ## Why the day is read on the zone a second time
+ * The instant of that midnight comes from `wallClockOnZone`, and is then shown
+ * on the zone the way any instant is (`instantToPicker`): dayjs reads the
+ * zone's wall clock for it and keeps those parts, moving nothing.
  *
- * `dayjs.tz('2026-09-27', zone)` finds the right instant and the right offset,
- * but it stores them as a machine-local date moved by the difference between
- * the two clocks, and every part — the year, the day, the hour — is then read
- * from that moved date on the MACHINE's clock. When the machine's own zone
- * changes offset between the instant and the moved date, the reading is an
- * hour out, and an hour before midnight is the day before: on an Auckland
- * machine 2026-09-27, the day Auckland's clocks go forward, was drawn as the
- * 26th on a Riyadh branch while the form went on holding the 27th (measured).
- * So only the instant is taken from that value, and it is then shown on the
- * zone the way any instant is (`instantToPicker`): dayjs reads the zone's wall
- * clock for it and keeps those parts, moving nothing.
+ * ## What the value cannot hold
+ *
+ * dayjs keeps a zone's wall clock as a date on the MACHINE's calendar, so a
+ * wall clock the machine's own calendar skips cannot be kept: on an
+ * Asia/Beirut machine, whose clocks go from midnight to 01:00 on 29/03/2026,
+ * that day's midnight on a New York branch is held as 01:00 and its instant is
+ * an hour late (measured). The day is the same day, which is all a day field
+ * draws or hands back.
  */
 export function dayToPicker(day: string, zone: string | undefined): Dayjs | null {
   if (!isCalendarDay(day)) return null;
@@ -292,9 +355,9 @@ export function dayToPicker(day: string, zone: string | undefined): Dayjs | null
     const local = dayjs(day);
     return local.isValid() ? local : null;
   }
-  const midnight = dayjs.tz(day, zone);
-  if (!midnight.isValid()) return null;
-  const value = dayjs(midnight.valueOf()).tz(zone);
+  const midnight = wallClockOnZone(day, zone);
+  if (midnight === null) return null;
+  const value = dayjs(midnight.at).tz(zone);
   return value.isValid() ? value : null;
 }
 
@@ -345,14 +408,14 @@ export function pickerToInstant(value: Dayjs | null, zone: string | undefined): 
   if (zone === undefined) return value.format('YYYY-MM-DDTHH:mm:ssZ');
   // The wall clock, resolved afresh on the zone: the offset is the one in force
   // at THAT wall clock, whatever the picker's object was carrying.
-  const resolved = dayjs.tz(wallClockIn(value, zone), zone);
-  if (!resolved.isValid()) return resolved.format('YYYY-MM-DDTHH:mm:ssZ');
-  // Its instant and its offset are right on every machine; its parts are read
-  // on the MACHINE's clock and are an hour out near the machine's own offset
-  // change (see `dayToPicker`). So the digits are written from the instant by
-  // UTC arithmetic, which no machine clock takes part in.
-  const shown = dayjs.utc(resolved.valueOf()).add(resolved.utcOffset(), 'minute');
-  return `${shown.format(WALL_CLOCK)}${resolved.format('Z')}`;
+  const wall = wallClockIn(value, zone);
+  const resolved = wallClockOnZone(wall, zone);
+  if (resolved === null) return dayjs.tz(wall, zone).format('YYYY-MM-DDTHH:mm:ssZ');
+  // The digits are written from the instant by UTC arithmetic: read off the
+  // value dayjs resolves, they are an hour out near the machine's own offset
+  // change (see `wallClockOnZone`).
+  const shown = dayjs.utc(resolved.at + resolved.offset * MS_PER_MINUTE);
+  return `${shown.format(WALL_CLOCK)}${offsetText(resolved.offset)}`;
 }
 
 /**
