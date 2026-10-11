@@ -2034,25 +2034,39 @@ describe('D16 — the amounts are as of a stated moment', () => {
     await showReport();
     await screen.findByTestId('report-as-of');
     const calls = runReport.mock.calls.length;
-    const apply = screen.getByRole('button', { name: EN['reports.asOf.apply'] as string });
-    await act(async () => {
-      apply.click();
-      apply.click();
-    });
-    await screen.findByTestId('report-as-of');
+    const user = userEvent.setup();
+    /*
+     * Every press is its own interaction, made on the screen as it stands after
+     * the one before (P1-32-PRE-OD-REPA-03). Two clicks inside one `act()` are
+     * one batch, and the second of them never met a screen that had rendered
+     * the first — so that shape passed with or without the guard.
+     */
+    const apply = () => screen.getByRole('button', { name: EN['reports.asOf.apply'] as string });
+    const settle = () =>
+      act(async () => {
+        await Promise.resolve();
+      });
+    // The choice already shown (the end of the period), applied twice.
+    await user.click(apply());
+    await settle();
+    await user.click(apply());
+    await settle();
     expect(runReport).toHaveBeenCalledTimes(calls);
-    await userEvent
-      .setup()
-      .click(screen.getByRole('radio', { name: EN['reports.asOf.now'] as string }));
-    const applyNow = screen.getByRole('button', { name: EN['reports.asOf.apply'] as string });
-    await act(async () => {
-      applyNow.click();
-      applyNow.click();
-    });
+
+    // Another choice is a new answer, read once.
+    await user.click(screen.getByRole('radio', { name: EN['reports.asOf.now'] as string }));
+    await user.click(apply());
     await waitFor(() => expect(runReport).toHaveBeenCalledTimes(calls + 1));
-    await screen.findByTestId('report-as-of');
-    expect(runReport).toHaveBeenCalledTimes(calls + 1);
     expect(runReport).toHaveBeenLastCalledWith(expect.objectContaining({ asOf: 'now' }));
+    // That answer is drawn, with "Now" still the choice in its own form: the
+    // second press lands on it, reaches the handler, and reads nothing.
+    await screen.findByTestId('report-as-of');
+    expect(screen.getByRole('radio', { name: EN['reports.asOf.now'] as string })).toBeChecked();
+    await user.click(apply());
+    await settle();
+    await user.click(apply());
+    await settle();
+    expect(runReport).toHaveBeenCalledTimes(calls + 1);
   });
 
   it.each(['en', 'ar'] as const)(

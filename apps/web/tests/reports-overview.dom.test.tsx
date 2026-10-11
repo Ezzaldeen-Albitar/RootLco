@@ -1283,11 +1283,22 @@ describe('the scope form on Material UI (P1-32-PRE-OD-REPA)', () => {
   it('draws each summary as a table named by its report, in Arabic too', async () => {
     const { container } = await showOverview('ar');
     await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
-    const tables = within(container).getAllByRole('table');
-    expect(tables.length).toBeGreaterThan(0);
-    for (const table of tables) {
-      expect(table).toHaveAccessibleName();
+    // One table per domain, each inside its own section and named by THAT
+    // section's report — the Arabic title, not merely some name
+    // (P1-32-PRE-OD-REPA-03: "has a name" passed for any caption at all).
+    const names: string[] = [];
+    for (const code of contract.OVERVIEW_REPORT_CODES) {
+      const title = AR[`reports.${code}.title`] as string;
+      expect(title).toBeTruthy();
+      names.push(title);
+      const tables = within(panel(code, AR)).getAllByRole('table');
+      expect(tables).toHaveLength(1);
+      expect(tables[0]).toHaveAccessibleName(title);
     }
+    expect(new Set(names).size).toBe(contract.OVERVIEW_REPORT_CODES.length);
+    expect(within(container).getAllByRole('table')).toHaveLength(
+      contract.OVERVIEW_REPORT_CODES.length
+    );
     expect(document.documentElement.dir).toBe('rtl');
   });
 });
