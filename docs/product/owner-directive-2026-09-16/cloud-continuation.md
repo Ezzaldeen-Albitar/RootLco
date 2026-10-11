@@ -14,9 +14,9 @@ Where this page and one of those files disagree, the canonical file wins and thi
 
 ## 2. Baseline
 
-- `develop` is at `eb0a21fc09e08cc16950c95f73e48362162da157`, the merge of PR #562 (below), on top
-  of `c765ed8ccfc83906bcd0da65ce527ddf0152ac7d`, where administration wave 1 is merged (PR #554,
-  PR #552, PR #553).
+- `develop` is at `8efb403a6aaaba301ae8f62a9b041f962fa867e8`, the merge of PR #564, which follows
+  the merge of PR #562 (both below), on top of `c765ed8ccfc83906bcd0da65ce527ddf0152ac7d`, where
+  administration wave 1 is merged (PR #554, PR #552, PR #553).
 - `main` is at `1262de74` and is frozen. No promotion to `main` is authorised.
 
 ### Landed
@@ -28,6 +28,20 @@ Where this page and one of those files disagree, the canonical file wins and thi
   is success, and `develop-merge-integrity` run `38120791509` on the merge commit is success. The
   ten CP-20261009-1 INV-F rows stay FAIL until a runtime retest at a revision that contains this
   merge.
+- **PR #564 (ADM-5)** merged at 2026-10-11T07:56:47Z by the landing owner, through the landing
+  guard. Merge commit `8efb403a6aaaba301ae8f62a9b041f962fa867e8`, with parents
+  `eb0a21fc09e08cc16950c95f73e48362162da157` and the approved head
+  `5b885fb4db79898f0d91243d3b13656aa4238cb3`, which is the merge of `develop` into `b517b847`. The
+  `independent-review` status on the approved head is success; the independent delta review record
+  is a comment on the pull request (`issuecomment-6106891640`); and `develop-merge-integrity` run
+  `38123087959` is success.
+- **Follow-ups tracked from #564**, for a separate pull request: the chapter 07 sentence that quotes
+  the notice's message key (`admin.contractGap.noDirectory`); unused catalogue keys for numbering,
+  taxes and currencies; the chapter 07 wording that lists appointments as out of reach for the
+  Tenant Administrator; the order of keys between the English and Arabic catalogues near
+  `inventory.specifications.list.*`; the out-of-date sentence that speaks of "97 capability rows";
+  and, deferred to the checkpoint, the count derived in `navigation.test.ts` (26 against 32) and the
+  web test-file marker.
 
 ## 3. Open pull requests at 2026-10-10, about 14:00 UTC
 
@@ -54,11 +68,9 @@ Landing order: #562, #564, #563, #566, #565; then #558, #557, #560, #556.
 - Delta review: APPROVE at that head. Hosted CI: every check reported success at that head,
   `ci-gate` included. The review record is a comment on the pull request
   (`issuecomment-6098193498`).
-- Lands after #562, with mergeability checked again once #562 is in.
-- Follow-ups that do not block landing, for a separate pull request afterwards: the chapter 07
-  sentence that quotes the message key `admin.contractGap.noDirectory`; unused catalogue keys for
-  numbering, taxes and currencies; and chapter 07 listing appointments as out of reach for the
-  Tenant Administrator.
+- Landed on 2026-10-11 at approved head `5b885fb4` (section 2, "Landed"). The entry above is kept
+  as it stood before landing.
+- Follow-ups: see section 2, "Follow-ups tracked from #564".
 
 ### PR #563 — ADM-4, `feature/owner-directive-mui-admin-roles`
 
@@ -181,15 +193,15 @@ The six NOT RUN case ids, with the reason each could not run:
 ## 7. Next actions, in order
 
 1. Done: #562 landed at `eb0a21fc` on 2026-10-11 (section 2, "Landed").
-2. In progress: the cloud session merges `develop` into #564, gets a delta review and CI on the new head, posts
-   a new review record, and hands over the new approved head; the landing owner lands it.
-3. #563: finish the test-isolation round, merge `develop`, then delta review, CI, a new review
+2. Done: #564 landed at `8efb403a` on 2026-10-11 (section 2, "Landed").
+3. In progress: #563 is being brought up to date with `develop` (`8efb403a`), alongside the
+   test-isolation round; then delta review, CI, a new review record, and landing.
+4. In progress: #566 is being brought up to date with `develop`, applying the reviewed resolution of
+   the settings gating (section 3); then delta review, CI, a new review record, and landing.
+5. #565, after #566: merge `develop`, then delta review and CI on the new head, a new review
    record, and landing.
-4. #566: merge `develop`, make the changes the delta review asked for (section 3), then delta
-   review, CI, a new review record, and landing.
-5. #565: once hosted CI is green, merge `develop`, then delta review and CI on the new head, a new
-   review record, and landing.
-6. Open the separate follow-up pull request for #564's three non-blocking points.
+6. Open the separate follow-up pull request for the points tracked from #564 (section 2); the two
+   test-count points wait for the checkpoint.
 7. Merge `develop` into #558, #557, #560 and #556 (the `route-checklist.md` conflict), re-review
    any changed behaviour, and land them in that order, one at a time, the same way.
 8. The next checkpoint: an identified integration revision, hosted full verification, and a
