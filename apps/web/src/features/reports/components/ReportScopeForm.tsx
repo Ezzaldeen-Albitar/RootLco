@@ -57,19 +57,43 @@ import {
  * clock when the working context knows the chosen branch's zone. A day is still
  * a `YYYY-MM-DD` string and the half-open rule is unchanged.
  *
- * ## A branch whose zone is not known keeps the form, and says so
+ * ## The day typed is the day shown and the day sent, on any machine
  *
- * The day SENT is the day typed: the picker's value is read by its wall clock
- * (`pickerToDay`), so no zone can move it, and the server resolves the period
- * in the branch's own zone whatever this browser knows. The zone decides one
- * thing only — which day the picker's calendar marks as today. So where the
- * chosen branch's zone is missing from the working context, or is a name this
- * browser cannot resolve, the form is NOT refused (nothing it sends could be
- * wrong); the picker falls back as every day field does, and a note under the
- * days says that today's mark may be another day and that the days are used as
- * entered (`reports.run.zoneUnknownNote`, `P1-32-PRE-OD-REPA-03`). A moment is
- * different — its meaning does depend on the clock — and is refused: see the
- * report screen's as-of choice.
+ * A calendar day has no clock, and the server resolves the period in the
+ * branch's own zone whatever this browser knows — so the form's one duty is to
+ * hand over exactly the day the operator typed. The picker does not make that
+ * free. It holds a day as an instant on some zone, and two things moved the
+ * day by one (`P1-32-PRE-OD-REPA-04`; measured, not reasoned — the REPA-03
+ * text here claimed "no zone can move it", and a browser on UTC refuted it):
+ *
+ *  1. **A zone that changed under a mounted picker.** The picker builds what is
+ *     typed on the zone it was MOUNTED with and shows it on the zone it has
+ *     now, so choosing another branch and then typing 01/09 drew — and sent —
+ *     31/08 whenever the new clock was west of the old one.
+ *  2. **The browser's clock as the fallback.** Handed no zone, `DateField`
+ *     takes the working branch's, else the browser's; on the browser's clock
+ *     the picker moved the typed day back on some machines with no zone change
+ *     at all (a browser in Asia/Riyadh, measured).
+ *
+ * So this form never hands a day picker a zone that can change under it, and
+ * never leaves it to fall back:
+ *
+ *  - the two day fields are KEYED on their clock (`dayClock`), so another
+ *    branch's clock is a new picker, mounted on that clock. A whole day already
+ *    typed is kept — it is a string in this form's state, not the picker's — and
+ *    a day only partly typed goes with the picker it was typed into, together
+ *    with the complaint about it (`reportedProblems` is dropped with the clock);
+ *  - where the chosen branch's zone is not known — missing from the working
+ *    context, a name this browser cannot resolve, or no branch chosen yet — the
+ *    pickers stand on `DAY_REFERENCE_ZONE`, a fixed reference used only for the
+ *    calendar's arithmetic. It is not the branch's clock and is never said to
+ *    be: the one thing a reader could take from it is which day the calendar
+ *    marks as today, and the note under the days says that mark may be another
+ *    day and that the days are used as entered (`reports.run.zoneUnknownNote`).
+ *
+ * The form is NOT refused for an unknown zone: what it sends cannot be wrong.
+ * A moment is different — its meaning does depend on the clock — and is
+ * refused: see the report screen's as-of choice.
  *
  * What the picker adds is said where it happens: a
  * day only partly typed is "not finished", never "choose a day" — the box is not
@@ -79,6 +103,22 @@ import {
  * The choices here are a FILTER, not unsaved work: nothing is written, so a
  * branch switch never asks about them (the `EntityPicker` P6 rule).
  */
+/**
+ * The zone the day pickers stand on when the chosen branch's own is not known.
+ *
+ * A fixed reference for the calendar's arithmetic and nothing else: UTC has no
+ * offset changes and no historical offsets, so a day typed on it is that day on
+ * every machine. It is never presented as the branch's clock, and no instant is
+ * read from it — the form sends the `YYYY-MM-DD` string.
+ */
+const DAY_REFERENCE_ZONE = 'UTC';
+
+/** No complaint from either day field. */
+const NO_DAY_PROBLEMS: { readonly from: DayProblem; readonly to: DayProblem } = Object.freeze({
+  from: null,
+  to: null,
+});
+
 export function ReportScopeForm({
   locale,
   messages,
@@ -104,10 +144,43 @@ export function ReportScopeForm({
    * value for either, so without this a half-typed day would read as an empty
    * one.
    */
-  const [dayProblems, setDayProblems] = useState<{
+  const [reportedProblems, setReportedProblems] = useState<{
+    /** The clock of the pickers that reported them — see `dayClock`. */
+    readonly clock: string;
     readonly from: DayProblem;
     readonly to: DayProblem;
-  }>({ from: null, to: null });
+  }>({ clock: '', ...NO_DAY_PROBLEMS });
+  /*
+   * The days are typed on the clock of the branch being reported on. The
+   * directory names no zone, so it is read from the working context's own
+   * branches. A branch it does not hold, a zone this browser cannot read, or no
+   * branch chosen yet puts the pickers on the fixed reference instead — never
+   * on the working branch's clock or the browser's — and for a chosen branch
+   * the form says so (`zoneUnknown`). See "The day typed is the day shown and
+   * the day sent, on any machine".
+   */
+  const context = useWorkingContext();
+  const chosenZone = context.branches.find((branch) => branch.id === draft.branchId)?.timezone;
+  const zone = chosenZone !== undefined && isKnownZone(chosenZone) ? chosenZone : undefined;
+  const zoneUnknown = draft.branchId !== '' && zone === undefined;
+  /*
+   * The one zone both day pickers are mounted on, and their key: when it
+   * changes the pickers are new ones, so no picker ever sees its zone change.
+   * The marker keeps "the reference" apart from a branch that really is on UTC.
+   */
+  const dayZone = zone ?? DAY_REFERENCE_ZONE;
+  const dayClock = zone === undefined ? `reference:${dayZone}` : `branch:${dayZone}`;
+  /*
+   * A complaint belongs to the picker that made it, and goes with that picker:
+   * a new clock is new pickers, which have complained about nothing. Dropped
+   * during render (React's pattern for state that follows a value), so no frame
+   * shows an empty box under the old picker's complaint — and returning to the
+   * first clock later cannot bring that complaint back.
+   */
+  if (reportedProblems.clock !== dayClock) {
+    setReportedProblems({ clock: dayClock, ...NO_DAY_PROBLEMS });
+  }
+  const dayProblems = reportedProblems.clock === dayClock ? reportedProblems : NO_DAY_PROBLEMS;
   // Question f: the cursor goes to the first control to correct, and a
   // complaint goes once its control changes (route sweep B3).
   const {
@@ -121,17 +194,6 @@ export function ReportScopeForm({
     to: `${draft.to}|${dayProblems.to ?? ''}`,
   });
   const fixed = fixedBranchId !== null;
-  /*
-   * The days are typed on the clock of the branch being reported on. The
-   * directory names no zone, so it is read from the working context's own
-   * branches; a branch it does not hold, or a zone this browser cannot read,
-   * leaves the picker on the fallback every day field takes — and the form
-   * says so (`zoneUnknown`), because that fallback is not this branch's clock.
-   */
-  const context = useWorkingContext();
-  const chosenZone = context.branches.find((branch) => branch.id === draft.branchId)?.timezone;
-  const zone = chosenZone !== undefined && isKnownZone(chosenZone) ? chosenZone : undefined;
-  const zoneUnknown = draft.branchId !== '' && zone === undefined;
 
   const dayRefusal = (problem: DayProblem, value: string): string | null => {
     if (problem === 'incomplete') return 'reports.run.dayIncomplete';
@@ -140,9 +202,10 @@ export function ReportScopeForm({
   };
 
   const noteProblem = (field: 'from' | 'to') => (problem: DayProblem) =>
-    setDayProblems((current) =>
-      current[field] === problem ? current : { ...current, [field]: problem }
-    );
+    setReportedProblems((current) => {
+      const held = current.clock === dayClock ? current : { clock: dayClock, ...NO_DAY_PROBLEMS };
+      return held === current && held[field] === problem ? current : { ...held, [field]: problem };
+    });
 
   const submit = () => {
     const found: Record<string, string> = {};
@@ -213,10 +276,11 @@ export function ReportScopeForm({
           error={errorFor('branchId')}
         />
         <DateField
+          key={`from:${dayClock}`}
           label={translate(messages, 'reports.run.from')}
           description={translate(messages, 'reports.run.fromHint')}
           required
-          timezone={zone}
+          timezone={dayZone}
           value={isReportDay(draft.from) ? draft.from : ''}
           onChange={(value) => setDraft((current) => ({ ...current, from: value }))}
           onProblem={noteProblem('from')}
@@ -224,10 +288,11 @@ export function ReportScopeForm({
           testId="report-scope-from"
         />
         <DateField
+          key={`to:${dayClock}`}
           label={translate(messages, 'reports.run.to')}
           description={translate(messages, 'reports.run.toHint')}
           required
-          timezone={zone}
+          timezone={dayZone}
           value={isReportDay(draft.to) ? draft.to : ''}
           onChange={(value) => setDraft((current) => ({ ...current, to: value }))}
           onProblem={noteProblem('to')}

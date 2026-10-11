@@ -1649,6 +1649,141 @@ describe('a branch zone this browser does not know is refused, never drawn on an
   });
 });
 
+describe('the scope form shows and sends exactly the day typed, on any clock', () => {
+  /*
+   * P1-32-PRE-OD-REPA-04. A calendar day has no clock, so the day typed is the
+   * day shown and the day sent — for a branch whose zone is known, for one
+   * whose zone is not, and when the branch (and so the clock) changes under the
+   * form. Before this round a zone that changed under a mounted picker, and the
+   * browser's clock as the fallback, each moved the day by one on some
+   * machines: the hosted runner (UTC) showed 31/08 for a typed 01/09.
+   *
+   * Nothing here is computed from the clock of the machine running the test:
+   * the days are literals. The three zones are chosen so that the cases mean
+   * something on ANY machine clock — one far east of every likely runner
+   * (Pacific/Auckland), one far west (Pacific/Honolulu), and the region the
+   * product is used in (Asia/Riyadh). A change towards a clock west of the
+   * old one is what moved the day, and with these there is always one.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const scopes = {
+    ...SCOPES,
+    data: {
+      companies: SCOPES.data.companies,
+      branches: [
+        ...SCOPES.data.branches,
+        { id: OTHER_BRANCH.id, companyId: COMPANY_ID, name: 'Second branch' },
+      ],
+    },
+  };
+  /** BRANCH_ID stands on `knownZone`; the second branch's zone is no clock at all. */
+  function renderForm(knownZone: string, startOn: string) {
+    return renderLtr(
+      withPickers(
+        inBranch(
+          <ReportScreen
+            locale="en"
+            messages={en}
+            definition={BASELINE as never}
+            scopeOptions={scopes as never}
+            named={{ companyId: COMPANY_ID, branchId: startOn }}
+          />,
+          {
+            snapshot: branchSnapshot([
+              { ...TEST_BRANCH, timezone: knownZone },
+              { ...OTHER_BRANCH, timezone: 'Mars/Base' },
+            ]),
+          }
+        )
+      )
+    );
+  }
+  const branchBox = () =>
+    screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement;
+  const shownDays = () => ({
+    from: dayShown('reports.run.from'),
+    to: dayShown('reports.run.to'),
+  });
+  /** Presses Show and answers with the branch and the two days of the one read it spent. */
+  async function sentDays(user: ReturnType<typeof userEvent.setup>) {
+    runReport.mockClear();
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    const sent = runReport.mock.calls[0]?.[0] as {
+      readonly branchId: string;
+      readonly from: string;
+      readonly to: string;
+    };
+    return { branchId: sent.branchId, from: sent.from, to: sent.to };
+  }
+
+  describe.each(['Asia/Riyadh', 'Pacific/Auckland', 'Pacific/Honolulu'])(
+    'with the known branch on %s',
+    (knownZone) => {
+      it.each([
+        ['a branch whose zone is known', BRANCH_ID, null],
+        ['a branch whose zone is not known', OTHER_BRANCH.id, null],
+        ['a change from a known zone to an unknown one', BRANCH_ID, OTHER_BRANCH.id],
+        ['a change from an unknown zone to a known one', OTHER_BRANCH.id, BRANCH_ID],
+      ])('for %s', async (_what, startOn, changeTo) => {
+        renderForm(knownZone, startOn);
+        const user = userEvent.setup();
+        expect(branchBox().value).toBe(startOn);
+        // The change, when there is one, is made with both day fields mounted
+        // and empty — the state the hosted failure was in.
+        if (changeTo !== null) await user.selectOptions(branchBox(), changeTo);
+        const reportedOn = changeTo ?? startOn;
+        expect(screen.queryByTestId('report-scope-zone-unknown') !== null).toBe(
+          reportedOn === OTHER_BRANCH.id
+        );
+
+        await typeDay(user, 'reports.run.from', '2026-09-01');
+        await typeDay(user, 'reports.run.to', '2026-09-08');
+        expect(shownDays()).toEqual({ from: '01/09/2026', to: '08/09/2026' });
+        expect(await sentDays(user)).toEqual({
+          branchId: reportedOn,
+          from: '2026-09-01',
+          to: '2026-09-08',
+        });
+        // Still the days typed once the report has answered.
+        expect(shownDays()).toEqual({ from: '01/09/2026', to: '08/09/2026' });
+      });
+
+      it('keeps a whole day across a change of branch, and drops a half-typed one with its complaint', async () => {
+        renderForm(knownZone, BRANCH_ID);
+        const user = userEvent.setup();
+        await typeDay(user, 'reports.run.from', '2026-09-01');
+        // The day and the month of the second day, and no year.
+        const to = dayGroup('reports.run.to');
+        await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+        await user.keyboard('0809');
+        await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+        await waitFor(() => expect(to).toHaveAttribute('aria-invalid', 'true'));
+        expect(runReport).not.toHaveBeenCalled();
+
+        for (const next of [OTHER_BRANCH.id, BRANCH_ID]) {
+          await user.selectOptions(branchBox(), next);
+          // The whole day is the form's and stays; the half-typed one went with
+          // the picker it was typed into, and nothing complains about an empty box.
+          expect(shownDays()).toEqual({ from: '01/09/2026', to: '' });
+          expect(dayGroup('reports.run.to')).not.toHaveAttribute('aria-invalid', 'true');
+          expect(screen.queryByText(EN['reports.run.dayIncomplete'] as string)).toBeNull();
+        }
+
+        await user.selectOptions(branchBox(), OTHER_BRANCH.id);
+        await typeDay(user, 'reports.run.to', '2026-09-08');
+        expect(shownDays()).toEqual({ from: '01/09/2026', to: '08/09/2026' });
+        expect(await sentDays(user)).toEqual({
+          branchId: OTHER_BRANCH.id,
+          from: '2026-09-01',
+          to: '2026-09-08',
+        });
+      });
+    }
+  );
+});
+
 describe('the totals are the server’s, over the whole period and never over the page', () => {
   it('reads the deprecated state counts when the envelope carries no grouping', async () => {
     await showReport();
