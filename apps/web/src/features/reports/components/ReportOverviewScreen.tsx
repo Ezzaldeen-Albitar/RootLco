@@ -730,7 +730,10 @@ function OverviewSectionPanel({
         locale={locale}
         messages={messages}
         section={section}
-        caption={title ?? section.reportCode}
+        // The table is named in words: the report's name, or — for a report
+        // this build has no name for — what the section says it shows. The
+        // code is a machine name and is never read out as the table's name.
+        caption={title ?? translateDynamic(messages, section.captionKey)}
         definition={definition}
         outcome={outcome}
       />

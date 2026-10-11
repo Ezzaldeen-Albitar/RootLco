@@ -575,6 +575,42 @@ describe('the period, the zone and the branch travel with the summaries', () => 
     expect(container).not.toHaveTextContent(BRANCH_ID);
   });
 
+  it('names the summary table in words for a report this build has no name for, never by its code', async () => {
+    // The section is still headed by the code, shown as a code (deliberate);
+    // the TABLE's name is read out as prose, so it is the section's own
+    // sentence and not a machine name (P1-32-PRE-OD-REPA-04).
+    const code = 'work_orders_by_status';
+    const unnamed = Object.fromEntries(
+      Object.entries(en).filter(([key]) => key !== `reports.${code}.title`)
+    ) as typeof en;
+    renderLtr(
+      withPickers(
+        <ReportOverviewScreen
+          locale="en"
+          messages={unnamed}
+          scopeOptions={SCOPES as never}
+          catalogue={CATALOGUE(ALL_FOUR) as never}
+        />
+      )
+    );
+    const user = userEvent.setup();
+    await typeDay(user, labelled('reports.run.from'), FROM);
+    await typeDay(user, labelled('reports.run.to'), TO);
+    await user.click(screen.getByRole('button', { name: EN['reports.overview.show'] as string }));
+    await screen.findByTestId('overview-zone');
+    expect(
+      await screen.findByRole('table', {
+        name: EN['reports.overview.caption.workOrders'] as string,
+      })
+    ).toBeVisible();
+    expect(screen.queryByRole('table', { name: code })).toBeNull();
+    // The other three are still named by their reports.
+    expect(
+      screen.getByRole('table', { name: EN['reports.technician_labor_time.title'] as string })
+    ).toBeVisible();
+    expect(screen.getAllByRole('table')).toHaveLength(contract.OVERVIEW_REPORT_CODES.length);
+  });
+
   it('links each section to its own report, carrying the branch and the period', async () => {
     await showOverview();
     const section = within(await waitFor(() => panel('work_orders_by_status')));
