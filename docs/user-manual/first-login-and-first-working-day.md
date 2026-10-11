@@ -626,8 +626,8 @@ _"The invoice was issued."_ <!-- invoices.issue.success --> allocates the number
   branch's own sequence: _"Issuing allocates the number from the branch's sequence and fixes the
   invoice. It is refused if the invoice changed since it was read, or if the branch has no invoice
   numbering set up."_ <!-- invoices.issue.explain --> **Setting that sequence up is an OPERATOR
-  PROCEDURE in practice**: the numbering screen is gated on the settings-management permission,
-  which the standard administrator role does not carry (Part 6, §6.2.11).
+  PROCEDURE**: the Numbering rules screen shows the stored numbering settings read only and does not
+  configure the sequence (Part 6, §6.2.11).
 - **A draft can be cancelled; an issued invoice cannot.** _"Only a draft can be cancelled. The work
   order can then be invoiced again."_ <!-- invoices.cancel.explain --> After issue the correction is
   a credit note, and Part 6, §6.2.10 states what of that exists.
