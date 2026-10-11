@@ -285,6 +285,70 @@ const gitHistory: History = {
   },
 };
 
+/**
+ * Every committed version of a file, oldest first: one entry per commit that
+ * `git log -- <path>` lists, each resolved as `<commit>:<path>` — the commits
+ * and the object expression a `git show` per commit would use.
+ *
+ * Three git processes whatever the history holds: the log, one
+ * `cat-file --batch-check` that resolves every commit to its blob, and one
+ * `cat-file --batch` that reads each DISTINCT blob once. A process per commit
+ * made the cost of the caller grow with every pull request that touched the
+ * file. A commit whose tree does not hold the file as a blob is an error here,
+ * as it was for `git show`.
+ */
+function committedVersions(path: string): string[] {
+  const git = (args: string[], input?: string, maxBuffer = 64 * 1024 * 1024): Buffer =>
+    execFileSync('git', args, { cwd: ROOT, input, maxBuffer });
+  const commits = git(['log', '--format=%H', '--', path])
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean)
+    .reverse();
+  if (commits.length === 0) return [];
+
+  const specs = commits.map((sha) => `${sha}:${path}`);
+  const resolved = git(['cat-file', '--batch-check'], `${specs.join('\n')}\n`)
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean);
+  if (resolved.length !== specs.length) {
+    throw new Error(`git resolved ${resolved.length} of ${specs.length} versions of ${path}`);
+  }
+  const sizeByBlob = new Map<string, number>();
+  const blobs = resolved.map((line, i) => {
+    const match = /^([0-9a-f]{40,64}) blob (\d+)$/.exec(line);
+    if (!match) throw new Error(`git holds no blob for ${specs[i]}: ${line}`);
+    const [, blob = '', size = ''] = match;
+    sizeByBlob.set(blob, Number.parseInt(size, 10));
+    return blob;
+  });
+
+  // The sizes are known, so the buffer is sized to what will be read rather
+  // than to a ceiling the file's history would one day outgrow.
+  const distinct = [...sizeByBlob.keys()];
+  const expectedBytes = [...sizeByBlob.values()].reduce((sum, size) => sum + size, 0);
+  const out = git(
+    ['cat-file', '--batch'],
+    `${distinct.join('\n')}\n`,
+    expectedBytes + distinct.length * 256
+  );
+  const textByBlob = new Map<string, string>();
+  let offset = 0;
+  for (const blob of distinct) {
+    const size = sizeByBlob.get(blob) ?? 0;
+    const headerEnd = out.indexOf(0x0a, offset);
+    const header = headerEnd === -1 ? '' : out.subarray(offset, headerEnd).toString('utf8');
+    if (header !== `${blob} blob ${size}`) {
+      throw new Error(`git answered "${header}" where blob ${blob} of ${path} was asked for`);
+    }
+    const start = headerEnd + 1;
+    textByBlob.set(blob, out.subarray(start, start + size).toString('utf8'));
+    offset = start + size + 1;
+  }
+  return blobs.map((blob) => textByBlob.get(blob) ?? '');
+}
+
 describe('the TDP-2026-10 verification ledger', () => {
   const ledger = tableUnder(source, 'Verification ledger');
   const register = tableUnder(source, 'Hosted checkpoint register');
@@ -316,15 +380,9 @@ describe('the TDP-2026-10 verification ledger', () => {
      * may only gain a value in a blank cell. This covers the pull request's base
      * and everything before it, so a rewrite cannot slip in across two commits.
      */
-    const git = (...args: string[]) =>
-      execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    const versions = git('log', '--format=%H', '--', LEDGER_FILE)
-      .split('\n')
-      .filter(Boolean)
-      .reverse()
-      .map((sha) => git('show', `${sha}:${LEDGER_FILE}`))
-      .filter((text) => text.includes('### Hosted checkpoint register'));
-    versions.push(source);
+    const committed = committedVersions(LEDGER_FILE);
+    const earlier = committed.filter((text) => text.includes('### Hosted checkpoint register'));
+    const versions = [...earlier, source];
     const problems: string[] = [];
     for (let i = 1; i < versions.length; i += 1) {
       problems.push(
@@ -334,6 +392,13 @@ describe('the TDP-2026-10 verification ledger', () => {
         )
       );
     }
+    // Without an earlier version the loop above compares nothing and reports
+    // no problem, which would read as a kept promise.
+    expect(
+      earlier.length,
+      `git listed ${committed.length} committed version(s) of ${LEDGER_FILE} and ` +
+        `${earlier.length} of them hold the register, so no earlier version was compared`
+    ).toBeGreaterThan(0);
     expect(versions.length, 'the working copy holds no register').toBeGreaterThanOrEqual(1);
     expect(problems).toEqual([]);
   });
