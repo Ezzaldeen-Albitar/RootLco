@@ -14,9 +14,20 @@ Where this page and one of those files disagree, the canonical file wins and thi
 
 ## 2. Baseline
 
-- `develop` is at `c765ed8ccfc83906bcd0da65ce527ddf0152ac7d`: administration wave 1 is merged
-  (PR #554, PR #552, PR #553).
+- `develop` is at `eb0a21fc09e08cc16950c95f73e48362162da157`, the merge of PR #562 (below), on top
+  of `c765ed8ccfc83906bcd0da65ce527ddf0152ac7d`, where administration wave 1 is merged (PR #554,
+  PR #552, PR #553).
 - `main` is at `1262de74` and is frozen. No promotion to `main` is authorised.
+
+### Landed
+
+- **PR #562 (INV-F)** merged at 2026-10-11T07:16:04Z by the landing owner, through the landing
+  guard. Merge commit `eb0a21fc09e08cc16950c95f73e48362162da157`, with parents
+  `c765ed8ccfc83906bcd0da65ce527ddf0152ac7d` and the approved head
+  `85c9e0c15dc8a59f84412ce855ed4f321e8c577d`. The `independent-review` status on the approved head
+  is success, and `develop-merge-integrity` run `38120791509` on the merge commit is success. The
+  ten CP-20261009-1 INV-F rows stay FAIL until a runtime retest at a revision that contains this
+  merge.
 
 ## 3. Open pull requests at 2026-10-10, about 14:00 UTC
 
@@ -32,7 +43,7 @@ Landing order: #562, #564, #563, #566, #565; then #558, #557, #560, #556.
 - Independent review: APPROVE at that head. Hosted CI: all 17 checks reported success at that
   head, `ci-gate` included. The independent review record is a comment on the pull request
   (`issuecomment-6098192820`).
-- Not merged. Landing is blocked in the cloud session (section 4).
+- Landed on 2026-10-11 (section 2, "Landed"). The entry below is kept as it stood before landing.
 - The ten CP-20261009-1 FAIL rows stay FAIL until a runtime retest (section 5).
 
 ### PR #564 — ADM-5, `feature/owner-directive-mui-admin-settings`
@@ -117,7 +128,7 @@ approved head already contains current `develop`.
 
 **Order.**
 
-1. #562 can land now: its head `85c9e0c15dc8a59f84412ce855ed4f321e8c577d` contains `develop`
+1. Done on 2026-10-11 (section 2, "Landed"). #562 could land first because its head `85c9e0c15dc8a59f84412ce855ed4f321e8c577d` contains `develop`
    `c765ed8c`. Run the script for #562 with that head.
 2. Once #562 has landed, the head of #564 (`b517b847`) no longer contains current `develop`, so the
    script stops on it by design. The cloud session then merges `develop` into #564, gets a delta
@@ -169,8 +180,8 @@ The six NOT RUN case ids, with the reason each could not run:
 
 ## 7. Next actions, in order
 
-1. The landing owner lands #562 at `85c9e0c1` with the procedure in section 4.
-2. The cloud session merges `develop` into #564, gets a delta review and CI on the new head, posts
+1. Done: #562 landed at `eb0a21fc` on 2026-10-11 (section 2, "Landed").
+2. In progress: the cloud session merges `develop` into #564, gets a delta review and CI on the new head, posts
    a new review record, and hands over the new approved head; the landing owner lands it.
 3. #563: finish the test-isolation round, merge `develop`, then delta review, CI, a new review
    record, and landing.
