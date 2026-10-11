@@ -150,7 +150,10 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * `[today, tomorrow)` — and that selection is read at once
  * (`useWorkingReportScope`). A switch of the working branch follows it. The
  * operator widens the period or picks another branch by name, and the form then
- * holds their choice until the working branch changes.
+ * holds their choice until the working branch changes. A working branch whose
+ * zone is not a clock this browser knows has no "today" to read: nothing is read
+ * on arrival, the form starts on that branch with the two days left to the
+ * operator, and its note says why (`zoneUnknown`).
  *
  * No wider default is chosen: "the last thirty days" is a business rule nobody
  * has decided, and "today" is the directive's own bound.
@@ -363,7 +366,15 @@ export function ReportScreen({
         locale={locale}
         messages={messages}
         options={scopeOptions.data}
-        initial={followed ?? initialReportScope(scopeOptions.data, named)}
+        initial={
+          followed ??
+          initialReportScope(
+            scopeOptions.data,
+            // A working branch whose zone is not known starts the form on that
+            // branch with no day: there is no "today" to read on its clock.
+            !addressNamed && working.kind === 'zoneUnknown' ? working.pair : named
+          )
+        }
         submitKey="reports.run.show"
         onSubmit={(selection) =>
           requestResults({ chosen: selection, asOfChoice: { mode: 'end' } }, 'reread')

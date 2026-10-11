@@ -245,7 +245,13 @@ export function ReportOverviewScreen({
 
   const initial = initialReportScope(
     scopeOptions.data,
-    fixedBranch === null ? {} : { branchId: fixedBranch.id }
+    fixedBranch !== null
+      ? { branchId: fixedBranch.id }
+      : // A working branch whose zone is not known starts the form on that
+        // branch with no day: there is no "today" to read on its clock.
+        working.kind === 'zoneUnknown'
+        ? working.pair
+        : {}
   );
   /*
    * What the caller's catalogue says about the four reports, as one value. An

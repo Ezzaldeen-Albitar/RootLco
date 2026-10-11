@@ -785,6 +785,39 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
     expect(screen.queryByText(EN['reports.overview.idleTitle'] as string)).toBeNull();
   });
 
+  it.each(['Mars/Base', ''])(
+    'arrives in a working branch whose zone is not a clock without throwing, and derives no day (zone %j)',
+    async (timezone) => {
+      // The arrival read asked for today on the working branch's zone
+      // unchecked, which threw for a name the browser cannot resolve
+      // (P1-32-PRE-OD-REPA-03). Nothing is read; the form starts on the working
+      // branch with both days empty and says the branch's zone is not known.
+      allFourPublish();
+      const { container } = renderInContext(
+        branchSnapshot([{ ...OTHER_BRANCH, id: BRANCH_ID, timezone }])
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('report-scope-zone-unknown')).toHaveTextContent(
+        EN['reports.run.zoneUnknownNote'] as string
+      );
+      for (const key of ['reports.run.from', 'reports.run.to']) {
+        const group = screen.getByRole('group', { name: labelled(key) });
+        expect(group.parentElement?.querySelector('input')?.value).toBe('');
+      }
+      for (const day of new Set([
+        dayIn(Intl.DateTimeFormat().resolvedOptions().timeZone),
+        dayIn('UTC'),
+      ])) {
+        expect(container).not.toHaveTextContent(day);
+        expect(container).not.toHaveTextContent(day.split('-').reverse().join('/'));
+      }
+      expect(runReport).not.toHaveBeenCalled();
+      expect(screen.getByText(EN['reports.overview.idleTitle'] as string)).toBeVisible();
+    }
+  );
+
   it('under "All my branches" runs nothing and says an overview covers one branch', async () => {
     const user = userEvent.setup();
     renderInContext(

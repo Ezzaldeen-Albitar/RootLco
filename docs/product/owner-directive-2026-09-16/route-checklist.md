@@ -3430,6 +3430,15 @@ An independent review of #558 returned "changes required". What this round chang
   calendar use) and "Report"; the overview's company and branch facts take the same words. A report
   with no name is still headed by its code, shown as a code, and an unrecognised freshness by its
   own name — both unchanged and deliberate.
+- **Arrival in a working branch whose zone is not known no longer throws.** First recorded here
+  as open, then closed in the same round by planner ruling. `use-working-report-scope.ts` read
+  today on the working branch's zone unchecked (`dayIn`), which threw for a zone name the browser
+  cannot resolve or an empty one, on the report and on the overview. It now answers `zoneUnknown`
+  with the working pair and no day: nothing is read on arrival, the form starts on the working
+  branch with both days empty — no day is taken from the browser's clock or from UTC — and the
+  form's note says the branch's zone is not known. The days the operator types run the report as
+  usual. DOM cases on both screens, for an unrecognised and for an empty zone; each fails (it
+  throws) with the check removed.
 - **The `/reports` sweep row** credited `ReportFailure` for the catalogue's states; the catalogue
   is `OperationalGrid`, which draws the shared read states itself, and an empty catalogue is
   `MuiEmptyState`. Corrected in the row.
@@ -3469,10 +3478,6 @@ Open after this round, recorded and not fixed here:
 - `MomentZoneRefusal` takes its sentence from the working context first. With "All my branches"
   in force and a reported branch whose zone is unknown, it says to choose one branch rather than
   that the reported branch's zone is not known. The picker is withheld either way.
-- `use-working-report-scope.ts` reads today on the working branch's zone without checking that the
-  browser knows it (`dayIn`). A working branch with an unknown or empty zone that the report
-  directory holds would make the arrival read throw instead of refusing. Unchanged by this slice
-  (the file is as on `develop`) and not covered by a test; it needs its own decision.
 - The snapshots panel (REP-B, #557) says "Time not shown" inside its sentences for an unknown zone
   ("Snapshot as of Time not shown"); only the fallback was added here, not new sentences.
 - In a browser: the hosted authenticated tier's report specs skip their handoff-gated cases on a

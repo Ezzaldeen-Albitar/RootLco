@@ -1376,14 +1376,18 @@ describe('a branch zone this browser does not know is refused, never drawn on an
     }).format(new Date(instant));
 
   /** The screen in a working branch whose own zone is known, read on arrival. */
-  function renderInBranch(locale: 'en' | 'ar' = 'en', snapshot = branchSnapshot()) {
+  function renderInBranch(
+    locale: 'en' | 'ar' = 'en',
+    snapshot = branchSnapshot(),
+    scopes: unknown = SCOPES
+  ) {
     const ui = withPickers(
       inBranch(
         <ReportScreen
           locale={locale}
           messages={locale === 'ar' ? ar : en}
           definition={BASELINE as never}
-          scopeOptions={SCOPES as never}
+          scopeOptions={scopes as never}
         />,
         { snapshot, locale }
       ),
@@ -1511,6 +1515,80 @@ describe('a branch zone this browser does not know is refused, never drawn on an
     expect(within(container).queryByTestId('date-time-requires-branch')).toBeNull();
     expect(within(container).getByTestId('report-zone')).toHaveTextContent('Jordan Time (GMT+3)');
   });
+
+  it.each([
+    ['en', 'Mars/Base'],
+    ['ar', 'Mars/Base'],
+    ['en', ''],
+  ] as const)(
+    'arrives in a working branch whose zone is not a clock without throwing, and derives no day (%s, zone %j)',
+    async (locale, timezone) => {
+      // Arrival used to ask for today on the working branch's zone unchecked,
+      // which threw for a name the browser cannot resolve. Now nothing is read:
+      // the form starts on the working branch with both days empty — no day
+      // taken from the browser's clock or from UTC — and its note says why.
+      const M = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(M[key] as string)}`);
+      const held = (key: string) =>
+        dayGroup(key, locale).parentElement?.querySelector('input')?.value;
+      // Two branches in the directory, so the branch shown is the working one
+      // and not merely the only one there is.
+      const scopes = {
+        ...SCOPES,
+        data: {
+          companies: SCOPES.data.companies,
+          branches: [
+            { id: OTHER_BRANCH.id, companyId: COMPANY_ID, name: 'Second branch' },
+            ...SCOPES.data.branches,
+          ],
+        },
+      };
+      const { container } = renderInBranch(
+        locale,
+        branchSnapshot([{ ...TEST_BRANCH, timezone }]),
+        scopes
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(
+        (screen.getByRole('combobox', { name: label('reports.run.branch') }) as HTMLSelectElement)
+          .value
+      ).toBe(BRANCH_ID);
+      expect(screen.getByTestId('report-scope-zone-unknown')).toHaveTextContent(
+        M['reports.run.zoneUnknownNote'] as string
+      );
+      // No day at all: not today on the browser's clock, not today on UTC.
+      expect(held('reports.run.from')).toBe('');
+      expect(held('reports.run.to')).toBe('');
+      const todayHere = dayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
+      for (const day of new Set([todayHere, dayIn('UTC')])) {
+        expect(container).not.toHaveTextContent(written(day));
+        expect(container).not.toHaveTextContent(day);
+      }
+      expect(runReport).not.toHaveBeenCalled();
+      expect(within(container).getByText(M['reports.run.idleTitle'] as string)).toBeVisible();
+
+      // The operator's own days still run the report for that branch.
+      const user = userEvent.setup();
+      await typeDay(user, 'reports.run.from', '2026-09-01', locale);
+      await typeDay(user, 'reports.run.to', '2026-09-08', locale);
+      await user.click(screen.getByRole('button', { name: M['reports.run.show'] as string }));
+      await waitFor(() =>
+        expect(runReport).toHaveBeenCalledWith(
+          expect.objectContaining({
+            companyId: COMPANY_ID,
+            branchId: BRANCH_ID,
+            from: '2026-09-01',
+            to: '2026-09-08',
+            cursor: null,
+          })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('says so in the scope form when the chosen branch has no known zone, and still sends the days as typed', async () => {
     // The day sent is the day typed whatever the zone, so the form is not
