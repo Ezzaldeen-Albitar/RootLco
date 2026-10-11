@@ -1171,6 +1171,13 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
     note: 'branch_id and user_id are named by tg_technician_profiles_immutable, so the schema has no word for either and sending one is a 422 — never a silent drop, because a caller who believed a branch transfer happened would act on a roster that never changed, and the test asserts the STORED branch is unchanged. The documented transfer path is driven end to end: the create in the target branch is refused while the first profile is live, retiring frees the uq_technician_profiles_active_user slot, and both halves survive. Retirement is a soft delete and deactivation is not retirement',
   },
+  // P1-32-PRE-OD-ADM2B: the skill vocabulary a technician can be given. Dual-scope
+  // reference data under RLS; the assertions rest on catalogue codes read as the owner.
+  'tech.skill-list': {
+    files: ['tests/backend/od-technician-administration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'answers the active skills and levels a tenant may reference — the platform rows and its own, a tenant row shadowing the platform row of its code — compared code for code with the owner reading the same rule; an inactive skill and another tenant skill are never offered, in either direction; a caller without tech.technician.read is refused',
+  },
   'tech.technician-skill-set': {
     files: ['tests/backend/br-03-technician-capabilities.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
