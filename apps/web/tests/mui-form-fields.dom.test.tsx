@@ -1366,6 +1366,427 @@ describe('the conversions between a picker value and what a screen holds', () =>
 });
 
 /**
+ * The day typed is the day shown and the day handed back — on any machine
+ * clock, on any branch clock, and across a change of clock
+ * (`P1-32-PRE-OD-DFD`).
+ *
+ * ## What the hosted runner can and cannot see
+ *
+ * The hosted runner's clock is UTC. Three of the four defects pinned here need
+ * a machine that is NOT on UTC, so on the hosted runner their cases pass
+ * against the unfixed field as well and prove nothing there; each such group
+ * says so and names the machine clocks it was run under by hand, with the
+ * field before the fix and after it. The fourth — a clock that changes under an
+ * empty field — is wrong on every machine, UTC included, and the hosted runner
+ * does see it.
+ *
+ * Every expected value is a literal: no case derives the day it expects from
+ * the machine's clock, so a wrong day cannot agree with itself.
+ */
+function ClockHost({
+  clocks,
+  initial = '',
+  min,
+  onDay,
+  onProblem,
+}: {
+  /** The clocks the field is given in turn; `undefined` is "no zone named". */
+  readonly clocks: readonly (string | undefined)[];
+  readonly initial?: string;
+  readonly min?: string;
+  readonly onDay?: (day: string) => void;
+  readonly onProblem?: (problem: unknown) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [value, setValue] = useState(initial);
+  return (
+    <>
+      <button type="button" onClick={() => setIndex((at) => Math.min(at + 1, clocks.length - 1))}>
+        change clock
+      </button>
+      <DateField
+        label="Visit day"
+        value={value}
+        onChange={(next) => {
+          onDay?.(next);
+          setValue(next);
+        }}
+        timezone={clocks[index]}
+        min={min}
+        onProblem={onProblem}
+      />
+      <output data-testid="held-day">{value}</output>
+    </>
+  );
+}
+
+function MomentClockHost({
+  clocks,
+  onMoment,
+}: {
+  readonly clocks: readonly string[];
+  readonly onMoment?: (moment: string) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [value, setValue] = useState('');
+  return (
+    <>
+      <button type="button" onClick={() => setIndex((at) => Math.min(at + 1, clocks.length - 1))}>
+        change clock
+      </button>
+      <ZonedDateTimeField
+        messages={en}
+        label="Visit time"
+        value={value}
+        onChange={(next) => {
+          onMoment?.(next);
+          setValue(next);
+        }}
+        timezone={clocks[index] as string}
+      />
+    </>
+  );
+}
+
+/** The day field as it is NOW — a change of clock replaces the picker inside it. */
+function dayGroup(): HTMLElement {
+  return screen.getByRole('group', { name: /^Visit day/ });
+}
+
+function shownDay(): string {
+  return pickerInput(dayGroup()).value;
+}
+
+async function typeIntoDay(user: ReturnType<typeof userEvent.setup>, digits: string) {
+  await user.click(within(dayGroup()).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+}
+
+async function changeClock(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'change clock' }));
+}
+
+/** What is typed, the day it is, and how the field writes it. */
+const TYPED_DAYS: readonly (readonly [string, string, string, string])[] = [
+  ['22092026', '2026-09-22', '22/09/2026', 'an ordinary day'],
+  ['01032026', '2026-03-01', '01/03/2026', 'the first of a month'],
+  ['01012026', '2026-01-01', '01/01/2026', 'the first of a year'],
+  ['31122026', '2026-12-31', '31/12/2026', 'the last of a year'],
+  ['01032028', '2028-03-01', '01/03/2028', 'the day after a leap day'],
+  ['29022028', '2028-02-29', '29/02/2028', 'a leap day'],
+  ['08032026', '2026-03-08', '08/03/2026', 'the clocks go forward in Los Angeles and New York'],
+  ['01112026', '2026-11-01', '01/11/2026', 'the clocks go back in Los Angeles and New York'],
+  ['29032026', '2026-03-29', '29/03/2026', 'the clocks go forward in Berlin and Beirut'],
+  ['24042026', '2026-04-24', '24/04/2026', 'the clocks go forward in Cairo, at midnight'],
+  ['27092026', '2026-09-27', '27/09/2026', 'the clocks go forward in Auckland'],
+  ['05042026', '2026-04-05', '05/04/2026', 'the clocks go back in Auckland'],
+];
+
+describe('DateField: the typed day is the day shown and handed back', () => {
+  /*
+   * NO ZONE NAMED — the field under "All my branches", before a branch is
+   * chosen, or on a branch whose zone is not known.
+   *
+   * NOT OBSERVABLE ON THE HOSTED (UTC) RUNNER: before the fix every one of
+   * these cases passes on a UTC machine. Run by hand with the machine clock
+   * forced, before the fix the twelve typed days came out wrong on —
+   * Asia/Riyadh: eleven — ten as the day before (22/09/2026 as 21/09/2026,
+   * 01/03/2026 as 28/02/2026) and 01/01/2026 as 31/12/2026 — the leap day alone
+   * surviving; Asia/Amman, Pacific/Auckland and Europe/Berlin: two each
+   * (01/01/2026 as 01/01/2027, 01/03/2028 as 29/02/2028); America/Los_Angeles:
+   * five (01/03/2026 as 28/02/2026, 01/01/2026 as 31/12/2025, 31/12/2026 as
+   * 30/12/2026, 08/03/2026 as 07/03/2026, 01/03/2028 as 29/02/2028). After the
+   * fix: none, on all six clocks. See `pickerZone` in the component for why.
+   */
+  for (const [digits, day, written, about] of TYPED_DAYS) {
+    it(`with no zone named, ${written} typed is ${day} (${about})`, async () => {
+      const user = userEvent.setup();
+      const onDay = vi.fn();
+      mount(<ClockHost clocks={[undefined]} onDay={onDay} />);
+      await typeIntoDay(user, digits);
+      expect(shownDay()).toBe(written);
+      expect(onDay).toHaveBeenLastCalledWith(day);
+      expect(screen.getByTestId('held-day')).toHaveTextContent(day);
+    });
+  }
+
+  it('under "All my branches" a typed day is that day', async () => {
+    // The same field as a screen draws it: no `timezone`, and a working context
+    // that names no single branch. Not observable on the hosted runner either
+    // (before the fix: 21/09/2026 on an Asia/Riyadh machine).
+    const user = userEvent.setup();
+    const onDay = vi.fn();
+    const second = { ...TEST_BRANCH, id: '88888888-8888-4888-8888-888888888888', name: 'Second' };
+    mount(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <ClockHost clocks={[undefined]} onDay={onDay} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, second]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    await typeIntoDay(user, '22092026');
+    expect(shownDay()).toBe('22/09/2026');
+    expect(onDay).toHaveBeenLastCalledWith('2026-09-22');
+  });
+
+  it('with no zone named, a day it holds is shown as that day and one part of it can be changed', async () => {
+    const user = userEvent.setup();
+    const onDay = vi.fn();
+    mount(<ClockHost clocks={[undefined]} initial="2026-03-01" onDay={onDay} />);
+    expect(shownDay()).toBe('01/03/2026');
+    await typeIntoDay(user, '15');
+    expect(shownDay()).toBe('15/03/2026');
+    expect(onDay).toHaveBeenLastCalledWith('2026-03-15');
+  });
+
+  /*
+   * A NAMED ZONE, east and west of UTC. The fix must not change these: typed on
+   * a named zone, every one of them was already right before it, on every
+   * machine clock this file was run under (UTC, Asia/Riyadh, Asia/Amman,
+   * America/Los_Angeles, Pacific/Auckland, Europe/Berlin). They are here so
+   * that stays true; no case in this group failed on the unfixed field.
+   */
+  for (const zone of ['Asia/Riyadh', 'Pacific/Auckland', 'Pacific/Honolulu'] as const) {
+    for (const [digits, day, written, about] of TYPED_DAYS) {
+      it(`on ${zone}, ${written} typed is ${day} (${about})`, async () => {
+        const user = userEvent.setup();
+        const onDay = vi.fn();
+        mount(<ClockHost clocks={[zone]} onDay={onDay} />);
+        await typeIntoDay(user, digits);
+        expect(shownDay()).toBe(written);
+        expect(onDay).toHaveBeenLastCalledWith(day);
+      });
+    }
+  }
+});
+
+describe('DateField: a day it holds is drawn as that day on any machine clock', () => {
+  /*
+   * A day the caller holds — a kept filter day, a default, a bound — is drawn
+   * from the caller's string. Before the fix it was drawn as the DAY BEFORE
+   * when the MACHINE's own clock went forward on that day and the machine sat
+   * more than two hours east of the branch.
+   *
+   * NOT OBSERVABLE ON THE HOSTED (UTC) RUNNER, nor on an Asia/Riyadh or
+   * Asia/Amman machine: none of them ever changes offset. Run by hand with the
+   * machine clock forced, before the fix — Pacific/Auckland: 27/09/2026 was
+   * drawn as 26/09/2026 on Asia/Riyadh and on Pacific/Honolulu; Europe/Berlin:
+   * 29/03/2026 as 28/03/2026 on America/New_York and on Pacific/Honolulu;
+   * America/Los_Angeles: 08/03/2026 as 07/03/2026 on Pacific/Honolulu. After
+   * the fix: none. See `dayToPicker` in the component for why.
+   */
+  const HELD: readonly (readonly [string, string, string, string])[] = [
+    ['Asia/Riyadh', '2026-09-27', '27/09/2026', 'Pacific/Auckland'],
+    ['Pacific/Honolulu', '2026-09-27', '27/09/2026', 'Pacific/Auckland'],
+    ['America/New_York', '2026-03-29', '29/03/2026', 'Europe/Berlin'],
+    ['Pacific/Honolulu', '2026-03-29', '29/03/2026', 'Europe/Berlin'],
+    ['Pacific/Honolulu', '2026-03-08', '08/03/2026', 'America/Los_Angeles'],
+    ['Pacific/Auckland', '2026-09-27', '27/09/2026', 'no machine: a guard'],
+    ['Asia/Riyadh', '2026-03-01', '01/03/2026', 'no machine: a guard'],
+  ];
+  for (const [zone, day, written, machine] of HELD) {
+    it(`${day} held on ${zone} is drawn ${written} (the machine that drew it wrong: ${machine})`, () => {
+      mount(<ClockHost clocks={[zone]} initial={day} />);
+      expect(shownDay()).toBe(written);
+      // The conversion on its own: midnight of that day, and the same day back.
+      const picker = dayToPicker(day, zone);
+      expect(picker?.format('YYYY-MM-DD HH:mm')).toBe(`${day} 00:00`);
+      expect(pickerToDay(picker, zone)).toBe(day);
+    });
+  }
+
+  it('keeps the instant of that midnight, and still holds no day for what is not one', () => {
+    // The fix changes how the day is READ, not when it begins: these instants
+    // are the same before and after it, on every machine.
+    expect(dayToPicker('2026-09-27', 'Asia/Riyadh')?.toISOString()).toBe(
+      '2026-09-26T21:00:00.000Z'
+    );
+    expect(dayToPicker('2026-03-29', 'America/New_York')?.toISOString()).toBe(
+      '2026-03-29T04:00:00.000Z'
+    );
+    expect(dayToPicker('2026-09-27', 'UTC')?.toISOString()).toBe('2026-09-27T00:00:00.000Z');
+    expect(dayToPicker('2026-9-27', 'Asia/Riyadh')).toBeNull();
+    expect(dayToPicker('', undefined)).toBeNull();
+  });
+
+  /*
+   * The same reading, in a MOMENT: the digits of the instant a moment field
+   * emits were read on the machine's clock too, and came out an hour early
+   * near the machine's own offset change. NOT OBSERVABLE ON THE HOSTED (UTC)
+   * RUNNER, nor on Asia/Riyadh or Asia/Amman. Before the fix — Pacific/Auckland:
+   * 27/09/2026 00:30 typed on Asia/Riyadh was emitted as
+   * 2026-09-26T23:30:00+03:00; Europe/Berlin: 29/03/2026 00:30 typed on
+   * America/New_York as 2026-03-28T23:30:00-04:00. After the fix: none.
+   */
+  const MOMENTS: readonly (readonly [string, string, string, string])[] = [
+    ['Asia/Riyadh', '270920260030', '27/09/2026 00:30', '2026-09-27T00:30:00+03:00'],
+    ['Pacific/Honolulu', '270920260030', '27/09/2026 00:30', '2026-09-27T00:30:00-10:00'],
+    ['America/New_York', '290320260030', '29/03/2026 00:30', '2026-03-29T00:30:00-04:00'],
+  ];
+  for (const [zone, digits, written, moment] of MOMENTS) {
+    it(`a moment typed on ${zone} as ${written} is emitted as ${moment}`, async () => {
+      const user = userEvent.setup();
+      const onMoment = vi.fn();
+      mount(<MomentHost zone={zone} onMoment={onMoment} />);
+      const group = screen.getByRole('group', { name: /^Visit time/ });
+      await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard(digits);
+      expect(pickerInput(group)).toHaveValue(written);
+      expect(onMoment).toHaveBeenLastCalledWith(moment);
+    });
+  }
+
+  it('writes an instant it holds back as the same instant, across the days the machine clocks change', () => {
+    // The conversion on its own, either side of the Auckland and Berlin changes.
+    for (const [instant, zone, moment] of [
+      ['2026-09-26T21:30:00Z', 'Asia/Riyadh', '2026-09-27T00:30:00+03:00'],
+      ['2026-09-26T13:30:00Z', 'Asia/Riyadh', '2026-09-26T16:30:00+03:00'],
+      ['2026-09-26T14:30:00Z', 'Asia/Riyadh', '2026-09-26T17:30:00+03:00'],
+      ['2026-03-29T04:30:00Z', 'America/New_York', '2026-03-29T00:30:00-04:00'],
+      ['2026-03-29T01:30:00Z', 'America/New_York', '2026-03-28T21:30:00-04:00'],
+      ['2026-09-26T12:00:00Z', 'UTC', '2026-09-26T12:00:00+00:00'],
+    ] as const) {
+      expect(pickerToInstant(instantToPicker(instant, zone), zone), `${instant} on ${zone}`).toBe(
+        moment
+      );
+    }
+  });
+});
+
+describe('DateField: a change of clock under a mounted field', () => {
+  /*
+   * A field EMPTY when its clock changes, then typed into. OBSERVABLE ON THE
+   * HOSTED (UTC) RUNNER: the picker went on laying the typed parts over the
+   * clock it was mounted with, on every machine. Before the fix, on a UTC
+   * machine — Pacific/Auckland to none: drawn 21/09/2026; none to
+   * Pacific/Honolulu: 21/09/2026, handed back 2026-09-21; Asia/Riyadh to
+   * Pacific/Honolulu: the same; Asia/Riyadh to UTC: the same. Pacific/Honolulu
+   * to Pacific/Auckland came out a day LATE (23/09/2026) on Asia/Riyadh,
+   * Asia/Amman and Pacific/Auckland machines, and right on UTC. See "One
+   * picker per clock" in the component.
+   *
+   * The second case of each pair is the sentence the fix must keep true: a
+   * whole day typed BEFORE the change is not moved by it. Between two named
+   * zones that held before the fix as well, on every machine; with no zone on
+   * either side it did not on Asia/Riyadh and America/Los_Angeles machines.
+   */
+  const CHANGES: readonly (readonly [string | undefined, string | undefined, string])[] = [
+    ['Pacific/Auckland', undefined, 'a named zone, then none'],
+    ['Asia/Riyadh', undefined, 'a named zone, then none'],
+    [undefined, 'Pacific/Honolulu', 'none, then a named zone'],
+    [undefined, 'Asia/Riyadh', 'none, then a named zone'],
+    ['Asia/Riyadh', 'Pacific/Honolulu', 'one named zone, then another to its west'],
+    ['Pacific/Honolulu', 'Pacific/Auckland', 'one named zone, then another to its east'],
+    ['Asia/Riyadh', 'UTC', 'a branch clock, then UTC'],
+  ];
+  const named = (clock: string | undefined) => clock ?? 'no zone';
+
+  for (const [from, to, about] of CHANGES) {
+    it(`${named(from)} to ${named(to)}: a day typed after the change is that day (${about})`, async () => {
+      const user = userEvent.setup();
+      const onDay = vi.fn();
+      mount(<ClockHost clocks={[from, to]} onDay={onDay} />);
+      await changeClock(user);
+      await typeIntoDay(user, '22092026');
+      expect(shownDay()).toBe('22/09/2026');
+      expect(onDay).toHaveBeenLastCalledWith('2026-09-22');
+    });
+
+    it(`${named(from)} to ${named(to)}: a whole day typed before the change is kept, and can be typed over`, async () => {
+      // The acceptance sentence itself: a clock change does not move a day
+      // already typed. For two named zones this held before the fix too; with
+      // no zone on either side it did not on a machine that is not on UTC.
+      const user = userEvent.setup();
+      const onDay = vi.fn();
+      mount(<ClockHost clocks={[from, to]} onDay={onDay} />);
+      await typeIntoDay(user, '22092026');
+      expect(shownDay()).toBe('22/09/2026');
+      expect(onDay).toHaveBeenLastCalledWith('2026-09-22');
+      const reported = onDay.mock.calls.length;
+
+      await changeClock(user);
+      // Kept as it was: the same day drawn and held, and nothing handed back.
+      expect(shownDay()).toBe('22/09/2026');
+      expect(screen.getByTestId('held-day')).toHaveTextContent('2026-09-22');
+      expect(onDay).toHaveBeenCalledTimes(reported);
+
+      // A month boundary typed over it on the new clock.
+      await typeIntoDay(user, '01032026');
+      expect(shownDay()).toBe('01/03/2026');
+      expect(onDay).toHaveBeenLastCalledWith('2026-03-01');
+    });
+  }
+
+  it('a day only partly typed when the clock changes is dropped, and its report withdrawn', async () => {
+    // No clock could say which day `01/03/YYYY` would have been, so the new
+    // picker starts empty and the caller is told nothing is unfinished.
+    const user = userEvent.setup();
+    const onDay = vi.fn();
+    const onProblem = vi.fn();
+    mount(
+      <ClockHost clocks={['Asia/Riyadh', 'Pacific/Honolulu']} onDay={onDay} onProblem={onProblem} />
+    );
+    await typeIntoDay(user, '0103');
+    expect(onProblem).toHaveBeenLastCalledWith('incomplete');
+    await changeClock(user);
+    expect(shownDay()).toBe('');
+    expect(onProblem).toHaveBeenLastCalledWith(null);
+    expect(onDay).not.toHaveBeenCalled();
+    // And the empty field takes a whole day on the new clock.
+    await typeIntoDay(user, '01032026');
+    expect(shownDay()).toBe('01/03/2026');
+    expect(onDay).toHaveBeenLastCalledWith('2026-03-01');
+    expect(onProblem).toHaveBeenLastCalledWith(null);
+  });
+
+  it('a day outside its bound is still reported after the clock changes', async () => {
+    const user = userEvent.setup();
+    const onProblem = vi.fn();
+    mount(
+      <ClockHost
+        clocks={['Asia/Riyadh', 'Pacific/Honolulu']}
+        initial="2026-09-01"
+        min="2026-09-10"
+        onProblem={onProblem}
+      />
+    );
+    expect(onProblem).toHaveBeenLastCalledWith('minDate');
+    await changeClock(user);
+    expect(shownDay()).toBe('01/09/2026');
+    expect(onProblem).toHaveBeenLastCalledWith('minDate');
+  });
+
+  /*
+   * The same change under a MOMENT field, empty at the time: the typed wall
+   * clock was laid over the old clock and emitted on the new one, hours out.
+   * OBSERVABLE ON THE HOSTED (UTC) RUNNER. Before the fix, on every machine —
+   * Asia/Riyadh to UTC: 09:30 typed, 06:30 drawn and emitted; UTC to
+   * Asia/Riyadh: 12:30; Asia/Riyadh to Pacific/Honolulu: 21/09/2026 20:30.
+   */
+  const MOMENT_CHANGES: readonly (readonly [string, string, string])[] = [
+    ['Asia/Riyadh', 'UTC', '2026-09-22T09:30:00+00:00'],
+    ['UTC', 'Asia/Riyadh', '2026-09-22T09:30:00+03:00'],
+    ['Asia/Riyadh', 'Pacific/Honolulu', '2026-09-22T09:30:00-10:00'],
+  ];
+  for (const [from, to, moment] of MOMENT_CHANGES) {
+    it(`${from} to ${to}: a moment typed after the change is emitted as ${moment}`, async () => {
+      const user = userEvent.setup();
+      const onMoment = vi.fn();
+      mount(<MomentClockHost clocks={[from, to]} onMoment={onMoment} />);
+      await changeClock(user);
+      const group = screen.getByRole('group', { name: /^Visit time/ });
+      await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('220920260930');
+      expect(pickerInput(group)).toHaveValue('22/09/2026 09:30');
+      expect(onMoment).toHaveBeenLastCalledWith(moment);
+    });
+  }
+});
+
+/**
  * `TreePicker` — one record from a GENUINE hierarchy, on the MUI X Community
  * tree view (ADR-022), with the `FieldFrame` contract.
  *
