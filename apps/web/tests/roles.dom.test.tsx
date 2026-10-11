@@ -509,8 +509,11 @@ describe('the shared form dialog sends once, whatever Enter does (P1-32-PRE-OD-A
       within(dialog).getByRole('button', { name: new RegExp(`^${EN('mui.pickers.chooseDate')}`) })
     );
     const calendar = await screen.findByRole('grid');
-    // The calendar is drawn outside the form's own markup; React still hands
-    // its key events to the form, which is what this case is about.
+    // The calendar is drawn outside the form's own markup, yet React still
+    // hands its key events to the form. What this case covers is the outcome:
+    // Enter on a day submits nothing. It does NOT exercise FormDialog's
+    // `form.contains` check — a day is a button, so `entersSubmit` already
+    // answers no for it (and the picker marks that Enter as handled).
     expect(dialog.querySelector('form')?.contains(calendar)).toBe(false);
     const day = within(calendar)
       .getAllByRole('gridcell')
