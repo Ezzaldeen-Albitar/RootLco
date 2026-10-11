@@ -4811,6 +4811,39 @@ page is written on UTC or on the branch's clock, and it now also requires that n
 `<time>`. A snapshot measure this build has no word for is still shown by its key in the
 difference table, as REP-A records for the report's own tables.
 
+Review round (`P1-32-PRE-OD-REPB-04`) — the checks REP-A's review made, made on this slice's
+screens (`/refunds`, the invoice's refunds panel, the snapshots panel and `ReportFormDialog`):
+
+- Day and moment fields. The slice has one: the payout day (`PayoutForm` in `RefundsPanel.tsx`).
+  Its zone is the invoice branch's, read from the working context, which can be read again while
+  the form is open — so the picker's zone could change under it — and where that zone was not known
+  the picker was handed none and fell back to the working branch's clock or the browser's. Those
+  are the two things that moved a typed day by one in the report scope form (REPA-04), and they did
+  here: a typed 01/09/2026 was shown, and sent, as 31/08/2026. The picker is now keyed on its clock,
+  so another clock is a new picker — a whole day already typed is kept, a half-typed one goes with
+  its complaint — and it is always handed a zone: the branch's, or a fixed reference (UTC, for the
+  calendar's arithmetic only) where the branch's is not known, with no "today" bound offered then
+  and a sentence saying that the calendar may mark another day as today and that the day is used
+  as entered (`refunds.execute.zoneUnknownNote`, en and ar). `refunds.dom.test.tsx` gains "the
+  payout day is the day typed, on any clock": 21 cases on literal days — a known zone, an unknown
+  one, a change in each direction and from clocks far to the east and far to the west, with the
+  branch on Asia/Riyadh, Pacific/Auckland and Pacific/Honolulu. Run against the form as it was, 10
+  of them failed with the process on UTC and 13 with it on Asia/Riyadh; without the key alone, 10
+  and 9; with the fallback alone, none on UTC and 6 on Asia/Riyadh.
+- One write per press. `ReportFormDialog` holds no in-flight guard of its own and has two callers,
+  both in `ReportSnapshotsPanel.tsx`, each holding its own, set before the write: the save dialog
+  (`saving`) and the restatement dialog (`sending`). Each has its two-presses case in
+  `reports.dom.test.tsx`, and each case failed with its guard taken out.
+- No identifier shown. The refunds list and panel name an invoice by its number, a method by its
+  name and the requester only as "by you", each with a plain "not shown" where the read withholds
+  it; the snapshots panel names a saver by name, or as a person whose name is not shown, and a
+  refusal names the latest snapshot by its moments and its saver. Nothing was changed.
+- Instants. The snapshots panel follows REP-A's rule (above). Refund moments (`RefundMoment`, in
+  the list and in the invoice's history) are written on the branch's clock with the clock named,
+  and on UTC, named as UTC, where the branch's zone is not known — the way the invoice's printed
+  copy and the reception board write theirs — while REP-A's reports write no time at all there.
+  This slice leaves that as it is; which of the two the refund screens follow is not decided here.
+
 Checklist correction (WP00 scan): the FD16B table further down said the save and Restate need
 `rpt.export`; both rows now say `rpt.report.configure`, the gate since FD16C, and the operation row
 says `rpt.export` gates CSV export only, so it cannot be read as still gating the save.

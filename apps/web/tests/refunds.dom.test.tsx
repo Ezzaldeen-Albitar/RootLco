@@ -20,6 +20,11 @@
  * unsaved work a branch switch asks about, the payout day is checked on the
  * branch's calendar before it is sent, a request's moment is written on the
  * branch's clock with the clock named, and an empty list says which empty it is.
+ *
+ * The payout day is the day typed, on any clock (P1-32-PRE-OD-REPB-04): shown and
+ * sent as typed for a branch whose zone is known, for one whose zone is not, and
+ * when the zone changes under the open form — literal days, on zones east and
+ * west of any machine that runs this file.
  */
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -784,6 +789,147 @@ describe('the refunds panel — one write per press, unsaved entries and the pay
       await waitFor(() => expect(reason).toHaveValue(''));
       expect(requestRefund).not.toHaveBeenCalled();
       forgetRememberedBranch();
+    }
+  );
+});
+
+describe('the payout day is the day typed, on any clock (P1-32-PRE-OD-REPB-04)', () => {
+  /*
+   * A calendar day has no clock, so the day typed is the day shown and the day
+   * sent — for an invoice branch whose zone is known, for one whose zone is
+   * not, and when the working context is read again and the zone changes under
+   * the open form. The picker holds a day as an instant on some zone: a zone
+   * that changed under a mounted picker, and the browser's clock taken as the
+   * fallback, each moved a typed day by one in the report scope form
+   * (P1-32-PRE-OD-REPA-04), and the payout day stood on the same two legs.
+   *
+   * Nothing here is computed from the clock of the machine running the test:
+   * the days are literals. The zones are chosen so the cases mean something on
+   * ANY machine clock — the region the product is used in (Asia/Riyadh), one
+   * far east of every likely runner (Pacific/Auckland), one far west
+   * (Pacific/Honolulu), and the two ends of the map to change from.
+   */
+  const UNKNOWN_ZONE = 'Mars/Base';
+  const FAR_EAST = 'Pacific/Kiritimati';
+  const FAR_WEST = 'Pacific/Pago_Pago';
+  const SENT = { paymentMethodId: METHOD_ID, payoutReference: 'TRF-55', payoutDate: '2026-09-01' };
+
+  /** The panel of an invoice whose branch the working context puts on `zone`. */
+  const payoutPanel = (zone: string) =>
+    withMui(
+      inBranch(
+        <RefundsPanel
+          locale="en"
+          messages={getMessages('en')}
+          invoice={{ id: INVOICE_ID, companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id }}
+          currentUserId={SIGNED_IN}
+          canRequest
+          canDecide
+          onChanged={() => undefined}
+        />,
+        { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: zone }]) }
+      ),
+      'en'
+    );
+  const payoutForm = () =>
+    screen.findByRole('form', { name: EN['refunds.execute.heading'] as string });
+  const dayGroup = (form: HTMLElement) =>
+    within(form).getByRole('group', { name: labelled('refunds.execute.date') });
+  /** The day the picker holds, as it writes it into its own value input: `DD/MM/YYYY`. */
+  function dayShown(form: HTMLElement): string {
+    const input = dayGroup(form).parentElement?.querySelector('input');
+    if (!input) throw new Error('the picker has no value input');
+    return input.value;
+  }
+  async function typeParts(
+    user: ReturnType<typeof userEvent.setup>,
+    form: HTMLElement,
+    parts: string
+  ): Promise<void> {
+    await user.click(within(dayGroup(form)).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard(parts);
+  }
+  const typeReference = (user: ReturnType<typeof userEvent.setup>, form: HTMLElement) =>
+    user.type(within(form).getByLabelText(labelled('refunds.execute.reference')), 'TRF-55');
+  const record = (user: ReturnType<typeof userEvent.setup>, form: HTMLElement) =>
+    user.click(within(form).getByRole('button', { name: EN['refunds.execute.submit'] as string }));
+
+  beforeEach(() => {
+    listRefundRequests.mockResolvedValue(
+      page([refundRequest({ state: 'approved', recordVersion: 4 })])
+    );
+  });
+
+  describe.each(['Asia/Riyadh', 'Pacific/Auckland', 'Pacific/Honolulu'])(
+    'with the invoice branch on %s',
+    (knownZone) => {
+      it.each([
+        ['a branch whose zone is known', knownZone, null],
+        ['a branch whose zone is not known', UNKNOWN_ZONE, null],
+        ['a change from a known zone to an unknown one', knownZone, UNKNOWN_ZONE],
+        ['a change from an unknown zone to a known one', UNKNOWN_ZONE, knownZone],
+        ['a change from a clock far to the east', FAR_EAST, knownZone],
+        ['a change from a clock far to the west', FAR_WEST, knownZone],
+      ])('for %s', async (_what, startOn, changeTo) => {
+        const view = renderLtr(payoutPanel(startOn));
+        const user = userEvent.setup();
+        await typeReference(user, await payoutForm());
+        // The change, when there is one, is made with the day field mounted
+        // and empty — the state the report scope form's failure was in.
+        if (changeTo !== null) view.rerender(payoutPanel(changeTo));
+        const form = await payoutForm();
+        const standsOn = changeTo ?? startOn;
+        const note = screen.queryByTestId('refund-payout-zone-unknown');
+        if (standsOn === UNKNOWN_ZONE) {
+          expect(note).toHaveTextContent(EN['refunds.execute.zoneUnknownNote'] as string);
+        } else {
+          expect(note).toBeNull();
+        }
+
+        await typeParts(user, form, '01092026');
+        expect(dayShown(form)).toBe('01/09/2026');
+        await record(user, form);
+        await waitFor(() => expect(executeRefund).toHaveBeenCalledTimes(1));
+        expect(executeRefund.mock.calls[0]?.[1]).toEqual(SENT);
+      });
+
+      it('keeps a whole day across a change of clock, and drops a half-typed one with its complaint', async () => {
+        const view = renderLtr(payoutPanel(knownZone));
+        const user = userEvent.setup();
+        let form = await payoutForm();
+        await typeReference(user, form);
+        // The day and the month, and no year.
+        await typeParts(user, form, '0109');
+        await record(user, form);
+        expect(
+          await within(form).findByText(EN['refunds.execute.dateIncomplete'] as string)
+        ).toBeVisible();
+        expect(dayGroup(form)).toHaveAttribute('aria-invalid', 'true');
+        expect(executeRefund).not.toHaveBeenCalled();
+
+        for (const next of [UNKNOWN_ZONE, knownZone]) {
+          view.rerender(payoutPanel(next));
+          form = await payoutForm();
+          // The half-typed day went with the picker it was typed into, and
+          // nothing complains about an empty box.
+          expect(dayShown(form)).toBe('');
+          expect(dayGroup(form)).not.toHaveAttribute('aria-invalid', 'true');
+          expect(
+            within(form).queryByText(EN['refunds.execute.dateIncomplete'] as string)
+          ).toBeNull();
+        }
+
+        await typeParts(user, form, '01092026');
+        for (const next of [UNKNOWN_ZONE, FAR_WEST, FAR_EAST, knownZone]) {
+          view.rerender(payoutPanel(next));
+          form = await payoutForm();
+          // The whole day is the form's, and stays the day typed on every clock.
+          expect(dayShown(form)).toBe('01/09/2026');
+        }
+        await record(user, form);
+        await waitFor(() => expect(executeRefund).toHaveBeenCalledTimes(1));
+        expect(executeRefund.mock.calls[0]?.[1]).toEqual(SENT);
+      });
     }
   );
 });

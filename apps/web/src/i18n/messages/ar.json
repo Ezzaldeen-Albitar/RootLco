@@ -5950,6 +5950,7 @@
   "refunds.execute.submit": "تسجيل الرد",
   "refunds.execute.success": "سُجّل الرد.",
   "refunds.execute.waits": "ينتظر شخصًا يملك صلاحية تسجيل المدفوعات لتسجيل الرد.",
+  "refunds.execute.zoneUnknownNote": "المنطقة الزمنية لهذا الفرع غير معروفة هنا، لذلك قد يُميّز التقويم يومًا آخر على أنه اليوم. اليوم الذي تُدخله يُستخدم كما أدخلته تمامًا.",
   "refunds.history.byYou": "بواسطتك",
   "refunds.history.heading": "سجل الاستردادات",
   "refunds.history.paidOut": "رُدّ في {day}، بالمرجع {reference}.",

@@ -5950,6 +5950,7 @@
   "refunds.execute.submit": "Record the payout",
   "refunds.execute.success": "The payout was recorded.",
   "refunds.execute.waits": "It waits for a person who records payments to record the payout.",
+  "refunds.execute.zoneUnknownNote": "The time zone of this branch is not known here, so the calendar may mark a different day as today. The day you enter is used exactly as you enter it.",
   "refunds.history.byYou": "by you",
   "refunds.history.heading": "Refund history",
   "refunds.history.paidOut": "Paid back on {day}, reference {reference}.",

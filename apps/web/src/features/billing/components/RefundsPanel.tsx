@@ -728,12 +728,43 @@ function LiveRequest({
 }
 
 /**
+ * The zone the payout day's picker stands on when the invoice branch's own is
+ * not known.
+ *
+ * A fixed reference for the calendar's arithmetic and nothing else: UTC has no
+ * offset changes and no historical offsets, so a day typed on it is that day
+ * on every machine. It is not the branch's clock and is never said to be — the
+ * form says the branch's zone is not known (`refunds.execute.zoneUnknownNote`).
+ */
+const PAYOUT_DAY_REFERENCE_ZONE = 'UTC';
+
+/**
  * Recording, once, that an approved refund was paid out.
  *
  * The day is a calendar day on the invoice branch's clock (D-17): the server
  * refuses a day after that branch's today, so the picker offers no later day and
  * the form refuses one before sending, on the field, as it refuses a day only
  * partly typed.
+ *
+ * ## The day typed is the day shown and the day sent (`P1-32-PRE-OD-REPB-04`)
+ *
+ * A calendar day has no clock, so the form's one duty is to hand over exactly
+ * the day typed. The picker does not make that free: it holds a day as an
+ * instant on some zone, and a zone that changes under a mounted picker, or the
+ * browser's clock taken as a fallback, each moved a typed day by one in the
+ * report scope form (`P1-32-PRE-OD-REPA-04`, measured there). The branch's zone
+ * comes from the working context, which can be read again while this form is
+ * open, so here too:
+ *
+ *  - the picker is KEYED on its clock (`dayClock`): another clock is a new
+ *    picker, mounted on that clock, and no picker ever sees its zone change. A
+ *    whole day already typed is kept — it is a string in this form's state — and
+ *    a day only partly typed goes with the picker it was typed into, together
+ *    with the complaint about it;
+ *  - the picker is always handed a zone. Where the branch's own is not known it
+ *    stands on `PAYOUT_DAY_REFERENCE_ZONE`, never on the working branch's clock
+ *    or the browser's; no "today" bound is offered then (the server judges it),
+ *    and the form says the calendar may mark another day as today.
  */
 function PayoutForm({
   messages,
@@ -751,7 +782,6 @@ function PayoutForm({
 }) {
   const [reference, setReference] = useState('');
   const [day, setDay] = useState('');
-  const [dayProblem, setDayProblem] = useState<DayProblem | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -762,11 +792,42 @@ function PayoutForm({
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
   // The branch's today, when its clock is known; the server judges it again.
   const today = zone === null ? undefined : dayIn(zone);
+  /*
+   * The one zone the day picker is mounted on, and its key: when it changes the
+   * picker is a new one, so no picker ever sees its zone change. The marker
+   * keeps "the reference" apart from a branch that really is on UTC.
+   */
+  const dayZone = zone ?? PAYOUT_DAY_REFERENCE_ZONE;
+  const dayClock = zone === null ? `reference:${dayZone}` : `branch:${dayZone}`;
+  /*
+   * What the picker finds wrong belongs to the picker that found it, and goes
+   * with that picker: a new clock is a new picker, which has complained about
+   * nothing. Dropped during render (React's pattern for state that follows a
+   * value), with the form's own complaint about the day, so no frame shows an
+   * empty box under the old picker's complaint.
+   */
+  const [reported, setReported] = useState<{
+    readonly clock: string;
+    readonly problem: DayProblem;
+  }>({ clock: dayClock, problem: null });
+  if (reported.clock !== dayClock) {
+    setReported({ clock: dayClock, problem: null });
+    if (errors['payoutDate'] !== undefined) {
+      const kept = { ...errors };
+      delete kept['payoutDate'];
+      setErrors(kept);
+    }
+  }
+  const dayProblem = reported.clock === dayClock ? reported.problem : null;
+  const noteDayProblem = useCallback(
+    (problem: DayProblem) => setReported({ clock: dayClock, problem }),
+    [dayClock]
+  );
 
   const reset = useCallback(() => {
     setReference('');
     setDay('');
-    setDayProblem(null);
+    setReported((current) => ({ clock: current.clock, problem: null }));
     setErrors({});
     setOutcome(null);
   }, []);
@@ -880,19 +941,25 @@ function PayoutForm({
       />
       <div className="sm:max-w-xs">
         <DateField
+          key={dayClock}
           label={translate(messages, 'refunds.execute.date')}
           description={translate(messages, 'refunds.execute.dateHelp')}
           required
           name="payoutDate"
           value={day}
-          {...(zone === null ? {} : { timezone: zone })}
+          timezone={dayZone}
           {...(today === undefined ? {} : { max: today })}
           onChange={(next) => setDay(next)}
-          onProblem={setDayProblem}
+          onProblem={noteDayProblem}
           onEdit={() => corrected('payoutDate')}
           error={errorFor('payoutDate')}
         />
       </div>
+      {zone === null ? (
+        <p className="text-caption text-text-muted" data-testid="refund-payout-zone-unknown">
+          {translate(messages, 'refunds.execute.zoneUnknownNote')}
+        </p>
+      ) : null}
       <OutcomeNote messages={messages} outcome={outcome} />
       {outcome?.status === 'conflict' ? (
         <div>
