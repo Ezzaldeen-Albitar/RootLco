@@ -598,7 +598,8 @@ function OverviewResults({
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.company')}>
               {companyName === null ? (
-                <MachineName value={context.filters?.companyId ?? selection.companyId} />
+                // A name is said or said to be missing; the identifier is never shown.
+                <span lang={locale}>{translate(messages, 'reports.context.nameUnavailable')}</span>
               ) : (
                 <bdi>{companyName}</bdi>
               )}
@@ -607,7 +608,7 @@ function OverviewResults({
               {context.branch !== undefined ? (
                 <bdi>{context.branch.name}</bdi>
               ) : branchName === null ? (
-                <MachineName value={context.filters?.branchId ?? selection.branchId} />
+                <span lang={locale}>{translate(messages, 'reports.context.nameUnavailable')}</span>
               ) : (
                 <bdi>{branchName}</bdi>
               )}

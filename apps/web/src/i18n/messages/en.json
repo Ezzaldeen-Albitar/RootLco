@@ -6059,6 +6059,7 @@
   "reports.context.freshness.live": "Read from the live records the moment you asked",
   "reports.context.from": "From",
   "reports.context.generatedAt": "Read at",
+  "reports.context.nameUnavailable": "Name not available",
   "reports.context.periodNote": "Days and times are shown exactly as the system recorded them, in the time zone named above, so a row is never moved into a different day.",
   "reports.context.timezone": "Time zone",
   "reports.context.timezoneUnknown": "Not recognised by this browser",

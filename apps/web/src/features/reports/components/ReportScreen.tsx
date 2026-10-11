@@ -563,7 +563,8 @@ function ReportResults({
   return (
     <section aria-labelledby="report-result-heading" className="flex flex-col gap-4">
       <h3 id="report-result-heading" className="sr-only">
-        {title === null ? reportCode : title}
+        {/* A name, or the plain word for what this is; never the report's code. */}
+        {title ?? translate(messages, 'reports.run.title')}
       </h3>
 
       <RunEnvelope
@@ -710,7 +711,10 @@ function RunEnvelope({
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.company')}>
           {companyName === null ? (
-            <MachineName value={run.filters?.companyId ?? submitted.companyId} />
+            // A name is said or said to be missing; the identifier is never shown.
+            <span lang={locale} data-testid="report-company-unnamed">
+              {translate(messages, 'reports.context.nameUnavailable')}
+            </span>
           ) : (
             <bdi>{companyName}</bdi>
           )}
@@ -719,7 +723,9 @@ function RunEnvelope({
           {run.branch !== undefined ? (
             <bdi>{run.branch.name}</bdi>
           ) : branchName === null ? (
-            <MachineName value={run.filters?.branchId ?? submitted.branchId} />
+            <span lang={locale} data-testid="report-branch-unnamed">
+              {translate(messages, 'reports.context.nameUnavailable')}
+            </span>
           ) : (
             <bdi>{branchName}</bdi>
           )}

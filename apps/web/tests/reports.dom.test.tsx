@@ -1558,6 +1558,60 @@ describe('the totals are the server’s, over the whole period and never over th
   });
 });
 
+describe('a name that is missing is said to be missing, and no identifier is shown', () => {
+  it('says the name is not available for the company and the branch, and names the result in words', async () => {
+    // The run names its report by a key this build has no words for, and
+    // carries no branch of its own.
+    runReport.mockResolvedValue(
+      runOk({ ...OLD_ENVELOPE, titleKey: 'reports.unknown_dataset.title' })
+    );
+    const view = (scopes: unknown) =>
+      withPickers(
+        <ReportScreen
+          locale="en"
+          messages={en}
+          definition={BASELINE as never}
+          scopeOptions={scopes as never}
+        />
+      );
+    const { container, rerender } = renderLtr(view(SCOPES));
+    const user = userEvent.setup();
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await within(container).findByTestId('report-zone');
+    expect(within(fact('reports.context.company')).getByText('Workshop company')).toBeVisible();
+
+    // The directory is read again and no longer holds the pair the report was
+    // run for: there is no name left to show for either.
+    rerender(
+      view({
+        ...SCOPES,
+        data: {
+          companies: [{ id: PARTNER_ID, legalName: 'Another company' }],
+          branches: [{ id: WORK_ORDER_ID, companyId: PARTNER_ID, name: 'Another branch' }],
+        },
+      })
+    );
+    const company = await within(container).findByTestId('report-company-unnamed');
+    expect(company).toHaveTextContent(EN['reports.context.nameUnavailable'] as string);
+    expect(fact('reports.context.company')).toContainElement(company);
+    const branch = within(container).getByTestId('report-branch-unnamed');
+    expect(branch).toHaveTextContent(EN['reports.context.nameUnavailable'] as string);
+    expect(fact('reports.context.branch')).toContainElement(branch);
+    // Neither identifier, and not the report's code, anywhere on the screen.
+    expect(container).not.toHaveTextContent(COMPANY_ID);
+    expect(container).not.toHaveTextContent(BRANCH_ID);
+    expect(container).not.toHaveTextContent(CODE);
+    expect(
+      screen.getByRole('heading', { level: 3, name: EN['reports.run.title'] as string })
+    ).toBeInTheDocument();
+    // The product's own "name not available" wording, in both languages.
+    expect(EN['reports.context.nameUnavailable']).toBe(EN['audit.actor.unnamed']);
+    expect(AR['reports.context.nameUnavailable']).toBe(AR['audit.actor.unnamed']);
+  });
+});
+
 describe('a refused run is drawn as a refusal, never as a report with nothing in it', () => {
   it.each([
     ['denied', 'state.denied.title'],

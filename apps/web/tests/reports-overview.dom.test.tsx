@@ -527,6 +527,54 @@ describe('the period, the zone and the branch travel with the summaries', () => 
     ).toBeNull();
   });
 
+  it('says a name is not available rather than showing the company or branch identifier', async () => {
+    // The runs carry no branch of their own, and the directory is then read
+    // again without the pair the overview was shown for: no name is left for
+    // either, and neither identifier may take a name's place
+    // (P1-32-PRE-OD-REPA-03).
+    runReport.mockImplementation(async (input: { readonly reportCode: string }) => {
+      const answered = runOk(input.reportCode);
+      return { ...answered, data: { ...answered.data, branch: undefined } };
+    });
+    const view = (scopes: unknown) =>
+      withPickers(
+        <ReportOverviewScreen
+          locale="en"
+          messages={en}
+          scopeOptions={scopes as never}
+          catalogue={CATALOGUE(ALL_FOUR) as never}
+        />
+      );
+    const { container, rerender } = renderLtr(view(SCOPES));
+    const user = userEvent.setup();
+    await typeDay(user, labelled('reports.run.from'), FROM);
+    await typeDay(user, labelled('reports.run.to'), TO);
+    await user.click(screen.getByRole('button', { name: EN['reports.overview.show'] as string }));
+    await screen.findByTestId('overview-zone');
+    expect(within(fact('reports.context.company')).getByText('Workshop company')).toBeVisible();
+    expect(within(fact('reports.context.branch')).getByText('Service branch')).toBeVisible();
+
+    rerender(
+      view({
+        ...SCOPES,
+        data: {
+          companies: [{ id: OTHER_BRANCH_ID, legalName: 'Another company' }],
+          branches: [{ id: OTHER_BRANCH_ID, companyId: OTHER_BRANCH_ID, name: 'Another branch' }],
+        },
+      })
+    );
+    await waitFor(() =>
+      expect(fact('reports.context.company')).toHaveTextContent(
+        EN['reports.context.nameUnavailable'] as string
+      )
+    );
+    expect(fact('reports.context.branch')).toHaveTextContent(
+      EN['reports.context.nameUnavailable'] as string
+    );
+    expect(container).not.toHaveTextContent(COMPANY_ID);
+    expect(container).not.toHaveTextContent(BRANCH_ID);
+  });
+
   it('links each section to its own report, carrying the branch and the period', async () => {
     await showOverview();
     const section = within(await waitFor(() => panel('work_orders_by_status')));

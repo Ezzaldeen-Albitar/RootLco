@@ -6059,6 +6059,7 @@
   "reports.context.freshness.live": "قُرئ من السجلات الحية لحظة طلبك",
   "reports.context.from": "من",
   "reports.context.generatedAt": "وقت القراءة",
+  "reports.context.nameUnavailable": "الاسم غير متاح",
   "reports.context.periodNote": "تُعرض الأيام والأوقات كما سجّلها النظام تمامًا، بالمنطقة الزمنية المذكورة أعلاه، حتى لا يُنقل أي سطر إلى يوم آخر.",
   "reports.context.timezone": "المنطقة الزمنية",
   "reports.context.timezoneUnknown": "غير معروفة لهذا المتصفح",
