@@ -4844,6 +4844,40 @@ screens (`/refunds`, the invoice's refunds panel, the snapshots panel and `Repor
   copy and the reception board write theirs — while REP-A's reports write no time at all there.
   This slice leaves that as it is; which of the two the refund screens follow is not decided here.
 
+Review round (`P1-32-PRE-OD-REPB-05`) — what the independent review of the round above asked for:
+
+- One write per press, the refund writes. All five hold an in-flight guard, but only asking and
+  approving had a case that fails without it; the statements above and in the test file's header
+  that every hold was proven were not true for rejecting, withdrawing and recording the payout.
+  `refunds.dom.test.tsx` gains one case for each. Each was run with its hold line taken out of
+  `RefundsPanel.tsx` and failed with two requests sent where one is required, and the line was put
+  back. For a decision the two presses arrive before React has rendered the dialog's held action:
+  after that render the action is disabled and a press cannot reach the sender, so two presses
+  made as separate interactions pass with both decision holds taken out (run, and so not used as
+  the proof); each case also presses once more, on its own, with the request still open. The
+  payout's case is two separate interactions — a press of the button, then a submission of the
+  form itself — read at the transport: one request, carrying `If-Match` (the version the request
+  was read at) and `Idempotency-Key`.
+- Instants on the refund screens. Ruled: a time on UTC that says it is on UTC is acceptable where
+  the branch's zone is not known; a time with no clock named is not. `refunds.dom.test.tsx` pins
+  it — the time followed by the visible label `UTC`, in English and in Arabic, in the list and in
+  the invoice's history; all four cases failed with the label dropped.
+- The payout-day cases no longer depend on the date of the machine that runs them: "now" is pinned
+  (the `Date` only; timers stay real), so the field's "no day after the branch's today" bound is
+  the same everywhere. Moved to before the typed day, the pin fails the 15 cases that end on a
+  known zone and leaves the 6 that end on an unknown one, which have no bound.
+- `reports.snapshots.column.open`, the heading of the old table's "View" column, had no user left
+  once the list became the grid; it is removed from `en.json` and `ar.json`.
+
+Open after this round, none of them decided here: the payout is offered to any holder of
+`sal.payment.record` in the branch, the requester and the approver included, and the server
+requires no separate person for it
+([FIN03](decision-pack-2026-10-08.md#fin03-cancelling-an-approved-refund-that-is-not-yet-paid-out),
+[FIN04](decision-pack-2026-10-08.md#fin04-who-may-record-a-refund-payout)); saving a snapshot
+sends a new `Idempotency-Key` with every send, so a press repeated after a lost answer is not a
+replay and the server's duplicate refusal is what covers it (as on develop); the fixed-height grid
+row holding a refund's moment with the `UTC` label was not looked at in a browser.
+
 Checklist correction (WP00 scan): the FD16B table further down said the save and Restate need
 `rpt.export`; both rows now say `rpt.report.configure`, the gate since FD16C, and the operation row
 says `rpt.export` gates CSV export only, so it cannot be read as still gating the save.

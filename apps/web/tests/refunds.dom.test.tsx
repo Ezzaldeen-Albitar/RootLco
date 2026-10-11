@@ -16,22 +16,36 @@
  *  - the list: narrowed by state through the server, every figure the server's.
  *
  * On the Material UI wrappers (P1-32-PRE-OD-REPB), each also failing when removed:
- * one write per press (two presses inside ONE act() send once), typed entries are
- * unsaved work a branch switch asks about, the payout day is checked on the
- * branch's calendar before it is sent, a request's moment is written on the
- * branch's clock with the clock named, and an empty list says which empty it is.
+ * typed entries are unsaved work a branch switch asks about, the payout day is
+ * checked on the branch's calendar before it is sent, a request's moment is
+ * written on the branch's clock with the clock named, and an empty list says
+ * which empty it is.
+ *
+ * One write per press, for each of the five writes — asking, approving,
+ * rejecting, withdrawing and recording the payout. Each has a case that sends
+ * twice once its hold is taken out of `RefundsPanel.tsx`: asking and approving
+ * since P1-32-PRE-OD-REPB, the other three since P1-32-PRE-OD-REPB-05, each run
+ * that way. For a decision the two presses arrive before React has rendered the
+ * held action, the only moment the hold is what stops the second; the payout's
+ * are two separate interactions, the second a submission of the form itself.
+ *
+ * A request's moment under a branch zone this browser does not know is written
+ * on UTC and followed by the visible label UTC, in English and Arabic, in the
+ * list and in the invoice's history (P1-32-PRE-OD-REPB-05).
  *
  * The payout day is the day typed, on any clock (P1-32-PRE-OD-REPB-04): shown and
  * sent as typed for a branch whose zone is known, for one whose zone is not, and
  * when the zone changes under the open form — literal days, on zones east and
- * west of any machine that runs this file.
+ * west of any machine that runs this file, under a pinned "now" so that the
+ * field's "no day after today" bound never depends on the runner's date.
  */
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { intlLocale } from '../src/lib/format';
 import { formatMoney } from '../src/lib/money';
 import { addDays, dayIn, formatInZone, zoneLabelAt } from '../src/lib/branch-time';
 import {
@@ -92,6 +106,29 @@ const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
 vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: (...args: unknown[]) => notifyActionResult(...args),
 }));
+
+/*
+ * The transport, for the payout's two-press case only.
+ *
+ * A REAL `ApiClient` over a stubbed `fetch`, and the real payout sender beside
+ * the spy that stands in for it, so that one case can read the request itself:
+ * how many were sent, and the `If-Match` and `Idempotency-Key` each carries.
+ * Every other case drives the writes through the module mock above and never
+ * reaches this.
+ */
+const fetchImpl = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/api/server-client', async () => {
+  const { ApiClient } = await import('@/lib/api/client');
+  return {
+    authorizedClient: async () =>
+      new ApiClient({
+        baseUrl: 'http://api.test',
+        fetchImpl: (input: unknown, init: unknown) => fetchImpl(input, init),
+      }),
+  };
+});
+const actualBillingApi =
+  await vi.importActual<typeof import('@/features/billing/api')>('@/features/billing/api');
 
 const { RefundsPanel } = await import('@/features/billing/components/RefundsPanel');
 const { RefundsScreen } = await import('@/features/billing/components/RefundsScreen');
@@ -227,6 +264,26 @@ beforeEach(() => {
   rejectRefund.mockResolvedValue(echo(refundRequest({ state: 'rejected' })));
   withdrawRefund.mockResolvedValue(echo(refundRequest({ state: 'withdrawn' })));
   executeRefund.mockResolvedValue(echo(refundRequest({ state: 'executed' })));
+});
+
+/**
+ * Pins "now" for a case that types a payout day.
+ *
+ * The day field offers no day after the branch's today, so a case that types a
+ * literal day would otherwise pass or fail by the date of the machine running
+ * it. Only `Date` is replaced — timers stay real — so typing, waiting and the
+ * picker behave exactly as in every other case; the file's `afterEach` puts the
+ * real clock back. Mid-month and midday on UTC: the 15th or the 16th of
+ * September 2026 on every zone on the map, so the 1st is behind today anywhere.
+ */
+const PINNED_NOW = '2026-09-15T12:00:00Z';
+function pinToday(): void {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(PINNED_NOW));
+}
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('the invoice refunds panel — what is owed and asking for a refund', () => {
@@ -659,6 +716,150 @@ describe('the refunds panel — one write per press, unsaved entries and the pay
     expect(approveRefund).toHaveBeenCalledTimes(1);
   });
 
+  /*
+   * P1-32-PRE-OD-REPB-05 — the other three writes. Each case fails when its
+   * hold is taken out of `RefundsPanel.tsx`; each was run that way.
+   *
+   * For a decision the hold is the only thing between a second press and a
+   * second request for as long as React has not rendered the dialog's held
+   * action — so the two presses that prove it arrive before that render. Once
+   * it has rendered, the action is disabled and a press cannot reach the
+   * sender at all; each case presses once more then, on its own, with the
+   * request still open, and the count stays at one.
+   */
+  /** A further press, on its own, of an action the screen is by now holding. */
+  const pressHeld = (button: HTMLElement) => {
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+  };
+  /** One turn of the event loop, so anything a press started has reached the transport. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+  it('rejects once however often the reason is confirmed', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    rejectRefund.mockReturnValue(answer.promise);
+    listRefundRequests.mockResolvedValue(page([refundRequest()]));
+    panel();
+    const section = await region();
+    await user.click(
+      await within(section).findByRole('button', { name: EN['refunds.reject.action'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['refunds.reject.confirmTitle'] as string,
+    });
+    await user.type(within(dialog).getByLabelText(labelled('refunds.reject.reason')), 'Duplicate');
+    const confirm = within(dialog).getByRole('button', {
+      name: EN['refunds.reject.action'] as string,
+    });
+    twice(confirm);
+    expect(rejectRefund).toHaveBeenCalledTimes(1);
+    expect(rejectRefund).toHaveBeenCalledWith(REQUEST_ID, { reason: 'Duplicate' }, 3);
+    pressHeld(confirm);
+    await settle();
+    expect(rejectRefund).toHaveBeenCalledTimes(1);
+    await act(async () => answer.open(echo(refundRequest({ state: 'rejected' }))));
+    expect(await screen.findByText(EN['refunds.reject.done'] as string)).toBeVisible();
+    expect(rejectRefund).toHaveBeenCalledTimes(1);
+  });
+
+  it('withdraws once however often the confirmation is pressed', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    withdrawRefund.mockReturnValue(answer.promise);
+    listRefundRequests.mockResolvedValue(page([refundRequest({ requestedBy: SIGNED_IN })]));
+    panel();
+    const section = await region();
+    await user.click(
+      await within(section).findByRole('button', { name: EN['refunds.withdraw.action'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['refunds.withdraw.confirmTitle'] as string,
+    });
+    const confirm = within(dialog).getByRole('button', {
+      name: EN['refunds.withdraw.action'] as string,
+    });
+    twice(confirm);
+    expect(withdrawRefund).toHaveBeenCalledTimes(1);
+    expect(withdrawRefund).toHaveBeenCalledWith(REQUEST_ID, 3);
+    pressHeld(confirm);
+    await settle();
+    expect(withdrawRefund).toHaveBeenCalledTimes(1);
+    await act(async () => answer.open(echo(refundRequest({ state: 'withdrawn' }))));
+    expect(await screen.findByText(EN['refunds.withdraw.done'] as string)).toBeVisible();
+    expect(withdrawRefund).toHaveBeenCalledTimes(1);
+  });
+
+  it('records the payout once: a second submission while the first is open sends nothing, and the one request carries its version and its key', async () => {
+    /*
+     * Two separate interactions, the screen rendered between them. The first is
+     * a press of the button. The button is held after it, so the second is a
+     * submission of the form itself — where Enter in one of its boxes lands —
+     * which reaches the sender whether or not the button is held: only the
+     * form's own hold stops it. The request is read at the transport.
+     */
+    pinToday();
+    const user = userEvent.setup();
+    const answer = gate<Response>();
+    fetchImpl.mockReturnValue(answer.promise);
+    executeRefund.mockImplementation((...args: unknown[]) =>
+      (actualBillingApi.executeRefund as (...sent: unknown[]) => unknown)(...args)
+    );
+    listRefundRequests.mockResolvedValue(
+      page([refundRequest({ state: 'approved', recordVersion: 4 })])
+    );
+    panel();
+    const form = await screen.findByRole('form', { name: EN['refunds.execute.heading'] as string });
+    await user.type(within(form).getByLabelText(labelled('refunds.execute.reference')), 'TRF-55');
+    const day = within(form).getByRole('group', { name: labelled('refunds.execute.date') });
+    await user.click(within(day).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('01092026');
+    const submit = within(form).getByRole('button', {
+      name: EN['refunds.execute.submit'] as string,
+    });
+
+    await user.click(submit);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(submit).toBeDisabled();
+
+    fireEvent.submit(form);
+    await settle();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    const [url, init] = fetchImpl.mock.calls[0] as [
+      string,
+      {
+        readonly method: string;
+        readonly headers: Readonly<Record<string, string>>;
+        readonly body: string;
+      },
+    ];
+    expect(url).toBe(`http://api.test/api/v1/refund-requests/${REQUEST_ID}/execution`);
+    expect(init.method).toBe('POST');
+    // If-Match: the version the request was read at. Idempotency-Key: the form's one key.
+    expect(init.headers['if-match']).toBe('4');
+    expect(init.headers['idempotency-key']).toMatch(UUID_SHAPE);
+    expect(JSON.parse(init.body)).toEqual({
+      paymentMethodId: METHOD_ID,
+      payoutReference: 'TRF-55',
+      payoutDate: '2026-09-01',
+    });
+
+    await act(async () =>
+      answer.open(
+        new Response(JSON.stringify(echo(refundRequest({ state: 'executed' })).created), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+    );
+    expect(await screen.findByText(EN['refunds.execute.done'] as string)).toBeVisible();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('puts the cursor on the first field to fix when the request is refused', async () => {
     const user = userEvent.setup();
     panel();
@@ -804,7 +1005,8 @@ describe('the payout day is the day typed, on any clock (P1-32-PRE-OD-REPB-04)',
    * (P1-32-PRE-OD-REPA-04), and the payout day stood on the same two legs.
    *
    * Nothing here is computed from the clock of the machine running the test:
-   * the days are literals. The zones are chosen so the cases mean something on
+   * the days are literals and "now" is pinned (`pinToday`), so the field's
+   * bound — no day after the branch's today — is the same on every runner. The zones are chosen so the cases mean something on
    * ANY machine clock — the region the product is used in (Asia/Riyadh), one
    * far east of every likely runner (Pacific/Auckland), one far west
    * (Pacific/Honolulu), and the two ends of the map to change from.
@@ -855,6 +1057,7 @@ describe('the payout day is the day typed, on any clock (P1-32-PRE-OD-REPB-04)',
     user.click(within(form).getByRole('button', { name: EN['refunds.execute.submit'] as string }));
 
   beforeEach(() => {
+    pinToday();
     listRefundRequests.mockResolvedValue(
       page([refundRequest({ state: 'approved', recordVersion: 4 })])
     );
@@ -930,6 +1133,87 @@ describe('the payout day is the day typed, on any clock (P1-32-PRE-OD-REPB-04)',
         await waitFor(() => expect(executeRefund).toHaveBeenCalledTimes(1));
         expect(executeRefund.mock.calls[0]?.[1]).toEqual(SENT);
       });
+    }
+  );
+});
+
+describe('a refund moment under a branch zone this browser does not know (P1-32-PRE-OD-REPB-05)', () => {
+  /*
+   * The ruling for the refund screens: a time on UTC that SAYS it is on UTC is
+   * acceptable; a time with no clock named is not. So where the branch's zone
+   * is not known, the time is written on UTC and is followed by the visible
+   * literal `UTC` — in English and in Arabic, in the list and in the invoice's
+   * history. Each case fails if the label is dropped, and if the time is
+   * written on any other clock.
+   */
+  const INSTANT = '2026-10-08T09:00:00Z';
+  const unknownZone = () => branchSnapshot([{ ...TEST_BRANCH, timezone: 'Mars/Base' }]);
+  const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
+  /** The instant on UTC as the reader's language writes it, from `Intl` and nothing of the screen's. */
+  const onUtc = (locale: 'en' | 'ar') =>
+    squash(
+      new Intl.DateTimeFormat(intlLocale(locale), {
+        timeZone: 'UTC',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(INSTANT))
+    );
+  /** Every moment drawn inside `root` is that time followed by the label, and can be seen. */
+  function expectNamedUtc(root: HTMLElement, locale: 'en' | 'ar'): void {
+    const when = onUtc(locale);
+    const moments = Array.from(root.querySelectorAll<HTMLElement>('bdi')).filter((node) =>
+      squash(node.textContent ?? '').startsWith(when)
+    );
+    expect(moments.length).toBeGreaterThan(0);
+    for (const moment of moments) {
+      expect(squash(moment.textContent ?? '')).toBe(`${when} UTC`);
+      expect(moment).toBeVisible();
+    }
+  }
+  const show = (ui: ReactElement, locale: 'en' | 'ar') => {
+    const framed = withMui(inBranch(ui, { snapshot: unknownZone(), locale }), locale);
+    return locale === 'ar' ? renderRtl(framed) : renderLtr(framed);
+  };
+
+  beforeEach(() => {
+    listRefundRequests.mockResolvedValue(page([refundRequest({ requestedAt: INSTANT })]));
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'the list writes it on UTC, followed by the label UTC (%s)',
+    async (locale) => {
+      show(
+        <RefundsScreen
+          locale={locale}
+          messages={getMessages(locale)}
+          currentUserId={SIGNED_IN}
+          canReadCustomers={false}
+          canSearchInvoices
+        />,
+        locale
+      );
+      const grid = await screen.findByTestId('refunds-grid');
+      await within(grid).findByText('Paid twice');
+      expectNamedUtc(grid, locale);
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'the invoice history writes it on UTC, followed by the label UTC (%s)',
+    async (locale) => {
+      show(
+        <RefundsPanel
+          locale={locale}
+          messages={getMessages(locale)}
+          invoice={{ id: INVOICE_ID, companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id }}
+          currentUserId={SIGNED_IN}
+          canRequest
+          canDecide
+          onChanged={() => undefined}
+        />,
+        locale
+      );
+      expectNamedUtc(await screen.findByTestId('refund-history'), locale);
     }
   );
 });
