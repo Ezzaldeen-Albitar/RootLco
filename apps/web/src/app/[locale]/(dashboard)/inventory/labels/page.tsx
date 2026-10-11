@@ -49,8 +49,14 @@ export default async function InventoryLabelsPage({
     );
   }
 
+  /*
+   * `data-print-scope` (P1-32-PRE-OD-INVF, LBL-sheet-print): while a label
+   * sheet is on the page, paper carries the labels and not the page heading,
+   * its description or the panels around them — the convention every printable
+   * page follows (`styles/print/_index.scss`).
+   */
   return (
-    <>
+    <div data-print-scope="document">
       <PageHeader
         locale={locale}
         messages={messages}
@@ -61,7 +67,7 @@ export default async function InventoryLabelsPage({
       <PageBody>
         <LabelsScreen locale={locale} messages={messages} />
       </PageBody>
-    </>
+    </div>
   );
 }
 

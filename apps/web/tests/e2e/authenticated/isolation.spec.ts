@@ -338,6 +338,36 @@ test.describe('cross-tenant isolation', () => {
     }
   });
 
+  test('the two self-reads refuse a lone __proto__ query key over real HTTP', async ({
+    request,
+  }) => {
+    // FRX1-c. Next drops a `__proto__` key from the URL a route handler reads,
+    // so only the API's proxy can see it; this is the running server, not the
+    // proxy function. A real token, so the refusal is not a missing session.
+    const token = await bearerForTenantA(request);
+    for (const path of ['/api/v1/auth/session', '/api/v1/auth/working-context']) {
+      const plain = await request.get(`${API}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        failOnStatusCode: false,
+      });
+      expect(plain.status(), `${path} without a parameter must answer`).toBe(200);
+
+      for (const search of ['?__proto__=x', '?constructor=x', '?userId=x']) {
+        const refused = await request.get(`${API}${path}${search}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          failOnStatusCode: false,
+        });
+        expect(refused.status(), `${path}${search} must be refused`).toBe(422);
+        expect(((await refused.json()) as { code?: string }).code).toBe('ERR-VAL-001');
+      }
+
+      const anonymous = await request.get(`${API}${path}?__proto__=x`, {
+        failOnStatusCode: false,
+      });
+      expect(anonymous.status(), `${path}?__proto__=x is refused before any session`).toBe(422);
+    }
+  });
+
   test('no token at all is refused too', async ({ request }) => {
     const anonymous = await request.get(`${API}/api/v1/iam/users/${TENANT_B_USER}`, {
       failOnStatusCode: false,
