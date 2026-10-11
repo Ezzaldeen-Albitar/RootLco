@@ -150,12 +150,14 @@ export function AttentionScreen({
               locale={locale}
               companyId={pair.companyId}
               branchId={pair.branchId}
+              zone={zone}
             />
             <CountDiscrepancyCard
               messages={messages}
               locale={locale}
               companyId={pair.companyId}
               branchId={pair.branchId}
+              zone={zone}
             />
             <UnusualConsumptionCard
               messages={messages}
@@ -169,13 +171,14 @@ export function AttentionScreen({
               locale={locale}
               companyId={pair.companyId}
               branchId={pair.branchId}
+              zone={zone}
               branchName={branchName}
             />
           </div>
         ) : null}
 
         {canReadCapacity ? (
-          <CapacityCard messages={messages} locale={locale} enabled />
+          <CapacityCard messages={messages} locale={locale} zone={zone} enabled />
         ) : (
           <MuiRefusedState
             messages={messages}
