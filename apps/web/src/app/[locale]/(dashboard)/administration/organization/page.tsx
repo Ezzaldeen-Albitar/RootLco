@@ -16,6 +16,7 @@ import { SettingsEditor } from '@/features/administration/organization/component
 import { TenantForm } from '@/features/administration/organization/components/TenantForm';
 import { Panel } from '@/features/administration/shared/components/ScreenStates';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
+import { CURRENCY_RULES } from '@/features/administration/shared/settings-keys';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -74,6 +75,12 @@ export default async function OrganizationPage({
   const referenceValues = canReadTenant ? await readReferenceValues() : null;
   // Made and failed, as against never made: only a failure offers Try again.
   const referenceUnavailable = canReadTenant && referenceValues === null;
+  // The settings editors below can write `currency.enabled_codes`, so they apply
+  // the Currencies screen's check; a code the platform does not hold is refused
+  // only when its list was read.
+  const knownCodes = referenceValues
+    ? referenceValues.currencies.map((currency) => currency.code)
+    : null;
   const companies = canReadCompanies ? await listCompanies() : null;
   const branches = canReadBranches ? await listBranches() : null;
   const currencyChoices =
@@ -157,6 +164,8 @@ export default async function OrganizationPage({
                 scope="company"
                 canWrite={canWriteSettings}
                 keyPrefix=""
+                valueRules={CURRENCY_RULES}
+                knownCodes={knownCodes}
               />
             </Panel>
           ) : null}
@@ -168,6 +177,8 @@ export default async function OrganizationPage({
                 scope="branch"
                 canWrite={canWriteSettings}
                 keyPrefix=""
+                valueRules={CURRENCY_RULES}
+                knownCodes={knownCodes}
               />
             </Panel>
           ) : null}
