@@ -6198,7 +6198,6 @@
   "reports.snapshots.close": "إغلاق اللقطة",
   "reports.snapshots.column.asOf": "المبالغ كما في",
   "reports.snapshots.column.kind": "النوع",
-  "reports.snapshots.column.open": "فتح",
   "reports.snapshots.column.rows": "عدد الصفوف",
   "reports.snapshots.column.savedAt": "وقت الحفظ",
   "reports.snapshots.column.savedBy": "حفظها",

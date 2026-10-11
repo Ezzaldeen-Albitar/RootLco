@@ -6198,7 +6198,6 @@
   "reports.snapshots.close": "Close snapshot",
   "reports.snapshots.column.asOf": "Amounts as of",
   "reports.snapshots.column.kind": "Kind",
-  "reports.snapshots.column.open": "Open",
   "reports.snapshots.column.rows": "Rows",
   "reports.snapshots.column.savedAt": "Saved",
   "reports.snapshots.column.savedBy": "Saved by",
