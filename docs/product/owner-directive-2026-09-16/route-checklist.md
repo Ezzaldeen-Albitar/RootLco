@@ -227,7 +227,7 @@ from the address whose read failed.
 
 | Route                   | Screen file                                                          | a                                                                                                                                                                                                                           | b                                                                                                                                                                         | c                                                                                                                                     | d                                                       | e                                                                            | f                                                                                               | g                                                                | h    | i    |
 | ----------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---- | ---- |
-| `/reports`              | `apps/web/src/features/reports/components/ReportCatalogueScreen.tsx` | n/a — the catalogue is the tenant's                                                                                                                                                                                         | pass — the first page is read on arrival                                                                                                                                  | fixed (REPA) — a report is named by its message alone, its level in words; a code is shown, as a code, only for a report with no name | n/a — the catalogue read takes a cursor and a size only | n/a                                                                          | n/a — nothing is typed                                                                          | pass — `ReportFailure` renders the shared states                 | pass | pass |
+| `/reports`              | `apps/web/src/features/reports/components/ReportCatalogueScreen.tsx` | n/a — the catalogue is the tenant's                                                                                                                                                                                         | pass — the first page is read on arrival                                                                                                                                  | fixed (REPA) — a report is named by its message alone, its level in words; a code is shown, as a code, only for a report with no name | n/a — the catalogue read takes a cursor and a size only | n/a                                                                          | n/a — nothing is typed                                                                          | pass — `OperationalGrid` draws the shared read states            | pass | pass |
 | `/reports/[reportCode]` | `apps/web/src/features/reports/components/ReportScreen.tsx`          | fixed (B3-02) — opens on the working branch; under "All my branches", or with none chosen, it reads nothing and says a report covers one branch, because `rpt.report-run` takes one branch and the server enforces no union | fixed (B3-02) — today on the branch's own clock, `[today, tomorrow)`, read on arrival and on a branch switch; an address that names a selection still only fills the form | pass — company and branch are named choices                                                                                           | n/a — the run read publishes no free-text parameter     | pass — the period is the date filter, and a new selection restarts the pages | fixed (B3-04) — the cursor goes to the first control to correct, and a corrected complaint goes | pass                                                             | pass | pass |
 | `/reports/overview`     | `apps/web/src/features/reports/components/ReportOverviewScreen.tsx`  | fixed (B3-02) — as the report screen; a branch fixed by the address (FE-016) still wins                                                                                                                                     | fixed (B3-02) — the four reports read today for the working branch on arrival                                                                                             | pass                                                                                                                                  | n/a                                                     | pass — the period                                                            | fixed (B3-04) — the shared scope form                                                           | pass — each section answers for itself through the shared states | pass | pass |
 
@@ -593,8 +593,13 @@ Known limitations of this slice, one line each:
   `shrink-0`) plus `title` and `dir`. Nobody has observed in a browser whether a native `<select>`
   draws the ellipsis (Chromium often clips without one) or whether the branch name overlaps the
   header at 375 px; UNVERIFIED visually, in either direction.
-- `formatReportTime` falls back to UTC for a zone the browser does not know while the context line
-  still names the original zone; theoretical, since the zones are IANA names from PostgreSQL.
+- `formatReportTime` fell back to UTC for a zone the browser does not know while the context line
+  still named the original zone. This was recorded here as theoretical; it was a drawn state pinned
+  by a DOM case, and against the D-17 ruling (an unknown branch zone is a refusal, never a silent
+  UTC fallback). Closed by `P1-32-PRE-OD-REPA-03`: the formatter answers with no time, and the
+  report screens say the zone is not known and the time is not shown — see "Review round REPA-03"
+  under "Reports on Material UI". How often a stored zone is one a browser cannot resolve is not
+  measured; the server takes its names from PostgreSQL and the browser from its own data.
 - The phone suffix arm compares the 8- or 9-digit national significant number, so a foreign number
   sharing those last digits also matches; theoretical, and the `MIN_PHONE_SUFFIX` floor and the
   permissions are unchanged.
@@ -1821,7 +1826,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F7; G1–G9, G11, G12; P1–P10; S1–S4            | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states                                                               | F6; G1–G11; S1–S5; T1–T6                         | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, states                                               | G1–G9; P1–P10; S1–S4                             | built on Material UI (P1-32-PRE-OD-FD2B, ADR-023 D2)                         | `refunds.dom.test.tsx`, en and ar           |
-| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                                | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated (REPA), not the snapshots panel: REP-B (#557) migrates it           | focused suites, en and ar — see below       |
+| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                                | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated (REPA, REPA-03), not the snapshots panel: REP-B (#557) migrates it  | focused suites, en and ar — see below       |
 | `/reports/overview`                                   | form fields, `DateField`, states                                                                         | F1–F6; E1–E4; S1–S4                              | migrated — see below the table (REPA)                                        | focused suites, en and ar — see below       |
 | `/reports`                                            | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | migrated — see below the table (REPA)                                        | focused suites, en and ar — see below       |
 | `/services/[serviceId]`                               | form fields, `TreePicker`, `DateField`, `ConfirmDialog`, states                                          | F1–F6; H1–H5; E1–E4; D1–D4; S1–S4                | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -3261,7 +3266,11 @@ Known limitations of this slice, one line each:
 The report catalogue (`/reports`), the operational overview (`/reports/overview`) and one report
 (`/reports/[reportCode]`) on the ADR-022 wrappers. Web only: no backend file, read, write,
 permission code, route, branch scope or migration changed, and no new operation. What each screen
-reads, how it refuses and what it computes (nothing) are unchanged; the drawing moved.
+reads, how it refuses and what it computes (nothing) are unchanged, and the drawing moved — with the
+behaviour differences this section names where they happen: a repeated Apply with the same choice
+reads nothing, a second press of Show while the first read is still open reads nothing more, and a
+branch zone the browser does not know is refused instead of drawn on UTC (the last two, and the
+re-read on Show that the first cut of this slice had dropped, are in "Review round REPA-03" below).
 
 What changed (`apps/web/src/features/reports/components/`):
 
@@ -3280,8 +3289,10 @@ What changed (`apps/web/src/features/reports/components/`):
   sentence with no grid under it; an empty later page says there is nothing further.
 - **The scope form** (`ReportScopeForm.tsx`, shared by the report and the overview):
   `FormSelectField` for the company and the branch (native lists, F6) and `DateField` for the two
-  days, drawn on the clock of the branch being chosen when the working context knows its zone and
-  the working branch's otherwise (E1–E4). The half-open rule and its messages are unchanged. A day
+  days, drawn on the clock of the branch being chosen when the working context knows its zone
+  (E1–E4). Where it does not — the branch is not in the working context, or its zone is a name the
+  browser cannot resolve — the picker takes the fallback E3 gives every day field, and the form now
+  says so under the days (REPA-03, below). The half-open rule and its messages are unchanged. A day
   only partly typed is refused as "not finished" (`reports.run.dayIncomplete`) and a day the
   calendar does not hold as one that cannot be used (`reports.run.dayInvalid`) — never "Choose a
   day", which would say an unfinished box is empty. The cursor goes to the first control to
@@ -3300,7 +3311,8 @@ What changed (`apps/web/src/features/reports/components/`):
   one bounded answer with no cursor and are the Material table (the planner ruling above). The two
   days of the period are written for reading on the branch's clock (`<time dateTime>` keeps the
   day). The as-of choice is `FormRadioGroupField` (end of period, now, a specific moment) with the
-  `ZonedDateTimeField` on the reported branch's clock; "now" is still sent as the word and resolved
+  `ZonedDateTimeField` on the reported branch's clock, or the shared `MomentZoneRefusal` where that
+  zone is not a clock the browser knows (REPA-03, below); "now" is still sent as the word and resolved
   by the database's clock; a partly typed, impossible, too early or too late moment is refused on
   the field, which takes the cursor; and pressing Apply again with the same choice reads nothing
   (planner-accepted: an unchanged choice is not a new one, so the shown answer stays as it is).
@@ -3308,7 +3320,8 @@ What changed (`apps/web/src/features/reports/components/`):
   answer, which would drop a typed export reason; both now go through the same unsaved-work
   question a branch switch asks (`ConfirmDialog` over `useUnsavedWork`): "Keep my entries" changes
   nothing and reads nothing, "Discard and show the report" clears the reason and reads the new
-  answer. With nothing typed, or with nothing that would change, nothing is asked.
+  answer. With nothing typed, or with nothing that would change, nothing is asked. Pressing Show on
+  the selection already shown reads it again and asks nothing (REPA-03, below).
 - **The export** (`ReportExportPanel.tsx`): still drawn only for `rpt.export` (withheld under
   CC-04) with a published export authority, and otherwise the one "not available" sentence. The
   reason is `FormTextField` (multiline) inside a form, refused on the field with the cursor on it;
@@ -3333,8 +3346,8 @@ English and in Arabic ("Keep my entries" keeps the reason and reads nothing, "Di
 report" clears it and reads once); the period is written for reading with its day kept.
 `reports-overview.dom.test.tsx` — two presses of Show, the second made while the first four reads
 are held open, spend the four reads once, Enter shows the overview, a partly typed day is
-refused in Arabic with the cursor on it, every summary table is named, and the banner names the zone
-in words in both languages. `report-export.dom.test.tsx` — two presses inside one `act()` send one
+refused in Arabic with the cursor on it, every summary table is named by its own report's title, and
+the banner names the zone in words in both languages. `report-export.dom.test.tsx` — two presses inside one `act()` send one
 export, a refused reason takes the cursor and is withdrawn once edited, a branch switch over a typed
 reason asks (Cancel keeps it, Discard clears it), and a reason already sent asks nothing. The
 browser specs (`tests/e2e/authenticated/reports-p1-31.spec.ts`, `overview-p1-31.spec.ts`) type the
@@ -3374,10 +3387,99 @@ Known limitations of this slice, one line each:
 - A page that is refused or fails replaces the whole result with its state and a retry (as
   before); the facts above the rows, and an export reason typed there, go with it.
 - The day pickers take their zone from the working context's branch list; a branch the report
-  directory holds and the working context does not is drawn on the working branch's clock (the
-  day typed is the same either way).
+  directory holds and the working context does not, or one whose zone the browser cannot resolve,
+  is drawn on the fallback every day field takes (the working branch's clock, else the browser's).
+  The day typed is the day sent either way; since REPA-03 the form says so under the days.
 - Not run locally: the browser specs (the Playwright tiers run in hosted CI only), the builds and
   the full web tier; the focused suites and their neighbours were run.
+
+**Review round REPA-03 (`P1-32-PRE-OD-REPA-03`).**
+
+An independent review of #558 returned "changes required". What this round changed, web only:
+
+- **A branch zone the browser does not know is refused, never drawn on another clock** (Owner
+  decision D-17 as applied across the product: a business moment is entered and displayed on the
+  branch's clock, and an unknown branch zone is a refusal — never a silent UTC fallback). Before
+  this round the report screen handed the envelope's zone name to `ZonedDateTimeField` unchecked,
+  and `formatReportTime` wrote instants on UTC under the stored zone name. Now `formatReportTime`
+  answers with no time for an instant under such a zone (`reportClock`); `ReportTime`,
+  `ReportZoneName` and `ReportClockNote` (`ReportShell.tsx`) say "Time not shown", "Not recognised
+  by this browser" and why, in place of the time, the zone name and the "zone named above"
+  sentence, on the report and on the overview; the moment the amounts are as of is said to exist
+  without being written; the export panel says the file is as of the report's moment (it is still
+  sent) instead of calling the data current; and "A specific moment" draws the shared
+  `MomentZoneRefusal` (`components/forms/mui/DateField.tsx`, the refusal the stock screens draw)
+  where the picker would be, so no moment can be typed or applied. "End of period" and "Now" stay,
+  because the server resolves both. The two days of the period are still written: a calendar day
+  carries no clock. The stored zone identifier is no longer shown for an unknown zone.
+- **The scope form is not refused for an unknown zone, and says what it cannot know.** The day sent
+  is the day typed — the picker's value is read by its wall clock (`pickerToDay`), and the server
+  resolves the period in the branch's own zone — so no zone can move it. The zone decides only
+  which day the calendar marks as today. Where the chosen branch's zone is not known the form
+  stays usable and a note under the days says the mark may be another day and the days are used as
+  entered (`reports.run.zoneUnknownNote`).
+- **Show on the selection already shown reads it again.** The screen did before this slice; the
+  first cut of the slice dropped it while adding the repeated-Apply guard, and the section above
+  called the behaviour unchanged. Restored: the page in hand is read again with its cursor and the
+  moment the first answer pinned, the facts above the rows and a typed export reason stay, and
+  nothing is asked. A press made while a read is still open reads nothing more (that read answers
+  both presses), and a repeated Apply with the same choice still reads nothing.
+- **No identifier where a name is missing.** The reported company and branch fell back to their
+  identifiers, and the result's hidden heading to the report code. They now say "Name not
+  available" (`reports.context.nameUnavailable`, the wording the audit log and the appointment
+  calendar use) and "Report"; the overview's company and branch facts take the same words. A report
+  with no name is still headed by its code, shown as a code, and an unrecognised freshness by its
+  own name — both unchanged and deliberate.
+- **The `/reports` sweep row** credited `ReportFailure` for the catalogue's states; the catalogue
+  is `OperationalGrid`, which draws the shared read states itself, and an empty catalogue is
+  `MuiEmptyState`. Corrected in the row.
+
+New catalogue keys, en and ar: `reports.asOf.statementZoneUnknown`,
+`reports.context.nameUnavailable`, `reports.context.timezoneUnknown`,
+`reports.context.zoneUnknownNote`, `reports.export.asOfNoteZoneUnknown`,
+`reports.run.zoneUnknownNote`, `reports.time.notShown`.
+
+Assertions changed in this round, with the reason:
+
+- `reports.dom.test.tsx`, "draws an instant in a zone this browser does not know on the UTC clock"
+  required the UTC time. It is now "writes no time at all for an instant in a zone this browser
+  does not know" and requires no time (`null`), with a calendar day still written. A behaviour
+  correction under the D-17 ruling, not a weakening; the drawn refusal is asserted by new cases.
+- `reports.dom.test.tsx`, "reads nothing again when Apply is pressed twice with the same choice":
+  both halves clicked twice inside one `act()`, one batch, so the second click never met a screen
+  that had rendered the first. Every press is now its own interaction, and the second pair lands
+  on the new answer's own form. Run against a screen without the guard it fails (3 reads of 1).
+- `reports-overview.dom.test.tsx`, "draws each summary as a table named by its report": it accepted
+  any accessible name. It now requires one table per section, named by that section's Arabic title.
+
+New cases: Show on the selection already shown reads again on each further press, and keeps a
+typed export reason without asking (each fails with the re-read removed); an unknown zone writes no
+time and no identifier on the report and on the overview, in English and in Arabic; the moment
+refusal is drawn in place of the picker and Apply sends nothing, in both languages (fails with the
+raw zone handed to the form), while a known zone keeps its picker; the scope form's note appears
+for a branch with an unknown zone and the days typed are the days sent; a missing name is said to
+be missing, with no identifier on the screen, on the report and on the overview; the export panel's
+note for a moment with no words.
+
+Open after this round, recorded and not fixed here:
+
+- `reports.catalogue.noDownload` tells the reader to open a report "to see its available export
+  options" while export is withheld from every role (CC-04). The wording waits on the export
+  decision (CC-04 and the open RPT decisions); it is not changed by this slice.
+- `MomentZoneRefusal` takes its sentence from the working context first. With "All my branches"
+  in force and a reported branch whose zone is unknown, it says to choose one branch rather than
+  that the reported branch's zone is not known. The picker is withheld either way.
+- `use-working-report-scope.ts` reads today on the working branch's zone without checking that the
+  browser knows it (`dayIn`). A working branch with an unknown or empty zone that the report
+  directory holds would make the arrival read throw instead of refusing. Unchanged by this slice
+  (the file is as on `develop`) and not covered by a test; it needs its own decision.
+- The snapshots panel (REP-B, #557) says "Time not shown" inside its sentences for an unknown zone
+  ("Snapshot as of Time not shown"); only the fallback was added here, not new sentences.
+- In a browser: the hosted authenticated tier's report specs skip their handoff-gated cases on a
+  checkout with no acceptance handoff, and the two cases that carry no such gate pin the outcome
+  the signed-in account is entitled to, which for an account without `rpt.report.read` is the
+  refusal. So the grid, the day pickers, the as-of choice and the export panel of these screens
+  have not been observed running in a browser by this slice; the DOM suites are the evidence.
 
 ### Inventory stock, item codes and movements on Material UI (`P1-32-PRE-OD-MUI7A1`)
 
