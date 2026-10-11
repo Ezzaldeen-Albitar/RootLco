@@ -1073,10 +1073,11 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
   });
 
   it('names only codes the service writes, under the record type it writes them with', () => {
-    // Located from this file, not from the directory the run started in.
+    // Located from this file, not from the directory the run started in, and
+    // written from the repository root so the change-scope scan reads it whole.
     const here = dirname(fileURLToPath(import.meta.url));
     const catalogue = readFileSync(
-      join(here, '..', '..', 'api', 'src', 'server', 'auth', 'audit-actions.ts'),
+      join(here, '..', '..', '..', 'apps', 'api', 'src', 'server', 'auth', 'audit-actions.ts'),
       'utf8'
     );
     const written = new Map<string, string>();
