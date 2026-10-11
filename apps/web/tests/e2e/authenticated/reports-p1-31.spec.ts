@@ -74,6 +74,32 @@ const REPORT_CODES = [
 const CATALOGUE_TITLE_KEY = 'reports.catalogue.title';
 
 /**
+ * The data rows of a Material UI grid, and never its header row.
+ *
+ * The catalogue and a report's rows are cursor pages, drawn by the operational grid since
+ * P1-32-PRE-OD-REPA (ADR-022 §9): a `grid` named by the same caption the table carried, whose
+ * data rows carry their position (`data-rowindex`) and whose header row does not.
+ */
+const GRID_ROWS = '[role="row"][data-rowindex]';
+
+/**
+ * Types a calendar day into one of the scope form's date pickers, part by part.
+ *
+ * Since P1-32-PRE-OD-REPA (ADR-022) the two days are the MIT date pickers: a group of spin
+ * buttons named by the label, one per part, not a text box a value can be filled into. Both
+ * catalogues write a day as day, month, year, so the digits go in that order whatever the
+ * locale; a filled picker is overwritten part by part from its first part. The label is
+ * matched from its start because a required field's label carries a decorative asterisk.
+ */
+async function typeDay(page: Page, label: string, day: string): Promise<void> {
+  const [year, month, date] = day.split('-');
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const group = page.getByRole('group', { name: new RegExp(`^${escaped}`) });
+  await group.getByRole('spinbutton').first().click();
+  await page.keyboard.type(`${date ?? ''}${month ?? ''}${year ?? ''}`);
+}
+
+/**
  * The code all three reporting operations declare and both pages gate on.
  *
  * `REPORT_PERMISSIONS.read` in `apps/web/src/features/reports/reports-contract.ts` is
@@ -110,8 +136,8 @@ function reportsAbsentReason(locale: 'en' | 'ar'): string {
 async function catalogueName(page: Page, locale: 'en' | 'ar', code: string): Promise<string> {
   await page.goto(`/${locale}/reports`);
   const row = page
-    .getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
-    .locator('tbody tr')
+    .getByRole('grid', { name: say(locale, 'reports.catalogue.caption') })
+    .locator(GRID_ROWS)
     .filter({ has: page.locator(`a[href="/${locale}/reports/${code}"]`) });
   await expect(row, `the catalogue must offer ${code}`).toHaveCount(1);
   const named = (await row.getByRole('link').locator('bdi').innerText()).trim();
@@ -171,8 +197,8 @@ async function runReport(
 ): Promise<void> {
   await page.getByLabel(say(locale, 'reports.run.company')).selectOption(scope.companyId);
   await page.getByLabel(say(locale, 'reports.run.branch')).selectOption(scope.branchId);
-  await page.getByLabel(say(locale, 'reports.run.from')).fill(period.from);
-  await page.getByLabel(say(locale, 'reports.run.to')).fill(period.to);
+  await typeDay(page, say(locale, 'reports.run.from'), period.from);
+  await typeDay(page, say(locale, 'reports.run.to'), period.to);
   await page.getByRole('button', { name: say(locale, 'reports.run.show') }).click();
 }
 
@@ -258,7 +284,7 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
 
       const surface =
         what === 'catalogue'
-          ? main.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
+          ? main.getByRole('grid', { name: say(locale, 'reports.catalogue.caption') })
           : main.getByRole('button', { name: say(locale, 'reports.run.show'), exact: true });
 
       if (!mayRead) {
@@ -303,6 +329,19 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
         // The catalogue's standing statement about export, which is the whole of its export
         // story and would be contradicted silently by a control appearing later.
         await expect(main.getByText(say(locale, 'reports.catalogue.noDownload'))).toBeVisible();
+        // In the reader's own words, in both locale projects: the grid's headings are the
+        // catalogue's, and no row shows a report's machine code beside its name.
+        await expect(
+          surface.getByRole('columnheader', {
+            name: say(locale, 'reports.catalogue.column.report'),
+          })
+        ).toBeVisible();
+        for (const code of REPORT_CODES) {
+          await expect(
+            surface.getByText(code, { exact: true }),
+            `the catalogue printed the code ${code} where a report is named`
+          ).toHaveCount(0);
+        }
       } else {
         // Nothing has been run yet, and the screen says so rather than showing an empty
         // table, which reads as a report that returned nothing.
@@ -331,7 +370,7 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
     // export story, and an export control appearing later would contradict it silently.
     await expect(page.getByText(say(locale, 'reports.catalogue.noDownload'))).toBeVisible();
 
-    const table = page.getByRole('table', { name: say(locale, 'reports.catalogue.caption') });
+    const table = page.getByRole('grid', { name: say(locale, 'reports.catalogue.caption') });
     await expect(table).toBeVisible();
 
     /*
@@ -374,15 +413,17 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
 
     for (const code of REPORT_CODES) {
       const row = table
-        .locator('tbody tr')
+        .locator(GRID_ROWS)
         .filter({ has: page.locator(`a[href="/${locale}/reports/${code}"]`) });
       await expect(row, `the catalogue must offer ${code}`).toHaveCount(1);
 
-      // A name, rendered as a name — and the identifier shown BESIDE it rather than instead
-      // of it, which is this screen's own way of keeping the two apart.
+      // A name, rendered as a name — and the identifier NOT shown beside it: a report with a
+      // name is shown by that name alone (route checklist, the catalogue row;
+      // P1-32-PRE-OD-REPA). The link's target still carries the code, which is how this row
+      // was found.
       const name = row.getByRole('link').locator('bdi');
       await expect(name, `the ${code} row must name the report`).toHaveCount(1);
-      await expect(row.getByText(code, { exact: true })).toBeVisible();
+      await expect(row.getByText(code, { exact: true })).toHaveCount(0);
 
       const offered = provenance[code];
       expect(offered, `the harness recorded no catalogue entry for ${code}`).toBeDefined();
@@ -510,8 +551,8 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
         await expect(page.getByText(say(locale, 'reports.run.noRows'))).toBeVisible();
       } else {
         const rows = page
-          .getByRole('table', { name: say(locale, 'reports.run.rowsCaption') })
-          .locator('tbody tr');
+          .getByRole('grid', { name: say(locale, 'reports.run.rowsCaption') })
+          .locator(GRID_ROWS);
         await expect(
           rows,
           `the screen must render the ${String(echoed.rows)} row(s) the server answered for ${code}`
@@ -689,7 +730,7 @@ test.describe('export principal (companion)', () => {
         'if it does, read the companion evidence for whether its fixture setup succeeded'
     ).toHaveCount(0);
     await expect(
-      main.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
+      main.getByRole('grid', { name: say(locale, 'reports.catalogue.caption') })
     ).toBeVisible();
 
     // The run screen for the very dataset the companion exported over HTTP, run over the same

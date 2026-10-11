@@ -35,7 +35,7 @@ import {
   type ReportSnapshotRows,
   type ReportSnapshotSummary,
 } from '../reports-contract';
-import { MachineName } from './ReportShell';
+import { MachineName, ReportTime } from './ReportShell';
 import { ReportFormDialog } from './ReportFormDialog';
 import { useCursorTrail } from './use-cursor-trail';
 
@@ -167,9 +167,12 @@ export function ReportSnapshotsPanel({
       summary.generatedBy.displayName ?? translate(messages, 'reports.snapshots.nameHidden'),
     [messages]
   );
+  // Under a zone this browser does not know no time is written (`formatReportTime`):
+  // the plain "time not shown" words stand where a moment is named in a sentence.
   const moment = useCallback(
-    (instant: string): string => formatReportTime(instant, locale, zone),
-    [locale, zone]
+    (instant: string): string =>
+      formatReportTime(instant, locale, zone) ?? translate(messages, 'reports.time.notShown'),
+    [locale, messages, zone]
   );
 
   async function save(): Promise<void> {
@@ -206,7 +209,9 @@ export function ReportSnapshotsPanel({
         id: 'savedAt',
         headerKey: 'reports.snapshots.column.savedAt',
         flex: 1.2,
-        cell: (row) => <time dateTime={row.generatedAt}>{moment(row.generatedAt)}</time>,
+        cell: (row) => (
+          <ReportTime messages={messages} locale={locale} zone={zone} value={row.generatedAt} />
+        ),
       },
       {
         id: 'savedBy',
@@ -219,7 +224,9 @@ export function ReportSnapshotsPanel({
         id: 'asOf',
         headerKey: 'reports.snapshots.column.asOf',
         flex: 1.2,
-        cell: (row) => <time dateTime={row.asOf}>{moment(row.asOf)}</time>,
+        cell: (row) => (
+          <ReportTime messages={messages} locale={locale} zone={zone} value={row.asOf} />
+        ),
       },
       {
         id: 'rows',
@@ -250,7 +257,7 @@ export function ReportSnapshotsPanel({
         ),
       },
     ],
-    [locale, messages, moment, person]
+    [locale, messages, person, zone]
   );
 
   // "View" is a choice among the rows (G12): pressed on the one shown below.
@@ -356,7 +363,7 @@ export function ReportSnapshotsPanel({
             branch: branchName ?? '',
             from,
             to,
-            moment: asOfMoment ?? '',
+            moment: asOfMoment ?? translate(messages, 'reports.time.notShown'),
           })}
           submitLabel={translate(messages, 'reports.snapshots.saveConfirm')}
           pendingLabel={translate(messages, 'reports.snapshots.saving')}
@@ -508,7 +515,9 @@ function SnapshotView({
     ...(reasonError === undefined ? {} : { fieldErrors: { reason: reasonError } }),
   });
 
-  const moment = (instant: string): string => formatReportTime(instant, locale, zone);
+  // Under a zone this browser does not know no time is written (`formatReportTime`).
+  const moment = (instant: string): string =>
+    formatReportTime(instant, locale, zone) ?? translate(messages, 'reports.time.notShown');
   const personOf = (summary: ReportSnapshotSummary): string =>
     summary.generatedBy.displayName ?? translate(messages, 'reports.snapshots.nameHidden');
 
