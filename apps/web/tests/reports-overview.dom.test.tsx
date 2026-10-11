@@ -446,10 +446,10 @@ describe('the period, the zone and the branch travel with the summaries', () => 
     // day itself as its machine value, and the zone named for a reader with its
     // offset — never the stored identifier, as on the report screen (DF-B5).
     const from = screen.getByTestId('overview-period-from');
-    expect(from).toHaveTextContent(formatReportTime(FROM, 'en', 'Asia/Amman'));
+    expect(from).toHaveTextContent(formatReportTime(FROM, 'en', 'Asia/Amman') as string);
     expect(from).toHaveAttribute('dateTime', FROM);
     const to = screen.getByTestId('overview-period-to');
-    expect(to).toHaveTextContent(formatReportTime(TO, 'en', 'Asia/Amman'));
+    expect(to).toHaveTextContent(formatReportTime(TO, 'en', 'Asia/Amman') as string);
     expect(to).toHaveAttribute('dateTime', TO);
     expect(screen.getByTestId('overview-zone')).toHaveTextContent('Jordan Time (GMT+3)');
     expect(screen.queryByText('Asia/Amman')).toBeNull();
@@ -471,6 +471,49 @@ describe('the period, the zone and the branch travel with the summaries', () => 
       within(fact('reports.context.generatedAt')).queryByText('2026-09-12T09:00:00.000Z')
     ).toBeNull();
   });
+
+  it.each(['en', 'ar'] as const)(
+    'writes no time and no zone identifier for a zone this browser does not know (%s)',
+    async (locale) => {
+      // Owner decision D-17 as applied across the product
+      // (P1-32-PRE-OD-REPA-03): an unknown branch zone is said to be unknown,
+      // and no instant is drawn on UTC or any other clock in its place.
+      const M = locale === 'ar' ? AR : EN;
+      runReport.mockImplementation(async (input: { readonly reportCode: string }) => {
+        const answered = runOk(input.reportCode);
+        return {
+          ...answered,
+          data: { ...answered.data, period: { from: FROM, to: TO, timezone: 'Not/A_Zone' } },
+        };
+      });
+      const { container } = await showOverview(locale);
+      await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+      const zone = await screen.findByTestId('overview-zone');
+      expect(zone).toHaveTextContent(M['reports.context.timezoneUnknown'] as string);
+      expect(zone).toHaveAttribute('data-zone-unknown', 'true');
+      expect(container).not.toHaveTextContent('Not/A_Zone');
+      expect(
+        within(container).getByText(M['reports.context.zoneUnknownNote'] as string)
+      ).toBeVisible();
+      expect(within(container).queryByText(M['reports.context.periodNote'] as string)).toBeNull();
+      // The time it was read is not written — not on UTC, not on any clock.
+      expect(within(container).getByText(M['reports.time.notShown'] as string).tagName).not.toBe(
+        'TIME'
+      );
+      const onUtc = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-JO-u-nu-latn' : 'en-GB', {
+        timeZone: 'UTC',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date('2026-09-12T09:00:00.000Z'));
+      expect(container).not.toHaveTextContent(onUtc);
+      expect(container.querySelectorAll('time[datetime*="T"]')).toHaveLength(0);
+      // A calendar day carries no clock, so the period's two days are written.
+      const from = screen.getByTestId('overview-period-from');
+      expect(from.tagName).toBe('TIME');
+      expect(from).toHaveAttribute('dateTime', FROM);
+      expect(from).toHaveTextContent(formatReportTime(FROM, locale, 'Asia/Amman') as string);
+    }
+  );
 
   it('names an unrecognised freshness as itself rather than calling it live', async () => {
     runReport.mockImplementation(async (input: { readonly reportCode: string }) => {

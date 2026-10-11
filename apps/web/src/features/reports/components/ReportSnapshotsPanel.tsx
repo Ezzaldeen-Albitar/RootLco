@@ -144,7 +144,9 @@ export function ReportSnapshotsPanel({
 
   const person = (summary: ReportSnapshotSummary): string =>
     summary.generatedBy.displayName ?? translate(messages, 'reports.snapshots.nameHidden');
-  const moment = (instant: string): string => formatReportTime(instant, locale, zone);
+  // Under a zone this browser does not know no time is written (`formatReportTime`).
+  const moment = (instant: string): string =>
+    formatReportTime(instant, locale, zone) ?? translate(messages, 'reports.time.notShown');
 
   return (
     <section
@@ -293,7 +295,7 @@ export function ReportSnapshotsPanel({
           branch: branchName ?? '',
           from,
           to,
-          moment: asOfMoment ?? '',
+          moment: asOfMoment ?? translate(messages, 'reports.time.notShown'),
         })}
         confirmLabel={translate(messages, 'reports.snapshots.saveConfirm')}
         pending={pending}
@@ -367,7 +369,9 @@ function SnapshotView({
   }
   const view = trail.outcome.data;
   const snapshot = view.snapshot;
-  const moment = (instant: string): string => formatReportTime(instant, locale, zone);
+  // Under a zone this browser does not know no time is written (`formatReportTime`).
+  const moment = (instant: string): string =>
+    formatReportTime(instant, locale, zone) ?? translate(messages, 'reports.time.notShown');
   const person = (name: string | null): string =>
     name ?? translate(messages, 'reports.snapshots.nameHidden');
 

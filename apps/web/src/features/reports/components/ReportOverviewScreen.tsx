@@ -17,10 +17,8 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
-import { zoneDisplayName } from '@/lib/branch-time';
-import { intlLocale } from '@/lib/format';
 import { runReport } from '../reports-api';
-import { fieldHeading, formatReportTime, groupDisplayLabel, runTitle } from '../report-labels';
+import { fieldHeading, groupDisplayLabel, runTitle } from '../report-labels';
 import {
   OVERVIEW_ROW_LIMIT,
   OVERVIEW_SECTIONS,
@@ -37,7 +35,15 @@ import {
   type ReportScopeOptions,
   type ReportScopeSelection,
 } from '../reports-contract';
-import { ContextFact, MachineName, ReportFailure, ReportLoading } from './ReportShell';
+import {
+  ContextFact,
+  MachineName,
+  ReportClockNote,
+  ReportFailure,
+  ReportLoading,
+  ReportTime,
+  ReportZoneName,
+} from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
 import { useWorkingReportScope } from './use-working-report-scope';
 
@@ -564,19 +570,31 @@ function OverviewResults({
         <>
           <dl className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
             <ContextFact label={translate(messages, 'reports.context.from')}>
-              <time dateTime={context.period.from} data-testid="overview-period-from">
-                {formatReportTime(context.period.from, locale, context.period.timezone)}
-              </time>
+              <ReportTime
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                value={context.period.from}
+                testId="overview-period-from"
+              />
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.to')}>
-              <time dateTime={context.period.to} data-testid="overview-period-to">
-                {formatReportTime(context.period.to, locale, context.period.timezone)}
-              </time>
+              <ReportTime
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                value={context.period.to}
+                testId="overview-period-to"
+              />
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.timezone')}>
-              <bdi data-testid="overview-zone">
-                {zoneDisplayName(context.period.timezone, intlLocale(locale), context.generatedAt)}
-              </bdi>
+              <ReportZoneName
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                at={context.generatedAt}
+                testId="overview-zone"
+              />
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.company')}>
               {companyName === null ? (
@@ -602,14 +620,15 @@ function OverviewResults({
               )}
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.generatedAt')}>
-              <time dateTime={context.generatedAt}>
-                {formatReportTime(context.generatedAt, locale, context.period.timezone)}
-              </time>
+              <ReportTime
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                value={context.generatedAt}
+              />
             </ContextFact>
           </dl>
-          <p className="text-caption text-text-muted" lang={locale}>
-            {translate(messages, 'reports.context.periodNote')}
-          </p>
+          <ReportClockNote messages={messages} locale={locale} zone={context.period.timezone} />
         </>
       )}
 

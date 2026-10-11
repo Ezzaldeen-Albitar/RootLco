@@ -172,9 +172,16 @@ function ExportForm({
       </h4>
       {/* A file of amounts as of a stated moment says that moment instead of
           warning that its values may have moved since the screen was read. */}
-      {asOf === null || asOfMoment === null ? (
+      {asOf === null ? (
         <p className="text-caption text-text-secondary">
           {translate(messages, 'reports.export.liveNote')}
+        </p>
+      ) : asOfMoment === null ? (
+        // The file is still as of the report's moment (it is sent with the
+        // request); only the words for it are missing, so the note says the
+        // same moment without writing one — never that the data is current.
+        <p className="text-caption text-text-secondary" data-testid="report-export-as-of">
+          {translate(messages, 'reports.export.asOfNoteZoneUnknown')}
         </p>
       ) : (
         <p className="text-caption text-text-secondary" data-testid="report-export-as-of">

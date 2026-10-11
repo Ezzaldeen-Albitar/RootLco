@@ -95,6 +95,36 @@ describe.each(BOTH_DIRECTIONS)('report export in %s', (locale, render) => {
     expect(calls.export).not.toHaveBeenCalled();
   });
 
+  it('says the file is as of the report\u2019s moment when that moment cannot be written, never that it is current', async () => {
+    // The reported branch's zone is not a clock this browser knows, so the
+    // report hands over the moment and no words for it (P1-32-PRE-OD-REPA-03).
+    // The file is still as of that moment: it is sent with the request.
+    const asOf = '2026-09-07T21:00:00.000Z';
+    render(
+      <ReportExportPanel
+        messages={messages}
+        reportCode={code}
+        selection={selection}
+        permitted
+        asOf={asOf}
+        asOfMoment={null}
+      />
+    );
+    expect(screen.getByTestId('report-export-as-of')).toHaveTextContent(
+      messages['reports.export.asOfNoteZoneUnknown']
+    );
+    expect(screen.queryByText(messages['reports.export.liveNote'])).toBeNull();
+    const user = userEvent.setup();
+    await user.type(reason(), 'Month-end figures');
+    await user.click(button());
+    await waitFor(() => expect(clicked).toHaveLength(1));
+    expect(calls.export).toHaveBeenCalledExactlyOnceWith(code, {
+      ...selection,
+      asOf,
+      reason: 'Month-end figures',
+    });
+  });
+
   it('requires a reason and downloads the actual CSV with its server filename', async () => {
     panel();
     const user = userEvent.setup();

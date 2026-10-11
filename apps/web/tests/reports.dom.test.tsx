@@ -888,7 +888,12 @@ describe('the result is rendered from the envelope, column kind by column kind',
     }
   });
 
-  it('draws an instant in a zone this browser does not know on the UTC clock', () => {
+  it('writes no time at all for an instant in a zone this browser does not know', () => {
+    // Behaviour correction (P1-32-PRE-OD-REPA-03): this case used to require the
+    // instant on the UTC clock. A UTC time beside days counted on the branch's
+    // clock reads as the branch's own, so the formatter now answers with no
+    // time at all (`null`) and the screen says so — see the describe
+    // "a branch zone this browser does not know is refused" below.
     // The zone check lives in lib/branch-time.ts so no feature file builds an
     // Intl formatter of its own (P1-27-FE-030).
     expect(isKnownZone('Asia/Amman')).toBe(true);
@@ -909,10 +914,20 @@ describe('the result is rendered from the envelope, column kind by column kind',
       dateStyle: 'medium',
       timeStyle: 'short',
     }).format(new Date('2026-09-03T07:15:00.000Z'));
-    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Not/A_Zone')).toBe(utc);
+    expect(utc).toContain('07:15');
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Not/A_Zone')).toBeNull();
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'ar', 'Not/A_Zone')).toBeNull();
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', '')).toBeNull();
     expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Asia/Amman')).toBe(
       amman('en-GB', '2026-09-03T07:15:00.000Z')
     );
+    // A calendar day carries no clock: it is the same day whatever the zone, so
+    // it is still written. A value that is no date is returned as it arrived.
+    expect(formatReportTime('2026-09-03', 'en', 'Not/A_Zone')).toBe(
+      formatReportTime('2026-09-03', 'en', 'Asia/Amman')
+    );
+    expect(formatReportTime('2026-09-03', 'en', 'Not/A_Zone')).not.toBeNull();
+    expect(formatReportTime('not a date', 'en', 'Not/A_Zone')).toBe('not a date');
   });
 
   it("says a work-order state in the reader's language, not the server's English name", async () => {
@@ -1235,10 +1250,10 @@ describe('the period, the zone and the filter context travel with the result', (
     // Written for reading on the branch's clock, with the day itself kept as the
     // machine value (completion standard: branch-local dates for display).
     const from = await within(container).findByTestId('report-period-from');
-    expect(from).toHaveTextContent(formatReportTime('2026-09-01', 'en', 'Asia/Amman'));
+    expect(from).toHaveTextContent(formatReportTime('2026-09-01', 'en', 'Asia/Amman') as string);
     expect(from).toHaveAttribute('dateTime', '2026-09-01');
     const to = within(container).getByTestId('report-period-to');
-    expect(to).toHaveTextContent(formatReportTime('2026-09-08', 'en', 'Asia/Amman'));
+    expect(to).toHaveTextContent(formatReportTime('2026-09-08', 'en', 'Asia/Amman') as string);
     expect(to).toHaveAttribute('dateTime', '2026-09-08');
     expect(within(container).queryByText('2026-09-01')).toBeNull();
     // Named for a reader, with its offset — never the stored identifier (DF-B5).
@@ -1282,6 +1297,226 @@ describe('the period, the zone and the filter context travel with the result', (
     await showReport();
     expect(within(fact('reports.context.branch')).getByText('Service branch')).toBeVisible();
     expect(within(fact('reports.context.company')).getByText('Workshop company')).toBeVisible();
+  });
+});
+
+describe('a branch zone this browser does not know is refused, never drawn on another clock', () => {
+  /*
+   * Owner decision D-17 as applied across the product (P1-32-PRE-OD-REPA-03): a
+   * business moment is entered and displayed on the branch's clock, and a zone
+   * that is not a clock is a refusal — never a time on UTC under the zone's
+   * stored name, which is what this screen drew before.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const AS_OF = '2026-09-07T21:00:00.000Z';
+  const UNKNOWN_ZONE_ENVELOPE = {
+    ...NEW_ENVELOPE,
+    period: { from: '2026-09-01', to: '2026-09-08', timezone: 'Not/A_Zone' },
+    freshness: 'as_of',
+    asOf: AS_OF,
+  };
+  /** The instant as the UTC clock would write it — the thing that must not be drawn. */
+  const onUtc = (intl: string, instant: string) =>
+    new Intl.DateTimeFormat(intl, {
+      timeZone: 'UTC',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(instant));
+
+  /** The screen in a working branch whose own zone is known, read on arrival. */
+  function renderInBranch(locale: 'en' | 'ar' = 'en', snapshot = branchSnapshot()) {
+    const ui = withPickers(
+      inBranch(
+        <ReportScreen
+          locale={locale}
+          messages={locale === 'ar' ? ar : en}
+          definition={BASELINE as never}
+          scopeOptions={SCOPES as never}
+        />,
+        { snapshot, locale }
+      ),
+      locale
+    );
+    return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
+  }
+
+  it.each([
+    ['en', 'en-GB'],
+    ['ar', 'ar-JO-u-nu-latn'],
+  ] as const)(
+    'writes no time and no zone identifier, and says the zone is not known (%s)',
+    async (locale, intl) => {
+      const M = locale === 'ar' ? AR : EN;
+      runReport.mockResolvedValue(runOk(UNKNOWN_ZONE_ENVELOPE));
+      const { container } = renderInBranch(locale);
+
+      const zone = await within(container).findByTestId('report-zone');
+      expect(zone).toHaveTextContent(M['reports.context.timezoneUnknown'] as string);
+      expect(zone).toHaveAttribute('data-zone-unknown', 'true');
+      // The stored name is a configuration value and is not shown.
+      expect(container).not.toHaveTextContent('Not/A_Zone');
+
+      // The time the report was read, the row's instant and the moment the
+      // amounts are as of: none is written, on UTC or on any other clock.
+      const readAt = within(container).getByTestId('report-generated-at');
+      expect(readAt).toHaveTextContent(M['reports.time.notShown'] as string);
+      expect(readAt.tagName).not.toBe('TIME');
+      expect(
+        within(rowsTable(locale)).getByText(M['reports.time.notShown'] as string)
+      ).toBeVisible();
+      expect(within(container).getByTestId('report-as-of')).toHaveTextContent(
+        M['reports.asOf.statementZoneUnknown'] as string
+      );
+      for (const instant of [OLD_ENVELOPE.generatedAt, '2026-09-03T07:15:00.000Z', AS_OF]) {
+        expect(container).not.toHaveTextContent(onUtc(intl, instant));
+        expect(container).not.toHaveTextContent(amman(intl, instant));
+        expect(container).not.toHaveTextContent(instant);
+      }
+      expect(container.querySelectorAll('time[datetime*="T"]')).toHaveLength(0);
+
+      // The reason is said, and the sentence about "the zone named above" is not.
+      expect(
+        within(container).getByText(M['reports.context.zoneUnknownNote'] as string)
+      ).toBeVisible();
+      expect(within(container).queryByText(M['reports.context.periodNote'] as string)).toBeNull();
+
+      // A calendar day carries no clock, so the period's two days are still written.
+      const from = within(container).getByTestId('report-period-from');
+      expect(from.tagName).toBe('TIME');
+      expect(from).toHaveAttribute('dateTime', '2026-09-01');
+      expect(from).toHaveTextContent(
+        formatReportTime('2026-09-01', locale, 'Asia/Amman') as string
+      );
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'draws the moment refusal in place of the picker, so no moment can be typed or applied (%s)',
+    async (locale) => {
+      const M = locale === 'ar' ? AR : EN;
+      runReport.mockResolvedValue(runOk(UNKNOWN_ZONE_ENVELOPE));
+      const { container } = renderInBranch(locale);
+      await within(container).findByTestId('report-as-of');
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('radio', { name: M['reports.asOf.specific'] as string }));
+
+      const field = screen.getByTestId('report-as-of-moment');
+      expect(field).toHaveAttribute('data-zone-refused', 'true');
+      expect(within(field).getByText(M['reports.asOf.moment'] as string)).toBeVisible();
+      expect(within(field).getByTestId('date-time-requires-branch')).toHaveTextContent(
+        M['dateField.zoneUnknown'] as string
+      );
+      // No picker: nothing to type a moment into, on any clock.
+      expect(within(field).queryByRole('spinbutton')).toBeNull();
+      expect(
+        screen.queryByRole('group', {
+          name: new RegExp(`^${escape(M['reports.asOf.moment'] as string)}`),
+        })
+      ).toBeNull();
+
+      // Applying "a specific moment" sends nothing, and complains about no
+      // box: there is none to complete.
+      const calls = runReport.mock.calls.length;
+      const apply = screen.getByRole('button', { name: M['reports.asOf.apply'] as string });
+      await user.click(apply);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(runReport).toHaveBeenCalledTimes(calls);
+      expect(runReport).not.toHaveBeenCalledWith(
+        expect.objectContaining({ asOf: expect.stringMatching(/^\d{4}-/) })
+      );
+      expect(screen.queryByText(M['reports.asOf.chooseMoment'] as string)).toBeNull();
+      expect(screen.getByTestId('report-as-of-moment')).toHaveAttribute(
+        'data-zone-refused',
+        'true'
+      );
+
+      // The choices that need no clock here still work: "Now" is the server's.
+      await user.click(screen.getByRole('radio', { name: M['reports.asOf.now'] as string }));
+      expect(screen.queryByTestId('report-as-of-moment')).toBeNull();
+      await user.click(apply);
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ asOf: 'now', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(calls + 1);
+    }
+  );
+
+  it('keeps the picker for a zone the browser knows', async () => {
+    runReport.mockResolvedValue(
+      runOk({ ...UNKNOWN_ZONE_ENVELOPE, period: { ...OLD_ENVELOPE.period } })
+    );
+    const { container } = renderInBranch();
+    await within(container).findByTestId('report-as-of');
+    await userEvent
+      .setup()
+      .click(screen.getByRole('radio', { name: EN['reports.asOf.specific'] as string }));
+    expect(screen.getByRole('group', { name: labelled('reports.asOf.moment') })).toBeVisible();
+    expect(screen.getByTestId('report-as-of-moment')).not.toHaveAttribute('data-zone-refused');
+    expect(within(container).queryByTestId('date-time-requires-branch')).toBeNull();
+    expect(within(container).getByTestId('report-zone')).toHaveTextContent('Jordan Time (GMT+3)');
+  });
+
+  it('says so in the scope form when the chosen branch has no known zone, and still sends the days as typed', async () => {
+    // The day sent is the day typed whatever the zone, so the form is not
+    // refused; what the zone decides is the day the calendar marks as today,
+    // and the form says that mark may be another day.
+    const UNKNOWN_BRANCH = { ...OTHER_BRANCH, timezone: 'Mars/Base' };
+    const scopes = {
+      ...SCOPES,
+      data: {
+        companies: SCOPES.data.companies,
+        branches: [
+          ...SCOPES.data.branches,
+          { id: OTHER_BRANCH.id, companyId: COMPANY_ID, name: 'Second branch' },
+        ],
+      },
+    };
+    renderLtr(
+      withPickers(
+        inBranch(
+          <ReportScreen
+            locale="en"
+            messages={en}
+            definition={BASELINE as never}
+            scopeOptions={scopes as never}
+            named={{ companyId: COMPANY_ID, branchId: BRANCH_ID }}
+          />,
+          { snapshot: branchSnapshot([TEST_BRANCH, UNKNOWN_BRANCH]) }
+        )
+      )
+    );
+    const user = userEvent.setup();
+    const branch = screen.getByRole('combobox', { name: labelled('reports.run.branch') });
+    // A branch whose zone the working context knows: nothing to say.
+    expect((branch as HTMLSelectElement).value).toBe(BRANCH_ID);
+    expect(screen.queryByTestId('report-scope-zone-unknown')).toBeNull();
+
+    await user.selectOptions(branch, OTHER_BRANCH.id);
+    expect(screen.getByTestId('report-scope-zone-unknown')).toHaveTextContent(
+      EN['reports.run.zoneUnknownNote'] as string
+    );
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    expect(dayShown('reports.run.from')).toBe(written('2026-09-01'));
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() =>
+      expect(runReport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          branchId: OTHER_BRANCH.id,
+          from: '2026-09-01',
+          to: '2026-09-08',
+          cursor: null,
+        })
+      )
+    );
+
+    await user.selectOptions(branch, BRANCH_ID);
+    expect(screen.queryByTestId('report-scope-zone-unknown')).toBeNull();
   });
 });
 
@@ -1879,7 +2114,8 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
           columns: COLUMNS,
           rows: { items: [ROW], nextCursor: null, hasMore: false },
         };
-  const at = (instant: string) => formatReportTime(instant, 'en', 'Asia/Amman');
+  // Asia/Amman is a zone every runtime knows, so the formatter answers with a time.
+  const at = (instant: string) => formatReportTime(instant, 'en', 'Asia/Amman') as string;
   const fill = (template: string, values: Record<string, string>) =>
     Object.entries(values).reduce(
       (text, [key, value]) => text.replace(`{${key}}`, value),

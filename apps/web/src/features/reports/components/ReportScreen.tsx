@@ -12,6 +12,7 @@ import TableRow from '@mui/material/TableRow';
 import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import {
   dayToPicker,
+  MomentZoneRefusal,
   ZonedDateTimeField,
   type MomentProblem,
 } from '@/components/forms/mui/DateField';
@@ -37,6 +38,7 @@ import {
   formatReportTime,
   groupCurrency,
   groupDisplayLabel,
+  reportClock,
   reportCreditStatusLabel,
   reportDocumentStatusLabel,
   reportDocumentTypeLabel,
@@ -62,7 +64,15 @@ import {
   type ReportScopeOptions,
   type ReportScopeSelection,
 } from '../reports-contract';
-import { ContextFact, MachineName, ReportFailure, ReportLoading } from './ReportShell';
+import {
+  ContextFact,
+  MachineName,
+  ReportClockNote,
+  ReportFailure,
+  ReportLoading,
+  ReportTime,
+  ReportZoneName,
+} from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
 import { ReportExportPanel } from './ReportExportPanel';
 import { ReportSnapshotsPanel } from './ReportSnapshotsPanel';
@@ -107,6 +117,20 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * beside them by its name and offset (`zoneDisplayName`: "Jordan Time (GMT+3)"),
  * never as the identifier the platform stores (DF-B5). The raw ISO string is not
  * what an operator reads (Browser QA part 7, row 6.7).
+ *
+ * ## A zone this browser does not know is refused, never replaced
+ *
+ * The zone arrives on the envelope as a name. A name the browser cannot resolve
+ * (`isKnownZone`) is no clock, and no other clock stands in for it — not UTC,
+ * not the browser's (`P1-32-PRE-OD-REPA-03`; the standing D-17 ruling: an
+ * unknown branch zone is a refusal, never a silent UTC fallback). So under such
+ * a zone no instant is written as a time: the context says the zone is not
+ * known here, each instant says its time is not shown (`ReportTime`), the
+ * moment the amounts are as of is said to exist without being written, and the
+ * "specific moment" choice draws the shared `MomentZoneRefusal` in place of the
+ * picker, so no moment can be typed or applied. The two days of the period are
+ * still written: a calendar day carries no clock. "End of period" and "Now"
+ * stay available, because the server resolves both.
  *
  * ## The period is half-open, and the screen says so where it is typed
  *
@@ -633,14 +657,18 @@ function RunEnvelope({
    * says it; a live report claims no moment.
    */
   const asOf = run.freshness === 'as_of' && run.asOf !== undefined ? run.asOf : null;
+  /*
+   * The clock the moments of this page are written on, or `null` when the zone
+   * the period was resolved in is not one this browser knows. Without a clock
+   * the moment is not written at all — see "A zone this browser does not know
+   * is refused, never replaced".
+   */
+  const clock = reportClock(run.period.timezone);
+  const asOfWritten = asOf === null ? null : formatReportTime(asOf, locale, run.period.timezone);
   const asOfMoment =
-    asOf === null
+    asOf === null || clock === null || asOfWritten === null
       ? null
-      : `${formatReportTime(asOf, locale, run.period.timezone)} (${zoneDisplayName(
-          run.period.timezone,
-          intlLocale(locale),
-          asOf
-        )})`;
+      : `${asOfWritten} (${zoneDisplayName(clock, intlLocale(locale), asOf)})`;
 
   return (
     <>
@@ -654,19 +682,31 @@ function RunEnvelope({
       */}
       <dl className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
         <ContextFact label={translate(messages, 'reports.context.from')}>
-          <time dateTime={run.period.from} data-testid="report-period-from">
-            {formatReportTime(run.period.from, locale, run.period.timezone)}
-          </time>
+          <ReportTime
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            value={run.period.from}
+            testId="report-period-from"
+          />
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.to')}>
-          <time dateTime={run.period.to} data-testid="report-period-to">
-            {formatReportTime(run.period.to, locale, run.period.timezone)}
-          </time>
+          <ReportTime
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            value={run.period.to}
+            testId="report-period-to"
+          />
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.timezone')}>
-          <bdi data-testid="report-zone">
-            {zoneDisplayName(run.period.timezone, intlLocale(locale), run.generatedAt)}
-          </bdi>
+          <ReportZoneName
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            at={run.generatedAt}
+            testId="report-zone"
+          />
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.company')}>
           {companyName === null ? (
@@ -694,16 +734,18 @@ function RunEnvelope({
           )}
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.generatedAt')}>
-          <time dateTime={run.generatedAt}>
-            {formatReportTime(run.generatedAt, locale, run.period.timezone)}
-          </time>
+          <ReportTime
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            value={run.generatedAt}
+            testId="report-generated-at"
+          />
         </ContextFact>
       </dl>
-      <p className="text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'reports.context.periodNote')}
-      </p>
+      <ReportClockNote messages={messages} locale={locale} zone={run.period.timezone} />
 
-      {asOf === null || asOfMoment === null ? null : (
+      {asOf === null ? null : (
         <section
           aria-labelledby="report-as-of-heading"
           className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
@@ -714,18 +756,24 @@ function RunEnvelope({
             data-testid="report-as-of"
             lang={locale}
           >
-            <bdi>
-              {formatMessage(translate(messages, 'reports.asOf.statement'), {
-                moment: asOfMoment,
-              })}
-            </bdi>
+            {asOfMoment === null ? (
+              // The amounts ARE as of a moment; it is the clock to write it on
+              // that is missing, so the moment is said to exist and not written.
+              translate(messages, 'reports.asOf.statementZoneUnknown')
+            ) : (
+              <bdi>
+                {formatMessage(translate(messages, 'reports.asOf.statement'), {
+                  moment: asOfMoment,
+                })}
+              </bdi>
+            )}
           </p>
           <p className="text-caption text-text-muted" lang={locale}>
             {translate(messages, 'reports.asOf.note')}
           </p>
           <AsOfChoiceForm
             messages={messages}
-            zone={run.period.timezone}
+            zone={clock}
             periodFrom={run.period.from}
             choice={asOfChoice}
             onApply={onAsOfChange}
@@ -861,6 +909,11 @@ function RowsTable({
  * a moment before the period starts or later than now is refused before a request
  * is spent, with the bound it broke. The server refuses both too. A refusal puts
  * the cursor on the moment and is withdrawn once the moment changes.
+ *
+ * `zone` is `null` when the reported branch's zone is not a clock this browser
+ * knows. A typed moment would then mean nothing, so "a specific moment" draws
+ * the shared `MomentZoneRefusal` where the picker would be and applies nothing;
+ * the other two choices need no clock here and stay as they are.
  */
 function AsOfChoiceForm({
   messages,
@@ -870,7 +923,8 @@ function AsOfChoiceForm({
   onApply,
 }: {
   readonly messages: Messages;
-  readonly zone: string;
+  /** The reported branch's clock (`reportClock`), `null` when it is not known. */
+  readonly zone: string | null;
   readonly periodFrom: string;
   readonly choice: ReportAsOfChoice;
   readonly onApply: (choice: ReportAsOfChoice) => void;
@@ -888,6 +942,12 @@ function AsOfChoiceForm({
     if (mode !== 'at') {
       refuse({});
       onApply({ mode });
+      return;
+    }
+    if (zone === null) {
+      // No clock, so no moment: the refusal is already drawn where the picker
+      // would be, and nothing is sent.
+      refuse({});
       return;
     }
     const refusal = momentRefusal(moment, problem, periodFrom, zone);
@@ -919,7 +979,13 @@ function AsOfChoiceForm({
           { value: 'at', label: translate(messages, 'reports.asOf.specific') },
         ]}
       />
-      {mode === 'at' ? (
+      {mode !== 'at' ? null : zone === null ? (
+        <MomentZoneRefusal
+          messages={messages}
+          label={translate(messages, 'reports.asOf.moment')}
+          testId="report-as-of-moment"
+        />
+      ) : (
         <ZonedDateTimeField
           messages={messages}
           label={translate(messages, 'reports.asOf.moment')}
@@ -931,7 +997,7 @@ function AsOfChoiceForm({
           error={refused === undefined ? undefined : translate(messages, refused as keyof Messages)}
           testId="report-as-of-moment"
         />
-      ) : null}
+      )}
       <div>
         <Button type="submit" variant="outlined">
           {translate(messages, 'reports.asOf.apply')}
@@ -1167,7 +1233,7 @@ function CellValue({
         {translate(messages, 'reports.cell.none')}
       </span>
     ) : (
-      <time dateTime={cell.value}>{formatReportTime(cell.value, locale, zone)}</time>
+      <ReportTime messages={messages} locale={locale} zone={zone} value={cell.value} />
     );
   }
 

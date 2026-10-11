@@ -54,9 +54,24 @@ import {
  *
  * The two selectors are `FormSelectField` (native, so the platform's own list)
  * and the two days are `DateField`, the MIT date picker, drawn on the BRANCH's
- * clock: the zone of the branch being chosen when the working context knows it,
- * the working branch's otherwise. A day is still a `YYYY-MM-DD` string and the
- * half-open rule is unchanged. What the picker adds is said where it happens: a
+ * clock when the working context knows the chosen branch's zone. A day is still
+ * a `YYYY-MM-DD` string and the half-open rule is unchanged.
+ *
+ * ## A branch whose zone is not known keeps the form, and says so
+ *
+ * The day SENT is the day typed: the picker's value is read by its wall clock
+ * (`pickerToDay`), so no zone can move it, and the server resolves the period
+ * in the branch's own zone whatever this browser knows. The zone decides one
+ * thing only — which day the picker's calendar marks as today. So where the
+ * chosen branch's zone is missing from the working context, or is a name this
+ * browser cannot resolve, the form is NOT refused (nothing it sends could be
+ * wrong); the picker falls back as every day field does, and a note under the
+ * days says that today's mark may be another day and that the days are used as
+ * entered (`reports.run.zoneUnknownNote`, `P1-32-PRE-OD-REPA-03`). A moment is
+ * different — its meaning does depend on the clock — and is refused: see the
+ * report screen's as-of choice.
+ *
+ * What the picker adds is said where it happens: a
  * day only partly typed is "not finished", never "choose a day" — the box is not
  * empty — and a day the calendar does not hold is refused as one that cannot be
  * used. Enter in a day submits the form, as the native box did.
@@ -110,11 +125,13 @@ export function ReportScopeForm({
    * The days are typed on the clock of the branch being reported on. The
    * directory names no zone, so it is read from the working context's own
    * branches; a branch it does not hold, or a zone this browser cannot read,
-   * leaves the picker on the working branch's clock, as every day field does.
+   * leaves the picker on the fallback every day field takes — and the form
+   * says so (`zoneUnknown`), because that fallback is not this branch's clock.
    */
   const context = useWorkingContext();
   const chosenZone = context.branches.find((branch) => branch.id === draft.branchId)?.timezone;
   const zone = chosenZone !== undefined && isKnownZone(chosenZone) ? chosenZone : undefined;
+  const zoneUnknown = draft.branchId !== '' && zone === undefined;
 
   const dayRefusal = (problem: DayProblem, value: string): string | null => {
     if (problem === 'incomplete') return 'reports.run.dayIncomplete';
@@ -221,6 +238,15 @@ export function ReportScopeForm({
       <p className="mt-3 text-caption text-text-muted" lang={locale}>
         {translate(messages, 'reports.run.periodRule')}
       </p>
+      {zoneUnknown ? (
+        <p
+          className="mt-2 text-caption text-text-muted"
+          lang={locale}
+          data-testid="report-scope-zone-unknown"
+        >
+          {translate(messages, 'reports.run.zoneUnknownNote')}
+        </p>
+      ) : null}
       {fixed ? (
         <p className="mt-2 text-caption text-text-muted" lang={locale}>
           {translate(messages, 'reports.overview.branchFixed')}
