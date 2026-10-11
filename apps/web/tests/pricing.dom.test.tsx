@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -1167,5 +1167,127 @@ describe('the company discount threshold', () => {
     await renderPage(DiscountThresholdPage, { locale: 'en' });
     expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(readDiscountThreshold).not.toHaveBeenCalled();
+  });
+
+  /*
+   * On Material UI (`P1-32-PRE-OD-ADM4`): the read's refusal and outage are the
+   * shared states, the value is a decimal STRING checked by pattern before
+   * anything is sent, a stale version offers "Load the latest version", the save
+   * is one act, and a typed value counts as unsaved work.
+   */
+  it('says a refused read as a refusal in both languages, and offers no retry and no form', async () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const C = locale === 'en' ? EN : AR;
+      readDiscountThreshold.mockReset();
+      readDiscountThreshold.mockResolvedValue({ status: 'denied', correlationId: 'corr-deny' });
+      const view = renderThreshold(true, locale);
+      expect(await screen.findByText(C['state.denied.title'] as string)).toBeVisible();
+      expect(screen.getByText(C['discountThreshold.denied'] as string)).toBeVisible();
+      expect(screen.getByText('corr-deny')).toBeVisible();
+      expect(screen.queryByRole('button', { name: C['state.retry'] as string })).toBeNull();
+      expect(
+        screen.queryByRole('form', { name: C['discountThreshold.formHeading'] as string })
+      ).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it('offers a retry for an outage, and reads again when it is pressed', async () => {
+    readDiscountThreshold.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'c-1' });
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    const user = userEvent.setup();
+    renderThreshold(false);
+    await user.click(await screen.findByRole('button', { name: EN['state.retry'] as string }));
+    expect(await screen.findByTestId('discount-threshold-current')).toHaveTextContent('100.0000');
+    expect(readDiscountThreshold).toHaveBeenCalledTimes(2);
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`refuses a value with more than four decimal places at its box and sends nothing (${locale})`, async () => {
+      const C = locale === 'en' ? EN : AR;
+      const label = (key: string) => new RegExp(`^${escape(C[key] as string)}`);
+      readDiscountThreshold.mockResolvedValue(okRead(view()));
+      const user = userEvent.setup();
+      renderThreshold(true, locale);
+      const form = await screen.findByRole('form', {
+        name: C['discountThreshold.formHeading'] as string,
+      });
+      const amount = within(form).getByLabelText(label('discountThreshold.amount'));
+      await user.clear(amount);
+      await user.type(amount, '12.34567');
+      await user.click(
+        within(form).getByRole('button', { name: C['discountThreshold.save'] as string })
+      );
+      expect(within(form).getByText(C['discountThreshold.valueFormat'] as string)).toBeVisible();
+      expect(amount).toHaveAttribute('aria-invalid', 'true');
+      // The typed text stays as typed: never parsed into a number.
+      expect(amount).toHaveValue('12.34567');
+      expect(setDiscountThreshold).not.toHaveBeenCalled();
+    });
+  }
+
+  it('says a stale version is a conflict, and loads the latest on request', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    setDiscountThreshold.mockResolvedValue({
+      state: { status: 'conflict', messageKey: 'state.conflict.title', attempt: 1 },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderThreshold(true);
+    const form = await screen.findByRole('form', {
+      name: EN['discountThreshold.formHeading'] as string,
+    });
+    const amount = within(form).getByLabelText(labelled('discountThreshold.amount'));
+    await user.clear(amount);
+    await user.type(amount, '120');
+    await user.click(
+      within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
+    );
+    expect(await within(form).findByText(EN['discountThreshold.conflict'] as string)).toBeVisible();
+    readDiscountThreshold.mockResolvedValue(
+      okRead(view({ recordVersion: 5, current: version({ thresholdValue: '130.0000' }) }))
+    );
+    await user.click(within(form).getByRole('button', { name: EN['form.loadLatest'] as string }));
+    await waitFor(() => expect(readDiscountThreshold).toHaveBeenCalledTimes(2));
+    const fresh = await screen.findByRole('form', {
+      name: EN['discountThreshold.formHeading'] as string,
+    });
+    await waitFor(() =>
+      expect(within(fresh).getByLabelText(labelled('discountThreshold.amount'))).toHaveValue(
+        '130.0000'
+      )
+    );
+  });
+
+  it('sends one save when it is pressed twice inside one frame', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    let answer: (value: unknown) => void = () => undefined;
+    setDiscountThreshold.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderThreshold(true);
+    const form = await screen.findByRole('form', {
+      name: EN['discountThreshold.formHeading'] as string,
+    });
+    const amount = within(form).getByLabelText(labelled('discountThreshold.amount'));
+    await user.clear(amount);
+    await user.type(amount, '150');
+    const press = within(form).getByRole('button', {
+      name: EN['discountThreshold.save'] as string,
+    });
+    act(() => {
+      press.click();
+      press.click();
+    });
+    await waitFor(() => expect(setDiscountThreshold).toHaveBeenCalledTimes(1));
+    answer({
+      state: { status: 'success', messageKey: 'discountThreshold.saved', attempt: 1 },
+      created: view(),
+    });
+    await waitFor(() => expect(readDiscountThreshold).toHaveBeenCalledTimes(2));
+    expect(setDiscountThreshold).toHaveBeenCalledTimes(1);
   });
 });
