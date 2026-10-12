@@ -188,7 +188,7 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 const handedColumns = new Map<string, readonly { id: string; minChars?: number }[]>();
 vi.mock('@/components/data/OperationalGrid', async (original) => {
   const real = await original<typeof import('@/components/data/OperationalGrid')>();
-  const Real = real.OperationalGrid as (props: Record<string, unknown>) => ReactElement;
+  const Real = real.OperationalGrid as unknown as (props: Record<string, unknown>) => ReactElement;
   return {
     ...real,
     OperationalGrid: (props: Record<string, unknown>) => {
