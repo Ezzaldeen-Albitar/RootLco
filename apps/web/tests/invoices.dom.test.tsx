@@ -31,6 +31,7 @@ import {
 } from './support/branch-switch';
 import { findSearchedOption } from './support/picker-option';
 import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
+import { SEARCH_DEBOUNCE_MS } from '@/lib/use-debounced-value';
 import type { BranchPermissions } from '@/features/working-context/working-context-contract';
 import { INVOICE_REFUSAL_MESSAGE_KEYS } from '@/features/billing/billing-contract';
 
@@ -799,6 +800,15 @@ describe('the job picker and the working context', () => {
     await user.click(screen.getByRole('button', { name: 'first' }));
     await user.type(box(), 'Layla{Enter}');
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    // The switch comes AFTER the typed term has settled, on purpose. That is
+    // the only timing under which this case ever counted a second read: the
+    // search hook fell back to the settled term once the switch had emptied the
+    // box, and asked the branch just left for it again. A run quicker than the
+    // debounce never reached that, so the case passed or failed on the speed of
+    // the machine. A timer set later with a longer delay cannot fire before the
+    // debounce's own, so the term has settled by the time this one resolves.
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_DEBOUNCE_MS + 50));
+    expect(listWorkOrders).toHaveBeenCalledTimes(1);
     // Nothing chosen yet, so nothing to lose: the switch does not ask.
     await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
