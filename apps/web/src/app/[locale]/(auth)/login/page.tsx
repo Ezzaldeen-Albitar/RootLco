@@ -15,7 +15,9 @@ import { pageMetadata } from '@/lib/page-metadata';
  * sentence so an operator who was thrown out mid-task is told why rather than
  * being silently returned to a form. It is a fixed enum, matched exactly: an
  * unrecognised value renders no notice at all, so the query string cannot become
- * a way to put arbitrary text on the page.
+ * a way to put arbitrary text on the page. Exactly means one of the map's OWN
+ * keys, given once as a string — not a name every object inherits (`toString`,
+ * `constructor`, `__proto__`), and not a repeated parameter.
  *
  * ## The `intended` parameter
  *
@@ -61,9 +63,16 @@ export default async function LoginPage({
   const messages = getMessages(locale);
 
   const query = await searchParams;
-  const rawReason = Array.isArray(query.reason) ? query.reason[0] : query.reason;
+  // One of the four words, given once, and nothing else (P1-32-PRE-OD-AUTHB-05).
+  // An OWN key of the map: `in` also answers for every name an object inherits,
+  // so `?reason=toString` drew an empty notice and `?reason=__proto__` handed
+  // React an object and broke the page. A repeated parameter arrives as an array
+  // and is not a reason either.
+  const rawReason = query.reason;
   const reasonKey =
-    rawReason && rawReason in REASONS ? REASONS[rawReason as keyof typeof REASONS] : null;
+    typeof rawReason === 'string' && Object.hasOwn(REASONS, rawReason)
+      ? REASONS[rawReason as keyof typeof REASONS]
+      : null;
   const rawIntended = query[INTENDED_PATH_PARAM];
   const intendedPath = safeIntendedPath(Array.isArray(rawIntended) ? rawIntended[0] : rawIntended);
 

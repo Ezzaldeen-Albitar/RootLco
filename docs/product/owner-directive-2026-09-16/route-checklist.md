@@ -7541,3 +7541,36 @@ change, which is the reason the comparison is there.
 Not run for this round: any Playwright tier, the backend and database tiers, and any check in a real
 browser. A writer that reports nothing was reproduced in jsdom by setting the value on the element;
 no extension was tried.
+
+**Review round (`P1-32-PRE-OD-AUTHB-05`).** The sign-in page looked the `reason` word up with `in`,
+which also answers for every name an object inherits. A link carrying `?reason=toString`,
+`constructor`, `hasOwnProperty` or `valueOf` drew an empty notice, and `?reason=__proto__` handed
+React an object, so the sign-in page failed to draw at all. Nothing from the address was ever shown.
+The line dates from P1-26 and was found by this slice's policy scan. The word is now matched as one
+of the map's own keys, given once as a string: a repeated `reason` parameter, which arrives as a
+list, is no reason either (the page used to read the first of them). The `intended` parameter was
+already a string checked against a set and is unchanged. `apps/web/tests/sign-in-notices.dom.test.tsx`
+gains thirteen cases in each language (36 to 62 executed): the five inherited names, four repeated
+forms, and an unknown word, a known word in another case, an empty reason and none at all; each
+draws no notice and still draws the form. Against the page as it was, sixteen of them fail (the five
+names and the three repeated forms that begin with a known word, in both languages), two of them
+with React's own error for `__proto__`; the unknown-word cases pass either way, as that part already
+held. The four known words still draw their catalogue sentences (the cases above them, unchanged).
+
+Open adoption item: the reason notice and the intended-page notice on `/login` are page markup
+(`<p role="status">` with token classes), not Material `Alert`s as the other signed-out pages'
+notices are. Planner ruling: they stay as they are in this slice.
+
+Open, older than this slice and not changed by it:
+
+- Sign-out clears the cookie and then asks the backend to end the session without reading the
+  answer (`features/authentication/actions/logout.ts`). When that request fails, the browser is
+  signed out and the server-side session ends only by expiry or by inactivity.
+- An outage on the console's session read sends the operator to sign-in with `reason=forbidden`
+  (`features/platform/api/session.ts`, `requirePlatformSession`), so it reads as an account without
+  access rather than as the service being unavailable.
+- The intended path is a path of this application and nothing else, but a path can hold a record's
+  identifier (a customer or a work order page), and that identifier then travels in the sign-in
+  address and so in the browser's history and in anything that records addresses.
+- AUTH01 is an open Owner decision. Today a password change or a password reset does not sign the
+  account's other devices out; each stays signed in until its own sign-in runs out.

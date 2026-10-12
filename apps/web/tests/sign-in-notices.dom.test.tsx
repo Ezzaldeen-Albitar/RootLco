@@ -108,6 +108,46 @@ describe.each(BOTH_DIRECTIONS)('sign-in notices (%s)', (locale, render) => {
     expect(document.body.textContent ?? '').not.toContain('alert(1)');
   });
 
+  /*
+   * The reason is one of four words, exactly (P1-32-PRE-OD-AUTHB-05). The map
+   * the page looks the word up in is an object, and an object answers for names
+   * it inherits as well as its own: a link carrying one of those drew an empty
+   * notice, and `__proto__` handed React an object and broke the page.
+   */
+  it.each([['toString'], ['__proto__'], ['constructor'], ['hasOwnProperty'], ['valueOf']])(
+    'shows no notice for reason=%s, a name every object inherits, and still draws the form',
+    async (reason) => {
+      const { messages } = render(await page(locale, { reason }));
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(document.body.textContent ?? '').not.toContain(reason);
+      expect(
+        screen.getByRole('button', { name: messages['auth.login.submit'] })
+      ).toBeInTheDocument();
+    }
+  );
+
+  it.each([
+    ['a known word given twice', ['expired', 'expired']],
+    ['a known word, then an unknown one', ['signed-out', 'nothing']],
+    ['an unknown word, then a known one', ['nothing', 'forbidden']],
+    ['a known word alone in a list', ['unavailable']],
+  ])('shows no notice for a repeated reason: %s', async (_label, reason) => {
+    const { messages } = render(await page(locale, { reason }));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: messages['auth.login.submit'] })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['an unknown word', { reason: 'locked' }],
+    ['a known word in another case', { reason: 'Expired' }],
+    ['an empty reason', { reason: '' }],
+    ['no reason at all', {}],
+  ] as const)('shows no notice for %s, and still draws the form', async (_label, query) => {
+    const { messages } = render(await page(locale, { ...query }));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: messages['auth.login.submit'] })).toBeInTheDocument();
+  });
+
   it('announces the intended page without echoing its address, and sends it with the form', async () => {
     const { messages } = render(
       await page(locale, { reason: 'signed-out', intended: `/${locale}/work-orders` })
