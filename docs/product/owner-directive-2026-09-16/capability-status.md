@@ -519,12 +519,15 @@ runtime retest of the ten CP-20261009-1 FAIL rows, run on the local acceptance s
 `feature/owner-directive-residual-fixes-inv-g`, cut from `develop` at
 `22229fca82f6edd53c3f6fb9564d05d93270da8a`, carries fixes for five of them — the category code on
 the material requirement cards, the unit code beside the unit name, the untranslated dimension
-column, the count identifier fragment on `/attention`, and the pack-quantity line and top margin of
-the 50 × 25 mm label — and for one point from the same day's run of the new screens, the raw
-identifier under Details in the audit record drawer (case A-07c) — implemented, not yet
-runtime-retested. The runtime matrix row
-LANG-identifiers stays FAIL until a signed-in retest at a revision containing the merge says
-otherwise. The detail is in `route-checklist.md`, section `P1-32-PRE-OD-INVG`.
+column, the count identifier fragment on `/attention`, and the layout of the 50 × 25 mm label (its
+bars under the padding, no row cut) — and for one point from the same day's run of the new
+screens, the record identifiers under Details in the audit record drawer (case A-07c) —
+implemented, not yet runtime-retested. The runtime matrix row LANG-identifiers stays FAIL until a
+signed-in retest at a revision containing the merge says otherwise. Five Owner decisions are left
+open by it and listed in `route-checklist.md`, section `P1-32-PRE-OD-INVG`, with the detail: the
+pack quantity on the 50 × 25 mm label, how an auditor reaches record identifiers, the support
+reference, the removed "Count reference" fragment, and the location's name on a count difference
+row.
 
 ### Features delivered or planned under this directive
 

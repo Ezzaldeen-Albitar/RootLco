@@ -5214,69 +5214,127 @@ code, API contract, branch scope or migration changed.
   moment, so the row does not match that list by time and does not claim to. The retest classed
   this point a design question; removing the fragment was decided in this change and can be
   reverted on its own (one commit).
-- **The 50 × 25 mm label (`/inventory/labels`, `LabelRun.tsx`, `styles/print/_index.scss`; retest
-  point O4).** No document in the repository states what a label of each size carries: the
-  directive asks for printable labels (`README.md`, "Barcodes") and the manual lists the three
-  sizes (`docs/user-manual/05-inventory.md`, 5.22.3). The smallest label is therefore treated as
-  carrying the same five rows as the others. At the screen's type sizes those rows are taller than
-  25 mm, and the centred column was cut at both ends: the bars began at the top edge and the
-  pack-quantity line was cut off. For this preset only, the stylesheet now states every row in
-  millimetres — bars 6.5 mm high across the whole width inside the padding, four text rows of 3 mm
-  each in 2.3 mm type, 0.4 mm apart — and starts the column at the top, under the 2 mm padding; a
-  name too long for one line ends in an ellipsis. The symbologies drawn (Code 128, EAN-13, EAN-8,
-  UPC-A) define their quiet zones at the two ends of the symbol and none above it; the end zones
-  are part of the drawn symbol and are unchanged, and the margin above the bars is the 2 mm
-  padding. The 70 × 40 mm and A4 labels are unchanged.
+- **The 50 × 25 mm label (`/inventory/labels`, `LabelRun.tsx`, `BarcodeImage.tsx`,
+  `styles/print/_index.scss`; retest point O4).** No document in the repository states what a label
+  of each size carries: the directive asks for printable labels (`README.md`, "Barcodes") and the
+  manual lists the three sizes (`docs/user-manual/05-inventory.md`, 5.22.3). On this label about
+  34 mm of rows at the screen's type sizes were centred in a 25 mm cell and cut at both ends: the
+  bars began above the top edge, so 8.35 mm of their 12.7 mm was printed with nothing between them
+  and the edge, and the last row, the pack quantity, was never visible. Only the layout defects are
+  fixed. For this size alone the stylesheet states every row in millimetres and starts the column
+  under the 2 mm padding: bars 8.5 mm high across the whole width inside the padding, then the
+  code, the name and the stock code, 3.5 mm each in 2.8 mm type (it was 3.2 mm), 0.4 mm apart; a
+  name too long for one line ends in an ellipsis, as does the sentence that stands in place of bars
+  that cannot be drawn. The bars are no shorter than what was printed before and no module is
+  narrower: an EAN-13 symbol goes from 35.9 mm to 46 mm wide and a Code 128 symbol stays 46 mm.
+  **The pack-quantity row is not drawn on this size** (it still ends the 70 × 40 mm and A4 labels,
+  which are unchanged): a fourth text row fits only with shorter bars, and that trade is not made
+  here — see the open decisions below. The symbologies drawn (Code 128, EAN-13, EAN-8, UPC-A)
+  define their quiet zones at the two ends of the symbol and none above it; the end zones are part
+  of the drawn symbol and are unchanged, and the margin above the bars is the padding.
 
 A sixth point comes from the run of the new screens on the same day (CP-20261012-1, case A-07c;
 evidence outside the repository), on the same terms — implemented, not yet runtime-retested:
 
 - **The audit record drawer (`/administration/audit-log`, `audit/labels.ts`,
   `AuditLogScreen.tsx`).** Under Details the drawer drew a refund request's `obligationId` as it
-  came: "Another detail", the field's code and a full identifier. A detail row that is a reference
-  to another record is now left out: a row whose field names an identifier (`obligationId`,
-  `invoice_id`, `allocation.id`, `lines[0].itemId`), a row either of whose values holds an
-  identifier anywhere in it or is a structured value with an identifier field inside, and — under a
-  field the catalogue does not name — a row whose value is a dotted machine code. When any row is
-  left out the drawer says "Details that hold only internal references or codes are not shown
-  here.", and a record whose rows are all references says that rather than that it has no details.
-  A field the catalogue names keeps a dotted value (a setting's key). Nothing is resolved to a
-  name: the read (`iam.audit-event-detail`) names the actor and the account a record is about, both
-  already drawn in the drawer's own rows, and no other record a detail refers to; naming those
-  would need the API to publish them, which this change does not ask for. The grid draws no
-  detail: its cells are the moment, the people by name or in words, the action and the record type
-  in words, and the support reference.
+  came: "Another detail", the field's code and a full identifier. The log exists to say what
+  changed, so the rule leaves out record identifiers and nothing else:
+  1. Never altered: the audit vocabulary the service writes as a value — `permission_code`,
+     `requiredPermission`, `exportPermissionCode`, `entity_type`, `resource` — each under a
+     catalogue label, and business numbers whose names end in "id" (`vatId`, `national_id` and the
+     like; no writer records one today).
+  2. A row is left out when its field is named for a record identifier (`id`, `ids`, `uuid`, or
+     ending `Id`, `Ids`, `_id`, `_ids`, at the last step of a path) and its value holds an
+     identifier, alone or in a list, in any case, with or without dashes; and when its whole value
+     is a dashed identifier under any field (`requestedBy`).
+  3. Free text is never dropped: an identifier quoted in a reason or a note is replaced by
+     "[reference]" / "[مرجع]" and every other word is kept.
+  4. A structured value loses only its identifier members, at any depth, and keeps the rest with
+     the characters it was written with; it is left out only when nothing remains. No writer
+     records a structured value today.
+  5. Everything else is drawn as written: numbers (a numeric `customer_id` too), codes, digests,
+     file names. Thirty-two hexadecimal characters are taken for an identifier only under a field
+     named for one; elsewhere they are a digest.
+
+  When an identifier was left out — a row, a member or a quoted one — the drawer says "Record
+  identifiers are not shown here." / "معرّفات السجلات لا تُعرض هنا.", and only then; a record whose
+  rows are all identifiers says that rather than that it has no details. A record type is said in
+  the drawer's own words for one, with its code in brackets where the catalogue has no name of its
+  own for it. A permission is drawn by its code under the label "Permission": the web holds no
+  wording for a permission — the permissions screen draws the description the service publishes
+  with its catalogue (`iam.permission-list`), which the audit screen does not read. Nothing is
+  resolved to a name: the read (`iam.audit-event-detail`) names the actor and the account a record
+  is about, both drawn in the drawer's own rows, and no other record.
+
+  The rows are written by 284 `appendAudit` and `auditForOperation` call sites in 75 files under
+  `apps/api/src/modules` (1,019 detail entries, 445 distinct field names, 123 of them named for an
+  identifier). Their shapes, each held by a case: a role's permission added, changed or removed
+  (`access-administration-service.ts`); a state or decision with a typed reason; a reference to
+  another record (`obligationId`, `invoice_id`); a person under a name that does not say so
+  (`requestedBy`, `approvedBy`, `countedBy`); identifiers joined by commas
+  (`releasedReservationIds`); words joined by commas (`changed_columns`, `fields`); amounts,
+  quantities and counts; business numbers and codes (`receiptNumber`, `display_number`); permission
+  and record-type vocabulary; digests and content facts (`rows_digest`, `content_type`).
+
+  The grid draws no detail. Its last column, the support reference, draws the reference as it came,
+  which at runtime is an identifier; that is unchanged and belongs to the support-reference decision
+  below.
 
 Also corrected, comment only: `apps/web/tests/data-table.dom.test.tsx` named counter sales as
 reachable by the type, switch, type search sequence; counter sales remounts its search on a branch
 switch, so of the screens whose scope is the loader's only the service catalogue is.
 
 New catalogue keys, English and Arabic: `inventory.setup.items.unitNotNamed`,
-`inventory.setup.units.dimension.{area,count,length,mass,other,time,volume}` and
-`audit.detail.referencesOmitted`. Removed from both: `attention.discrepancy.countRef`.
+`inventory.setup.units.dimension.{area,count,length,mass,other,time,volume}`,
+`audit.detail.identifiersOmitted`, `audit.detail.identifierPlaceholder` and
+`audit.field.{entityType,exportPermissionCode,permissionCode,requiredPermission,resource}`. Removed
+from both: `attention.discrepancy.countRef`. The mass dimension is "الكتلة": the Arabic catalogue
+says "الوزن" nowhere, so there was no existing term to follow, and "الكتلة" is the dimension's own
+name.
 
 Tests, in the existing DOM files (en and ar): `inventory-material-requirements.dom` (the family by
 its path of names, no code on the panel), `inventory-item-codes.dom` (the header's unit cell holds
 the name alone), `inventory-setup.dom` (a created item's unit by name, the sentence for a unit the
-list does not hold, each dimension by its catalogue word, an unknown dimension as "Other"),
+list does not hold, each dimension by its catalogue word, an unknown dimension as "Other") and
 `attention.dom` (two counts of one shelf told apart by place and moment, nothing of either
-identifier) and `inventory-labels.dom` (the pack quantity is the last row; the rows the stylesheet
-states add up to less than the label; the column starts at the top under the padding; only the
-50 × 25 mm rows are restated). Measured by mutation with the product files put back to `22229fca`
-and then restored byte for byte: 23 of the cases above fail against the earlier code (2, 8, 4, 2
-and 7 in the order of the list) and the other 343 cases of the five files pass. For the audit
-drawer, `audit-log.dom` gains seven cases (en and ar): a record carrying an identifier field in
-camel and snake case, a nested identifier by field path and inside a structured value, an
-identifier under a field the catalogue names, and a machine code under one it does not, beside rows
-a reader can use; a record whose rows are all references; a named field keeping a dotted value;
-and two that hold what was already so (a record with nothing left out says nothing about it; the
-grid draws no identifier). With the two product files put back, five of the seven fail and the
-other 61 cases of the file pass.
+identifier): 16 cases, which fail against `22229fca` with the product files put back and restored
+byte for byte. `inventory-labels.dom` holds the smallest label in 14 cases: the rows it carries and
+that it carries no pack quantity; that the rows the stylesheet states add up to less than the
+label, each one line that cannot wrap or be squeezed; bars no shorter than the 8.35 mm printed
+before and at full width; the column starting under the padding; a refused code's label; the two
+larger sizes as they were; and one label to a page with no page after the last. `audit-log.dom`
+holds the drawer in 20 cases built from the rows the service writes. Measured by mutation, the
+product files restored byte for byte each time: against `22229fca`, 13 of the label cases and 18 of
+the audit cases fail; against the first form of this change (`153b2f79`: 6.5 mm bars with a pack
+row, and a rule that hid whole rows), 8 and 17 fail.
+
+What no tier of this repository covers: the height and width of the bars as a browser lays them
+out and as a printer prints them. The DOM cases hold the arithmetic the stylesheet states; the
+browser tier's print-layout spec counts the pages and finds the stock code on each. The figures
+above for the label were measured once, in a headless browser from a static page built from the
+real component and the compiled stylesheet, outside any tier; that is not a runtime retest. No
+physical printer or scanner was used.
+
+Open Owner decisions:
+
+1. **Pack quantity on the 50 × 25 mm label.** Whether the smallest label should carry the pack
+   quantity, which needs either a larger label or shorter bars and a physical scan test.
+2. **Record identifiers for an auditor.** The drawer no longer draws them, and the record's own
+   `entityId` was never drawn, so the drawer says what kind of record an event concerns and not
+   which one. Whether an auditor needs identifiers reachable some other way — a copy action, a
+   support view — or records named by the read, which needs the API to publish names.
+3. **The support reference.** "Reference:" followed by a full identifier at the end of a refusal
+   (retest point O5), and the support reference in the audit grid's last column and in the drawer.
+   Of a kind with it and also unchanged: the drawer's action code, record type code and a detail
+   field's code, each under a label naming it a reference for support.
+4. **The "Count reference" fragment.** It was removed in this change although the retest classed
+   it a design question (point O6); it can be restored by reverting one commit.
+5. **The location on a count difference row.** Whether the row should carry the location's name
+   beside or instead of its code; the read carries the code only, so it needs an API change.
 
 Open, recorded by the retest and not changed here:
 
-- "Reference:" followed by a full identifier at the end of a refusal (retest point O5) — whether a
-  support reference may be shown, and in what form, is an Owner design decision.
 - No visible focus ring on the button the cursor returns to after a dialog is closed with the
   mouse (retest point O3).
 - A duplicate code is still answered by the API with the general conflict problem, and the truthful
@@ -5284,15 +5342,9 @@ Open, recorded by the retest and not changed here:
 - The Code column of the units table, the code in brackets a unit picker adds where two units share
   a name, the category pickers' "name (code)" options, and the fall-back to a unit's code on a
   screen that holds no unit list are as they were.
-- In the audit drawer, the action code, the record type code and a detail field's code are still
-  drawn, each under a label naming it a reference for support, and the support reference is still
-  drawn there and in the grid's last column; they are of a kind with the support reference above
-  and wait on the same decision.
-- A reference left out of the audit drawer is not replaced by the name of the record it points to;
-  the read does not carry one.
-- The label rows are held by the arithmetic of the compiled stylesheet in a DOM test; what a
-  browser lays out, and what a printer prints, stay with the next runtime print retest. No physical
-  printer or scanner was used, and the browser tiers were not run locally.
+- The retest read "1.000 Each" on a label cell of the default size as one of the LANG-identifiers
+  observations; that row is no longer on the 50 × 25 mm label, so a retest reads the unit's name on
+  a larger size.
 
 ### Departments and employees on Material UI (`P1-32-PRE-OD-ADM2`)
 
