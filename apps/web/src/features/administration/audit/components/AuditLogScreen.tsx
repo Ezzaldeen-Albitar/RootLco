@@ -30,8 +30,10 @@ import { AccountPicker, type ChosenAccount } from '../../users/components/Accoun
 import { listAuditEvents, readAuditEvent } from '../api';
 import {
   auditActionLabel,
+  auditDetailValue,
   auditEntityLabel,
   auditFieldLabel,
+  isAuditCodeField,
   isNamedAuditField,
   shownAuditDetails,
 } from '../labels';
@@ -598,11 +600,23 @@ function AuditDetailDrawer({
 
   const loading = held === null || held.generation !== generation;
   const record = !loading && held.status === 'ok' ? held.record : null;
-  // The detail rows a reader can use, and how many references were left out
-  // (`shownAuditDetails`); `null` while there is no record or its details are
-  // withheld.
+  // The detail rows as the drawer draws them, and whether any record identifier
+  // was left out of them (`shownAuditDetails`); `null` while there is no record
+  // or its details are withheld.
   const detailRows =
-    record === null || record.details === undefined ? null : shownAuditDetails(record.details);
+    record === null || record.details === undefined
+      ? null
+      : shownAuditDetails(record.details, t('audit.detail.identifierPlaceholder'));
+  // One value of a detail: a permission code as a code, left to right; a record
+  // type in the drawer's own words for one; anything else as written.
+  const say = (fieldName: string, value: string): ReactNode =>
+    isAuditCodeField(fieldName) ? (
+      <code dir="ltr" className="font-mono">
+        {value}
+      </code>
+    ) : (
+      auditDetailValue(messages, fieldName, value)
+    );
 
   return (
     <Drawer
@@ -700,10 +714,9 @@ function AuditDetailDrawer({
                 ) : detailRows.shown.length === 0 ? null : (
                   <ul className="flex flex-col gap-2">
                     {/*
-                      Only the rows a reader can use: a row that is a reference
-                      to another record — an identifier under a machine field
-                      name — is left out (`shownAuditDetails`), and the sentence
-                      below the list says so.
+                      Every row that says what changed. Only the identifiers of
+                      records are left out (`shownAuditDetails`), and the
+                      sentence below the list says so when one was.
                     */}
                     {detailRows.shown.map((entry) => (
                       <li
@@ -722,25 +735,25 @@ function AuditDetailDrawer({
                           </p>
                         )}
                         <p className="break-all text-supporting text-text-primary">
-                          {entry.oldValueMasked !== null ? (
+                          {entry.oldValue !== null ? (
                             <>
                               <span className="text-text-muted line-through">
-                                {entry.oldValueMasked}
+                                {say(entry.fieldName, entry.oldValue)}
                               </span>{' '}
                             </>
                           ) : null}
-                          {entry.newValueMasked ?? '—'}
+                          {entry.newValue === null ? '—' : say(entry.fieldName, entry.newValue)}
                         </p>
                       </li>
                     ))}
                   </ul>
                 )}
-                {detailRows !== null && detailRows.omitted > 0 ? (
+                {detailRows !== null && detailRows.identifiersLeftOut ? (
                   <p
                     className="mt-2 text-caption text-text-muted"
                     data-testid="audit-detail-omitted"
                   >
-                    {t('audit.detail.referencesOmitted')}
+                    {t('audit.detail.identifiersOmitted')}
                   </p>
                 ) : null}
                 <p className="mt-2 text-caption text-text-muted">{t('audit.detail.maskedHint')}</p>

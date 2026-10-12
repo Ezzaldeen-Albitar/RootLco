@@ -948,83 +948,50 @@ describe('people by name, never by identifier (P1-32-PRE-OD-ADM6)', () => {
 /**
  * P1-32-PRE-OD-INVG — the drawer drew a refund request's `obligationId` as it
  * came: "Another detail", the machine field name, and a full identifier
- * (CP-20261012-1 new-screens run, A-07c). A detail that is a reference to
- * another record is left out, whatever its field is called and wherever the
- * identifier sits in the value; the drawer says it left something out.
+ * (CP-20261012-1 new-screens run, A-07c).
+ *
+ * The rule leaves out as little as it can, because the log exists to say WHAT
+ * changed: only the identifiers of records go — a row that is nothing else, a
+ * member of a structured value, an identifier quoted in a sentence — and the
+ * drawer says so. Permission codes, record types, numbers, digests, file names
+ * and every sentence stay.
+ *
+ * Each case is built from the detail rows the service really writes (the
+ * `appendAudit` call it copies is named beside it), except the structured
+ * values, which no writer records today and for which the rule is stated all
+ * the same.
  */
-describe('P1-32-PRE-OD-INVG: a detail that is a reference to another record is not drawn', () => {
-  const OBLIGATION = 'a4b074be-5842-4588-909b-80055f46b76a';
-  const INVOICE_WAS = 'b5c185cf-6953-4699-8a1c-91166a57c87b';
-  const INVOICE_NOW = 'c6d296d0-7a64-47aa-9b2d-a2277b68d98c';
+describe('P1-32-PRE-OD-INVG: the drawer leaves out record identifiers and nothing else', () => {
+  const ROLE = 'a4b074be-5842-4588-909b-80055f46b76a';
+  const OBLIGATION = 'b5c185cf-6953-4699-8a1c-91166a57c87b';
+  const INVOICE = 'C6D296D0-7A64-47AA-9B2D-A2277B68D98C';
   const QUOTED = 'd7e3a7e1-8b75-48bb-ac3e-b3388c79ea9d';
-  const refundApproved = {
-    ...row,
-    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-    seq: '6000',
-    action: 'sal.refund_request.approved',
-    entityType: 'sal.refund_request',
-  };
+  const PERSON = 'e8f4b8f2-9c86-49cc-bd4f-c4499d8afbae';
+  const FIRST_HELD = 'f9a5c9a3-ad97-4add-8e5a-d55aae9bacbf';
+  const SECOND_HELD = '0ab6dab4-bea8-4bee-9f6b-e66bbfacbdc0';
+  const BARE = 'a4b074be58424588909b80055f46b76a';
+  const SHA256 = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+  const MD5 = '5d41402abc4b2a76b9719d911017c592';
+  const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
   const detail = (
     fieldName: string,
-    newValueMasked: string,
-    oldValueMasked: string | null = null
-  ) => ({
-    fieldName,
-    oldValueMasked,
-    newValueMasked,
-    valueClassification: 'internal',
-  });
-  /** The rows a reader can use: three the catalogue names and two it does not. */
-  const READABLE = [
-    detail('amount', '***'),
-    detail('approvalState', 'approved', 'pending'),
-    detail('currency', 'JOD'),
-    // Not identifiers, though their names end in the same two letters.
-    detail('paid', 'true'),
-    detail('valid', 'false'),
-  ];
-  /** References, in every shape a row can carry one. */
-  const REFERENCES = [
-    // An identifier field, camel case and snake case.
-    detail('obligationId', OBLIGATION),
-    detail('invoiceId', INVOICE_NOW, INVOICE_WAS),
-    detail('customer_id', '70411'),
-    // A nested identifier: by the path of the field, and inside a structured value.
-    detail('allocation.id', '17'),
-    detail('lines[0].itemId', '9031'),
-    detail('snapshot', '{"invoice":{"id":"INV-000031"},"total":"4.9390"}'),
-    // An identifier under a field that is not named for one — the catalogue
-    // names `reason`, and the row is left out all the same.
-    detail('reason', `see ${QUOTED}`),
-    detail('source', `{"moved":["${QUOTED}"]}`),
-    // A machine code under a field the catalogue does not name.
-    detail('trigger', 'sal.refund_request.approved'),
-  ];
-  const MACHINE_TEXT = [
-    OBLIGATION,
-    INVOICE_WAS,
-    INVOICE_NOW,
-    QUOTED,
-    'obligationId',
-    'invoiceId',
-    'customer_id',
-    '70411',
-    'allocation.id',
-    'itemId',
-    'snapshot',
-    'INV-000031',
-    'trigger',
-  ];
+    newValueMasked: string | null,
+    oldValueMasked: string | null = null,
+    valueClassification = 'internal'
+  ) => ({ fieldName, oldValueMasked, newValueMasked, valueClassification });
 
   async function openDrawer(
     locale: 'en' | 'ar',
+    over: Record<string, unknown>,
     details: readonly unknown[]
   ): Promise<HTMLElement> {
     const T = locale === 'en' ? EN : AR;
-    listAuditEvents.mockResolvedValue(okPage([refundApproved]));
+    const record = { ...row, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', seq: '6000', ...over };
+    listAuditEvents.mockResolvedValue(okPage([record]));
     readAuditEvent.mockResolvedValue({
       status: 'ok',
-      record: { ...refundApproved, details },
+      record: { ...record, details },
       correlationId: 'corr-d',
     });
     const user = userEvent.setup();
@@ -1058,100 +1025,308 @@ describe('P1-32-PRE-OD-INVG: a detail that is a reference to another record is n
     within(drawer).getByText((locale === 'en' ? EN : AR)['audit.detail.details'] as string, {
       selector: 'dt',
     }).nextElementSibling as HTMLElement;
+  /** The rows drawn, each as "label | the rest of its text". */
+  const rows = (block: HTMLElement): string[] =>
+    within(block)
+      .queryAllByRole('listitem')
+      .map((item) => [...item.children].map((child) => child.textContent ?? '').join(' | '));
+  const omitted = (block: HTMLElement) => within(block).queryByTestId('audit-detail-omitted');
 
   for (const locale of ['en', 'ar'] as const) {
-    it(`${locale}: draws the details a reader can use and leaves out every reference`, async () => {
-      const T = locale === 'en' ? EN : AR;
-      // Interleaved, as a record carries them.
-      const mixed = [
-        READABLE[0],
-        REFERENCES[0],
-        REFERENCES[1],
-        READABLE[1],
-        REFERENCES[2],
-        REFERENCES[3],
-        REFERENCES[4],
-        READABLE[2],
-        REFERENCES[5],
-        REFERENCES[6],
-        READABLE[3],
-        REFERENCES[7],
-        REFERENCES[8],
-        READABLE[4],
-      ];
-      const drawer = await openDrawer(locale, mixed);
-      const block = detailsBlock(drawer, locale);
-      const items = within(block).getAllByRole('listitem');
-      expect(items).toHaveLength(READABLE.length);
-      // The catalogue's words for the fields it names; "Another detail" for the rest.
-      expect(items[0]).toHaveTextContent(T['audit.field.amount'] as string);
-      expect(items[1]).toHaveTextContent(T['audit.field.other'] as string);
-      expect(items[1]).toHaveTextContent('approved');
-      expect(items[2]).toHaveTextContent(T['audit.field.currency'] as string);
-      expect(items[2]).toHaveTextContent('JOD');
-      expect(items[3]).toHaveTextContent('true');
-      expect(items[4]).toHaveTextContent('false');
-      // No identifier, no identifier field name and no machine code under Details.
-      const text = block.textContent ?? '';
-      for (const machine of MACHINE_TEXT) expect(text, machine).not.toContain(machine);
-      expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      expect(text).not.toContain('sal.refund_request.approved');
-      // Nor anywhere else in the drawer.
-      for (const id of [OBLIGATION, INVOICE_WAS, INVOICE_NOW, QUOTED]) {
-        expect(drawer.textContent, id).not.toContain(id);
-      }
-      // And the drawer says it left something out.
-      expect(within(block).getByTestId('audit-detail-omitted')).toHaveTextContent(
-        T['audit.detail.referencesOmitted'] as string
+    const T = locale === 'en' ? EN : AR;
+
+    // `iam.role.permission_added` — access-administration-service.ts, appendAudit at :286.
+    it(`${locale}: a permission added to a role shows the permission and the effect, not the role's identifier`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'iam.role.permission_added', entityType: 'iam.role_permission' },
+        [
+          detail('role_id', ROLE),
+          detail('permission_code', 'inv.stock.read', null, 'public'),
+          detail('effect', 'allow', null, 'public'),
+        ]
       );
-      expect(within(block).queryByText(T['audit.detail.noDetails'] as string)).toBeNull();
+      const block = detailsBlock(drawer, locale);
+      expect(rows(block)).toEqual([
+        `${T['audit.field.permissionCode']} | inv.stock.read`,
+        `${T['audit.field.effect']} | allow`,
+      ]);
+      expect(block.textContent).not.toContain(ROLE);
+      expect(block.textContent).not.toContain('role_id');
+      expect(omitted(block)).toHaveTextContent(T['audit.detail.identifiersOmitted'] as string);
     });
 
-    it(`${locale}: a record whose details are all references says so, not that it has none`, async () => {
-      const T = locale === 'en' ? EN : AR;
-      const drawer = await openDrawer(locale, REFERENCES);
-      const block = detailsBlock(drawer, locale);
-      expect(within(block).queryAllByRole('listitem')).toHaveLength(0);
-      expect(within(block).getByTestId('audit-detail-omitted')).toHaveTextContent(
-        T['audit.detail.referencesOmitted'] as string
+    // `iam.role.permission_changed` — the same service, appendAudit at :325: no identifier at all.
+    it(`${locale}: a permission's effect changed shows both effects, and says nothing was left out`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'iam.role.permission_changed', entityType: 'iam.role_permission' },
+        [
+          detail('permission_code', 'sal.invoice.issue', null, 'public'),
+          detail('effect', 'deny', 'allow', 'public'),
+        ]
       );
+      const block = detailsBlock(drawer, locale);
+      expect(rows(block)).toEqual([
+        `${T['audit.field.permissionCode']} | sal.invoice.issue`,
+        `${T['audit.field.effect']} | allow deny`,
+      ]);
+      expect(omitted(block)).toBeNull();
+    });
+
+    // `iam.role.permission_removed` — the same service, appendAudit at :364.
+    it(`${locale}: a permission removed from a role shows which permission and the effect it had`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'iam.role.permission_removed', entityType: 'iam.role_permission' },
+        [
+          detail('role_id', ROLE),
+          detail('permission_code', 'iam.user.invite', null, 'public'),
+          detail('effect', null, 'allow', 'public'),
+        ]
+      );
+      const block = detailsBlock(drawer, locale);
+      expect(rows(block)).toEqual([
+        `${T['audit.field.permissionCode']} | iam.user.invite`,
+        `${T['audit.field.effect']} | allow —`,
+      ]);
+      expect(block.textContent).not.toContain(ROLE);
+      expect(omitted(block)).not.toBeNull();
+    });
+
+    // `sal.refund_request.approved` — refund-service.ts :488, the record of the A-07c screenshot.
+    it(`${locale}: an approved refund shows its amount, state and currency, not the obligation's identifier`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'sal.refund_request.approved', entityType: 'sal.refund_request' },
+        [
+          detail('amount', '***', null, 'restricted'),
+          detail('approvalState', 'approved', 'pending'),
+          detail('currency', 'JOD'),
+          detail('obligationId', OBLIGATION),
+        ]
+      );
+      const block = detailsBlock(drawer, locale);
+      expect(rows(block)).toEqual([
+        `${T['audit.field.amount']} | ***`,
+        `${T['audit.field.other']} | ${T['audit.detail.fieldCode']} approvalState | pending approved`,
+        `${T['audit.field.currency']} | JOD`,
+      ]);
+      expect(drawer.textContent).not.toContain(OBLIGATION);
+      expect(block.textContent).not.toContain('obligationId');
+      expect(omitted(block)).toHaveTextContent(T['audit.detail.identifiersOmitted'] as string);
+    });
+
+    // A sentence somebody typed (`reason`, fifty writers) that quotes an identifier.
+    it(`${locale}: a reason that quotes an identifier keeps every word and loses only the identifier`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'inv.stock_adjustment.rejected', entityType: 'inv.stock_adjustment' },
+        [
+          detail('reason', `Raised twice: same as ${QUOTED}, see the count of 9 October`),
+          detail('decisionReason', `${QUOTED} and ${PERSON.toUpperCase()} disagree`),
+          detail('note', 'No identifier in this one'),
+        ]
+      );
+      const block = detailsBlock(drawer, locale);
+      const mark = T['audit.detail.identifierPlaceholder'] as string;
+      expect(rows(block)).toEqual([
+        `${T['audit.field.reason']} | Raised twice: same as ${mark}, see the count of 9 October`,
+        `${T['audit.field.other']} | ${T['audit.detail.fieldCode']} decisionReason | ${mark} and ${mark} disagree`,
+        `${T['audit.field.other']} | ${T['audit.detail.fieldCode']} note | No identifier in this one`,
+      ]);
+      expect(block.textContent).not.toMatch(UUID_ANYWHERE);
+      expect(omitted(block)).not.toBeNull();
+    });
+
+    // Identifiers in every spelling a writer or a database can give them.
+    it(`${locale}: an identifier is left out in upper case, without dashes, in a list and under a field not named for one`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'inv.material_request.fulfilled', entityType: 'inv.material_request' },
+        [
+          detail('invoiceId', INVOICE),
+          detail('itemId', BARE),
+          // inventory-material-service.ts :1171 — `ids.join(',')`.
+          detail('releasedReservationIds', `${FIRST_HELD},${SECOND_HELD}`),
+          // `requestedBy` (eight writers): a person's identifier under a name that does not say so.
+          detail('requestedBy', PERSON),
+          detail('supersedes', `["${FIRST_HELD}","${SECOND_HELD.toUpperCase()}"]`),
+          detail('lines[0].itemId', FIRST_HELD),
+          detail('quantity', '2.000'),
+        ]
+      );
+      const block = detailsBlock(drawer, locale);
+      expect(rows(block)).toEqual([`${T['audit.field.quantity']} | 2.000`]);
+      const text = (block.textContent ?? '').toLowerCase();
+      for (const id of [INVOICE, BARE, FIRST_HELD, SECOND_HELD, PERSON]) {
+        expect(text, id).not.toContain(id.toLowerCase());
+      }
+      expect(omitted(block)).not.toBeNull();
+    });
+
+    it(`${locale}: a record whose details are all identifiers says so, not that it has none`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'sal.refund_request.created', entityType: 'sal.refund_request' },
+        [detail('obligationId', OBLIGATION), detail('invoiceId', INVOICE, OBLIGATION)]
+      );
+      const block = detailsBlock(drawer, locale);
+      expect(rows(block)).toEqual([]);
+      expect(omitted(block)).toHaveTextContent(T['audit.detail.identifiersOmitted'] as string);
       expect(within(block).queryByText(T['audit.detail.noDetails'] as string)).toBeNull();
-      const text = block.textContent ?? '';
-      for (const machine of MACHINE_TEXT) expect(text, machine).not.toContain(machine);
+      expect(block.textContent).not.toMatch(UUID_ANYWHERE);
     });
   }
 
-  it('a record with nothing left out says nothing about leaving anything out', async () => {
-    const drawer = await openDrawer('en', READABLE);
+  // No writer records a structured value today; the rule for one is held here.
+  it('a structured value loses its identifier members at any depth and keeps the rest as written', async () => {
+    const drawer = await openDrawer(
+      'en',
+      { action: 'sal.invoice.issued', entityType: 'sal.invoice' },
+      [
+        detail(
+          'snapshot',
+          `{"id":"${INVOICE}","total":"4.9390","tax":0.6170,"lines":2,` +
+            `"customer":{"partnerId":"${PERSON}","name":"Layla Haddad"},` +
+            `"held":["${FIRST_HELD}","${SECOND_HELD}"],"note":"replaces ${QUOTED}"}`
+        ),
+        // Nothing but identifiers inside: the row goes.
+        detail('links', `{"invoiceId":"${INVOICE}","ids":["${FIRST_HELD}"]}`),
+        // Nothing to take out: drawn with the very characters it was written with.
+        detail('totals', '{ "gross": 12.50, "net": "10.0000" }'),
+      ]
+    );
     const block = detailsBlock(drawer, 'en');
-    expect(within(block).getAllByRole('listitem')).toHaveLength(READABLE.length);
-    expect(within(block).queryByTestId('audit-detail-omitted')).toBeNull();
-  });
-
-  it('a field the catalogue names keeps a dotted value; one it does not name loses it', async () => {
-    const drawer = await openDrawer('en', [
-      detail('setting_key', 'finance.rounding_mode'),
-      detail('trigger', 'finance.rounding_mode'),
+    const mark = EN['audit.detail.identifierPlaceholder'] as string;
+    expect(rows(block)).toEqual([
+      `${EN['audit.field.other']} | ${EN['audit.detail.fieldCode']} snapshot | ` +
+        `{"total":"4.9390","tax":0.6170,"lines":2,"customer":{"name":"Layla Haddad"},"note":"replaces ${mark}"}`,
+      `${EN['audit.field.other']} | ${EN['audit.detail.fieldCode']} totals | { "gross": 12.50, "net": "10.0000" }`,
     ]);
-    const block = detailsBlock(drawer, 'en');
-    const items = within(block).getAllByRole('listitem');
-    expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent(EN['audit.field.settingKey'] as string);
-    expect(items[0]).toHaveTextContent('finance.rounding_mode');
-    expect(within(block).getByTestId('audit-detail-omitted')).toBeVisible();
+    expect(block.textContent).not.toMatch(UUID_ANYWHERE);
+    expect(omitted(block)).not.toBeNull();
   });
 
-  it('the grid draws no detail at all: its cells are the moment, the people, and words', async () => {
-    listAuditEvents.mockResolvedValue(okPage([refundApproved]));
+  it('business numbers, a digest and a file name are drawn as written, and nothing is said to be left out', async () => {
+    const drawer = await openDrawer(
+      'en',
+      { action: 'rpt.report_snapshot.saved', entityType: 'rpt.report_snapshot' },
+      [
+        // Numbers a person knows a record by, though two of the names end in "id".
+        detail('vatId', '100234567'),
+        detail('national_id', '9871234567'),
+        detail('customer_id', '70411'),
+        detail('receiptNumber', '000031'),
+        detail('display_number', 'WO-000016'),
+        // report-snapshot-service.ts :462 — a digest, not an identifier.
+        detail('rows_digest', SHA256),
+        detail('checksum', MD5),
+        detail('file_name', 'stock-count 2026-10-09.pdf'),
+        detail('content_type', 'application/pdf'),
+        detail('row_count', '42'),
+      ]
+    );
+    const block = detailsBlock(drawer, 'en');
+    const other = (code: string, value: string) =>
+      `${EN['audit.field.other']} | ${EN['audit.detail.fieldCode']} ${code} | ${value}`;
+    expect(rows(block)).toEqual([
+      other('vatId', '100234567'),
+      other('national_id', '9871234567'),
+      other('customer_id', '70411'),
+      other('receiptNumber', '000031'),
+      other('display_number', 'WO-000016'),
+      other('rows_digest', SHA256),
+      other('checksum', MD5),
+      other('file_name', 'stock-count 2026-10-09.pdf'),
+      other('content_type', 'application/pdf'),
+      other('row_count', '42'),
+    ]);
+    expect(omitted(block)).toBeNull();
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    const T = locale === 'en' ? EN : AR;
+    // discount-threshold-service.ts :254, report-configuration-service.ts :287,
+    // attachment-service.ts :896, export-authorization-service.ts :197.
+    it(`${locale}: the service's own vocabulary is labelled and never left out`, async () => {
+      const drawer = await openDrawer(
+        locale,
+        { action: 'shared.attachment.linked', entityType: 'shared.attachment_link' },
+        [
+          detail('requiredPermission', 'quo.discount.approve'),
+          detail('exportPermissionCode', 'rpt.export'),
+          detail('entity_type', 'iam.role', null, 'public'),
+          detail('entity_id', ROLE),
+          detail('resource', 'crm.customers', null, 'public'),
+          detail('fields', 'displayName,phone', null, 'public'),
+          // A dotted code under a field the catalogue does not name is drawn too.
+          detail('trigger', 'sal.refund_request.approved'),
+        ]
+      );
+      const block = detailsBlock(drawer, locale);
+      expect(rows(block)).toEqual([
+        `${T['audit.field.requiredPermission']} | quo.discount.approve`,
+        `${T['audit.field.exportPermissionCode']} | rpt.export`,
+        `${T['audit.field.entityType']} | ${T['audit.record.iamRole']}`,
+        `${T['audit.field.resource']} | crm.customers`,
+        `${T['audit.field.other']} | ${T['audit.detail.fieldCode']} fields | displayName,phone`,
+        `${T['audit.field.other']} | ${T['audit.detail.fieldCode']} trigger | sal.refund_request.approved`,
+      ]);
+      expect(block.textContent).not.toContain(ROLE);
+      expect(omitted(block)).not.toBeNull();
+    });
+  }
+
+  it('a record type the catalogue has no name for is said by its part of the product, with its code', async () => {
+    const drawer = await openDrawer(
+      'en',
+      { action: 'shared.attachment.linked', entityType: 'shared.attachment_link' },
+      [detail('entity_type', 'wo.work_order', null, 'public')]
+    );
+    const block = detailsBlock(drawer, 'en');
+    const words = (EN['audit.record.otherIn'] as string).replace(
+      '{area}',
+      EN['audit.area.wo'] as string
+    );
+    expect(rows(block)).toEqual([`${EN['audit.field.entityType']} | ${words} (wo.work_order)`]);
+    expect(omitted(block)).toBeNull();
+  });
+
+  /*
+   * The grid. Its last column is the support reference, which at runtime is an
+   * identifier (the fixture above the file uses a short word for it). This
+   * holds what the product does today and is not a statement that it should:
+   * the column draws the reference as it came. Whether a support reference may
+   * be shown, and in what form, is the open Owner decision recorded in the
+   * route checklist (`P1-32-PRE-OD-INVG`); nothing is changed for it here.
+   */
+  it('the grid draws no detail; its support reference column draws the reference as it came', async () => {
+    const SUPPORT = '2628d9cb-61a0-401f-a5ad-1e485db15edd';
+    const record = {
+      ...row,
+      id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      seq: '6000',
+      action: 'sal.refund_request.approved',
+      entityType: 'sal.refund_request',
+      entityId: OBLIGATION,
+      correlationId: SUPPORT,
+    };
+    listAuditEvents.mockResolvedValue(okPage([record]));
     renderScreen();
     const table = await screen.findByRole('grid', { name: EN['audit.title'] as string });
     await within(table).findByText('Another change in sales and payments');
     const text = table.textContent ?? '';
-    expect(text).not.toContain(refundApproved.id);
-    expect(text).not.toContain(ACTOR_ID);
-    expect(text).not.toContain(RECORD_ID);
-    expect(text).not.toContain('sal.refund_request');
-    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    // No identifier of the record, of its actor or of what it is about, and no code.
+    for (const hidden of [record.id, ACTOR_ID, OBLIGATION, 'sal.refund_request']) {
+      expect(text, hidden).not.toContain(hidden);
+    }
+    // The one identifier the grid does draw: the support reference, under its heading.
+    expect(
+      within(table).getByRole('columnheader', { name: EN['audit.column.correlationId'] as string })
+    ).toBeVisible();
+    expect(within(table).getByText(SUPPORT)).toBeVisible();
+    expect(text.match(new RegExp(UUID_ANYWHERE.source, 'gi'))).toEqual([SUPPORT]);
   });
 });
 
