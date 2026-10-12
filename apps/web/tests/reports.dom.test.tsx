@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -49,6 +49,36 @@ const AR = ar as Record<string, string>;
  */
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
+
+/*
+ * The two days are the MIT date pickers since P1-32-PRE-OD-REPA (ADR-022): a
+ * group of spin buttons named by the label, typed part by part in the order both
+ * catalogues write a day (day, month, year), and holding a `YYYY-MM-DD` day.
+ */
+const dayGroup = (key: string, locale = 'en') =>
+  screen.getByRole('group', {
+    name: new RegExp(`^${escape((locale === 'ar' ? AR : EN)[key] as string)}`),
+  });
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  key: string,
+  day: string,
+  locale = 'en'
+): Promise<HTMLElement> {
+  const [year, month, date] = day.split('-');
+  const group = dayGroup(key, locale);
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(`${date ?? ''}${month ?? ''}${year ?? ''}`);
+  return group;
+}
+/** The day a picker holds, as it writes it into its own value input: `DD/MM/YYYY`. */
+function dayShown(key: string): string {
+  const input = dayGroup(key).parentElement?.querySelector('input');
+  if (!input) throw new Error('the picker has no value input');
+  return input.value;
+}
+/** `YYYY-MM-DD` as the English picker writes it. */
+const written = (day: string) => day.split('-').reverse().join('/');
 
 const listReportCatalogue = vi.fn();
 const readReport = vi.fn();
@@ -209,7 +239,7 @@ const runOk = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 
  * one. Naming the region is what makes each case say which half it means.
  */
 const rowsTable = (locale = 'en') =>
-  screen.getByRole('table', {
+  screen.getByRole('grid', {
     name: (locale === 'ar' ? AR : EN)['reports.run.rowsCaption'] as string,
   });
 const totalsTable = (locale = 'en') =>
@@ -261,19 +291,24 @@ async function renderReportPage(
     params: Promise.resolve({ locale, reportCode: CODE }),
     searchParams: Promise.resolve(search),
   })) as React.ReactElement;
-  // The locale layout's Material provider, which the moment picker of the D16
-  // as-of choice needs; the other cases render without it, as they always have.
-  const ui = pickers ? (
+  // The locale layout's Material provider. The day pickers of the scope form
+  // need it since P1-32-PRE-OD-REPA, so every case renders inside it; `pickers`
+  // is kept so the D16 cases still say that the moment picker needs it too.
+  void pickers;
+  const ui = withPickers(page, locale);
+  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
+}
+
+/** A screen inside the locale layout's Material provider, as the application renders it. */
+function withPickers(ui: React.ReactElement, locale = 'en') {
+  return (
     <UiFoundationProvider
       locale={locale === 'ar' ? 'ar' : 'en'}
       text={muiTextOf(getMessages(locale === 'ar' ? 'ar' : 'en'))}
     >
-      {page}
+      {ui}
     </UiFoundationProvider>
-  ) : (
-    page
   );
-  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
 }
 
 /** Fills the form and runs the report, returning the rendered container. */
@@ -290,10 +325,8 @@ async function showReport(locale = 'en', pickers = false) {
     screen.getByRole('combobox', { name: label('reports.run.branch') }),
     BRANCH_ID
   );
-  const from = screen.getByLabelText(label('reports.run.from'));
-  const to = screen.getByLabelText(label('reports.run.to'));
-  await user.type(from, '2026-09-01');
-  await user.type(to, '2026-09-08');
+  await typeDay(user, 'reports.run.from', '2026-09-01', locale);
+  await typeDay(user, 'reports.run.to', '2026-09-08', locale);
   await user.click(screen.getByRole('button', { name: messages['reports.run.show'] as string }));
   await waitFor(() => expect(runReport).toHaveBeenCalled());
   return rendered;
@@ -337,11 +370,44 @@ describe('both report pages decide the permission before they read', () => {
 });
 
 describe('the catalogue renders what the operation returned, and decides nothing', () => {
-  it('names a platform baseline by its message and shows its code as a code', async () => {
+  it('names a platform baseline by its message alone, and never prints its code beside it', async () => {
+    // The code is a machine name: a report with a name is shown by that name only
+    // (route checklist, the catalogue row; P1-32-PRE-OD-REPA).
     await renderCataloguePage();
     const title = await screen.findByText(EN['reports.work_orders_by_status.title'] as string);
     expect(title).toBeVisible();
-    expect(screen.getAllByText(CODE).length).toBeGreaterThan(0);
+    expect(screen.queryByText(CODE)).toBeNull();
+    expect(screen.queryByText('branch_cash_position')).toBeNull();
+  });
+
+  it('shows the code, as a code, only for a report with no name to show', async () => {
+    listReportCatalogue.mockResolvedValue(
+      cataloguePage([{ ...BASELINE, titleKey: 'reports.unknown_dataset.title' }])
+    );
+    await renderCataloguePage();
+    const code = await screen.findByText(CODE);
+    expect(code.tagName).toBe('CODE');
+    expect(code.closest('a')).toHaveAttribute('href', `/en/reports/${CODE}`);
+  });
+
+  it('says a report\u2019s level in words, never as the code the server stores', async () => {
+    listReportCatalogue.mockResolvedValue(
+      cataloguePage([
+        BASELINE,
+        { ...UNRUNNABLE, scopeLevel: 'company' },
+        { ...UNRUNNABLE, reportCode: 'tenant_wide', name: 'Everything', scopeLevel: 'tenant' },
+      ])
+    );
+    await renderCataloguePage();
+    const grid = await screen.findByRole('grid', {
+      name: EN['reports.catalogue.caption'] as string,
+    });
+    expect(within(grid).getByText(EN['reports.catalogue.scope.branch'] as string)).toBeVisible();
+    expect(within(grid).getByText(EN['reports.catalogue.scope.company'] as string)).toBeVisible();
+    expect(within(grid).getByText(EN['reports.catalogue.scope.tenant'] as string)).toBeVisible();
+    for (const code of ['branch', 'company', 'tenant']) {
+      expect(within(grid).queryByText(code, { exact: true })).toBeNull();
+    }
   });
 
   it('shows a workshop’s own definition under the name that workshop gave it', async () => {
@@ -357,12 +423,12 @@ describe('the catalogue renders what the operation returned, and decides nothing
     // the presence of a code would offer a run whose only outcome is a refusal.
     const { container } = await renderCataloguePage();
     const row = (await within(container).findByText('Counter takings')).closest(
-      'tr'
+      '[role="row"]'
     ) as HTMLElement;
     expect(within(row).getByText(EN['reports.catalogue.runnable.no'] as string)).toBeVisible();
     const baselineRow = (
       await within(container).findByText(EN['reports.work_orders_by_status.title'] as string)
-    ).closest('tr') as HTMLElement;
+    ).closest('[role="row"]') as HTMLElement;
     expect(
       within(baselineRow).getByText(EN['reports.catalogue.runnable.yes'] as string)
     ).toBeVisible();
@@ -391,6 +457,7 @@ describe('the catalogue renders what the operation returned, and decides nothing
     renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
     expect(await screen.findByText(EN['reports.catalogue.noneTitle'] as string)).toBeVisible();
     expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('grid')).toBeNull();
   });
 
   it.each([
@@ -404,19 +471,62 @@ describe('the catalogue renders what the operation returned, and decides nothing
     expect(screen.queryByText(EN['reports.catalogue.noneTitle'] as string)).toBeNull();
   });
 
+  it('offers a retry on an outage, and reads the same page again', async () => {
+    listReportCatalogue.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-cat' });
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await screen.findByText(EN['reports.work_orders_by_status.title'] as string)
+    ).toBeVisible();
+    expect(listReportCatalogue).toHaveBeenCalledTimes(2);
+    expect(listReportCatalogue).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: null }));
+  });
+
+  it('offers no retry on a refusal, which would be refused the same way', async () => {
+    listReportCatalogue.mockResolvedValue({ status: 'denied', correlationId: 'corr-cat' });
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    expect(await screen.findByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
   it('offers the next page only when the server said there is one', async () => {
     listReportCatalogue.mockResolvedValue(cataloguePage([BASELINE], true, 'next-cursor'));
     renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
-    const next = await screen.findByRole('button', { name: EN['reports.page.next'] as string });
-    expect(next).toBeEnabled();
-    expect(
-      screen.getByRole('button', { name: EN['reports.page.previous'] as string })
-    ).toBeDisabled();
+    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    await waitFor(() => expect(next).toBeEnabled());
+    expect(screen.getByRole('button', { name: EN['table.previousPage'] as string })).toBeDisabled();
+    // No total and no position in one: a page label, and nothing that counts.
+    expect(screen.getByTestId('report-catalogue-page')).toHaveTextContent(
+      (EN['mui.pagination.page'] as string).replace('{page}', '1')
+    );
     await userEvent.setup().click(next);
     await waitFor(() =>
       expect(listReportCatalogue).toHaveBeenLastCalledWith(
         expect.objectContaining({ cursor: 'next-cursor' })
       )
+    );
+  });
+
+  it('offers no next page when the server said the set ends here', async () => {
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    await screen.findByText(EN['reports.work_orders_by_status.title'] as string);
+    expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
+  });
+
+  it('asks for the page size the operator chooses, and starts from the first page', async () => {
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    await screen.findByText(EN['reports.work_orders_by_status.title'] as string);
+    expect(listReportCatalogue).toHaveBeenLastCalledWith({ cursor: null, limit: 50 });
+    await userEvent
+      .setup()
+      .selectOptions(
+        screen.getByRole('combobox', { name: EN['table.rowsPerPage'] as string }),
+        '25'
+      );
+    await waitFor(() =>
+      expect(listReportCatalogue).toHaveBeenLastCalledWith({ cursor: null, limit: 25 })
     );
   });
 });
@@ -440,11 +550,124 @@ describe('the report screen requests nothing until it has a branch and a period'
       screen.getByRole('combobox', { name: labelled('reports.run.branch') }),
       BRANCH_ID
     );
-    await user.type(screen.getByLabelText(labelled('reports.run.from')), '2026-09-08');
-    await user.type(screen.getByLabelText(labelled('reports.run.to')), '2026-09-08');
+    await typeDay(user, 'reports.run.from', '2026-09-08');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
     await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
     expect(await screen.findByText(EN['reports.run.toAfterFrom'] as string)).toBeVisible();
     expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('refuses a day only partly typed as unfinished, never as missing, and sends nothing', async () => {
+    await renderReportPage();
+    const user = userEvent.setup();
+    // The day and the month, and not the year.
+    const from = dayGroup('reports.run.from');
+    await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0109');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(from).toHaveAttribute('aria-invalid', 'true'));
+    expect(from).toHaveAccessibleDescription(
+      new RegExp(escape(EN['reports.run.dayIncomplete'] as string))
+    );
+    expect(screen.queryByText(EN['reports.run.needDay'] as string)).toBeNull();
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('submits on Enter in a day, as the native box did', async () => {
+    await renderReportPage();
+    const user = userEvent.setup();
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    await user.keyboard('{Enter}');
+    await waitFor(() =>
+      expect(runReport).toHaveBeenCalledWith(
+        expect.objectContaining({ from: '2026-09-01', to: '2026-09-08', cursor: null })
+      )
+    );
+  });
+
+  it('runs once for two presses of the button, the second while the first read is open', async () => {
+    // The first read is held open, so the second press lands on a screen that
+    // has already rendered it as being read, not inside the same batch.
+    let answer: (outcome: unknown) => void = () => undefined;
+    runReport.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    await renderReportPage();
+    const user = userEvent.setup();
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    const show = screen.getByRole('button', { name: EN['reports.run.show'] as string });
+    await user.click(show);
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('state-loading')).toBeInTheDocument();
+    await user.click(show);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(runReport).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      answer(runOk(OLD_ENVELOPE));
+      await Promise.resolve();
+    });
+    await screen.findByRole('grid', { name: EN['reports.run.rowsCaption'] as string });
+    expect(runReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the report again when the button is pressed on the selection already shown', async () => {
+    // Show is the operator asking for the report: pressed on the selection
+    // already on screen, once that answer has been drawn, it reads again, as the
+    // screen did before it moved to Material UI (P1-32-PRE-OD-REPA-03).
+    await showReport();
+    // The first answer is on screen — its row is drawn — before the next press.
+    await screen.findByRole('link', { name: 'W-000123' });
+    expect(runReport).toHaveBeenCalledTimes(1);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(2));
+    expect(runReport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reportCode: CODE,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+        cursor: null,
+      })
+    );
+    // The answer is drawn again, and a third press reads a third time.
+    await screen.findByRole('link', { name: 'W-000123' });
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(3));
+    await screen.findByRole('link', { name: 'W-000123' });
+  });
+
+  it('keeps a typed export reason when the same selection is read again, and asks nothing', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    readReport.mockResolvedValue({
+      status: 'ok',
+      data: { ...BASELINE, exportPermissionCode: 'rpt.export', source: 'tenant', versionNumber: 1 },
+      correlationId: null,
+    });
+    await showReport();
+    await screen.findByRole('link', { name: 'W-000123' });
+    const user = userEvent.setup();
+    const reason = () => screen.getByRole('textbox', { name: labelled('reports.export.reason') });
+    await user.type(reason(), 'Month-end figures');
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(2));
+    // Nothing would be lost, so nothing is asked; the reason is still there
+    // while the page is read and after it answers.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(reason()).toHaveValue('Month-end figures');
+    await screen.findByRole('link', { name: 'W-000123' });
+    expect(reason()).toHaveValue('Month-end figures');
+    expect(exportReport).not.toHaveBeenCalled();
   });
 
   it('moves the cursor to the first control to correct, and withdraws its complaint once it changes (route sweep B3)', async () => {
@@ -452,15 +675,12 @@ describe('the report screen requests nothing until it has a branch and a period'
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
     // One company and one branch are filled in for this caller; the first gap is the start day.
-    const from = screen.getByLabelText(labelled('reports.run.from'));
-    await waitFor(() => expect(from).toHaveFocus());
+    const from = dayGroup('reports.run.from');
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
     expect(from).toHaveAttribute('aria-invalid', 'true');
-    await user.type(from, '2026-09-01');
-    expect(from).not.toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveAttribute(
-      'aria-invalid',
-      'true'
-    );
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await waitFor(() => expect(from).not.toHaveAttribute('aria-invalid', 'true'));
+    expect(dayGroup('reports.run.to')).toHaveAttribute('aria-invalid', 'true');
     expect(runReport).not.toHaveBeenCalled();
   });
 
@@ -550,20 +770,22 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
     scopes: typeof SCOPES = SCOPES
   ) {
     return renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="first" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
-          <BranchSwitch to="all" label="everywhere" />
-          <ReportScreen
-            locale="en"
-            messages={en}
-            definition={BASELINE as never}
-            scopeOptions={scopes as never}
-            named={named}
-          />
-        </>,
-        { snapshot }
+      withPickers(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <BranchSwitch to="all" label="everywhere" />
+            <ReportScreen
+              locale="en"
+              messages={en}
+              definition={BASELINE as never}
+              scopeOptions={scopes as never}
+              named={named}
+            />
+          </>,
+          { snapshot }
+        )
       )
     );
   }
@@ -585,8 +807,8 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
       (screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement)
         .value
     ).toBe(BRANCH_ID);
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue(today);
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue(tomorrow);
+    expect(dayShown('reports.run.from')).toBe(written(today));
+    expect(dayShown('reports.run.to')).toBe(written(tomorrow));
     expect(screen.queryByText(EN['reports.run.idleTitle'] as string)).toBeNull();
   });
 
@@ -626,7 +848,7 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
       to: '2026-09-08',
     });
     expect(await screen.findByText(EN['reports.run.idleTitle'] as string)).toBeVisible();
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('2026-09-01');
+    expect(dayShown('reports.run.from')).toBe('01/09/2026');
     expect(runReport).not.toHaveBeenCalled();
   });
 });
@@ -649,8 +871,8 @@ describe('the address may fill the form in, and may not run it', () => {
       (screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement)
         .value
     ).toBe(BRANCH_ID);
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('2026-09-01');
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue('2026-09-08');
+    expect(dayShown('reports.run.from')).toBe('01/09/2026');
+    expect(dayShown('reports.run.to')).toBe('08/09/2026');
     // Filled in is not submitted. Nothing is read until the operator asks.
     expect(runReport).not.toHaveBeenCalled();
     expect(screen.getByText(EN['reports.run.idleTitle'] as string)).toBeVisible();
@@ -670,8 +892,8 @@ describe('the address may fill the form in, and may not run it', () => {
 
   it('refuses a period in the address that is not a calendar day', async () => {
     await renderReportPage('en', { from: 'yesterday', to: '2026-9-1' });
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('');
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue('');
+    expect(dayShown('reports.run.from')).toBe('');
+    expect(dayShown('reports.run.to')).toBe('');
   });
 });
 
@@ -717,7 +939,12 @@ describe('the result is rendered from the envelope, column kind by column kind',
     }
   });
 
-  it('draws an instant in a zone this browser does not know on the UTC clock', () => {
+  it('writes no time at all for an instant in a zone this browser does not know', () => {
+    // Behaviour correction (P1-32-PRE-OD-REPA-03): this case used to require the
+    // instant on the UTC clock. A UTC time beside days counted on the branch's
+    // clock reads as the branch's own, so the formatter now answers with no
+    // time at all (`null`) and the screen says so — see the describe
+    // "a branch zone this browser does not know is refused" below.
     // The zone check lives in lib/branch-time.ts so no feature file builds an
     // Intl formatter of its own (P1-27-FE-030).
     expect(isKnownZone('Asia/Amman')).toBe(true);
@@ -738,10 +965,20 @@ describe('the result is rendered from the envelope, column kind by column kind',
       dateStyle: 'medium',
       timeStyle: 'short',
     }).format(new Date('2026-09-03T07:15:00.000Z'));
-    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Not/A_Zone')).toBe(utc);
+    expect(utc).toContain('07:15');
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Not/A_Zone')).toBeNull();
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'ar', 'Not/A_Zone')).toBeNull();
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', '')).toBeNull();
     expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Asia/Amman')).toBe(
       amman('en-GB', '2026-09-03T07:15:00.000Z')
     );
+    // A calendar day carries no clock: it is the same day whatever the zone, so
+    // it is still written. A value that is no date is returned as it arrived.
+    expect(formatReportTime('2026-09-03', 'en', 'Not/A_Zone')).toBe(
+      formatReportTime('2026-09-03', 'en', 'Asia/Amman')
+    );
+    expect(formatReportTime('2026-09-03', 'en', 'Not/A_Zone')).not.toBeNull();
+    expect(formatReportTime('not a date', 'en', 'Not/A_Zone')).toBe('not a date');
   });
 
   it("says a work-order state in the reader's language, not the server's English name", async () => {
@@ -1061,8 +1298,15 @@ describe('the result is rendered from the envelope, column kind by column kind',
 describe('the period, the zone and the filter context travel with the result', () => {
   it('shows the period and the zone the server resolved it in', async () => {
     const { container } = await showReport();
-    expect(await within(container).findByText('2026-09-01')).toBeVisible();
-    expect(within(container).getByText('2026-09-08')).toBeVisible();
+    // Written for reading on the branch's clock, with the day itself kept as the
+    // machine value (completion standard: branch-local dates for display).
+    const from = await within(container).findByTestId('report-period-from');
+    expect(from).toHaveTextContent(formatReportTime('2026-09-01', 'en', 'Asia/Amman') as string);
+    expect(from).toHaveAttribute('dateTime', '2026-09-01');
+    const to = within(container).getByTestId('report-period-to');
+    expect(to).toHaveTextContent(formatReportTime('2026-09-08', 'en', 'Asia/Amman') as string);
+    expect(to).toHaveAttribute('dateTime', '2026-09-08');
+    expect(within(container).queryByText('2026-09-01')).toBeNull();
     // Named for a reader, with its offset — never the stored identifier (DF-B5).
     expect(within(container).getByTestId('report-zone')).toHaveTextContent('Jordan Time (GMT+3)');
     expect(within(container).queryByText('Asia/Amman')).toBeNull();
@@ -1107,6 +1351,439 @@ describe('the period, the zone and the filter context travel with the result', (
   });
 });
 
+describe('a branch zone this browser does not know is refused, never drawn on another clock', () => {
+  /*
+   * Owner decision D-17 as applied across the product (P1-32-PRE-OD-REPA-03): a
+   * business moment is entered and displayed on the branch's clock, and a zone
+   * that is not a clock is a refusal — never a time on UTC under the zone's
+   * stored name, which is what this screen drew before.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const AS_OF = '2026-09-07T21:00:00.000Z';
+  const UNKNOWN_ZONE_ENVELOPE = {
+    ...NEW_ENVELOPE,
+    period: { from: '2026-09-01', to: '2026-09-08', timezone: 'Not/A_Zone' },
+    freshness: 'as_of',
+    asOf: AS_OF,
+  };
+  /** The instant as the UTC clock would write it — the thing that must not be drawn. */
+  const onUtc = (intl: string, instant: string) =>
+    new Intl.DateTimeFormat(intl, {
+      timeZone: 'UTC',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(instant));
+
+  /** The screen in a working branch whose own zone is known, read on arrival. */
+  function renderInBranch(
+    locale: 'en' | 'ar' = 'en',
+    snapshot = branchSnapshot(),
+    scopes: unknown = SCOPES
+  ) {
+    const ui = withPickers(
+      inBranch(
+        <ReportScreen
+          locale={locale}
+          messages={locale === 'ar' ? ar : en}
+          definition={BASELINE as never}
+          scopeOptions={scopes as never}
+        />,
+        { snapshot, locale }
+      ),
+      locale
+    );
+    return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
+  }
+
+  it.each([
+    ['en', 'en-GB'],
+    ['ar', 'ar-JO-u-nu-latn'],
+  ] as const)(
+    'writes no time and no zone identifier, and says the zone is not known (%s)',
+    async (locale, intl) => {
+      const M = locale === 'ar' ? AR : EN;
+      runReport.mockResolvedValue(runOk(UNKNOWN_ZONE_ENVELOPE));
+      const { container } = renderInBranch(locale);
+
+      const zone = await within(container).findByTestId('report-zone');
+      expect(zone).toHaveTextContent(M['reports.context.timezoneUnknown'] as string);
+      expect(zone).toHaveAttribute('data-zone-unknown', 'true');
+      // The stored name is a configuration value and is not shown.
+      expect(container).not.toHaveTextContent('Not/A_Zone');
+
+      // The time the report was read, the row's instant and the moment the
+      // amounts are as of: none is written, on UTC or on any other clock.
+      const readAt = within(container).getByTestId('report-generated-at');
+      expect(readAt).toHaveTextContent(M['reports.time.notShown'] as string);
+      expect(readAt.tagName).not.toBe('TIME');
+      expect(
+        within(rowsTable(locale)).getByText(M['reports.time.notShown'] as string)
+      ).toBeVisible();
+      expect(within(container).getByTestId('report-as-of')).toHaveTextContent(
+        M['reports.asOf.statementZoneUnknown'] as string
+      );
+      for (const instant of [OLD_ENVELOPE.generatedAt, '2026-09-03T07:15:00.000Z', AS_OF]) {
+        expect(container).not.toHaveTextContent(onUtc(intl, instant));
+        expect(container).not.toHaveTextContent(amman(intl, instant));
+        expect(container).not.toHaveTextContent(instant);
+      }
+      expect(container.querySelectorAll('time[datetime*="T"]')).toHaveLength(0);
+
+      // The reason is said, and the sentence about "the zone named above" is not.
+      expect(
+        within(container).getByText(M['reports.context.zoneUnknownNote'] as string)
+      ).toBeVisible();
+      expect(within(container).queryByText(M['reports.context.periodNote'] as string)).toBeNull();
+
+      // A calendar day carries no clock, so the period's two days are still written.
+      const from = within(container).getByTestId('report-period-from');
+      expect(from.tagName).toBe('TIME');
+      expect(from).toHaveAttribute('dateTime', '2026-09-01');
+      expect(from).toHaveTextContent(
+        formatReportTime('2026-09-01', locale, 'Asia/Amman') as string
+      );
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'draws the moment refusal in place of the picker, so no moment can be typed or applied (%s)',
+    async (locale) => {
+      const M = locale === 'ar' ? AR : EN;
+      runReport.mockResolvedValue(runOk(UNKNOWN_ZONE_ENVELOPE));
+      const { container } = renderInBranch(locale);
+      await within(container).findByTestId('report-as-of');
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('radio', { name: M['reports.asOf.specific'] as string }));
+
+      const field = screen.getByTestId('report-as-of-moment');
+      expect(field).toHaveAttribute('data-zone-refused', 'true');
+      expect(within(field).getByText(M['reports.asOf.moment'] as string)).toBeVisible();
+      expect(within(field).getByTestId('date-time-requires-branch')).toHaveTextContent(
+        M['dateField.zoneUnknown'] as string
+      );
+      // No picker: nothing to type a moment into, on any clock.
+      expect(within(field).queryByRole('spinbutton')).toBeNull();
+      expect(
+        screen.queryByRole('group', {
+          name: new RegExp(`^${escape(M['reports.asOf.moment'] as string)}`),
+        })
+      ).toBeNull();
+
+      // Applying "a specific moment" sends nothing, and complains about no
+      // box: there is none to complete.
+      const calls = runReport.mock.calls.length;
+      const apply = screen.getByRole('button', { name: M['reports.asOf.apply'] as string });
+      await user.click(apply);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(runReport).toHaveBeenCalledTimes(calls);
+      expect(runReport).not.toHaveBeenCalledWith(
+        expect.objectContaining({ asOf: expect.stringMatching(/^\d{4}-/) })
+      );
+      expect(screen.queryByText(M['reports.asOf.chooseMoment'] as string)).toBeNull();
+      expect(screen.getByTestId('report-as-of-moment')).toHaveAttribute(
+        'data-zone-refused',
+        'true'
+      );
+
+      // The choices that need no clock here still work: "Now" is the server's.
+      await user.click(screen.getByRole('radio', { name: M['reports.asOf.now'] as string }));
+      expect(screen.queryByTestId('report-as-of-moment')).toBeNull();
+      await user.click(apply);
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ asOf: 'now', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(calls + 1);
+    }
+  );
+
+  it('keeps the picker for a zone the browser knows', async () => {
+    runReport.mockResolvedValue(
+      runOk({ ...UNKNOWN_ZONE_ENVELOPE, period: { ...OLD_ENVELOPE.period } })
+    );
+    const { container } = renderInBranch();
+    await within(container).findByTestId('report-as-of');
+    await userEvent
+      .setup()
+      .click(screen.getByRole('radio', { name: EN['reports.asOf.specific'] as string }));
+    expect(screen.getByRole('group', { name: labelled('reports.asOf.moment') })).toBeVisible();
+    expect(screen.getByTestId('report-as-of-moment')).not.toHaveAttribute('data-zone-refused');
+    expect(within(container).queryByTestId('date-time-requires-branch')).toBeNull();
+    expect(within(container).getByTestId('report-zone')).toHaveTextContent('Jordan Time (GMT+3)');
+  });
+
+  it.each([
+    ['en', 'Mars/Base'],
+    ['ar', 'Mars/Base'],
+    ['en', ''],
+  ] as const)(
+    'arrives in a working branch whose zone is not a clock without throwing, and derives no day (%s, zone %j)',
+    async (locale, timezone) => {
+      // Arrival used to ask for today on the working branch's zone unchecked,
+      // which threw for a name the browser cannot resolve. Now nothing is read:
+      // the form starts on the working branch with both days empty — no day
+      // taken from the browser's clock or from UTC — and its note says why.
+      const M = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(M[key] as string)}`);
+      const held = (key: string) =>
+        dayGroup(key, locale).parentElement?.querySelector('input')?.value;
+      // Two branches in the directory, so the branch shown is the working one
+      // and not merely the only one there is.
+      const scopes = {
+        ...SCOPES,
+        data: {
+          companies: SCOPES.data.companies,
+          branches: [
+            { id: OTHER_BRANCH.id, companyId: COMPANY_ID, name: 'Second branch' },
+            ...SCOPES.data.branches,
+          ],
+        },
+      };
+      const { container } = renderInBranch(
+        locale,
+        branchSnapshot([{ ...TEST_BRANCH, timezone }]),
+        scopes
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(
+        (screen.getByRole('combobox', { name: label('reports.run.branch') }) as HTMLSelectElement)
+          .value
+      ).toBe(BRANCH_ID);
+      expect(screen.getByTestId('report-scope-zone-unknown')).toHaveTextContent(
+        M['reports.run.zoneUnknownNote'] as string
+      );
+      // No day at all: not today on the browser's clock, not today on UTC.
+      expect(held('reports.run.from')).toBe('');
+      expect(held('reports.run.to')).toBe('');
+      const todayHere = dayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
+      for (const day of new Set([todayHere, dayIn('UTC')])) {
+        expect(container).not.toHaveTextContent(written(day));
+        expect(container).not.toHaveTextContent(day);
+      }
+      expect(runReport).not.toHaveBeenCalled();
+      expect(within(container).getByText(M['reports.run.idleTitle'] as string)).toBeVisible();
+
+      // The operator's own days still run the report for that branch.
+      const user = userEvent.setup();
+      await typeDay(user, 'reports.run.from', '2026-09-01', locale);
+      await typeDay(user, 'reports.run.to', '2026-09-08', locale);
+      await user.click(screen.getByRole('button', { name: M['reports.run.show'] as string }));
+      await waitFor(() =>
+        expect(runReport).toHaveBeenCalledWith(
+          expect.objectContaining({
+            companyId: COMPANY_ID,
+            branchId: BRANCH_ID,
+            from: '2026-09-01',
+            to: '2026-09-08',
+            cursor: null,
+          })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('says so in the scope form when the chosen branch has no known zone, and still sends the days as typed', async () => {
+    // The day sent is the day typed whatever the zone, so the form is not
+    // refused; what the zone decides is the day the calendar marks as today,
+    // and the form says that mark may be another day.
+    const UNKNOWN_BRANCH = { ...OTHER_BRANCH, timezone: 'Mars/Base' };
+    const scopes = {
+      ...SCOPES,
+      data: {
+        companies: SCOPES.data.companies,
+        branches: [
+          ...SCOPES.data.branches,
+          { id: OTHER_BRANCH.id, companyId: COMPANY_ID, name: 'Second branch' },
+        ],
+      },
+    };
+    renderLtr(
+      withPickers(
+        inBranch(
+          <ReportScreen
+            locale="en"
+            messages={en}
+            definition={BASELINE as never}
+            scopeOptions={scopes as never}
+            named={{ companyId: COMPANY_ID, branchId: BRANCH_ID }}
+          />,
+          { snapshot: branchSnapshot([TEST_BRANCH, UNKNOWN_BRANCH]) }
+        )
+      )
+    );
+    const user = userEvent.setup();
+    const branch = screen.getByRole('combobox', { name: labelled('reports.run.branch') });
+    // A branch whose zone the working context knows: nothing to say.
+    expect((branch as HTMLSelectElement).value).toBe(BRANCH_ID);
+    expect(screen.queryByTestId('report-scope-zone-unknown')).toBeNull();
+
+    await user.selectOptions(branch, OTHER_BRANCH.id);
+    expect(screen.getByTestId('report-scope-zone-unknown')).toHaveTextContent(
+      EN['reports.run.zoneUnknownNote'] as string
+    );
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    expect(dayShown('reports.run.from')).toBe(written('2026-09-01'));
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() =>
+      expect(runReport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          branchId: OTHER_BRANCH.id,
+          from: '2026-09-01',
+          to: '2026-09-08',
+          cursor: null,
+        })
+      )
+    );
+
+    await user.selectOptions(branch, BRANCH_ID);
+    expect(screen.queryByTestId('report-scope-zone-unknown')).toBeNull();
+  });
+});
+
+describe('the scope form shows and sends exactly the day typed, on any clock', () => {
+  /*
+   * P1-32-PRE-OD-REPA-04. A calendar day has no clock, so the day typed is the
+   * day shown and the day sent — for a branch whose zone is known, for one
+   * whose zone is not, and when the branch (and so the clock) changes under the
+   * form. Before this round a zone that changed under a mounted picker, and the
+   * browser's clock as the fallback, each moved the day by one on some
+   * machines: the hosted runner (UTC) showed 31/08 for a typed 01/09.
+   *
+   * Nothing here is computed from the clock of the machine running the test:
+   * the days are literals. The three zones are chosen so that the cases mean
+   * something on ANY machine clock — one far east of every likely runner
+   * (Pacific/Auckland), one far west (Pacific/Honolulu), and the region the
+   * product is used in (Asia/Riyadh). A change towards a clock west of the
+   * old one is what moved the day, and with these there is always one.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const scopes = {
+    ...SCOPES,
+    data: {
+      companies: SCOPES.data.companies,
+      branches: [
+        ...SCOPES.data.branches,
+        { id: OTHER_BRANCH.id, companyId: COMPANY_ID, name: 'Second branch' },
+      ],
+    },
+  };
+  /** BRANCH_ID stands on `knownZone`; the second branch's zone is no clock at all. */
+  function renderForm(knownZone: string, startOn: string) {
+    return renderLtr(
+      withPickers(
+        inBranch(
+          <ReportScreen
+            locale="en"
+            messages={en}
+            definition={BASELINE as never}
+            scopeOptions={scopes as never}
+            named={{ companyId: COMPANY_ID, branchId: startOn }}
+          />,
+          {
+            snapshot: branchSnapshot([
+              { ...TEST_BRANCH, timezone: knownZone },
+              { ...OTHER_BRANCH, timezone: 'Mars/Base' },
+            ]),
+          }
+        )
+      )
+    );
+  }
+  const branchBox = () =>
+    screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement;
+  const shownDays = () => ({
+    from: dayShown('reports.run.from'),
+    to: dayShown('reports.run.to'),
+  });
+  /** Presses Show and answers with the branch and the two days of the one read it spent. */
+  async function sentDays(user: ReturnType<typeof userEvent.setup>) {
+    runReport.mockClear();
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    const sent = runReport.mock.calls[0]?.[0] as {
+      readonly branchId: string;
+      readonly from: string;
+      readonly to: string;
+    };
+    return { branchId: sent.branchId, from: sent.from, to: sent.to };
+  }
+
+  describe.each(['Asia/Riyadh', 'Pacific/Auckland', 'Pacific/Honolulu'])(
+    'with the known branch on %s',
+    (knownZone) => {
+      it.each([
+        ['a branch whose zone is known', BRANCH_ID, null],
+        ['a branch whose zone is not known', OTHER_BRANCH.id, null],
+        ['a change from a known zone to an unknown one', BRANCH_ID, OTHER_BRANCH.id],
+        ['a change from an unknown zone to a known one', OTHER_BRANCH.id, BRANCH_ID],
+      ])('for %s', async (_what, startOn, changeTo) => {
+        renderForm(knownZone, startOn);
+        const user = userEvent.setup();
+        expect(branchBox().value).toBe(startOn);
+        // The change, when there is one, is made with both day fields mounted
+        // and empty — the state the hosted failure was in.
+        if (changeTo !== null) await user.selectOptions(branchBox(), changeTo);
+        const reportedOn = changeTo ?? startOn;
+        expect(screen.queryByTestId('report-scope-zone-unknown') !== null).toBe(
+          reportedOn === OTHER_BRANCH.id
+        );
+
+        await typeDay(user, 'reports.run.from', '2026-09-01');
+        await typeDay(user, 'reports.run.to', '2026-09-08');
+        expect(shownDays()).toEqual({ from: '01/09/2026', to: '08/09/2026' });
+        expect(await sentDays(user)).toEqual({
+          branchId: reportedOn,
+          from: '2026-09-01',
+          to: '2026-09-08',
+        });
+        // Still the days typed once the report has answered.
+        expect(shownDays()).toEqual({ from: '01/09/2026', to: '08/09/2026' });
+      });
+
+      it('keeps a whole day across a change of branch, and drops a half-typed one with its complaint', async () => {
+        renderForm(knownZone, BRANCH_ID);
+        const user = userEvent.setup();
+        await typeDay(user, 'reports.run.from', '2026-09-01');
+        // The day and the month of the second day, and no year.
+        const to = dayGroup('reports.run.to');
+        await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+        await user.keyboard('0809');
+        await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+        await waitFor(() => expect(to).toHaveAttribute('aria-invalid', 'true'));
+        expect(runReport).not.toHaveBeenCalled();
+
+        for (const next of [OTHER_BRANCH.id, BRANCH_ID]) {
+          await user.selectOptions(branchBox(), next);
+          // The whole day is the form's and stays; the half-typed one went with
+          // the picker it was typed into, and nothing complains about an empty box.
+          expect(shownDays()).toEqual({ from: '01/09/2026', to: '' });
+          expect(dayGroup('reports.run.to')).not.toHaveAttribute('aria-invalid', 'true');
+          expect(screen.queryByText(EN['reports.run.dayIncomplete'] as string)).toBeNull();
+        }
+
+        await user.selectOptions(branchBox(), OTHER_BRANCH.id);
+        await typeDay(user, 'reports.run.to', '2026-09-08');
+        expect(shownDays()).toEqual({ from: '01/09/2026', to: '08/09/2026' });
+        expect(await sentDays(user)).toEqual({
+          branchId: OTHER_BRANCH.id,
+          from: '2026-09-01',
+          to: '2026-09-08',
+        });
+      });
+    }
+  );
+});
+
 describe('the totals are the server’s, over the whole period and never over the page', () => {
   it('reads the deprecated state counts when the envelope carries no grouping', async () => {
     await showReport();
@@ -1142,6 +1819,60 @@ describe('the totals are the server’s, over the whole period and never over th
     runReport.mockResolvedValue(runOk({ ...OLD_ENVELOPE, countsByState: [] }));
     await showReport();
     expect(screen.queryByText(EN['reports.groups.heading'] as string)).toBeNull();
+  });
+});
+
+describe('a name that is missing is said to be missing, and no identifier is shown', () => {
+  it('says the name is not available for the company and the branch, and names the result in words', async () => {
+    // The run names its report by a key this build has no words for, and
+    // carries no branch of its own.
+    runReport.mockResolvedValue(
+      runOk({ ...OLD_ENVELOPE, titleKey: 'reports.unknown_dataset.title' })
+    );
+    const view = (scopes: unknown) =>
+      withPickers(
+        <ReportScreen
+          locale="en"
+          messages={en}
+          definition={BASELINE as never}
+          scopeOptions={scopes as never}
+        />
+      );
+    const { container, rerender } = renderLtr(view(SCOPES));
+    const user = userEvent.setup();
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await within(container).findByTestId('report-zone');
+    expect(within(fact('reports.context.company')).getByText('Workshop company')).toBeVisible();
+
+    // The directory is read again and no longer holds the pair the report was
+    // run for: there is no name left to show for either.
+    rerender(
+      view({
+        ...SCOPES,
+        data: {
+          companies: [{ id: PARTNER_ID, legalName: 'Another company' }],
+          branches: [{ id: WORK_ORDER_ID, companyId: PARTNER_ID, name: 'Another branch' }],
+        },
+      })
+    );
+    const company = await within(container).findByTestId('report-company-unnamed');
+    expect(company).toHaveTextContent(EN['reports.context.nameUnavailable'] as string);
+    expect(fact('reports.context.company')).toContainElement(company);
+    const branch = within(container).getByTestId('report-branch-unnamed');
+    expect(branch).toHaveTextContent(EN['reports.context.nameUnavailable'] as string);
+    expect(fact('reports.context.branch')).toContainElement(branch);
+    // Neither identifier, and not the report's code, anywhere on the screen.
+    expect(container).not.toHaveTextContent(COMPANY_ID);
+    expect(container).not.toHaveTextContent(BRANCH_ID);
+    expect(container).not.toHaveTextContent(CODE);
+    expect(
+      screen.getByRole('heading', { level: 3, name: EN['reports.run.title'] as string })
+    ).toBeInTheDocument();
+    // The product's own "name not available" wording, in both languages.
+    expect(EN['reports.context.nameUnavailable']).toBe(EN['audit.actor.unnamed']);
+    expect(AR['reports.context.nameUnavailable']).toBe(AR['audit.actor.unnamed']);
   });
 });
 
@@ -1197,7 +1928,10 @@ describe('the screens read in Arabic as Arabic', () => {
 
   it('keeps the same screen for both languages rather than a second Arabic one', () => {
     renderRtl(
-      <ReportScreen locale="ar" messages={ar} definition={BASELINE} scopeOptions={SCOPES} />
+      withPickers(
+        <ReportScreen locale="ar" messages={ar} definition={BASELINE} scopeOptions={SCOPES} />,
+        'ar'
+      )
     );
     expect(screen.getByText(AR['reports.run.show'] as string)).toBeVisible();
   });
@@ -1213,9 +1947,7 @@ describe('export uses the displayed report selection', () => {
     });
     await showReport();
     const user = userEvent.setup();
-    const from = screen.getByLabelText(labelled('reports.run.from'));
-    await user.clear(from);
-    await user.type(from, '2026-09-02');
+    await typeDay(user, 'reports.run.from', '2026-09-02');
     await user.type(
       screen.getByRole('textbox', { name: labelled('reports.export.reason') }),
       'Export displayed period'
@@ -1232,6 +1964,97 @@ describe('export uses the displayed report selection', () => {
     );
     expect(runReport).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps a typed export reason, and the page label, across a page move', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    readReport.mockResolvedValue({
+      status: 'ok',
+      data: { ...BASELINE, exportPermissionCode: 'rpt.export', source: 'tenant', versionNumber: 1 },
+      correlationId: null,
+    });
+    runReport.mockResolvedValue(
+      runOk({ ...OLD_ENVELOPE, rows: { items: [ROW], nextCursor: 'page-2', hasMore: true } })
+    );
+    await showReport();
+    const user = userEvent.setup();
+    const reason = screen.getByRole('textbox', { name: labelled('reports.export.reason') });
+    await user.type(reason, 'Keep this reason');
+    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
+    await waitFor(() =>
+      expect(runReport).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'page-2' }))
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('report-rows-page')).toHaveTextContent(
+        (EN['mui.pagination.page'] as string).replace('{page}', '2')
+      )
+    );
+    expect(screen.getByRole('textbox', { name: labelled('reports.export.reason') })).toHaveValue(
+      'Keep this reason'
+    );
+    expect(exportReport).not.toHaveBeenCalled();
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'asks before Show with another period drops a typed export reason (%s)',
+    async (locale) => {
+      const messages = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
+      PERMISSIONS = [READ, 'rpt.export'];
+      readReport.mockResolvedValue({
+        status: 'ok',
+        data: {
+          ...BASELINE,
+          exportPermissionCode: 'rpt.export',
+          source: 'tenant',
+          versionNumber: 1,
+        },
+        correlationId: null,
+      });
+      await showReport(locale);
+      const user = userEvent.setup();
+      const reason = () => screen.getByRole('textbox', { name: label('reports.export.reason') });
+      await user.type(reason(), 'Month-end figures');
+      await typeDay(user, 'reports.run.from', '2026-09-02', locale);
+      const show = screen.getByRole('button', { name: messages['reports.run.show'] as string });
+      await user.click(show);
+
+      const dialog = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      expect(dialog).toHaveAccessibleDescription(
+        messages['reports.run.discard.description'] as string
+      );
+      // Nothing was read behind the question.
+      expect(runReport).toHaveBeenCalledTimes(1);
+      await user.click(
+        within(dialog).getByRole('button', { name: messages['reports.run.discard.stay'] as string })
+      );
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(reason()).toHaveValue('Month-end figures');
+      expect(runReport).toHaveBeenCalledTimes(1);
+
+      await user.click(show);
+      const again = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      await user.click(
+        within(again).getByRole('button', {
+          name: messages['reports.run.discard.confirm'] as string,
+        })
+      );
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ from: '2026-09-02', to: '2026-09-08', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(reason()).toHaveValue(''));
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(exportReport).not.toHaveBeenCalled();
+    }
+  );
 
   it('keeps a configured report withheld when the session lacks export permission', async () => {
     readReport.mockResolvedValue({
@@ -1331,9 +2154,9 @@ describe('D16 — the amounts are as of a stated moment', () => {
         expect.objectContaining({ asOf: 'now', cursor: null })
       )
     );
-    await user.click(
-      await screen.findByRole('button', { name: EN['reports.page.next'] as string })
-    );
+    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
     // The next page is computed as of the moment the first one answered with,
     // not "now" again.
     await waitFor(() =>
@@ -1419,6 +2242,120 @@ describe('D16 — the amounts are as of a stated moment', () => {
     );
   });
 
+  it('reads nothing again when Apply is pressed twice with the same choice', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport();
+    await screen.findByTestId('report-as-of');
+    const calls = runReport.mock.calls.length;
+    const user = userEvent.setup();
+    /*
+     * Every press is its own interaction, made on the screen as it stands after
+     * the one before (P1-32-PRE-OD-REPA-03). Two clicks inside one `act()` are
+     * one batch, and the second of them never met a screen that had rendered
+     * the first — so that shape passed with or without the guard.
+     */
+    const apply = () => screen.getByRole('button', { name: EN['reports.asOf.apply'] as string });
+    const settle = () =>
+      act(async () => {
+        await Promise.resolve();
+      });
+    // The choice already shown (the end of the period), applied twice.
+    await user.click(apply());
+    await settle();
+    await user.click(apply());
+    await settle();
+    expect(runReport).toHaveBeenCalledTimes(calls);
+
+    // Another choice is a new answer, read once.
+    await user.click(screen.getByRole('radio', { name: EN['reports.asOf.now'] as string }));
+    await user.click(apply());
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(calls + 1));
+    expect(runReport).toHaveBeenLastCalledWith(expect.objectContaining({ asOf: 'now' }));
+    // That answer is drawn, with "Now" still the choice in its own form: the
+    // second press lands on it, reaches the handler, and reads nothing.
+    await screen.findByTestId('report-as-of');
+    expect(screen.getByRole('radio', { name: EN['reports.asOf.now'] as string })).toBeChecked();
+    await user.click(apply());
+    await settle();
+    await user.click(apply());
+    await settle();
+    expect(runReport).toHaveBeenCalledTimes(calls + 1);
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'asks before a different as-of choice drops a typed export reason (%s)',
+    async (locale) => {
+      const messages = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
+      PERMISSIONS = [READ, 'rpt.export'];
+      readReport.mockResolvedValue({
+        status: 'ok',
+        data: {
+          ...BASELINE,
+          exportPermissionCode: 'rpt.export',
+          source: 'tenant',
+          versionNumber: 1,
+        },
+        correlationId: null,
+      });
+      runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+      await showReport(locale);
+      await screen.findByTestId('report-as-of');
+      const user = userEvent.setup();
+      const reason = () => screen.getByRole('textbox', { name: label('reports.export.reason') });
+      await user.type(reason(), 'Month-end figures');
+      const calls = runReport.mock.calls.length;
+      await user.click(screen.getByRole('radio', { name: messages['reports.asOf.now'] as string }));
+      const apply = screen.getByRole('button', { name: messages['reports.asOf.apply'] as string });
+      await user.click(apply);
+
+      const dialog = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      // Nothing was read behind the question.
+      expect(runReport).toHaveBeenCalledTimes(calls);
+      await user.click(
+        within(dialog).getByRole('button', { name: messages['reports.run.discard.stay'] as string })
+      );
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(reason()).toHaveValue('Month-end figures');
+      expect(runReport).toHaveBeenCalledTimes(calls);
+
+      await user.click(apply);
+      const again = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      await user.click(
+        within(again).getByRole('button', {
+          name: messages['reports.run.discard.confirm'] as string,
+        })
+      );
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ asOf: 'now', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(calls + 1);
+      await screen.findByTestId('report-as-of');
+      await waitFor(() => expect(reason()).toHaveValue(''));
+      expect(exportReport).not.toHaveBeenCalled();
+    }
+  );
+
+  it('puts the cursor on a refused moment', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport('en', true);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('radio', { name: EN['reports.asOf.specific'] as string })
+    );
+    await typeMoment(user, '0309');
+    await user.click(screen.getByRole('button', { name: EN['reports.asOf.apply'] as string }));
+    const moment = screen.getByRole('group', { name: labelled('reports.asOf.moment') });
+    await waitFor(() => expect(moment).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(moment.contains(document.activeElement)).toBe(true));
+  });
+
   it('reads in Arabic as Arabic, right to left', async () => {
     runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
     const { container } = await showReport('ar');
@@ -1442,7 +2379,15 @@ describe('D16 — the amounts are as of a stated moment', () => {
  * shown, the snapshots of the period listed with their restatement chain, a frozen
  * snapshot read with its banner and difference, and a restatement of the latest one
  * that cannot be saved without a reason. Saving and restating are offered only to an
- * operator holding the export permission.
+ * operator holding `rpt.report.configure` (P1-32-PRE-OD-FD16C).
+ *
+ * On the Material UI wrappers (P1-32-PRE-OD-REPB): the list is `OperationalGrid`
+ * over the list operation's cursor pages, its rows are grid rows and "View" is a
+ * pressed choice named with the moment it opens; saving and restating are form
+ * dialogs (`role="dialog"`, never an alert dialog), each sending once however
+ * often it is pressed; a refusal because another snapshot already stands names
+ * that snapshot and offers it. Rendered under the locale layout's Material
+ * provider, as every screen on these wrappers is.
  */
 describe('D16 — snapshots keep a report as it was, and restatements are distinguished', () => {
   const AS_OF = '2026-09-07T21:00:00.000Z';
@@ -1509,12 +2454,47 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
           columns: COLUMNS,
           rows: { items: [ROW], nextCursor: null, hasMore: false },
         };
-  const at = (instant: string) => formatReportTime(instant, 'en', 'Asia/Amman');
+  // Asia/Amman is a zone every runtime knows, so the formatter answers with a time.
+  const at = (instant: string) => formatReportTime(instant, 'en', 'Asia/Amman') as string;
   const fill = (template: string, values: Record<string, string>) =>
     Object.entries(values).reduce(
       (text, [key, value]) => text.replace(`{${key}}`, value),
       template
     );
+  /** The report, run, under the Material provider the wrappers render in. */
+  const show = (locale = 'en') => showReport(locale, true);
+  /**
+   * The snapshot rows of the grid, once its page is read: the grid's own rows
+   * after its header row, each a `row` with its cells.
+   */
+  async function snapshotItems(count: number): Promise<HTMLElement[]> {
+    const list = await screen.findByTestId('report-snapshot-list');
+    let items: HTMLElement[] = [];
+    await waitFor(() => {
+      items = within(list).getAllByRole('row').slice(1);
+      expect(items).toHaveLength(count);
+      expect(within(items[0] as HTMLElement).getAllByRole('gridcell').length).toBeGreaterThan(0);
+    });
+    return items;
+  }
+  /** A row's "View" — named with the moment it opens, so its name starts with the word. */
+  const viewOf = (item: HTMLElement, messages: Record<string, string> = EN) =>
+    within(item).getByRole('button', {
+      name: new RegExp(`^${escape(messages['reports.snapshots.view'] as string)}`),
+    });
+  /** Two presses inside ONE act(), before React re-renders a disabled button. */
+  const twice = (button: HTMLElement) =>
+    act(() => {
+      button.click();
+      button.click();
+    });
+  function gate<T>() {
+    let open: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+      open = resolve;
+    });
+    return { promise, open: (value: T) => open(value) };
+  }
 
   beforeEach(() => {
     runReport.mockResolvedValue(runOk(SNAP_ENVELOPE));
@@ -1528,7 +2508,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
 
   it('lists the period’s snapshots by name, never by identifier, with the chain visible', async () => {
     PERMISSIONS = [READ, CONFIGURE];
-    await showReport();
+    await show();
     const list = await screen.findByTestId('report-snapshot-list');
     expect(listReportSnapshots).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1539,14 +2519,69 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
         to: '2026-09-08',
       })
     );
-    const items = within(list).getAllByTestId('report-snapshot-item');
-    expect(items).toHaveLength(2);
+    const items = await snapshotItems(2);
     expect(items[0]).toHaveTextContent(EN['reports.snapshots.kind.restatement'] as string);
     expect(items[0]).toHaveTextContent(EN['reports.snapshots.nameHidden'] as string);
     expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.original'] as string);
     expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.restated'] as string);
     expect(items[1]).toHaveTextContent('Rana Haddad');
     expect(list.textContent).not.toContain(SAVER_ID);
+    // The grid, named; "View" names the moment it opens and is a choice (G12).
+    expect(
+      screen.getByRole('grid', { name: EN['reports.snapshots.listCaption'] as string })
+    ).toBeInTheDocument();
+    expect(viewOf(items[1] as HTMLElement)).toHaveAccessibleName(
+      `${EN['reports.snapshots.view'] as string} ${at(ORIGINAL.generatedAt)}`
+    );
+    expect(viewOf(items[1] as HTMLElement)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('walks the snapshot list with the server cursor, a page at a time', async () => {
+    PERMISSIONS = [READ];
+    listReportSnapshots
+      .mockResolvedValueOnce(cataloguePage([RESTATEMENT], true, 'cursor-2'))
+      .mockResolvedValueOnce(cataloguePage([ORIGINAL]));
+    await show();
+    await snapshotItems(1);
+    const user = userEvent.setup();
+    await user.click(
+      within(await screen.findByTestId('report-snapshot-list')).getByRole('button', {
+        name: EN['table.nextPage'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listReportSnapshots).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: 'cursor-2' })
+      )
+    );
+    const items = await snapshotItems(1);
+    expect(items[0]).toHaveTextContent('Rana Haddad');
+  });
+
+  it('says plainly when no snapshot has been saved for the period', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    listReportSnapshots.mockResolvedValue(cataloguePage([]));
+    await show();
+    const none = await screen.findByTestId('report-snapshots-none');
+    expect(none).toHaveTextContent(EN['reports.snapshots.noneTitle'] as string);
+    expect(none).toHaveTextContent(EN['reports.snapshots.none'] as string);
+  });
+
+  it('says an unreadable list as an outage with a retry, never as no snapshots', async () => {
+    PERMISSIONS = [READ];
+    listReportSnapshots.mockResolvedValue({ status: 'unavailable', correlationId: 'snap-503' });
+    await show();
+    const panel = await screen.findByTestId('report-snapshots');
+    expect(
+      await within(panel).findByText(EN['reports.snapshots.unavailable'] as string)
+    ).toBeVisible();
+    expect(within(panel).getByText('snap-503')).toBeVisible();
+    expect(within(panel).queryByTestId('report-snapshots-none')).toBeNull();
+    listReportSnapshots.mockResolvedValue(cataloguePage([RESTATEMENT, ORIGINAL]));
+    await userEvent
+      .setup()
+      .click(within(panel).getByRole('button', { name: EN['state.retry'] as string }));
+    await snapshotItems(2);
   });
 
   it('saves a snapshot after a confirmation stating the scope, the period and the moment', async () => {
@@ -1556,18 +2591,25 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
       messageKey: 'reports.snapshots.saved',
       saved: { ...ORIGINAL, restatedBySnapshotId: null, filters: FILTERS, difference: null },
     });
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    await user.click(
-      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
-    );
-    const dialog = await screen.findByRole('alertdialog');
+    const opener = await screen.findByRole('button', {
+      name: EN['reports.snapshots.save'] as string,
+    });
+    await user.click(opener);
+    // A form dialog, named by its title — never an alert dialog.
+    const dialog = await screen.findByRole('dialog', {
+      name: EN['reports.snapshots.saveTitle'] as string,
+    });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(dialog).toHaveTextContent('Workshop company');
     expect(dialog).toHaveTextContent('Named by the run');
     expect(dialog).toHaveTextContent('2026-09-01');
     expect(dialog).toHaveTextContent('2026-09-08');
     expect(dialog).toHaveTextContent(at(AS_OF));
     expect(saveReportSnapshot).not.toHaveBeenCalled();
+    // The focus is inside the dialog, on its action.
+    expect(dialog.contains(document.activeElement)).toBe(true);
     await user.click(
       within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
     );
@@ -1580,6 +2622,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
         asOf: AS_OF,
       })
     );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     // The list is read again and the saved snapshot opened.
     await waitFor(() => expect(listReportSnapshots).toHaveBeenCalledTimes(2));
     await waitFor(() =>
@@ -1589,18 +2632,67 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
   });
 
+  it('sends one save however often it is pressed, and holds the dialog while it is answered', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    const answer = gate<unknown>();
+    saveReportSnapshot.mockReturnValue(answer.promise);
+    await show();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
+    );
+    const dialog = await screen.findByRole('dialog');
+    twice(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
+    );
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+    // While it is answered, both buttons are held and Escape does nothing.
+    expect(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saving'] as string })
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.restateCancel'] as string })
+    ).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () =>
+      answer.open({
+        status: 'success',
+        messageKey: 'reports.snapshots.saved',
+        saved: { ...ORIGINAL, restatedBySnapshotId: null, filters: FILTERS, difference: null },
+      })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels the save by Escape and puts the focus back on Save snapshot', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    await show();
+    const user = userEvent.setup();
+    const opener = await screen.findByRole('button', {
+      name: EN['reports.snapshots.save'] as string,
+    });
+    await user.click(opener);
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(saveReportSnapshot).not.toHaveBeenCalled();
+  });
+
   it('says a refused save in its own words, inside the confirmation', async () => {
     PERMISSIONS = [READ, CONFIGURE];
     saveReportSnapshot.mockResolvedValue({
       status: 'conflict',
       messageKey: 'form.violation.report_snapshot_exists',
     });
-    await showReport();
+    await show();
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
     );
-    const dialog = await screen.findByRole('alertdialog');
+    const dialog = await screen.findByRole('dialog');
     await user.click(
       within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
     );
@@ -1609,15 +2701,53 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     ).toBeVisible();
   });
 
+  it('names the newest snapshot of the period when a duplicate is refused, and opens it', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.report_snapshot_exists',
+    });
+    await show();
+    await snapshotItems(2);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
+    );
+    const latest = await within(dialog).findByTestId('report-snapshot-latest');
+    // The newest snapshot of the period, read afresh, by name and moment — never by id.
+    expect(listReportSnapshots).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '2026-09-01', to: '2026-09-08', cursor: null, limit: 1 })
+    );
+    expect(latest).toHaveTextContent(
+      fill(EN['reports.snapshots.latestIs'] as string, {
+        savedAt: at(RESTATEMENT.generatedAt),
+        person: EN['reports.snapshots.nameHidden'] as string,
+        moment: at(RESTATEMENT.asOf),
+      })
+    );
+    expect(latest.textContent).not.toContain(RESTATEMENT_ID);
+    await user.click(
+      within(latest).getByRole('button', { name: EN['reports.snapshots.openLatest'] as string })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(readReportSnapshot).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshotId: RESTATEMENT_ID })
+      )
+    );
+    expect(await screen.findByTestId('report-snapshot-banner')).toBeVisible();
+  });
+
   it('shows a frozen snapshot with its banner, and the newer one that restated it', async () => {
     PERMISSIONS = [READ];
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
-    const original = within(list).getAllByTestId('report-snapshot-item')[1] as HTMLElement;
-    await user.click(
-      within(original).getByRole('button', { name: EN['reports.snapshots.view'] as string })
-    );
+    const original = (await snapshotItems(2))[1] as HTMLElement;
+    await user.click(viewOf(original));
     const banner = await screen.findByTestId('report-snapshot-banner');
     expect(banner).toHaveTextContent(
       fill(EN['reports.snapshots.banner'] as string, {
@@ -1651,9 +2781,103 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
     expect(difference).toHaveTextContent('200.000');
     expect(difference).toHaveTextContent('150.000');
+    expect(
+      within(difference).getByRole('table', {
+        name: EN['reports.snapshots.difference.caption'] as string,
+      })
+    ).toBeInTheDocument();
     expect(screen.getByTestId('report-snapshot-restates')).toHaveTextContent(
       'A late receipt was applied'
     );
+  });
+
+  it('says a snapshot that cannot be read as itself, with a retry that reads it again', async () => {
+    PERMISSIONS = [READ];
+    readReportSnapshot.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'rows-503' });
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[1] as HTMLElement));
+    const failed = await screen.findByTestId('report-snapshot-failed');
+    expect(failed).toHaveTextContent('rows-503');
+    await user.click(within(failed).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await screen.findByTestId('report-snapshot-banner')).toBeVisible();
+    expect(readReportSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('writes no time for a snapshot when the reported zone is not one the browser knows', async () => {
+    // The snapshots panel takes the report's zone. Under a zone that is no
+    // clock it says the time is not shown in its list, in a frozen snapshot's
+    // banner and rows, and in the save dialog — never a time on UTC or on any
+    // other clock (P1-32-PRE-OD-REPA-03; this case P1-32-PRE-OD-REPA-04, on the
+    // grid and the form dialog since P1-32-PRE-OD-REPB-04).
+    PERMISSIONS = [READ, CONFIGURE];
+    runReport.mockResolvedValue(
+      runOk({ ...SNAP_ENVELOPE, period: { ...PERIOD, timezone: 'Not/A_Zone' } })
+    );
+    await show();
+    const user = userEvent.setup();
+    const notShown = EN['reports.time.notShown'] as string;
+
+    const items = await snapshotItems(2);
+    for (const item of items) {
+      // The moment it was saved and the moment it is as of: two cells, each
+      // saying so in words and neither holding a `<time>`.
+      const unknown = Array.from(item.querySelectorAll('[data-zone-unknown="true"]'));
+      expect(unknown).toHaveLength(2);
+      for (const cell of unknown) expect(cell).toHaveTextContent(notShown);
+      expect(item.querySelector('time')).toBeNull();
+      // "View" names the row by the same words, never by a time.
+      expect(viewOf(item)).toHaveAccessibleName(
+        `${EN['reports.snapshots.view'] as string} ${notShown}`
+      );
+    }
+
+    await user.click(viewOf(items[1] as HTMLElement));
+    expect(await screen.findByTestId('report-snapshot-banner')).toHaveTextContent(
+      fill(EN['reports.snapshots.banner'] as string, {
+        moment: notShown,
+        savedAt: notShown,
+        person: 'Rana Haddad',
+      })
+    );
+    expect(screen.getByTestId('report-snapshot-restated')).toHaveTextContent(notShown);
+    // The frozen row's instant, in the report's own table.
+    expect(
+      within(
+        screen.getByRole('table', { name: EN['reports.snapshots.rowsCaption'] as string })
+      ).getByText(notShown)
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: EN['reports.snapshots.save'] as string }));
+    expect(
+      await screen.findByRole('dialog', { name: EN['reports.snapshots.saveTitle'] as string })
+    ).toHaveTextContent(
+      fill(EN['reports.snapshots.saveSummary'] as string, {
+        company: 'Workshop company',
+        branch: 'Named by the run',
+        from: '2026-09-01',
+        to: '2026-09-08',
+        moment: notShown,
+      })
+    );
+
+    // No instant is written anywhere on the page, on UTC or on Amman's clock.
+    const utc = (instant: string) =>
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'UTC',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(instant));
+    for (const instant of [
+      AS_OF,
+      ORIGINAL.generatedAt,
+      RESTATEMENT.generatedAt,
+      '2026-09-03T07:15:00.000Z',
+    ]) {
+      expect(document.body).not.toHaveTextContent(utc(instant));
+      expect(document.body).not.toHaveTextContent(at(instant));
+    }
+    expect(document.body).not.toHaveTextContent('Not/A_Zone');
   });
 
   it('restates only the latest snapshot, and only with a reason', async () => {
@@ -1663,42 +2887,35 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
       messageKey: 'reports.snapshots.restatedSaved',
       saved: { ...RESTATEMENT, id: ORIGINAL_ID, filters: FILTERS, difference: null },
     });
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
     // The restated original offers no restatement of its own.
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[1] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf((await snapshotItems(2))[1] as HTMLElement));
     await screen.findByTestId('report-snapshot-banner');
     expect(
       screen.queryByRole('button', { name: EN['reports.snapshots.restate'] as string })
     ).toBeNull();
     // The latest does.
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
     await user.click(
       await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
     );
     const form = await screen.findByTestId('report-snapshot-restate');
+    // A form dialog, named by its title, with the cursor in the reason.
+    expect(form).toHaveAttribute('role', 'dialog');
+    expect(form).toHaveAccessibleName(EN['reports.snapshots.restateTitle'] as string);
+    const box = within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') });
+    await waitFor(() => expect(document.activeElement).toBe(box));
     await user.click(
       within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
     );
     expect(
       await within(form).findByText(EN['reports.snapshots.reasonRequired'] as string)
     ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
     expect(saveReportSnapshot).not.toHaveBeenCalled();
-    await user.type(
-      within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') }),
-      'Corrected allocation'
-    );
+    await user.type(box, 'Corrected allocation');
+    expect(box).not.toHaveAttribute('aria-invalid');
     await user.click(
       within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
     );
@@ -1715,23 +2932,103 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
   });
 
+  it('sends one restatement however often it is pressed', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    const answer = gate<unknown>();
+    saveReportSnapshot.mockReturnValue(answer.promise);
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByTestId('report-snapshot-restate');
+    await user.type(
+      within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') }),
+      'Corrected allocation'
+    );
+    twice(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer.open({
+        status: 'success',
+        messageKey: 'reports.snapshots.restatedSaved',
+        saved: { ...RESTATEMENT, id: ORIGINAL_ID, filters: FILTERS, difference: null },
+      })
+    );
+    await waitFor(() => expect(screen.queryByTestId('report-snapshot-restate')).toBeNull());
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts a refusal of the reason on the reason, and keeps what was typed', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.report_snapshot_reason_required',
+      fieldErrors: { reason: 'form.violation.report_snapshot_reason_required' },
+    });
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByTestId('report-snapshot-restate');
+    const box = within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') });
+    await user.type(box, 'Typed reason');
+    await user.click(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.report_snapshot_reason_required'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(box).toHaveValue('Typed reason');
+    await waitFor(() => expect(document.activeElement).toBe(box));
+  });
+
+  it('names the latest snapshot when the one restated was restated meanwhile', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.report_snapshot_not_latest',
+    });
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByTestId('report-snapshot-restate');
+    await user.type(
+      within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') }),
+      'Late receipt'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.report_snapshot_not_latest'] as string)
+    ).toBeVisible();
+    expect(await within(form).findByTestId('report-snapshot-latest')).toHaveTextContent(
+      at(RESTATEMENT.generatedAt)
+    );
+  });
+
   it('offers save and restate with the configure permission, without the export switch', async () => {
     // P1-32-PRE-OD-FD16C: a snapshot is saved under rpt.report.configure. The
     // export switch is withheld from every tenant administrator, so gating the
     // actions on it left no tenant account able to save one.
     PERMISSIONS = [READ, CONFIGURE];
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
+    const items = await snapshotItems(2);
     expect(
       screen.getByRole('button', { name: EN['reports.snapshots.save'] as string })
     ).toBeVisible();
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf(items[0] as HTMLElement));
     await screen.findByTestId('report-snapshot-banner');
     expect(
       screen.getByRole('button', { name: EN['reports.snapshots.restate'] as string })
@@ -1740,18 +3037,13 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
 
   it('offers neither save nor restate without the configure permission, even with export', async () => {
     PERMISSIONS = [READ, 'rpt.export'];
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
+    const items = await snapshotItems(2);
     expect(
       screen.queryByRole('button', { name: EN['reports.snapshots.save'] as string })
     ).toBeNull();
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf(items[0] as HTMLElement));
     await screen.findByTestId('report-snapshot-banner');
     expect(
       screen.queryByRole('button', { name: EN['reports.snapshots.restate'] as string })
@@ -1761,7 +3053,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   it('shows no snapshots for a report that keeps none', async () => {
     PERMISSIONS = [READ, CONFIGURE];
     runReport.mockResolvedValue(runOk({ ...SNAP_ENVELOPE, snapshots: false }));
-    await showReport();
+    await show();
     await screen.findByTestId('report-as-of');
     expect(screen.queryByTestId('report-snapshots')).toBeNull();
     expect(listReportSnapshots).not.toHaveBeenCalled();
@@ -1769,15 +3061,36 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
 
   it('reads in Arabic as Arabic, right to left', async () => {
     PERMISSIONS = [READ, CONFIGURE];
-    const { container } = await showReport('ar');
+    const { container } = await show('ar');
     const panel = await within(container).findByTestId('report-snapshots');
     expect(panel).toHaveTextContent(AR['reports.snapshots.heading'] as string);
     expect(
       within(panel).getByRole('button', { name: AR['reports.snapshots.save'] as string })
     ).toBeVisible();
-    const list = await within(container).findByTestId('report-snapshot-list');
-    expect(list).toHaveTextContent(AR['reports.snapshots.kind.restatement'] as string);
-    expect(list).toHaveTextContent(AR['reports.snapshots.nameHidden'] as string);
+    const items = await snapshotItems(2);
+    expect(items[0]).toHaveTextContent(AR['reports.snapshots.kind.restatement'] as string);
+    expect(items[0]).toHaveTextContent(AR['reports.snapshots.nameHidden'] as string);
     expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('asks for the restatement in Arabic, in a dialog that reads right to left', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    await show('ar');
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement, AR));
+    await user.click(
+      await screen.findByRole('button', { name: AR['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByRole('dialog', {
+      name: AR['reports.snapshots.restateTitle'] as string,
+    });
+    expect(form.closest('[dir="rtl"]')).not.toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: AR['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(
+      await within(form).findByText(AR['reports.snapshots.reasonRequired'] as string)
+    ).toBeVisible();
+    expect(saveReportSnapshot).not.toHaveBeenCalled();
   });
 });

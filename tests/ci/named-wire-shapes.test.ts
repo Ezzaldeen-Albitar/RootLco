@@ -231,8 +231,12 @@ describe('every route body serialises a named type', () => {
     // `named` moves by seven and `composed` does not.
     // 525 with the item read (P1-32-PRE-OD-INV2A): one read serialising the NAMED
     // `ItemDetailView`, so `named` moves by one and `composed` does not.
-    expect(summary.bodies).toBe(525);
-    expect(summary.named).toBe(473);
+    // 526 with the skill vocabulary (P1-32-PRE-OD-ADM2B): one read serialising the
+    // NAMED `TechnicianSkillCatalogue`, so `named` moves by one and `composed` does
+    // not. The roster list and detail now carry a name, and stay named
+    // (`Page<TechnicianRosterEntry>`, `TechnicianProfileDetail`).
+    expect(summary.bodies).toBe(526);
+    expect(summary.named).toBe(474);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

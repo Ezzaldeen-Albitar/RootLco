@@ -270,6 +270,8 @@ import '@/app/api/v1/technicians/[technicianProfileId]/certifications/[certifica
 import '@/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/detail/route';
 import '@/app/api/v1/technicians/[technicianProfileId]/availability/route';
 import '@/app/api/v1/technicians/[technicianProfileId]/availability/[availabilityId]/route';
+// P1-32-PRE-OD-ADM2B — the skill vocabulary a technician can be given.
+import '@/app/api/v1/technician-skills/route';
 import '@/app/api/v1/jobs/[jobId]/labor-sessions/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/stop/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/corrections/route';

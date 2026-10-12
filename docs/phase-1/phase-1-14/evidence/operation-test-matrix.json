@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 525,
-    "publicApi": 525,
+    "registered": 526,
+    "publicApi": 526,
     "internal": 0,
-    "withRequiredEvidence": 525,
+    "withRequiredEvidence": 526,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -47,9 +47,9 @@
       "metadataOnly": 0
     },
     "p1_19": {
-      "registered": 94,
-      "publicApi": 94,
-      "operationDepth": 94,
+      "registered": 95,
+      "publicApi": 95,
+      "operationDepth": 95,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -15470,6 +15470,38 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "tech.skill-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/technician-skills",
+      "public": false,
+      "files": ["tests/backend/od-technician-administration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant",
+        "isolation"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

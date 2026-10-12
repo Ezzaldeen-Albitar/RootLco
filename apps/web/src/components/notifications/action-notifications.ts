@@ -1,5 +1,5 @@
 import type { ToastTone } from '@/components/overlays/Overlays';
-import type { ActionState } from '@/lib/forms/action-result';
+import { isFieldConflict, type ActionState } from '@/lib/forms/action-result';
 import type { Messages } from '@/i18n/get-messages';
 import { explanationFor, translate, translateWithValues } from '@/i18n/get-messages';
 import { notify } from './notification-store';
@@ -40,6 +40,10 @@ const TONE_BY_STATUS: Partial<Record<ActionState['status'], ToastTone>> = {
 export function notifyActionResult(state: ActionState, messages: Messages): boolean {
   const tone = TONE_BY_STATUS[state.status];
   if (!tone) return false;
+  // A conflict about one named field — a duplicate code — is refused input, and
+  // belongs beside that field like `invalid` does: no toast telling the operator
+  // someone else changed the record (P1-32-PRE-OD-INVF, SETUP-cat-errors).
+  if (isFieldConflict(state)) return false;
 
   // The key is a KEY. A server-authored sentence must never reach a toast: it
   // would arrive untranslated in Arabic and would bypass the catalogue

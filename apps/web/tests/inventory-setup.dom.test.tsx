@@ -20,6 +20,7 @@ import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { fromFailure } from '@/lib/forms/action-result';
 import {
   inBranch,
   messagesFor,
@@ -1683,5 +1684,210 @@ describe('half-typed catalogue work and a branch switch', () => {
     await user.selectOptions(itemBox, CREATED_ID);
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVF — two rows of the CP-20261009-1 runtime acceptance.
+ *
+ * UNIT-names: in Arabic the platform's units read in English — every row of
+ * the units table and the unit select ("litre - Litre"). A standard unit that
+ * kept its standard name is now named in the page language; a name somebody
+ * gave a unit is shown exactly as stored, in either language.
+ *
+ * SETUP-cat-errors / SETUP-item-errors: a plain duplicate code or SKU showed
+ * the right field error AND "Someone else changed this … Reload" in the form.
+ * The adapter answer is built with the real `fromFailure`, so what is asserted
+ * is the shared path the screens actually take.
+ */
+describe('P1-32-PRE-OD-INVF: unit names and duplicate refusals', () => {
+  const LITRE_ID = '99999999-9999-4999-8999-999999999999';
+  const litre = {
+    id: LITRE_ID,
+    scope: 'platform',
+    code: 'litre',
+    name: 'Litre',
+    dimension: 'volume',
+  };
+  // A standard code whose name was changed: shown as stored, never translated.
+  const renamed = {
+    id: UNIT_ID,
+    scope: 'platform',
+    code: 'each',
+    name: 'Carton',
+    dimension: 'count',
+  };
+  const unitsTable = (caption: string) => screen.getByRole('table', { name: caption });
+
+  it('en: the units table and the item unit select name each unit, the customised one as stored', async () => {
+    listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre, renamed] }));
+    renderScreen({ canManage: true });
+    const table = await waitFor(() => unitsTable(EN['inventory.setup.units.caption'] as string));
+    expect(await within(table).findByText('Litre')).toBeVisible();
+    expect(within(table).getByText('Carton')).toBeVisible();
+    const select = within(form('inventory.setup.item.new')).getByLabelText(
+      labelled('inventory.setup.item.unit')
+    );
+    expect(within(select).getByRole('option', { name: 'Litre' })).toBeTruthy();
+    expect(within(select).getByRole('option', { name: 'Carton' })).toBeTruthy();
+    // The option is the unit's name, not "code — name".
+    expect(within(select).queryByRole('option', { name: 'litre — Litre' })).toBeNull();
+  });
+
+  it('ar: a standard unit is named in Arabic in the table and the select; a customised name is kept', async () => {
+    listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre, renamed] }));
+    renderRtl(
+      <SetupScreen
+        locale="ar"
+        messages={ar}
+        canManage={true}
+        canReadStock={false}
+        canReadBranches={false}
+      />
+    );
+    const table = await waitFor(() => unitsTable(AR['inventory.setup.units.caption'] as string));
+    expect(await within(table).findByText(AR['units.name.litre'] as string)).toBeVisible();
+    expect(within(table).queryByText('Litre')).toBeNull();
+    expect(within(table).getByText('Carton')).toBeVisible();
+    const newItem = screen.getByRole('form', { name: AR['inventory.setup.item.new'] as string });
+    const select = within(newItem).getByLabelText(
+      new RegExp(`^${escape(AR['inventory.setup.item.unit'] as string)}`)
+    );
+    expect(
+      within(select).getByRole('option', { name: AR['units.name.litre'] as string })
+    ).toBeTruthy();
+    expect(within(select).getByRole('option', { name: 'Carton' })).toBeTruthy();
+    expect(within(select).queryByRole('option', { name: /Litre/ })).toBeNull();
+  });
+
+  const duplicate = (path: string, rule: string) => ({
+    state: fromFailure(
+      {
+        ok: false,
+        kind: 'conflict',
+        status: 409,
+        problem: { code: 'ERR-CON-001', status: 409, violations: [{ path, rule }] },
+        correlationId: 'corr-dup',
+      },
+      1
+    ),
+    created: null,
+  });
+
+  /** The form's own alert says only that it was not saved; nothing about another person. */
+  function expectFieldRefusalOnly(panel: HTMLElement) {
+    const alert = within(panel)
+      .getAllByRole('alert')
+      .find((node) => node.textContent?.includes(EN['form.formError'] as string));
+    expect(alert).toBeDefined();
+    expect(
+      within(panel).queryByText(new RegExp(escape(EN['state.conflict.title'] as string)))
+    ).toBeNull();
+    expect(
+      screen.queryByText(new RegExp(escape(EN['state.conflict.message'] as string)))
+    ).toBeNull();
+    const state = notifyActionResult.mock.calls.at(-1)?.[0] as { messageKey?: string };
+    expect(state.messageKey).toBe('form.formError');
+  }
+
+  it('a duplicate category code shows the field error and a neutral form summary only', async () => {
+    const user = userEvent.setup();
+    createItemCategory.mockResolvedValue(duplicate('body.code', 'duplicate_code'));
+    renderScreen({ canManage: true });
+    const panel = form('inventory.setup.category.new');
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.category.code')),
+      'brakes'
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.category.name')),
+      'Brakes'
+    );
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.setup.category.submit'] as string })
+    );
+    expect(
+      await within(panel).findByText(EN['form.violation.duplicate_code'] as string)
+    ).toBeVisible();
+    expectFieldRefusalOnly(panel);
+  });
+
+  it('a duplicate SKU shows the field error and a neutral form summary only', async () => {
+    const user = userEvent.setup();
+    createItem.mockResolvedValue(duplicate('body.sku', 'duplicate_sku'));
+    renderScreen({ canManage: true });
+    await screen.findByText('brakes');
+    const panel = form('inventory.setup.item.new');
+    await user.click(await within(itemCategoryTree(panel)).findByText('Brakes (brakes)'));
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-001');
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.name')), 'Pads');
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.setup.item.unit')),
+      UNIT_ID
+    );
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.setup.item.submit'] as string })
+    );
+    expect(
+      await within(panel).findByText(EN['form.violation.duplicate_sku'] as string)
+    ).toBeVisible();
+    expectFieldRefusalOnly(panel);
+  });
+
+  it('a duplicate location code shows the field error and a neutral form summary only', async () => {
+    const user = userEvent.setup();
+    createStockLocation.mockResolvedValue(duplicate('body.locationCode', 'duplicate_code'));
+    renderScreen({ canManage: true, canReadStock: true, canReadBranches: true });
+    await chooseBranch();
+    await screen.findByText('WH-1');
+    const panel = form('inventory.setup.location.new');
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.location.code')),
+      'WH-1'
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.location.name')),
+      'Again'
+    );
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.setup.location.submit'] as string })
+    );
+    expect(
+      await within(panel).findByText(EN['form.violation.duplicate_code'] as string)
+    ).toBeVisible();
+    expectFieldRefusalOnly(panel);
+  });
+
+  it('a genuine stale-version conflict on the same form still says someone else changed it', async () => {
+    const user = userEvent.setup();
+    createItemCategory.mockResolvedValue({
+      state: fromFailure(
+        {
+          ok: false,
+          kind: 'conflict',
+          status: 409,
+          problem: { code: 'ERR-CON-001', status: 409 },
+          correlationId: 'corr-stale',
+        },
+        1
+      ),
+      created: null,
+    });
+    renderScreen({ canManage: true });
+    const panel = form('inventory.setup.category.new');
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.category.code')),
+      'pads'
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.category.name')),
+      'Pads'
+    );
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.setup.category.submit'] as string })
+    );
+    expect(
+      await within(panel).findByText(new RegExp(escape(EN['state.conflict.title'] as string)))
+    ).toBeVisible();
   });
 });

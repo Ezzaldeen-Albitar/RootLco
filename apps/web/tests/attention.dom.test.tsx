@@ -39,6 +39,7 @@ import {
   branch,
   FAR_ZONE,
   expectOnClock,
+  onClock,
   labelled,
   okRead,
   seriousViolations,
@@ -2225,4 +2226,66 @@ describe('the compact signal states its instant on the branch\u2019s clock (P1-3
       expectOnClock(indicator, AS_OF, locale);
     });
   }
+});
+
+/**
+ * P1-32-PRE-OD-INVF, ATT-clock: the stock cards on /attention wrote their
+ * moments on the BROWSER's clock, unnamed — a count that began at 19:00 in
+ * Amman read 09:00 to a browser in Los Angeles. They are now written on the
+ * working branch's clock with that clock named, the helper the stock screens
+ * use (`momentText`), and on UTC, named, when no single branch is in force.
+ *
+ * The branch keeps Asia/Amman, as in the acceptance run, unless this process
+ * itself reads Amman's wall time at the instant under test — then a clock no
+ * test environment keeps stands in, so the two can never read alike.
+ */
+describe('P1-32-PRE-OD-INVF: the stock cards write their moments on the branch clock', () => {
+  const COUNTED_ON = discrepancyRow().countedOn as string;
+  const BRANCH_ZONE =
+    onClock(COUNTED_ON, 'en', 'Asia/Amman') !== onClock(COUNTED_ON, 'en') &&
+    onClock(AS_OF, 'en', 'Asia/Amman') !== onClock(AS_OF, 'en')
+      ? 'Asia/Amman'
+      : FAR_ZONE;
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes a count's moment and the cards' "as of" on the branch clock, named (${locale})`, async () => {
+      readCountDiscrepancyAlerts.mockResolvedValue(discrepancies([discrepancyRow()]));
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        inBranch(
+          <AttentionScreen
+            locale={locale}
+            messages={messagesFor(locale)}
+            canReadStock
+            canReadCapacity
+            canReadBranches
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: BRANCH_ZONE }]), locale }
+        )
+      );
+      await waitFor(() => expect(readCountDiscrepancyAlerts).toHaveBeenCalled());
+      const T = messagesFor(locale) as unknown as Record<string, string>;
+      const heading = await screen.findByRole('heading', {
+        name: T['attention.discrepancy.title'] as string,
+      });
+      const frame = heading.closest('section') as HTMLElement;
+      await waitFor(() => expect(frame.textContent ?? '').toContain('A-01'));
+      expectOnClock(frame, COUNTED_ON, locale, BRANCH_ZONE);
+      expectOnClock(frame, AS_OF, locale, BRANCH_ZONE);
+      const lowStockFrame = screen
+        .getByRole('heading', { name: T['attention.lowStock.title'] as string })
+        .closest('section') as HTMLElement;
+      await waitFor(() => expect(lowStockFrame.textContent ?? '').toContain('2026'));
+      expectOnClock(lowStockFrame, AS_OF, locale, BRANCH_ZONE);
+    });
+  }
+
+  it('under all branches the organisation-wide card is written on UTC, and says so', async () => {
+    renderScreen(TWO_BRANCHES);
+    const frame = await waitFor(() => card('attention.capacity.title'));
+    await waitFor(() => expect(frame.textContent ?? '').toContain('2026'));
+    const text = frame.textContent ?? '';
+    expect(text).toContain(onClock(AS_OF, 'en', 'UTC'));
+    expect(text).toContain('UTC');
+  });
 });

@@ -214,18 +214,43 @@ export function formatReportMoney(value: string, currency: string | null, locale
 }
 
 /**
- * A report date or instant for reading, on the REPORTED branch's clock.
+ * The clock a report's instants are written on: the zone its period was
+ * resolved in when this browser knows a zone by that name, and `null` when it
+ * does not.
+ *
+ * `null` is a real answer. A zone the browser cannot resolve is no clock at
+ * all, and no other clock is taken in its place — not UTC, not the browser's,
+ * not the working branch's (Owner decision D-17 as applied across the product:
+ * a business moment is entered and displayed on the branch's clock, and an
+ * unknown branch zone is refused). The caller draws the refusal.
+ */
+export function reportClock(zone: string): string | null {
+  return isKnownZone(zone) ? zone : null;
+}
+
+/**
+ * A report date or instant for reading, on the REPORTED branch's clock, or
+ * `null` when it is an instant and that clock is not known.
  *
  * The period is resolved in the branch's zone (D-17), so an instant is drawn on
  * that same clock and never on the browser's — a row counted into "the 3rd in
- * Amman" stays under the 3rd for a reader sitting elsewhere. A calendar day is a
- * day and is not shifted. A zone the browser does not know falls back to UTC,
- * and a value that is not a date at all is shown exactly as it arrived.
+ * Amman" stays under the 3rd for a reader sitting elsewhere.
+ *
+ * An instant under a zone the browser does not know is NOT written on UTC: a
+ * UTC wall time beside the branch's own days would be a time on a clock the
+ * report was never counted on, shown as though it were the branch's. It is
+ * `null`, and the caller says the time is not shown (`ReportTime`).
+ *
+ * A calendar day is a day and carries no clock, so it is written as that day
+ * whatever the zone — every clock writes the same day for it. A value that is
+ * not a date at all is returned exactly as it arrived.
  */
-export function formatReportTime(value: string, locale: Locale, zone: string): string {
+export function formatReportTime(value: string, locale: Locale, zone: string): string | null {
   const intl = intlLocale(locale);
-  const clock = isKnownZone(zone) ? zone : 'UTC';
-  if (isCalendarDay(value)) return formatDayInZone(value, intl, clock);
+  const clock = reportClock(zone);
+  // A day is formatted at its own midnight on the clock that formats it, so
+  // any known clock yields the same day; UTC is only the one always present.
+  if (isCalendarDay(value)) return formatDayInZone(value, intl, clock ?? 'UTC');
   if (Number.isNaN(new Date(value).getTime())) return value;
-  return formatInZone(value, intl, clock);
+  return clock === null ? null : formatInZone(value, intl, clock);
 }

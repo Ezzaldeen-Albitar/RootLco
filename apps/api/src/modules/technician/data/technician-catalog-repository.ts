@@ -39,18 +39,39 @@ export interface CertificationRow {
 export interface HeldSkillRow {
   readonly skillId: string;
   readonly skillCode: string;
+  /**
+   * The catalogue's own words for the skill and the level held, so a screen
+   * names a holding without a second read — and names it even after the
+   * catalogue row has been made inactive, which the active catalogue read omits.
+   */
+  readonly skillName: string;
   readonly skillLevelId: string;
+  readonly skillLevelName: string;
   readonly rank: number;
 }
 
 export interface HeldCertificationRow {
   readonly certificationId: string;
   readonly certificationCode: string;
+  /** The catalogue's own words for the certification held. */
+  readonly certificationName: string;
   readonly issuedOn: Date;
+  /**
+   * The same issue date as a calendar day, `YYYY-MM-DD` — the form the record
+   * and update responses already use. `issuedOn` above is the driver's `Date`,
+   * which serialises as an instant whose day depends on the server's zone.
+   */
+  readonly issuedOnDay: string;
   /** Calendar date as `YYYY-MM-DD`, never an instant. See certificationIsValidOn. */
   readonly expiresOn: string | null;
   readonly certStatus: string;
   readonly isSafetyCritical: boolean;
+  /**
+   * The holding's version: `tech.technician-certification-update` is
+   * version-guarded, so a screen that changes a holding it read needs the
+   * version that read published to send as `If-Match`.
+   */
+  readonly recordVersion: number;
 }
 
 export interface AvailabilityRow {
@@ -242,11 +263,14 @@ export class TechnicianCatalogRepository extends Repository {
     const result = await this.run<{
       skill_id: string;
       skill_code: string;
+      skill_name: string;
       skill_level_id: string;
+      skill_level_name: string;
       rank: number;
     }>(
       db,
-      `SELECT ts.skill_id, s.code AS skill_code, ts.skill_level_id, sl.rank
+      `SELECT ts.skill_id, s.code AS skill_code, s.name AS skill_name, ts.skill_level_id,
+              sl.name AS skill_level_name, sl.rank
          FROM tech.technician_skills ts
          JOIN tech.skills s ON s.id = ts.skill_id AND s.deleted_at IS NULL
          JOIN tech.skill_levels sl ON sl.id = ts.skill_level_id AND sl.deleted_at IS NULL
@@ -256,7 +280,9 @@ export class TechnicianCatalogRepository extends Repository {
     return result.rows.map((row) => ({
       skillId: row.skill_id,
       skillCode: row.skill_code,
+      skillName: row.skill_name,
       skillLevelId: row.skill_level_id,
+      skillLevelName: row.skill_level_name,
       rank: row.rank,
     }));
   }
@@ -277,15 +303,19 @@ export class TechnicianCatalogRepository extends Repository {
     const result = await this.run<{
       certification_id: string;
       certification_code: string;
+      certification_name: string;
       issued_on: Date;
+      issued_on_day: string;
       expires_on: string | null;
       cert_status: string;
       is_safety_critical: boolean;
+      record_version: number;
     }>(
       db,
-      `SELECT tc.certification_id, c.code AS certification_code, tc.issued_on,
+      `SELECT tc.certification_id, c.code AS certification_code, c.name AS certification_name,
+              tc.issued_on, to_char(tc.issued_on, 'YYYY-MM-DD') AS issued_on_day,
               to_char(tc.expires_on, 'YYYY-MM-DD') AS expires_on,
-              tc.cert_status, c.is_safety_critical
+              tc.cert_status, c.is_safety_critical, tc.record_version
          FROM tech.technician_certifications tc
          JOIN tech.certifications c ON c.id = tc.certification_id AND c.deleted_at IS NULL
         WHERE tc.tenant_id = $1 AND tc.technician_profile_id = $2 AND tc.deleted_at IS NULL`,
@@ -294,10 +324,13 @@ export class TechnicianCatalogRepository extends Repository {
     return result.rows.map((row) => ({
       certificationId: row.certification_id,
       certificationCode: row.certification_code,
+      certificationName: row.certification_name,
       issuedOn: row.issued_on,
+      issuedOnDay: row.issued_on_day,
       expiresOn: row.expires_on,
       certStatus: row.cert_status,
       isSafetyCritical: row.is_safety_critical,
+      recordVersion: row.record_version,
     }));
   }
 

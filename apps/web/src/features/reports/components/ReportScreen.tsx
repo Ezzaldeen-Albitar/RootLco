@@ -1,15 +1,26 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import Link from 'next/link';
-import { RadioGroupField } from '@/components/forms/Field';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import {
   dayToPicker,
+  MomentZoneRefusal,
   ZonedDateTimeField,
   type MomentProblem,
 } from '@/components/forms/mui/DateField';
-import { EmptyState } from '@/components/states/States';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import {
+  useUnsavedWork,
   useWorkingContext,
   useWorkingContextChange,
 } from '@/features/working-context/WorkingContextProvider';
@@ -19,6 +30,7 @@ import { formatMessage, translate } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { zoneDisplayName } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { runReport } from '../reports-api';
 import {
   fieldHeading,
@@ -26,6 +38,7 @@ import {
   formatReportTime,
   groupCurrency,
   groupDisplayLabel,
+  reportClock,
   reportCreditStatusLabel,
   reportDocumentStatusLabel,
   reportDocumentTypeLabel,
@@ -54,16 +67,16 @@ import {
 import {
   ContextFact,
   MachineName,
-  REPORT_SECONDARY_BUTTON,
-  REPORT_TABLE_CELL,
-  REPORT_TABLE_HEADER,
+  ReportClockNote,
   ReportFailure,
   ReportLoading,
+  ReportTime,
+  ReportZoneName,
 } from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
 import { ReportExportPanel } from './ReportExportPanel';
 import { ReportSnapshotsPanel } from './ReportSnapshotsPanel';
-import { useCursorTrail } from './use-cursor-trail';
+import { trailTable, useCursorTrail } from './use-cursor-trail';
 import { useWorkingReportScope } from './use-working-report-scope';
 
 /**
@@ -105,6 +118,20 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * never as the identifier the platform stores (DF-B5). The raw ISO string is not
  * what an operator reads (Browser QA part 7, row 6.7).
  *
+ * ## A zone this browser does not know is refused, never replaced
+ *
+ * The zone arrives on the envelope as a name. A name the browser cannot resolve
+ * (`isKnownZone`) is no clock, and no other clock stands in for it — not UTC,
+ * not the browser's (`P1-32-PRE-OD-REPA-03`; the standing D-17 ruling: an
+ * unknown branch zone is a refusal, never a silent UTC fallback). So under such
+ * a zone no instant is written as a time: the context says the zone is not
+ * known here, each instant says its time is not shown (`ReportTime`), the
+ * moment the amounts are as of is said to exist without being written, and the
+ * "specific moment" choice draws the shared `MomentZoneRefusal` in place of the
+ * picker, so no moment can be typed or applied. The two days of the period are
+ * still written: a calendar day carries no clock. "End of period" and "Now"
+ * stay available, because the server resolves both.
+ *
  * ## The period is half-open, and the screen says so where it is typed
  *
  * `from` is the first day included and `to` is the first day EXCLUDED — the day
@@ -123,7 +150,10 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * `[today, tomorrow)` — and that selection is read at once
  * (`useWorkingReportScope`). A switch of the working branch follows it. The
  * operator widens the period or picks another branch by name, and the form then
- * holds their choice until the working branch changes.
+ * holds their choice until the working branch changes. A working branch whose
+ * zone is not a clock this browser knows has no "today" to read: nothing is read
+ * on arrival, the form starts on that branch with the two days left to the
+ * operator, and its note says why (`zoneUnknown`).
  *
  * No wider default is chosen: "the last thirty days" is a business rule nobody
  * has decided, and "today" is the directive's own bound.
@@ -157,6 +187,39 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * anything the caller's own directory does not hold is dropped rather than shown:
  * see `initialReportScope`. An address that names anything at all takes the place
  * of the working context: the form is filled from it and the operator runs it.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-REPA`)
+ *
+ * The rows are cursor pages, so they are drawn by `OperationalGrid` (G1–G9): an
+ * unknown count, "Page N", and Previous and Next that walk the run's own cursor
+ * trail (`trailTable`) — the trail keeps the whole envelope of the page it
+ * holds, so the period, the zone, the moment and the groups shown are always the
+ * shown page's. The groups are one bounded answer with no cursor and are drawn as
+ * the Material table (the planner ruling of 2026-10-09). The states are the
+ * Material ones, the as-of choice is `FormRadioGroupField` with the moment picker,
+ * and a refused moment takes the cursor (`useLocalRefusal`). Pressing Apply twice
+ * with the same choice reads nothing again: an unchanged choice is not a new one.
+ *
+ * ## Show on the selection already shown reads it again
+ *
+ * Show is the operator asking for the report, so pressing it on the selection
+ * already on screen reads that page again (`readAgain`) — as the screen did
+ * before it moved to Material UI — with the facts above the rows, a typed
+ * export reason and the pinned moment kept, exactly as a page move keeps them.
+ * A press made while a read is still open reads nothing more: that read is the
+ * answer to both presses.
+ *
+ * ## Showing another answer asks before it drops typed work
+ *
+ * The results are keyed on the submitted selection and the as-of choice, so
+ * pressing Show with another period or branch, or applying a different as-of
+ * choice, mounts a new set of results — and the export reason typed under the
+ * old one goes with it. A branch switch already asked first; these two did not.
+ * So both go through `requestResults`: with nothing unsaved, or with nothing
+ * that would change, it applies at once; with unsaved work it asks first, with
+ * the same `ConfirmDialog` and the same registry (`useUnsavedWork`) the branch
+ * switch uses. "Keep my entries" changes nothing; "Discard and show" runs each
+ * form's own `onDiscard` and then shows the new answer.
  */
 
 export function ReportScreen({
@@ -215,6 +278,34 @@ export function ReportScreen({
     }
   });
   const submitted = chosen ?? followed;
+  const unsaved = useUnsavedWork();
+  // The answer the operator asked for while the shown one held unsaved work.
+  const [pendingResults, setPendingResults] = useState<RequestedResults | null>(null);
+  // The mounted results, so Show on the selection already shown can read again.
+  const results = useRef<ReportResultsHandle | null>(null);
+
+  const applyResults = (next: RequestedResults) => {
+    setChosen(next.chosen);
+    setAsOfChoice((current) =>
+      JSON.stringify(current) === JSON.stringify(next.asOfChoice) ? current : next.asOfChoice
+    );
+  };
+  /**
+   * The one way the shown answer changes — see "Showing another answer asks
+   * first". `same` says what a request for the answer ALREADY shown does:
+   * `'reread'` for Show, which reads it again; `'keep'` for Apply, where an
+   * unchanged choice is not a new one and nothing is read.
+   */
+  const requestResults = (next: RequestedResults, same: 'reread' | 'keep') => {
+    const changes =
+      resultsKey(next.chosen ?? followed, next.asOfChoice) !== resultsKey(submitted, asOfChoice);
+    if (changes && unsaved.any()) {
+      setPendingResults(next);
+      return;
+    }
+    applyResults(next);
+    if (!changes && same === 'reread') results.current?.readAgain();
+  };
 
   const title = reportTitle(messages, definition);
 
@@ -222,7 +313,7 @@ export function ReportScreen({
     return (
       <div className="flex flex-col gap-3">
         <ReportHeading title={title} code={definition.reportCode} />
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.run.notRunnableTitle"
           descriptionKey="reports.run.notRunnableBody"
@@ -235,6 +326,7 @@ export function ReportScreen({
     return (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={scopeOptions.status}
         correlationId={scopeOptions.correlationId}
       />
@@ -246,7 +338,7 @@ export function ReportScreen({
     !branches.some((branch) => companies.some((company) => company.id === branch.companyId))
   ) {
     return (
-      <EmptyState
+      <MuiEmptyState
         messages={messages}
         titleKey="reports.run.noScopesTitle"
         descriptionKey="reports.run.noScopesBody"
@@ -274,16 +366,23 @@ export function ReportScreen({
         locale={locale}
         messages={messages}
         options={scopeOptions.data}
-        initial={followed ?? initialReportScope(scopeOptions.data, named)}
+        initial={
+          followed ??
+          initialReportScope(
+            scopeOptions.data,
+            // A working branch whose zone is not known starts the form on that
+            // branch with no day: there is no "today" to read on its clock.
+            !addressNamed && working.kind === 'zoneUnknown' ? working.pair : named
+          )
+        }
         submitKey="reports.run.show"
-        onSubmit={(selection) => {
-          setChosen(selection);
-          setAsOfChoice({ mode: 'end' });
-        }}
+        onSubmit={(selection) =>
+          requestResults({ chosen: selection, asOfChoice: { mode: 'end' } }, 'reread')
+        }
       />
 
       {submitted === null ? (
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.run.idleTitle"
           descriptionKey="reports.run.idleBody"
@@ -293,21 +392,59 @@ export function ReportScreen({
         // read on a new period or branch rather than paging the previous one with
         // cursors issued against a different selection.
         <ReportResults
-          key={`${JSON.stringify(submitted)}|${JSON.stringify(asOfChoice)}`}
+          key={resultsKey(submitted, asOfChoice)}
+          ref={results}
           locale={locale}
           messages={messages}
           reportCode={definition.reportCode}
           submitted={submitted}
           asOfChoice={asOfChoice}
-          onAsOfChange={setAsOfChoice}
+          onAsOfChange={(next) => requestResults({ chosen, asOfChoice: next }, 'keep')}
           companyName={chosenCompany?.legalName ?? null}
           branchName={chosenBranch?.name ?? null}
           canExport={canExport}
           canSnapshot={canSnapshot}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingResults !== null}
+        onCancel={() => setPendingResults(null)}
+        onConfirm={() => {
+          const target = pendingResults;
+          setPendingResults(null);
+          if (target === null) return;
+          // The forms put themselves back first, in the same update as the new
+          // answer, so no frame shows it over work declared lost.
+          unsaved.discard();
+          applyResults(target);
+        }}
+        title={translate(messages, 'reports.run.discard.title')}
+        description={translate(messages, 'reports.run.discard.description')}
+        confirmLabel={translate(messages, 'reports.run.discard.confirm')}
+        cancelLabel={translate(messages, 'reports.run.discard.stay')}
+        messages={messages}
+        destructive
+        testId="report-results-discard"
+      />
     </div>
   );
+}
+
+/** A selection and an as-of choice the operator asked to be shown. */
+interface RequestedResults {
+  /** The operator's own selection; null while the screen follows the working branch. */
+  readonly chosen: ReportScopeSelection | null;
+  readonly asOfChoice: ReportAsOfChoice;
+}
+
+/**
+ * The identity of one shown answer: its selection and its as-of choice, by
+ * value. The results are keyed on it, so a new key is a new read — and the loss
+ * of whatever was typed under the previous answer.
+ */
+function resultsKey(selection: ReportScopeSelection | null, choice: ReportAsOfChoice): string {
+  return `${JSON.stringify(selection)}|${JSON.stringify(choice)}`;
 }
 
 /**
@@ -326,12 +463,22 @@ function ReportHeading({ title, code }: { readonly title: string | null; readonl
   );
 }
 
+/** What the screen may ask of the results it has mounted. */
+interface ReportResultsHandle {
+  /**
+   * Reads the page in hand again, with the cursor that opened it and the moment
+   * the first answer pinned. Does nothing while a read is still open.
+   */
+  readonly readAgain: () => void;
+}
+
 const runSignals = (run: ReportRun) => ({
   nextCursor: run.rows.nextCursor,
   hasMore: run.rows.hasMore,
 });
 
 function ReportResults({
+  ref,
   locale,
   messages,
   reportCode,
@@ -343,6 +490,7 @@ function ReportResults({
   canExport,
   canSnapshot,
 }: {
+  readonly ref?: Ref<ReportResultsHandle> | undefined;
   readonly locale: Locale;
   readonly messages: Messages;
   readonly reportCode: string;
@@ -382,65 +530,244 @@ function ReportResults({
     [reportCode, companyId, branchId, from, to, asOfChoice]
   );
   const trail = useCursorTrail<ReportRun>(read, runSignals);
+  const { loading: reading, refresh: readPageAgain } = trail;
+  useImperativeHandle(
+    ref,
+    () => ({
+      readAgain: () => {
+        // A read still open is the answer to this press too.
+        if (!reading) readPageAgain();
+      },
+    }),
+    [reading, readPageAgain]
+  );
+  const answered =
+    trail.outcome !== null && trail.outcome.status === 'ok' ? trail.outcome.data : null;
+  /*
+   * The last page that answered, kept while the next one is read.
+   *
+   * The grid keeps the report's columns by it, so a page move draws skeleton
+   * rows under the same header instead of a blank region; and the facts above
+   * the rows — the period, the zone, the moment, the export, the groups — stay
+   * mounted, so a page move neither drops a typed export reason nor takes the
+   * cursor away. Every page of one report carries the same selection and the
+   * same pinned moment (D16), and no rows are drawn while the next page is
+   * read, so nothing of one page is ever shown beside another page's rows. A
+   * page that is refused or fails is drawn as itself, with nothing kept above it.
+   */
+  const [held, setHeld] = useState<ReportRun | null>(null);
+  if (answered !== null && held !== answered) setHeld(answered);
+  const run = answered ?? (trail.loading ? held : null);
+  const table = trailTable(
+    trail,
+    (page: ReportRun) =>
+      page.rows.items.map((row, index) => ({ id: `${String(trail.page)}:${String(index)}`, row })),
+    REPORT_PAGE_SIZE
+  );
+  const shapeColumns = run === null ? null : run.columns;
+  const shapeZone = run === null ? null : run.period.timezone;
+  const gridColumns = useMemo<readonly OperationalColumn<ReportGridRow>[]>(
+    () =>
+      shapeColumns === null || shapeZone === null
+        ? []
+        : shapeColumns.map((column) => ({
+            id: column.key,
+            // A column this build has no word for is headed by its own key, as
+            // the machine name it is; the grid takes a catalogue key or text.
+            headerKey:
+              fieldHeading(messages, column.key) === null
+                ? column.key
+                : `reports.field.${column.key}`,
+            numeric: NUMERIC_KINDS.has(column.kind),
+            cell: (entry: ReportGridRow) => (
+              <CellValue
+                locale={locale}
+                messages={messages}
+                zone={shapeZone}
+                column={column}
+                row={entry.row}
+                cell={entry.row.cells.find((candidate) => candidate.key === column.key) ?? null}
+              />
+            ),
+          })),
+    [shapeColumns, shapeZone, locale, messages]
+  );
 
-  if (trail.loading || trail.outcome === null) return <ReportLoading messages={messages} />;
-  if (trail.outcome.status !== 'ok') {
-    return (
-      <ReportFailure
-        messages={messages}
-        status={trail.outcome.status}
-        correlationId={trail.outcome.correlationId}
-      />
-    );
+  if (run === null) {
+    // No page is held: the first one is still being read, or this page could
+    // not be. Either is drawn as itself, and an outage can be retried.
+    const failed = trail.loading ? null : trail.outcome;
+    if (failed !== null && failed.status !== 'ok') {
+      return (
+        <ReportFailure
+          messages={messages}
+          locale={locale}
+          status={failed.status}
+          correlationId={failed.correlationId}
+          onRetry={trail.refresh}
+        />
+      );
+    }
+    return <ReportLoading messages={messages} />;
   }
 
-  const run = trail.outcome.data;
-  const groups = reportGroups(run);
-  const rows = run.rows.items;
   const title = runTitle(messages, run.titleKey);
+
+  return (
+    <section aria-labelledby="report-result-heading" className="flex flex-col gap-4">
+      <h3 id="report-result-heading" className="sr-only">
+        {/* A name, or the plain word for what this is; never the report's code. */}
+        {title ?? translate(messages, 'reports.run.title')}
+      </h3>
+
+      <RunEnvelope
+        locale={locale}
+        messages={messages}
+        reportCode={reportCode}
+        run={run}
+        submitted={submitted}
+        asOfChoice={asOfChoice}
+        onAsOfChange={onAsOfChange}
+        companyName={companyName}
+        branchName={branchName}
+        canExport={canExport}
+        canSnapshot={canSnapshot}
+      />
+
+      {run.rows.items.length === 0 && trail.page === 1 ? (
+        // The honest zero: a sentence, not an empty grid, which would read as
+        // a report that failed to load.
+        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
+          {translate(messages, 'reports.run.noRows')}
+        </p>
+      ) : (
+        <OperationalGrid<ReportGridRow>
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'reports.run.rowsCaption')}
+          columns={gridColumns}
+          rowId={(entry) => entry.id}
+          table={table}
+          suppressEmptyState
+          testId="report-rows"
+        />
+      )}
+      {run.rows.items.length === 0 && trail.page > 1 ? (
+        <p className="py-4 text-center text-body text-text-secondary" lang={locale}>
+          {translate(messages, 'reports.catalogue.noFurther')}
+        </p>
+      ) : null}
+      <p className="text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'reports.run.pagingNote')}
+      </p>
+    </section>
+  );
+}
+
+/** One row of the report's grid: the row as the server sent it, and its place. */
+interface ReportGridRow {
+  /** The page and the position in it — a report row is a projection, not a record. */
+  readonly id: string;
+  readonly row: ReportRow;
+}
+
+/** The column kinds whose values are figures, aligned as figures. */
+const NUMERIC_KINDS: ReadonlySet<string> = new Set(['count', 'duration', 'quantity', 'money']);
+
+/**
+ * Everything one answered page says about itself, above its rows: the period,
+ * the zone and the filter context (D-17), the moment its amounts are as of and
+ * the choice of another (D16), the export, the snapshots, and the groups.
+ */
+function RunEnvelope({
+  locale,
+  messages,
+  reportCode,
+  run,
+  submitted,
+  asOfChoice,
+  onAsOfChange,
+  companyName,
+  branchName,
+  canExport,
+  canSnapshot,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly reportCode: string;
+  readonly run: ReportRun;
+  readonly submitted: ReportScopeSelection;
+  readonly asOfChoice: ReportAsOfChoice;
+  readonly onAsOfChange: (choice: ReportAsOfChoice) => void;
+  readonly companyName: string | null;
+  readonly branchName: string | null;
+  readonly canExport: boolean;
+  readonly canSnapshot: boolean;
+}) {
+  const groups = reportGroups(run);
   /*
    * D16: the moment the amounts are as of, on the BRANCH's clock with the zone
    * named, exactly as the server stated it. Only a report that answered with one
    * says it; a live report claims no moment.
    */
   const asOf = run.freshness === 'as_of' && run.asOf !== undefined ? run.asOf : null;
+  /*
+   * The clock the moments of this page are written on, or `null` when the zone
+   * the period was resolved in is not one this browser knows. Without a clock
+   * the moment is not written at all — see "A zone this browser does not know
+   * is refused, never replaced".
+   */
+  const clock = reportClock(run.period.timezone);
+  const asOfWritten = asOf === null ? null : formatReportTime(asOf, locale, run.period.timezone);
   const asOfMoment =
-    asOf === null
+    asOf === null || clock === null || asOfWritten === null
       ? null
-      : `${formatReportTime(asOf, locale, run.period.timezone)} (${zoneDisplayName(
-          run.period.timezone,
-          intlLocale(locale),
-          asOf
-        )})`;
+      : `${asOfWritten} (${zoneDisplayName(clock, intlLocale(locale), asOf)})`;
 
   return (
-    <section aria-labelledby="report-result-heading" className="flex flex-col gap-4">
-      <h3 id="report-result-heading" className="sr-only">
-        {title === null ? reportCode : title}
-      </h3>
-
+    <>
       {/*
         D-17: the timezone and the filter context travel with the result
         wherever it is shown, so a number can never be read without the period
         that produced it. Every fact below is the envelope's own; the branch name
         prefers the one the run resolved and falls back to the name the operator
-        picked it by.
+        picked it by. The two days are written for reading on the branch's
+        clock, with the day itself kept as the machine value.
       */}
       <dl className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
         <ContextFact label={translate(messages, 'reports.context.from')}>
-          <span dir="ltr">{run.period.from}</span>
+          <ReportTime
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            value={run.period.from}
+            testId="report-period-from"
+          />
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.to')}>
-          <span dir="ltr">{run.period.to}</span>
+          <ReportTime
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            value={run.period.to}
+            testId="report-period-to"
+          />
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.timezone')}>
-          <bdi data-testid="report-zone">
-            {zoneDisplayName(run.period.timezone, intlLocale(locale), run.generatedAt)}
-          </bdi>
+          <ReportZoneName
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            at={run.generatedAt}
+            testId="report-zone"
+          />
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.company')}>
           {companyName === null ? (
-            <MachineName value={run.filters?.companyId ?? submitted.companyId} />
+            // A name is said or said to be missing; the identifier is never shown.
+            <span lang={locale} data-testid="report-company-unnamed">
+              {translate(messages, 'reports.context.nameUnavailable')}
+            </span>
           ) : (
             <bdi>{companyName}</bdi>
           )}
@@ -449,7 +776,9 @@ function ReportResults({
           {run.branch !== undefined ? (
             <bdi>{run.branch.name}</bdi>
           ) : branchName === null ? (
-            <MachineName value={run.filters?.branchId ?? submitted.branchId} />
+            <span lang={locale} data-testid="report-branch-unnamed">
+              {translate(messages, 'reports.context.nameUnavailable')}
+            </span>
           ) : (
             <bdi>{branchName}</bdi>
           )}
@@ -464,16 +793,18 @@ function ReportResults({
           )}
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.generatedAt')}>
-          <time dateTime={run.generatedAt}>
-            {formatReportTime(run.generatedAt, locale, run.period.timezone)}
-          </time>
+          <ReportTime
+            messages={messages}
+            locale={locale}
+            zone={run.period.timezone}
+            value={run.generatedAt}
+            testId="report-generated-at"
+          />
         </ContextFact>
       </dl>
-      <p className="text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'reports.context.periodNote')}
-      </p>
+      <ReportClockNote messages={messages} locale={locale} zone={run.period.timezone} />
 
-      {asOf === null || asOfMoment === null ? null : (
+      {asOf === null ? null : (
         <section
           aria-labelledby="report-as-of-heading"
           className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
@@ -484,18 +815,24 @@ function ReportResults({
             data-testid="report-as-of"
             lang={locale}
           >
-            <bdi>
-              {formatMessage(translate(messages, 'reports.asOf.statement'), {
-                moment: asOfMoment,
-              })}
-            </bdi>
+            {asOfMoment === null ? (
+              // The amounts ARE as of a moment; it is the clock to write it on
+              // that is missing, so the moment is said to exist and not written.
+              translate(messages, 'reports.asOf.statementZoneUnknown')
+            ) : (
+              <bdi>
+                {formatMessage(translate(messages, 'reports.asOf.statement'), {
+                  moment: asOfMoment,
+                })}
+              </bdi>
+            )}
           </p>
           <p className="text-caption text-text-muted" lang={locale}>
             {translate(messages, 'reports.asOf.note')}
           </p>
           <AsOfChoiceForm
             messages={messages}
-            zone={run.period.timezone}
+            zone={clock}
             periodFrom={run.period.from}
             choice={asOfChoice}
             onApply={onAsOfChange}
@@ -550,50 +887,16 @@ function ReportResults({
       {groups.length === 0 ? null : (
         <GroupTable messages={messages} groups={groups} locale={locale} />
       )}
-
-      {rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'reports.run.noRows')}
-        </p>
-      ) : (
-        <RowsTable
-          locale={locale}
-          messages={messages}
-          zone={run.period.timezone}
-          columns={run.columns}
-          rows={rows}
-          captionKey="reports.run.rowsCaption"
-        />
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className={REPORT_SECONDARY_BUTTON}
-          disabled={!trail.canGoBack}
-          onClick={trail.goBack}
-        >
-          {translate(messages, 'reports.page.previous')}
-        </button>
-        <button
-          type="button"
-          className={REPORT_SECONDARY_BUTTON}
-          disabled={!trail.canGoForward}
-          onClick={trail.goForward}
-        >
-          {translate(messages, 'reports.page.next')}
-        </button>
-      </div>
-      <p className="text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'reports.run.pagingNote')}
-      </p>
-    </section>
+    </>
   );
 }
 
 /**
- * A page of report rows, live or frozen in a snapshot (P1-32-PRE-OD-FD16B): one
- * table, so a saved row reads exactly as the live one did.
+ * A page of report rows frozen in a snapshot (P1-32-PRE-OD-FD16B), drawn as the
+ * Material table: the snapshot panel hands over one page it has read and walks
+ * its own pages, so this draws the rows it is given and nothing else. The cells
+ * are the live grid's own (`CellValue`), so a saved row reads exactly as the live
+ * one did.
  */
 function RowsTable({
   locale,
@@ -611,30 +914,30 @@ function RowsTable({
   readonly captionKey: keyof Messages;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-      <table className="w-full border-collapse">
+    <TableContainer className="rounded-lg border border-border bg-surface">
+      <Table size="small">
         <caption className="sr-only">{translate(messages, captionKey)}</caption>
-        <thead className="bg-table-header">
-          <tr>
+        <TableHead>
+          <TableRow>
             {columns.map((column) => {
               const heading = fieldHeading(messages, column.key);
               return (
-                <th key={column.key} scope="col" className={REPORT_TABLE_HEADER}>
+                <TableCell key={column.key} scope="col">
                   {heading === null ? <MachineName value={column.key} /> : heading}
-                </th>
+                </TableCell>
               );
             })}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHead>
+        <TableBody>
           {rows.map((row, index) => (
             // The operation publishes no row identifier — a report row is a
             // projection, not a record — so the position in the page is the
             // key. It is stable for the page being rendered, which is what a
             // key is for.
-            <tr key={`${String(index)}`} className="border-t border-border-subtle">
+            <TableRow key={`${String(index)}`} className="align-top">
               {columns.map((column) => (
-                <td key={column.key} className={REPORT_TABLE_CELL}>
+                <TableCell key={column.key}>
                   <CellValue
                     locale={locale}
                     messages={messages}
@@ -643,13 +946,13 @@ function RowsTable({
                     row={row}
                     cell={row.cells.find((candidate) => candidate.key === column.key) ?? null}
                   />
-                </td>
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -658,11 +961,18 @@ function RowsTable({
  * period (the report's own default), now, or a moment the operator types on the
  * reported branch's clock.
  *
- * Applying a choice re-reads the report; nothing is computed here. A moment only
- * partly typed is refused with the incomplete-entry message — never "required",
- * which would tell the operator the box is empty when it is not — and a moment
- * before the period starts or later than now is refused before a request is spent,
- * with the bound it broke. The server refuses both too.
+ * Applying a choice re-reads the report; nothing is computed here. "Now" is sent
+ * as the word and resolved by the database's clock, never this browser's. A
+ * moment only partly typed is refused with the incomplete-entry message — never
+ * "required", which would tell the operator the box is empty when it is not — and
+ * a moment before the period starts or later than now is refused before a request
+ * is spent, with the bound it broke. The server refuses both too. A refusal puts
+ * the cursor on the moment and is withdrawn once the moment changes.
+ *
+ * `zone` is `null` when the reported branch's zone is not a clock this browser
+ * knows. A typed moment would then mean nothing, so "a specific moment" draws
+ * the shared `MomentZoneRefusal` where the picker would be and applies nothing;
+ * the other two choices need no clock here and stay as they are.
  */
 function AsOfChoiceForm({
   messages,
@@ -672,7 +982,8 @@ function AsOfChoiceForm({
   onApply,
 }: {
   readonly messages: Messages;
-  readonly zone: string;
+  /** The reported branch's clock (`reportClock`), `null` when it is not known. */
+  readonly zone: string | null;
   readonly periodFrom: string;
   readonly choice: ReportAsOfChoice;
   readonly onApply: (choice: ReportAsOfChoice) => void;
@@ -680,41 +991,34 @@ function AsOfChoiceForm({
   const [mode, setMode] = useState<ReportAsOfChoice['mode']>(choice.mode);
   const [moment, setMoment] = useState(choice.mode === 'at' ? choice.instant : '');
   const [problem, setProblem] = useState<MomentProblem>(null);
-  const [errorKey, setErrorKey] = useState<keyof Messages | null>(null);
+  // A complaint about the moment is withdrawn once the moment, or the choice
+  // it belongs to, changes.
+  const { errorKey, formRef, refuse } = useLocalRefusal({
+    moment: `${mode}|${moment}|${problem ?? ''}`,
+  });
 
   const apply = () => {
     if (mode !== 'at') {
-      setErrorKey(null);
+      refuse({});
       onApply({ mode });
       return;
     }
-    if (problem === 'incomplete') {
-      setErrorKey('reports.asOf.incomplete');
+    if (zone === null) {
+      // No clock, so no moment: the refusal is already drawn where the picker
+      // would be, and nothing is sent.
+      refuse({});
       return;
     }
-    if (problem !== null) {
-      setErrorKey('reports.asOf.invalid');
-      return;
-    }
-    if (moment === '' || !isReportInstant(moment)) {
-      setErrorKey('reports.asOf.chooseMoment');
-      return;
-    }
-    const opens = dayToPicker(periodFrom, zone);
-    if (opens !== null && Date.parse(moment) < opens.valueOf()) {
-      setErrorKey('reports.asOf.beforePeriod');
-      return;
-    }
-    if (Date.parse(moment) > Date.now()) {
-      setErrorKey('reports.asOf.afterNow');
-      return;
-    }
-    setErrorKey(null);
+    const refusal = momentRefusal(moment, problem, periodFrom, zone);
+    refuse(refusal === null ? {} : { moment: refusal });
+    if (refusal !== null) return;
     onApply({ mode: 'at', instant: moment });
   };
+  const refused = errorKey('moment');
 
   return (
     <form
+      ref={formRef}
       noValidate
       aria-label={translate(messages, 'reports.asOf.legend')}
       className="flex flex-col gap-3"
@@ -723,47 +1027,59 @@ function AsOfChoiceForm({
         apply();
       }}
     >
-      <RadioGroupField
+      <FormRadioGroupField
         label={translate(messages, 'reports.asOf.legend')}
         name="report-as-of"
         value={mode}
-        onChange={(next) => {
-          setErrorKey(null);
-          setMode(next === 'now' || next === 'at' ? next : 'end');
-        }}
+        onChange={(next) => setMode(next === 'now' || next === 'at' ? next : 'end')}
         options={[
           { value: 'end', label: translate(messages, 'reports.asOf.endOfPeriod') },
           { value: 'now', label: translate(messages, 'reports.asOf.now') },
           { value: 'at', label: translate(messages, 'reports.asOf.specific') },
         ]}
       />
-      {mode === 'at' ? (
+      {mode !== 'at' ? null : zone === null ? (
+        <MomentZoneRefusal
+          messages={messages}
+          label={translate(messages, 'reports.asOf.moment')}
+          testId="report-as-of-moment"
+        />
+      ) : (
         <ZonedDateTimeField
           messages={messages}
           label={translate(messages, 'reports.asOf.moment')}
           description={translate(messages, 'reports.asOf.momentHint')}
           timezone={zone}
           value={moment}
-          onChange={(next) => {
-            setErrorKey(null);
-            setMoment(next);
-          }}
+          onChange={setMoment}
           onProblem={setProblem}
-          error={errorKey === null ? undefined : translate(messages, errorKey)}
+          error={refused === undefined ? undefined : translate(messages, refused as keyof Messages)}
           testId="report-as-of-moment"
         />
-      ) : errorKey === null ? null : (
-        <p role="alert" className="text-supporting text-error">
-          {translate(messages, errorKey)}
-        </p>
       )}
       <div>
-        <button type="submit" className={REPORT_SECONDARY_BUTTON}>
+        <Button type="submit" variant="outlined">
           {translate(messages, 'reports.asOf.apply')}
-        </button>
+        </Button>
       </div>
     </form>
   );
+}
+
+/** Why a typed moment cannot be applied, as a catalogue key, or `null` when it can. */
+function momentRefusal(
+  moment: string,
+  problem: MomentProblem,
+  periodFrom: string,
+  zone: string
+): keyof Messages | null {
+  if (problem === 'incomplete') return 'reports.asOf.incomplete';
+  if (problem !== null) return 'reports.asOf.invalid';
+  if (moment === '' || !isReportInstant(moment)) return 'reports.asOf.chooseMoment';
+  const opens = dayToPicker(periodFrom, zone);
+  if (opens !== null && Date.parse(moment) < opens.valueOf()) return 'reports.asOf.beforePeriod';
+  if (Date.parse(moment) > Date.now()) return 'reports.asOf.afterNow';
+  return null;
 }
 
 /**
@@ -778,6 +1094,10 @@ function AsOfChoiceForm({
  * first-seen order. There is no declaration of them on the envelope, and
  * inventing an order would put a workshop's own grouping into an arrangement this
  * side chose.
+ *
+ * One bounded answer with no cursor, so it is the Material table rather than the
+ * grid (the planner ruling of 2026-10-09); nothing is paged, and nothing more
+ * exists than what is drawn.
  */
 function GroupTable({
   messages,
@@ -804,30 +1124,30 @@ function GroupTable({
       <h4 id="report-groups-heading" className="text-label font-medium text-text-primary">
         {translate(messages, 'reports.groups.heading')}
       </h4>
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-        <table className="w-full border-collapse">
+      <TableContainer className="rounded-lg border border-border bg-surface">
+        <Table size="small">
           <caption className="sr-only">{translate(messages, 'reports.groups.caption')}</caption>
-          <thead className="bg-table-header">
-            <tr>
-              <th scope="col" className={REPORT_TABLE_HEADER}>
+          <TableHead>
+            <TableRow>
+              <TableCell scope="col">
                 {translate(messages, 'reports.groups.column.group')}
-              </th>
+              </TableCell>
               {measureNames.map((name) => {
                 const heading = fieldHeading(messages, name);
                 return (
-                  <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                  <TableCell key={name} scope="col" align="right">
                     {heading === null ? <MachineName value={name} /> : heading}
-                  </th>
+                  </TableCell>
                 );
               })}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {groups.map((group) => {
               const label = groupDisplayLabel(messages, group);
               return (
-                <tr key={JSON.stringify(group.key)} className="border-t border-border-subtle">
-                  <td className={REPORT_TABLE_CELL}>
+                <TableRow key={JSON.stringify(group.key)} className="align-top">
+                  <TableCell>
                     {label === null ? (
                       <span className="flex flex-col gap-1">
                         {keyNames.map((name) => {
@@ -858,12 +1178,12 @@ function GroupTable({
                     ) : (
                       <bdi>{label}</bdi>
                     )}
-                  </td>
+                  </TableCell>
                   {measureNames.map((name) => {
                     const measure = group.measures[name];
                     const currency = groupCurrency(group);
                     return (
-                      <td key={name} className={REPORT_TABLE_CELL}>
+                      <TableCell key={name} align="right">
                         {measure === undefined ? (
                           <span className="text-text-muted" lang={locale}>
                             {translate(messages, 'reports.groups.noMeasure')}
@@ -871,15 +1191,15 @@ function GroupTable({
                         ) : (
                           <span dir="ltr">{formatReportMoney(measure, currency, locale)}</span>
                         )}
-                      </td>
+                      </TableCell>
                     );
                   })}
-                </tr>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
     </section>
   );
 }
@@ -972,7 +1292,7 @@ function CellValue({
         {translate(messages, 'reports.cell.none')}
       </span>
     ) : (
-      <time dateTime={cell.value}>{formatReportTime(cell.value, locale, zone)}</time>
+      <ReportTime messages={messages} locale={locale} zone={zone} value={cell.value} />
     );
   }
 

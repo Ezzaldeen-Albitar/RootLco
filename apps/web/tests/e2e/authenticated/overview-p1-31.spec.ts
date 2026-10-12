@@ -95,14 +95,31 @@ function sectionPanel(page: Page, reportCode: string): Locator {
   return page.locator(`section[aria-labelledby="overview-section-${reportCode}"]`);
 }
 
+/**
+ * Types a calendar day into one of the scope form's date pickers, part by part.
+ *
+ * Since P1-32-PRE-OD-REPA (ADR-022) the two days are the MIT date pickers: a group of spin
+ * buttons named by the label, one per part, not a text box a value can be filled into. Both
+ * catalogues write a day as day, month, year, so the digits go in that order whatever the
+ * locale; a filled picker is overwritten part by part from its first part. The label is
+ * matched from its start because a required field's label carries a decorative asterisk.
+ */
+async function typeDay(page: Page, label: string, day: string): Promise<void> {
+  const [year, month, date] = day.split('-');
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const group = page.getByRole('group', { name: new RegExp(`^${escaped}`) });
+  await group.getByRole('spinbutton').first().click();
+  await page.keyboard.type(`${date ?? ''}${month ?? ''}${year ?? ''}`);
+}
+
 /** Fills the period and asks for the overview. The branch may already be fixed. */
 async function showOverview(
   page: Page,
   locale: 'en' | 'ar',
   period: { readonly from: string; readonly to: string }
 ): Promise<void> {
-  await page.getByLabel(say(locale, 'reports.run.from')).fill(period.from);
-  await page.getByLabel(say(locale, 'reports.run.to')).fill(period.to);
+  await typeDay(page, say(locale, 'reports.run.from'), period.from);
+  await typeDay(page, say(locale, 'reports.run.to'), period.to);
   await page.getByRole('button', { name: say(locale, 'reports.overview.show') }).click();
 }
 

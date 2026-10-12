@@ -302,13 +302,13 @@ function safeShape(c: Control): boolean {
 const CLEARS_ON_REFUSAL: readonly { file: string; match: string; why: string }[] = [
   {
     file: 'features/authentication/components/LoginForm.tsx',
-    match: '<PasswordField',
-    why: 'Sign-in. A refused sign-in is the case where the password was most likely mistyped, and re-typing it is the intended correction. Retaining it would also leave the secret in a live DOM node across a failed attempt on a shared reception desk. The EMAIL beside it is retained — that is the half that was a defect, and it is fixed.',
+    match: '<FormPasswordField',
+    why: 'Sign-in. A refused sign-in is the case where the password was most likely mistyped, and re-typing it is the intended correction. Retaining it would also leave the secret in a live DOM node across a failed attempt on a shared reception desk. The EMAIL beside it is retained — that is the half that was a defect, and it is fixed. Since the Material UI slice (P1-32-PRE-OD-AUTHA) the box is controlled and the form clears it on the attempt the refusal answers, so the clearing is the code’s decision rather than a side effect of the reset.',
   },
   {
     file: 'features/authentication/components/SetPasswordForm.tsx',
-    match: '<PasswordField',
-    why: 'Choosing a new password, both boxes — the password and its confirmation. Every refusal this form can produce is a statement about the value itself (too short, too common, the two do not match), so restoring the rejected value would restore precisely what was refused and invite the operator to submit it again unchanged.',
+    match: '<FormPasswordField',
+    why: 'Choosing a new password, both boxes — the password and its confirmation. Every refusal this form can produce is a statement about the value itself (too short, too common, the two do not match), so restoring the rejected value would restore precisely what was refused and invite the operator to submit it again unchanged. Controlled since the Material UI slice (P1-32-PRE-OD-AUTHA), and cleared by the form on the attempt the refusal answers.',
   },
 ];
 
@@ -339,6 +339,11 @@ const RENDERS_COMPONENT = /<([A-Z]\w*)/g;
  * that still post a file through `<form action={…}>` key every control on the
  * settlement and hold it controlled, the shape the reception signature capture
  * uses.
+ *
+ * One more left with the users slice (`P1-32-PRE-OD-ADM3`): the user list's status
+ * filter is a `FormSelectField` of the shared filter toolbar now, controlled and
+ * outside every form, and the invitation is held in component state and sent
+ * from its own handler (`onSubmit`), which no Server Action reset reaches.
  *
  * Four entries left this list when the branch pair did.
  *
@@ -395,11 +400,6 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'components/data-table/DataTable.tsx',
     match: '<select value={request.pageSize}',
     why: 'The shared table’s page-size control, at `DataTable.tsx:586`. The table is a SIBLING of every form that appears beside it — the derived reachability reaches this file because a form owner renders `<DataTable`, not because the table is inside the form — and its request state is owned by `useServerTable`, which no form reset touches.',
-  },
-  {
-    file: 'features/administration/users/components/UsersScreen.tsx',
-    match: "<SelectField label={t('users.filter.status')}",
-    why: 'The user-list status filter at `UsersScreen.tsx:177`, rendered in `UsersScreen` above the table. The only `<form action={…}>` in this file belongs to `InviteDialog`, a separate component mounted in a dialog, so the filter is not inside it — read off the element nesting rather than inferred from the file owning a form somewhere.',
   },
 ];
 
@@ -566,6 +566,15 @@ function resetKeyOf(head: string, signals: ReadonlySet<string>): ResetKey {
  *
  * `PasswordField` is listed so it is SEEN. What happens to it is decided by
  * `CLEARS_ON_REFUSAL` rather than by the shape rule — see that list.
+ *
+ * The sign-in and account forms moved onto the Material wrappers
+ * (P1-32-PRE-OD-AUTHA), and a matcher that named only the legacy components
+ * would have stopped seeing every box on them — the email the case below keeps
+ * guarded, and the three password boxes whose decision this file records. So
+ * `FormTextField` is a text control and `FormPasswordField` a password control,
+ * from the caller's side, exactly as their legacy namesakes are. Both are
+ * controlled by type (`value` is a required prop), which is the safe shape for
+ * a text box; the password decision stays `CLEARS_ON_REFUSAL`'s.
  */
 const COMPONENT_KIND = {
   SelectField: 'select',
@@ -574,6 +583,8 @@ const COMPONENT_KIND = {
   TextField: 'text',
   TextAreaField: 'textarea',
   PasswordField: 'password',
+  FormTextField: 'text',
+  FormPasswordField: 'password',
 } as const;
 
 /** One file, read once, with everything the reachability closure needs. */
@@ -690,7 +701,7 @@ function inventory(): {
      * it renders is `<SelectField>`.
      */
     for (const m of src.matchAll(
-      /<(SelectField|CheckboxField|RadioGroupField|TextField|TextAreaField|PasswordField)\b/g
+      /<(SelectField|CheckboxField|RadioGroupField|TextField|TextAreaField|PasswordField|FormTextField|FormPasswordField)\b/g
     )) {
       const at = m.index ?? 0;
       const head = src.slice(at, tagEnd(src, at));
@@ -874,6 +885,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       'components/forms/Field.tsx',
       'features/vehicles/components/VehicleRelationsSections.tsx',
       'features/vehicles/components/VehicleCreateScreen.tsx',
+      // Still opened by the scan, so a form there that returned to a Server
+      // Action would be inventoried again (see below).
+      'features/administration/access/components/ApprovalLimitsScreen.tsx',
     ]) {
       expect(
         files.some((f) => f.replace(/\\/g, '/') === required),
@@ -892,7 +906,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       // The three appointment files left this list with the Material UI slice:
       // their forms submit through their own handler, so no reset reaches them
       // and they hold no guarded control — the case below holds them to that.
-      'features/administration/access/components/ApprovalLimitsScreen.tsx',
+      // The approval-limits screen left it the same way (P1-32-PRE-OD-ADM4): its
+      // create and end forms are held in component state and sent from their
+      // own handler, and it is still required in the scan above.
     ]) {
       expect(
         guarded.some((c) => c.file === required),

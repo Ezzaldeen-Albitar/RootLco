@@ -118,10 +118,23 @@ export async function readPermissionCatalogue(roleId: string | null): Promise<Pe
   const mappings = await client.get<{ items: readonly RolePermissionRow[] }>(
     `/api/v1/iam/roles/${encodeURIComponent(roleId)}/permissions`
   );
+  /*
+   * A refused or failed mapping read is said as one (`P1-32-PRE-OD-ADM4`). It
+   * used to be answered with an empty list, which the screen drew as "this role
+   * holds nothing" — and offered to add every permission it already holds.
+   */
+  if (!mappings.ok) {
+    return {
+      status: STATUS_BY_KIND[mappings.kind],
+      permissions: catalogue.data.items,
+      mappings: [],
+      correlationId: mappings.correlationId,
+    };
+  }
   return {
     status: 'ok',
     permissions: catalogue.data.items,
-    mappings: mappings.ok ? mappings.data.items : [],
+    mappings: mappings.data.items,
     correlationId: catalogue.correlationId,
   };
 }

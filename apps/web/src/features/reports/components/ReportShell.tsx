@@ -1,16 +1,14 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import {
-  BackendUnavailableState,
-  ErrorState,
-  LoadingState,
-  NotFoundState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
+import { translate } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
+import { zoneDisplayName } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
+import { formatReportTime, reportClock } from '../report-labels';
 
 /**
  * The pieces both report screens share.
@@ -25,6 +23,10 @@ import type { ReadFailureStatus } from '@/lib/api/read-operation';
  * This file lives in `features/reports` rather than being imported from another
  * feature, because a feature does not import another feature. The delivery
  * screens hold their own copy of the same idea for the same reason.
+ *
+ * Since `P1-32-PRE-OD-REPA` (ADR-022) the states are the Material UI ones
+ * (`MuiStates`), with the same catalogue entries: the same sentence for each
+ * outcome, now with a retry where retrying can change the answer.
  */
 
 /**
@@ -46,28 +48,35 @@ export function ReportFailure({
   messages,
   status,
   correlationId,
+  locale,
+  onRetry,
 }: {
   readonly messages: Messages;
   readonly status: ReadFailureStatus;
   readonly correlationId: string | null;
+  /** Only so an ended session can offer the way back to signing in. */
+  readonly locale?: Locale | undefined;
+  /**
+   * Read again. Offered by the outage and the fault only — a refusal, an ended
+   * session and an absent report are answered identically however often they
+   * are asked (`MuiReadFailureState`).
+   */
+  readonly onRetry?: (() => void) | undefined;
 }) {
-  // `null` becomes `undefined` because the shared states take an optional prop,
-  // and an explicit null would render a reference that is not there.
-  const reference = correlationId ?? undefined;
-  if (status === 'denied') {
-    return <PermissionDeniedState messages={messages} correlationId={reference} />;
-  }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
-  if (status === 'unavailable') {
-    return <BackendUnavailableState messages={messages} correlationId={reference} />;
-  }
-  if (status === 'not-found') return <NotFoundState messages={messages} />;
-  return <ErrorState messages={messages} correlationId={reference} />;
+  return (
+    <MuiReadFailureState
+      messages={messages}
+      locale={locale}
+      status={status}
+      correlationId={correlationId}
+      onRetry={onRetry}
+    />
+  );
 }
 
 /** The shared loading placeholder, so one screen cannot invent a second. */
 export function ReportLoading({ messages }: { readonly messages: Messages }) {
-  return <LoadingState messages={messages} />;
+  return <MuiLoadingState messages={messages} />;
 }
 
 /**
@@ -100,6 +109,102 @@ export function ContextFact({
       <span className="text-caption text-text-muted">{label}</span>
       <span className="text-body text-text-primary">{children}</span>
     </div>
+  );
+}
+
+/**
+ * A day or an instant of a report, written for reading on the reported
+ * branch's clock (`formatReportTime`) with the value itself kept on the
+ * `<time>` element.
+ *
+ * Where it is an instant and the branch's zone is not a clock this browser
+ * knows, NO time is written: the plain "time not shown" words stand in its
+ * place, marked `data-zone-unknown`. A time on UTC, or on the reader's clock,
+ * would sit beside days counted on the branch's clock and read as one of them
+ * (Owner decision D-17; `P1-32-PRE-OD-REPA-03`).
+ */
+export function ReportTime({
+  messages,
+  locale,
+  zone,
+  value,
+  testId,
+}: {
+  readonly messages: Messages;
+  readonly locale: Locale;
+  /** The zone the period was resolved in: the reported branch's own. */
+  readonly zone: string;
+  readonly value: string;
+  readonly testId?: string | undefined;
+}) {
+  const written = formatReportTime(value, locale, zone);
+  if (written === null) {
+    return (
+      <span className="text-text-muted" lang={locale} data-testid={testId} data-zone-unknown="true">
+        {translate(messages, 'reports.time.notShown')}
+      </span>
+    );
+  }
+  return (
+    <time dateTime={value} data-testid={testId}>
+      {written}
+    </time>
+  );
+}
+
+/**
+ * The reported branch's zone, named for a reader with its offset
+ * (`zoneDisplayName`) — or, for a zone this browser does not know, the plain
+ * statement that it is not known here. The stored identifier is a
+ * configuration value and is never the thing shown.
+ */
+export function ReportZoneName({
+  messages,
+  locale,
+  zone,
+  at,
+  testId,
+}: {
+  readonly messages: Messages;
+  readonly locale: Locale;
+  readonly zone: string;
+  /** The instant whose offset is named. */
+  readonly at: string;
+  readonly testId?: string | undefined;
+}) {
+  if (reportClock(zone) === null) {
+    return (
+      <span lang={locale} data-testid={testId} data-zone-unknown="true">
+        {translate(messages, 'reports.context.timezoneUnknown')}
+      </span>
+    );
+  }
+  return <bdi data-testid={testId}>{zoneDisplayName(zone, intlLocale(locale), at)}</bdi>;
+}
+
+/**
+ * The sentence under a report's context facts: that days and times are on the
+ * zone named above — or, where that zone is not a clock this browser knows,
+ * that the times are not shown and why.
+ */
+export function ReportClockNote({
+  messages,
+  locale,
+  zone,
+}: {
+  readonly messages: Messages;
+  readonly locale: Locale;
+  readonly zone: string;
+}) {
+  return (
+    <p className="text-caption text-text-muted" lang={locale}>
+      {translate(
+        messages,
+        reportClock(zone) === null
+          ? 'reports.context.zoneUnknownNote'
+          : 'reports.context.periodNote'
+      )}
+    </p>
   );
 }
 

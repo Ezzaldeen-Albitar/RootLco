@@ -1009,3 +1009,48 @@ describe('the counts screen on Material UI (P1-32-PRE-OD-INV5)', () => {
     await waitFor(() => expect(cancel).toHaveFocus());
   });
 });
+
+/**
+ * P1-32-PRE-OD-INVF, COUNT-focus: after a count was closed the cursor was once
+ * found on `<main>`, because the screen gave it back only when it had fallen to
+ * the document's body. Closing now always gives it back to the count's Open
+ * button. Twenty rounds, half of them with the cursor moved onto a `<main>` as
+ * the panel closes — the case the acceptance run caught.
+ */
+describe('P1-32-PRE-OD-INVF: closing a count always gives the cursor back to its Open button', () => {
+  it('returns the cursor to the Open button on every close, including when it lands on <main>', async () => {
+    const user = userEvent.setup();
+    const main = document.createElement('main');
+    main.tabIndex = -1;
+    document.body.appendChild(main);
+    try {
+      renderScreen();
+      await chooseBranch(TARGET_FORM);
+      for (let round = 0; round < 20; round += 1) {
+        const panel = await openCount(user);
+        const heading = within(panel).getByRole('heading', { name: /Count of WH-1/ });
+        await waitFor(() => expect(heading).toHaveFocus());
+        const close = within(panel).getByRole('button', {
+          name: EN['inventory.stockOps.close'] as string,
+        });
+        const strayToMain = round % 2 === 0;
+        // The browser moving the cursor onto <main> as the panel goes, before
+        // the screen's own handler has run.
+        const stray = () => main.focus();
+        if (strayToMain) close.addEventListener('click', stray);
+        await user.click(close);
+        close.removeEventListener('click', stray);
+        await waitFor(() =>
+          expect(
+            within(listRegion()).getByRole('button', {
+              name: `${EN['inventory.counts.open'] as string} WH-1`,
+            })
+          ).toHaveFocus()
+        );
+        expect(document.activeElement).not.toBe(main);
+      }
+    } finally {
+      main.remove();
+    }
+  });
+});

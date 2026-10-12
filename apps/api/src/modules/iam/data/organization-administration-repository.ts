@@ -31,21 +31,30 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 
-/** A company as the reach list publishes it. Names, not internals. */
+/**
+ * A company as the reach list publishes it. Names, not internals — and the
+ * record version, which is what `org.company-update` needs as `If-Match`: an
+ * edit opened from the list sends the version the operator was looking at, so a
+ * change made by someone else in between is refused rather than overwritten
+ * (P1-32-PRE-OD-ADM1).
+ */
 export interface CompanyReachRow {
   readonly id: string;
   readonly companyCode: string;
   readonly legalName: string;
   readonly status: string;
+  readonly recordVersion: number;
 }
 
 /** A company as an administration write returns it. */
 export interface CompanyRecordRow extends CompanyReachRow {
   readonly baseCurrencyCode: string;
-  readonly recordVersion: number;
 }
 
-/** A branch as the reach list publishes it. */
+/**
+ * A branch as the reach list publishes it, with the record version
+ * `org.branch-update` needs as `If-Match` (P1-32-PRE-OD-ADM1).
+ */
 export interface BranchReachRow {
   readonly id: string;
   readonly companyId: string;
@@ -55,6 +64,7 @@ export interface BranchReachRow {
   readonly countryCode: string | null;
   readonly timezoneName: string;
   readonly status: string;
+  readonly recordVersion: number;
 }
 
 /** A branch as an administration write returns it. */
@@ -63,7 +73,6 @@ export interface BranchRecordRow extends BranchReachRow {
   readonly addressLine2: string | null;
   readonly region: string | null;
   readonly postalCode: string | null;
-  readonly recordVersion: number;
 }
 
 /** A department, in the one shape both the read and the writes publish. */
@@ -177,9 +186,10 @@ export class OrganizationAdministrationRepository extends Repository {
       company_code: string;
       legal_name: string;
       status: string;
+      record_version: number;
     }>(
       db,
-      `SELECT id, company_code, legal_name, status
+      `SELECT id, company_code, legal_name, status, record_version
          FROM org.legal_companies
         WHERE deleted_at IS NULL
         ORDER BY legal_name, id
@@ -190,6 +200,7 @@ export class OrganizationAdministrationRepository extends Repository {
       companyCode: row.company_code,
       legalName: row.legal_name,
       status: row.status,
+      recordVersion: row.record_version,
     }));
   }
 
@@ -354,9 +365,11 @@ export class OrganizationAdministrationRepository extends Repository {
       country_code: string | null;
       timezone_name: string;
       status: string;
+      record_version: number;
     }>(
       db,
-      `SELECT id, company_id, branch_code, name, city, country_code, timezone_name, status
+      `SELECT id, company_id, branch_code, name, city, country_code, timezone_name, status,
+              record_version
          FROM org.branches
         WHERE deleted_at IS NULL
         ORDER BY name, id
@@ -373,6 +386,7 @@ export class OrganizationAdministrationRepository extends Repository {
       countryCode: row.country_code,
       timezoneName: row.timezone_name,
       status: row.status,
+      recordVersion: row.record_version,
     }));
   }
 
