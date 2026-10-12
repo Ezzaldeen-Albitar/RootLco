@@ -71,7 +71,23 @@ import {
  * field on a clock the caller must name, which reads no working context at all
  * (a record reached by its address, on its own branch's clock, has no business
  * reading the working branch). `DateField` holds a calendar day, which names
- * no instant, and keeps the browser's calendar only for drawing the picker.
+ * no instant, and keeps the browser's calendar only for drawing the picker
+ * (`pickerZone`): the day it hands back is the day typed, on any machine.
+ *
+ * ## One picker per clock
+ *
+ * The picker decides once, when it mounts, which date the typed parts are laid
+ * over — today's midnight on the clock it was mounted with — and keeps that
+ * for as long as it holds no whole value. A field that was empty when its
+ * clock changed (the working branch switched, a filter's zone replaced) went
+ * on building the typed day on the OLD clock, and reading that midnight on the
+ * new one moved it: a day typed after a switch from a Riyadh clock to UTC came
+ * out as the day before, and a moment came out three hours early (measured,
+ * on every machine, UTC included). So each clock gets a picker of its own —
+ * the picker is keyed on its clock. A whole day or moment the caller holds is
+ * untouched by that, because the caller's string is what the new picker is
+ * given; a day only partly typed when the clock changes is dropped, as no
+ * clock could say which day it would have been.
  *
  * ## The hour that happens twice
  *
@@ -221,15 +237,179 @@ export function workingZone(context: WorkingContext): string | undefined {
   return zone === undefined || !isKnownZone(zone) ? undefined : zone;
 }
 
-/** The picker's zone name: an IANA zone, or `'default'` for the browser's. */
+/**
+ * The picker's zone name: an IANA zone, or `'system'` for the browser's own
+ * calendar when there is no zone to name.
+ *
+ * ## Why `'system'` and never the picker's `'default'`
+ *
+ * To the pickers' dayjs adapter `'default'` means "the zone set with
+ * `dayjs.tz.setDefault`", and nothing here sets one. The adapter then asks
+ * dayjs for a zone named `undefined`, on every render, for the value it is
+ * about to draw. dayjs answers with whatever offset it measures for the
+ * machine at that instant and no zone name at all — and for a year below 1000
+ * the offset it measures is zero on every machine (it writes the year as
+ * `202`, which its own parser does not read and the engine's reads on the
+ * machine's clock), so it takes the value for a UTC one and hands it back on
+ * UTC. A year is typed a digit at a time and passes through 202 on its way to
+ * 2026, so on any machine whose clock is not UTC the day being typed was
+ * redrawn on UTC half way through, and the finished entry was read back from
+ * there: on a Riyadh machine a typed day came out as the day before, on an
+ * Amman machine the first of January came out a year late, and on a Los
+ * Angeles machine a day on its winter clock came out as the day before
+ * (measured, MUI X 9.14 with dayjs 1.11). A UTC machine cannot show it, which
+ * is how it passed every hosted run.
+ *
+ * `'system'` is the adapter's name for a plain machine-local value: it builds
+ * one with `dayjs(value)` and never converts it, so the parts typed are the
+ * parts held. A zone-less `DateField` reads the day back from those parts and
+ * never from an instant, so no machine clock can move it.
+ */
 function pickerZone(zone: string | undefined): string {
-  return zone ?? 'default';
+  return zone ?? 'system';
 }
 
-/** A calendar day as the picker's value: that day's midnight on `zone`'s clock. */
+const MS_PER_MINUTE = 60_000;
+const MS_PER_DAY = 86_400_000;
+
+/** An instant on a zone: when, and the zone's offset then in minutes east of UTC. */
+interface ZonedInstant {
+  readonly at: number;
+  readonly offset: number;
+}
+
+/**
+ * `zone`'s offset at an instant, in minutes east of UTC — measured the way
+ * dayjs measures it for every value the picker holds, from the zone's rules
+ * and no clock: not the machine's, and not today's.
+ */
+function offsetOnZone(at: number, zone: string): number {
+  return dayjs(at).tz(zone).utcOffset();
+}
+
+/**
+ * Where `zone`'s wall clock reads the given digits (the wall clock written as
+ * if it were UTC's own): every instant at which it does, EARLIEST FIRST, and
+ * the two offsets the zone is on either side of it.
+ *
+ * One instant for an ordinary wall clock; two where the clocks went back over
+ * it and the hour happens twice; none where they went forward over it and the
+ * hour is skipped.
+ *
+ * The zone is on one of two offsets at that wall clock: the one it was on a
+ * day earlier or the one it is on a day later (no zone changes its clock twice
+ * in that span). Each is tried — the digits less the offset is an instant, and
+ * it is one of the answers when the zone really is on that offset then. The
+ * greater offset gives the earlier instant, so it is tried first.
+ */
+function occurrencesOnZone(
+  digits: number,
+  zone: string
+): { readonly found: readonly ZonedInstant[]; readonly lesser: number; readonly greater: number } {
+  const dayBefore = offsetOnZone(digits - MS_PER_DAY, zone);
+  const dayAfter = offsetOnZone(digits + MS_PER_DAY, zone);
+  const greater = Math.max(dayBefore, dayAfter);
+  const lesser = Math.min(dayBefore, dayAfter);
+  const found: ZonedInstant[] = [];
+  for (const offset of greater === lesser ? [greater] : [greater, lesser]) {
+    const at = digits - offset * MS_PER_MINUTE;
+    if (offsetOnZone(at, zone) === offset) found.push({ at, offset });
+  }
+  return { found, lesser, greater };
+}
+
+/**
+ * The instant a wall clock names on `zone`, and the zone's offset there in
+ * minutes east of UTC — `null` when the wall clock is not one. The wall clock
+ * is `YYYY-MM-DD` (that day's midnight) or `YYYY-MM-DDTHH:mm:ss`.
+ *
+ * The answer depends on the wall clock and the zone and on nothing else: not
+ * on the machine's clock, and not on the day it is asked.
+ *
+ *  - A wall clock that happens ONCE is that instant.
+ *  - One that happens TWICE — the clocks went back over it — is the EARLIER of
+ *    the two, on the offset before the change. See "The hour that happens
+ *    twice".
+ *  - One the zone SKIPS — the clocks went forward over it — is carried on by
+ *    the size of the change, on the offset after it: 02:30 on the morning New
+ *    York's clocks go forward is 03:30 on the summer offset.
+ *
+ * ## Why this is not `dayjs.tz(wall, zone)`
+ *
+ * It answers the same question, and three things about its answer are not the
+ * zone's:
+ *
+ *  - WHICH of two instants it picks. It starts its search from the offset the
+ *    zone is on NOW, and an hour that happens twice is settled by where the
+ *    search started. Asked in summer it gave the earlier 01:30 on the night
+ *    New York's clocks go back; asked after that night, the later one. The
+ *    same typed moment would have been sent an hour apart on two different
+ *    days;
+ *  - its PARTS. It stores the instant as a machine-local date moved by the
+ *    difference between the two clocks, and every part — the year, the day,
+ *    the hour — is read from that moved date on the MACHINE's clock. When the
+ *    machine's own zone changes offset between the instant and the moved date
+ *    the reading is an hour out, and an hour before midnight is the day
+ *    before: on an Auckland machine 2026-09-27, the day Auckland's clocks go
+ *    forward, was drawn as the 26th on a Riyadh branch while the form went on
+ *    holding the 27th (measured);
+ *  - its INSTANT. To give the instant back it undoes that move with the
+ *    machine offset it recorded — and takes a recorded offset of zero for
+ *    "none recorded", measuring the machine again at the moved date. On a
+ *    machine that is on UTC at the instant and not at the moved date the
+ *    instant comes back an hour off: on a Europe/London machine 02:30 typed on
+ *    a Riyadh branch for 29/03/2026 was sent as 03:30, and on an
+ *    Atlantic/Azores machine 2026-03-29 on a New York branch was drawn as the
+ *    28th (measured).
+ *
+ * So the instant is built here from the wall clock's own digits and the
+ * zone's offsets, by UTC arithmetic.
+ */
+export function wallClockOnZone(wall: string, zone: string): ZonedInstant | null {
+  // The digits read as UTC's own: parts only, no clock.
+  const parsed = dayjs.utc(wall);
+  if (!parsed.isValid()) return null;
+  const digits = parsed.valueOf();
+  const { found, lesser, greater } = occurrencesOnZone(digits, zone);
+  const earliest = found[0];
+  if (earliest !== undefined) return earliest;
+  // Skipped: counted from the offset before the change, named on the one after.
+  return { at: digits - lesser * MS_PER_MINUTE, offset: greater };
+}
+
+/** An offset in minutes east of UTC as `±HH:MM`. */
+function offsetText(minutes: number): string {
+  const size = Math.abs(minutes);
+  const hours = String(Math.floor(size / 60)).padStart(2, '0');
+  const rest = String(size % 60).padStart(2, '0');
+  return `${minutes < 0 ? '-' : '+'}${hours}:${rest}`;
+}
+
+/**
+ * A calendar day as the picker's value: that day's midnight on `zone`'s clock.
+ *
+ * The instant of that midnight comes from `wallClockOnZone`, and is then shown
+ * on the zone the way any instant is (`instantToPicker`): dayjs reads the
+ * zone's wall clock for it and keeps those parts, moving nothing.
+ *
+ * ## What the value cannot hold
+ *
+ * dayjs keeps a zone's wall clock as a date on the MACHINE's calendar, so a
+ * wall clock the machine's own calendar skips cannot be kept: on an
+ * Asia/Beirut machine, whose clocks go from midnight to 01:00 on 29/03/2026,
+ * that day's midnight on a New York branch is held as 01:00 and its instant is
+ * an hour late (measured). The day is the same day, which is all a day field
+ * draws or hands back.
+ */
 export function dayToPicker(day: string, zone: string | undefined): Dayjs | null {
   if (!isCalendarDay(day)) return null;
-  const value = zone === undefined ? dayjs(day) : dayjs.tz(day, zone);
+  if (zone === undefined) {
+    const local = dayjs(day);
+    return local.isValid() ? local : null;
+  }
+  const midnight = wallClockOnZone(day, zone);
+  if (midnight === null) return null;
+  const value = dayjs(midnight.at).tz(zone);
   return value.isValid() ? value : null;
 }
 
@@ -263,7 +443,17 @@ export function pickerToDay(value: Dayjs | null, zone: string | undefined): Cale
   return wallClockIn(value, zone).slice(0, 10);
 }
 
-/** An instant as the picker's value, shown on `zone`'s clock. */
+/**
+ * An instant as the picker's value, shown on `zone`'s clock.
+ *
+ * The same limit as a day's (`dayToPicker`, "What the value cannot hold"), and
+ * here it reaches what is drawn: a moment whose wall clock the MACHINE's own
+ * calendar skips is drawn an hour late, and typing that hour is refused as not
+ * a date. On a Europe/Berlin machine, whose clocks go from 02:00 to 03:00 on
+ * 29/03/2026, a Riyadh branch's 02:30 that day is drawn as 03:30 (measured).
+ * One hour a year, on a machine whose zone changes its clock; not fixed here —
+ * the picker would have to hold its value some other way.
+ */
 export function instantToPicker(instant: string, zone: string | undefined): Dayjs | null {
   if (instant.trim() === '') return null;
   const parsed = dayjs(instant);
@@ -280,36 +470,40 @@ export function pickerToInstant(value: Dayjs | null, zone: string | undefined): 
   if (zone === undefined) return value.format('YYYY-MM-DDTHH:mm:ssZ');
   // The wall clock, resolved afresh on the zone: the offset is the one in force
   // at THAT wall clock, whatever the picker's object was carrying.
-  return dayjs.tz(wallClockIn(value, zone), zone).format('YYYY-MM-DDTHH:mm:ssZ');
+  const resolved = wallClockOnZone(wallClockIn(value, zone), zone);
+  if (resolved === null) return '';
+  // The digits are written from the instant by UTC arithmetic, in which no
+  // machine clock takes part (see `wallClockOnZone`).
+  const shown = dayjs.utc(resolved.at + resolved.offset * MS_PER_MINUTE);
+  return `${shown.format(WALL_CLOCK)}${offsetText(resolved.offset)}`;
 }
 
 /**
  * Whether an instant's wall clock on `zone` happens twice that day (the clocks
- * went back), and if so the offsets of both occurrences, earlier first.
+ * went back), and if so the offsets of both occurrences, earlier first, and
+ * the offset of the instant itself.
  *
- * The other occurrence, if there is one, is one offset change away: the offset
- * is measured three hours either side (every transition in use is an hour or
- * less), and the instant moved by the difference is checked for the same wall
- * clock.
+ * The two occurrences are the two instants `occurrencesOnZone` finds for the
+ * wall clock the zone shows at that instant — the same two `wallClockOnZone`
+ * chooses between — so which is the earlier is settled by the instants
+ * themselves, on every machine and on every day.
  */
 export function repeatedWallClock(
   instant: string,
   zone: string
 ): { readonly earlier: string; readonly later: string; readonly shown: string } | null {
   if (instant.trim() === '') return null;
-  const at = dayjs(instant);
-  if (!at.isValid()) return null;
-  const local = at.tz(zone);
-  const wall = local.format(WALL_CLOCK);
-  for (const hours of [-3, 3]) {
-    const probe = at.add(hours, 'hour').tz(zone).utcOffset();
-    if (probe === local.utcOffset()) continue;
-    const other = at.add(local.utcOffset() - probe, 'minute').tz(zone);
-    if (other.format(WALL_CLOCK) !== wall) continue;
-    const [first, second] = other.isBefore(at) ? [other, local] : [local, other];
-    return { earlier: first.format('Z'), later: second.format('Z'), shown: local.format('Z') };
-  }
-  return null;
+  const parsed = dayjs(instant);
+  if (!parsed.isValid()) return null;
+  const at = parsed.valueOf();
+  const shown = offsetOnZone(at, zone);
+  const [first, second] = occurrencesOnZone(at + shown * MS_PER_MINUTE, zone).found;
+  if (first === undefined || second === undefined) return null;
+  return {
+    earlier: offsetText(first.offset),
+    later: offsetText(second.offset),
+    shown: offsetText(shown),
+  };
 }
 
 /**
@@ -471,12 +665,22 @@ export function DateField(props: DateFieldProps) {
     props;
   const context = useWorkingContext();
   const zone = timezone ?? workingZone(context);
+  const clock = pickerZone(zone);
   const wiring = useFieldWiring(props.description, props.error, props.describedBy);
   const minDay = min === undefined ? null : dayToPicker(min, zone);
   const maxDay = max === undefined ? null : dayToPicker(max, zone);
   const [picker, keep] = useHeldPickerValue(value, zone, dayToPicker);
   const [partsBlank, setPartsBlank] = useState(true);
   const [pickerProblem, setPickerProblem] = useState<DateValidationError>(null);
+  // A new clock is a new picker (`key` below), and a new picker reports only
+  // what it finds, so its findings start again from "nothing typed, nothing
+  // wrong". See "One picker per clock".
+  const [followedClock, setFollowedClock] = useState(clock);
+  if (followedClock !== clock) {
+    setFollowedClock(clock);
+    setPartsBlank(true);
+    setPickerProblem(null);
+  }
   // Parts typed and still no day at all: the picker is silent about this case.
   // A day typed whole but impossible is not null, and the picker names it.
   const problem: DayProblem = !partsBlank && picker === null ? 'incomplete' : pickerProblem;
@@ -496,9 +700,10 @@ export function DateField(props: DateFieldProps) {
 
   return (
     <DatePicker
+      key={clock}
       label={label}
       value={picker}
-      timezone={pickerZone(zone)}
+      timezone={clock}
       onChange={(next) => {
         const emitted = pickerToDay(next, zone);
         keep(next, emitted);
@@ -604,6 +809,14 @@ export function ZonedDateTimeField(props: ZonedDateTimeFieldProps) {
   const [picker, keep] = useHeldPickerValue(value, zone, instantToPicker);
   const [partsBlank, setPartsBlank] = useState(true);
   const [pickerProblem, setPickerProblem] = useState<DateTimeValidationError>(null);
+  // A new clock is a new picker (`key` below); its findings start again. See
+  // "One picker per clock".
+  const [followedClock, setFollowedClock] = useState(zone);
+  if (followedClock !== zone) {
+    setFollowedClock(zone);
+    setPartsBlank(true);
+    setPickerProblem(null);
+  }
   // Parts typed and still no moment at all: the picker is silent about this
   // case, exactly as for a day (see "A day half typed is reported").
   const problem: MomentProblem = !partsBlank && picker === null ? 'incomplete' : pickerProblem;
@@ -623,9 +836,10 @@ export function ZonedDateTimeField(props: ZonedDateTimeFieldProps) {
 
   return (
     <DateTimePicker
+      key={zone}
       label={label}
       value={picker}
-      timezone={pickerZone(zone)}
+      timezone={zone}
       onChange={(next) => {
         const emitted = pickerToInstant(next, zone);
         keep(next, emitted);
