@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { configure, getConfig, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState, type ReactElement } from 'react';
 import TextField from '@mui/material/TextField';
@@ -2056,6 +2056,570 @@ describe('DateField: a change of clock under a mounted field', () => {
       expect(onMoment).toHaveBeenLastCalledWith(moment);
     });
   }
+});
+
+/**
+ * A day the field holds, retyped: no key is lost, however fast it comes
+ * (`P1-32-PRE-OD-DFR`).
+ *
+ * ## What was lost, and when
+ *
+ * With 01/03/2028 held, the month cleared and 01 typed straight after, the
+ * field showed DD/01/YYYY and handed back nothing: every part but the one
+ * being typed was blanked. An acceptance run in a real browser met it on the
+ * warranty plan form, typing 01/01/2027 over 01/03/2028 one part at a time at
+ * a script's pace, and was left with DD/01/2027 and a refused save.
+ *
+ * It needs a key to arrive AFTER React has committed a render it made for
+ * something other than a key — here, the form keeping the field's own report
+ * in state, as the warranty, price-list, report and refund forms do — and
+ * BEFORE the effects of that commit have run. See "A key pressed is never
+ * lost to an effect that ran late" in the component.
+ *
+ * ## Why these cases dispatch their events raw
+ *
+ * Testing Library wraps every event in `act`, and `act` runs every pending
+ * effect before it returns. That is the one thing a browser does not do, so
+ * under `act` the moment in which the key is lost never exists: typed with
+ * user-event at zero delay, or with timers faked and stepped, every case here
+ * passes against the unfixed field too. (Faked timers cannot open it either:
+ * React orders a commit and its effects on the event loop, not on a timer.)
+ *
+ * So each case runs with `act` taken away, events dispatched as a browser
+ * dispatches them, and a counted number of turns of the event loop left
+ * between a key and the next. ONE turn is where the key was lost on React
+ * 19.2: time for the form's render to be committed, not for its effects. The
+ * cases run 0, 1 and 2 turns so that they do not rest on React keeping
+ * exactly that order.
+ *
+ * Every expected value is a literal.
+ */
+type RetypeForm =
+  | 'the warranty plan form'
+  | 'the price list form'
+  | 'the approval limit form'
+  | 'a form on a known zone'
+  | 'a form that keys the field on its clock';
+
+/** The field as each of those forms configures it, and what the form does with its report. */
+function RetypeHost({
+  form,
+  initial,
+  onDay,
+}: {
+  readonly form: RetypeForm;
+  readonly initial: string;
+  readonly onDay: (day: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const [unfinished, setUnfinished] = useState(false);
+  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [reported, setReported] = useState<{
+    readonly clock: string;
+    readonly problem: DayProblem;
+  }>({ clock: 'reference:UTC', problem: null });
+  const change = (next: string) => {
+    onDay(next);
+    setValue(next);
+  };
+  const corrected = () => setErrors((previous) => ('day' in previous ? {} : previous));
+  let field: ReactElement;
+  if (form === 'the warranty plan form') {
+    // No zone; the report kept in state and the complaint withdrawn with it.
+    field = (
+      <DateField
+        label="Visit day"
+        required
+        value={value}
+        onEdit={corrected}
+        onChange={change}
+        onProblem={(problem) => {
+          setUnfinished(problem !== null);
+          if (problem === null) corrected();
+        }}
+        error={errors['day']}
+      />
+    );
+  } else if (form === 'the price list form') {
+    // No zone; required; the report kept in state.
+    field = (
+      <DateField
+        label="Visit day"
+        required
+        value={value}
+        onChange={change}
+        onProblem={(problem) => setUnfinished(problem !== null)}
+        error={errors['day']}
+        testId="price-version-from"
+      />
+    );
+  } else if (form === 'the approval limit form') {
+    // No zone; a name; nothing listening to the report.
+    field = (
+      <DateField
+        name="effectiveFrom"
+        label="Visit day"
+        required
+        value={value}
+        onChange={change}
+        error={errors['day']}
+      />
+    );
+  } else if (form === 'a form on a known zone') {
+    field = (
+      <DateField
+        label="Visit day"
+        value={value}
+        timezone="Asia/Riyadh"
+        onChange={change}
+        onProblem={(problem) => setUnfinished(problem !== null)}
+      />
+    );
+  } else {
+    // The report scope form and the refunds panel: keyed on the clock, always
+    // a zone, the report kept in state beside the clock it was made on.
+    field = (
+      <DateField
+        key={reported.clock}
+        label="Visit day"
+        required
+        timezone="UTC"
+        value={value}
+        onChange={change}
+        onProblem={(problem) => setReported({ clock: 'reference:UTC', problem })}
+      />
+    );
+  }
+  return (
+    <>
+      {field}
+      <output data-testid="retype-unfinished">{String(unfinished)}</output>
+    </>
+  );
+}
+
+/** A moment field in a form that keeps the field's report in state. */
+function MomentRetypeHost({ onMoment }: { readonly onMoment: (moment: string) => void }) {
+  const [value, setValue] = useState('2026-09-22T06:30:00Z');
+  const [unfinished, setUnfinished] = useState(false);
+  return (
+    <>
+      <ZonedDateTimeField
+        messages={en}
+        label="Visit time"
+        value={value}
+        timezone="Asia/Riyadh"
+        onChange={(next) => {
+          onMoment(next);
+          setValue(next);
+        }}
+        onProblem={(problem) => setUnfinished(problem !== null)}
+      />
+      <output data-testid="retype-unfinished">{String(unfinished)}</output>
+    </>
+  );
+}
+
+const RETYPE_FORMS: readonly RetypeForm[] = [
+  'the warranty plan form',
+  'the price list form',
+  'the approval limit form',
+  'a form on a known zone',
+  'a form that keys the field on its clock',
+];
+
+type DayPart = 'day' | 'month' | 'year';
+
+function dayPartOf(element: Element | null): DayPart | null {
+  if (element === null || element.getAttribute('role') !== 'spinbutton') return null;
+  const most = Number(element.getAttribute('aria-valuemax'));
+  if (most === 12) return 'month';
+  return most > 1000 ? 'year' : 'day';
+}
+
+function dayPart(part: DayPart): HTMLElement {
+  const found = within(dayGroup())
+    .getAllByRole('spinbutton')
+    .find((element) => dayPartOf(element) === part);
+  if (found === undefined) throw new Error(`the field has no ${part} part`);
+  return found;
+}
+
+/** One turn of the event loop. */
+function turn(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+async function turns(count: number): Promise<void> {
+  for (let passed = 0; passed < count; passed += 1) await turn();
+}
+
+/** Long enough for React to have rendered, committed and run every effect. */
+async function settled(): Promise<void> {
+  await turns(6);
+  // The picker's own zero-delay timers, which no turn of `setImmediate` waits for.
+  await new Promise((resolve) => {
+    setTimeout(resolve, 2);
+  });
+  await turns(3);
+}
+
+/**
+ * Runs `body` with events dispatched as a browser dispatches them: outside
+ * `act`, so React schedules its own work. Put back however `body` ends.
+ */
+async function asABrowserDoes(body: () => Promise<void>): Promise<void> {
+  const scope = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
+  const wrapped = getConfig();
+  const acting = scope.IS_REACT_ACT_ENVIRONMENT;
+  configure({ asyncWrapper: (callback) => callback(), eventWrapper: (callback) => callback() });
+  scope.IS_REACT_ACT_ENVIRONMENT = false;
+  try {
+    await body();
+    await settled();
+  } finally {
+    scope.IS_REACT_ACT_ENVIRONMENT = acting;
+    configure({ asyncWrapper: wrapped.asyncWrapper, eventWrapper: wrapped.eventWrapper });
+  }
+}
+
+type RetypeUser = ReturnType<typeof userEvent.setup>;
+
+/** Clears the part that has the cursor, leaves `pause` turns, types `digits` (the first at once, the rest unhurried). */
+async function clearThenType(user: RetypeUser, pause: number, digits: string): Promise<void> {
+  await user.keyboard('{Backspace}');
+  await turns(pause);
+  await user.keyboard(digits.slice(0, 1));
+  for (const digit of digits.slice(1)) {
+    await settled();
+    await user.keyboard(digit);
+  }
+  await settled();
+}
+
+/** Moves the cursor to `part` with the arrow keys. */
+async function arrowTo(user: RetypeUser, part: DayPart): Promise<void> {
+  for (const key of ['{ArrowRight}', '{ArrowLeft}']) {
+    // Three presses reach either end from anywhere; the other arrow then comes back.
+    for (let pressed = 0; pressed < 3 && dayPartOf(document.activeElement) !== part; pressed += 1) {
+      await user.keyboard(key);
+      await settled();
+    }
+  }
+}
+
+const RETYPE_PAUSES = [0, 1, 2] as const;
+const NEW_DAY: Readonly<Record<DayPart, string>> = { day: '01', month: '01', year: '2027' };
+
+/**
+ * Mounts the field holding `initial` once per pause, runs `entry` on it as a
+ * browser would, and returns what it drew and handed back for each pause.
+ */
+async function retyped(
+  form: RetypeForm,
+  locale: Locale,
+  initial: string,
+  entry: (user: RetypeUser, pause: number) => Promise<void>
+): Promise<readonly string[]> {
+  const outcomes: string[] = [];
+  for (const pause of RETYPE_PAUSES) {
+    const onDay = vi.fn();
+    const { unmount } = mount(<RetypeHost form={form} initial={initial} onDay={onDay} />, locale);
+    await asABrowserDoes(async () => {
+      await entry(userEvent.setup({ delay: null }), pause);
+    });
+    const last = onDay.mock.calls.at(-1) as readonly [string] | undefined;
+    outcomes.push(
+      `${pause} turn(s): shows ${shownDay()}, handed back ${last === undefined ? 'nothing' : last[0]}`
+    );
+    unmount();
+  }
+  return outcomes;
+}
+
+/** What `retyped` returns when every pause ended on the same day. */
+function everyPause(written: string, day: string): readonly string[] {
+  return RETYPE_PAUSES.map((pause) => `${pause} turn(s): shows ${written}, handed back ${day}`);
+}
+
+describe('DateField: a held day retyped keeps every key', () => {
+  /*
+   * Before the fix, at ONE turn: the four forms that keep the report in state
+   * lost every part but the month — the field showed DD/07/YYYY (in Arabic
+   * the same with its own placeholders) and handed back nothing, for both
+   * languages. The approval limit form, which listens to nothing, kept the
+   * day at every pause, before and after: its two cases are guards.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    for (const form of RETYPE_FORMS) {
+      it(`${form}, ${locale}: one part cleared and typed at once keeps the others`, async () => {
+        const outcomes = await retyped(form, locale, '2028-03-01', async (user, pause) => {
+          await user.click(dayPart('month'));
+          await settled();
+          await clearThenType(user, pause, '07');
+        });
+        expect(outcomes).toEqual(everyPause('01/07/2028', '2028-07-01'));
+      });
+    }
+  }
+
+  /*
+   * The acceptance run's own sequence: each part clicked, cleared and typed,
+   * the day first — with the short pause at the SECOND part, which is where
+   * the run lost the day. Before the fix, at one turn, the four forms that
+   * keep the report showed DD/01/2027 and handed back nothing: the very
+   * result the browser run recorded. (With the same short pause at EVERY part
+   * the loss happens at the first one and the parts typed afterwards put the
+   * day together again, which is why a script that clears every part at one
+   * pace can pass and the same script a little slower at the start cannot.)
+   *
+   * Every form in English; in Arabic the warranty plan form, whose parts stand
+   * in the same order (day, month, year) and were lost the same way.
+   */
+  for (const [locale, forms] of [
+    ['en', RETYPE_FORMS],
+    ['ar', ['the warranty plan form']],
+  ] as const) {
+    for (const form of forms) {
+      it(`${form}, ${locale}: each part clicked, cleared and typed, the second straight after its clearing`, async () => {
+        const outcomes = await retyped(form, locale, '2028-03-01', async (user, pause) => {
+          for (const [part, wait] of [
+            ['day', 8],
+            ['month', pause],
+            ['year', 8],
+          ] as const) {
+            await user.click(dayPart(part));
+            await settled();
+            await clearThenType(user, wait, NEW_DAY[part]);
+          }
+        });
+        expect(outcomes).toEqual(everyPause('01/01/2027', '2027-01-01'));
+      });
+    }
+  }
+
+  /*
+   * Other days held, the warranty plan form: the same sequence. Before the
+   * fix each lost its day at one turn. The third holds the very day typed —
+   * the browser run's second field, which was left showing DD/03/2028.
+   */
+  for (const held of ['2026-12-31', '2028-02-29', '2027-01-01', '2026-11-15'] as const) {
+    it(`the warranty plan form holding ${held}: each part clicked, cleared and typed`, async () => {
+      const outcomes = await retyped('the warranty plan form', 'en', held, async (user, pause) => {
+        for (const [part, wait] of [
+          ['day', 8],
+          ['month', pause],
+          ['year', 8],
+        ] as const) {
+          await user.click(dayPart(part));
+          await settled();
+          await clearThenType(user, wait, NEW_DAY[part]);
+        }
+      });
+      expect(outcomes).toEqual(everyPause('01/01/2027', '2027-01-01'));
+    });
+  }
+
+  it('a whole day typed over the held one from its first part, a turn between keys', async () => {
+    // Nothing cleared: one click and eight digits, as fast as a script or a
+    // paste-like burst sends them. Before the fix, at one turn between keys,
+    // the warranty plan form showed DD/01/2027 and handed back nothing.
+    for (const locale of ['en', 'ar'] as const) {
+      const outcomes = await retyped(
+        'the warranty plan form',
+        locale,
+        '2028-03-01',
+        async (user, pause) => {
+          await user.click(dayPart('day'));
+          for (const digit of '01012027') {
+            await turns(pause);
+            await user.keyboard(digit);
+          }
+        }
+      );
+      expect(outcomes, locale).toEqual(everyPause('01/01/2027', '2027-01-01'));
+    }
+  });
+
+  it('moved from part to part with the arrow keys, each cleared and typed', async () => {
+    // Year first, then back to the month and the day. A guard: the unfixed
+    // field kept this one, because its first clearing blanks the rest and
+    // every part is then typed again.
+    const outcomes = await retyped(
+      'the warranty plan form',
+      'en',
+      '2028-03-01',
+      async (user, pause) => {
+        await user.click(dayPart('year'));
+        await settled();
+        for (const part of ['year', 'month', 'day'] as const) {
+          await arrowTo(user, part);
+          await clearThenType(user, pause, NEW_DAY[part]);
+        }
+      }
+    );
+    expect(outcomes).toEqual(everyPause('01/01/2027', '2027-01-01'));
+  });
+
+  it('Tab leaves the parts and Shift+Tab comes back; the part then cleared and typed is kept', async () => {
+    // Tab does not move from part to part in this field: it goes to the
+    // calendar button. Out and back, then the month. Before the fix, at one
+    // turn: DD/07/YYYY and nothing handed back.
+    const outcomes = await retyped(
+      'the warranty plan form',
+      'en',
+      '2028-03-01',
+      async (user, pause) => {
+        await user.click(dayPart('day'));
+        await settled();
+        await user.tab();
+        await settled();
+        expect(dayPartOf(document.activeElement)).toBeNull();
+        await user.tab({ shift: true });
+        await settled();
+        await arrowTo(user, 'month');
+        await clearThenType(user, pause, '07');
+      }
+    );
+    expect(outcomes).toEqual(everyPause('01/07/2028', '2028-07-01'));
+  });
+
+  it('a separator typed after a part costs nothing', async () => {
+    // The separator does not move the cursor in this field, and must not
+    // disturb what is held either: each short part cleared, one digit and a
+    // slash typed, the arrow to the next. Before the fix, at one turn:
+    // DD/MM/2027 and nothing handed back.
+    const outcomes = await retyped(
+      'the warranty plan form',
+      'en',
+      '2028-03-01',
+      async (user, pause) => {
+        await user.click(dayPart('day'));
+        await settled();
+        for (const part of ['day', 'month', 'year'] as const) {
+          await arrowTo(user, part);
+          await user.keyboard('{Backspace}');
+          await turns(pause);
+          if (part === 'year') {
+            await user.keyboard('2');
+            for (const digit of '027') {
+              await settled();
+              await user.keyboard(digit);
+            }
+          } else {
+            await user.keyboard('1');
+            await turns(pause);
+            await user.keyboard('/');
+          }
+          await settled();
+        }
+      }
+    );
+    expect(outcomes).toEqual(everyPause('01/01/2027', '2027-01-01'));
+  });
+
+  it('all selected, cleared, and the whole day typed', async () => {
+    // A guard: clearing everything is meant to blank every part, and all
+    // eight digits follow. Kept before the fix as well.
+    for (const locale of ['en', 'ar'] as const) {
+      const outcomes = await retyped(
+        'the warranty plan form',
+        locale,
+        '2028-03-01',
+        async (user, pause) => {
+          await user.click(dayPart('day'));
+          await settled();
+          await user.keyboard('{Control>}a{/Control}');
+          await settled();
+          await user.keyboard('{Backspace}');
+          await turns(pause);
+          await user.keyboard('0');
+          for (const digit of '1012027') {
+            await settled();
+            await user.keyboard(digit);
+          }
+        }
+      );
+      expect(outcomes, locale).toEqual(everyPause('01/01/2027', '2027-01-01'));
+    }
+  });
+
+  it('a whole day pasted over the held one, with all selected and into one part', async () => {
+    // A guard: a paste publishes a whole day at once and never depended on
+    // the pace. Kept before the fix as well.
+    for (const locale of ['en', 'ar'] as const) {
+      const allSelected = await retyped(
+        'the warranty plan form',
+        locale,
+        '2028-03-01',
+        async (user, pause) => {
+          await user.click(dayPart('day'));
+          await settled();
+          await user.keyboard('{Control>}a{/Control}');
+          await turns(pause);
+          await user.paste('01/01/2027');
+        }
+      );
+      expect(allSelected, locale).toEqual(everyPause('01/01/2027', '2027-01-01'));
+      const onePart = await retyped(
+        'the warranty plan form',
+        locale,
+        '2028-03-01',
+        async (user, pause) => {
+          await user.click(dayPart('month'));
+          await turns(pause);
+          await user.paste('01/01/2027');
+        }
+      );
+      expect(onePart, locale).toEqual(everyPause('01/01/2027', '2027-01-01'));
+    }
+  });
+
+  it('a moment field: the day cleared and typed at once keeps the month, the year and the time', async () => {
+    // The same text field under a moment, in a form that keeps its report:
+    // 22/09/2026 09:30 on a Riyadh branch, the day retyped as 01.
+    const outcomes: string[] = [];
+    for (const pause of RETYPE_PAUSES) {
+      const onMoment = vi.fn();
+      const { unmount } = mount(<MomentRetypeHost onMoment={onMoment} />);
+      await asABrowserDoes(async () => {
+        const user = userEvent.setup({ delay: null });
+        const parts = within(screen.getByRole('group', { name: /^Visit time/ })).getAllByRole(
+          'spinbutton'
+        );
+        await user.click(parts[0] as HTMLElement);
+        await settled();
+        await clearThenType(user, pause, '01');
+      });
+      const drawn = pickerInput(screen.getByRole('group', { name: /^Visit time/ })).value;
+      const last = onMoment.mock.calls.at(-1) as readonly [string] | undefined;
+      outcomes.push(
+        `${pause} turn(s): shows ${drawn}, handed back ${last === undefined ? 'nothing' : last[0]}`
+      );
+      unmount();
+    }
+    expect(outcomes).toEqual(
+      RETYPE_PAUSES.map(
+        (pause) => `${pause} turn(s): shows 01/09/2026 09:30, handed back 2026-09-01T09:30:00+03:00`
+      )
+    );
+  });
+
+  it('typed under act, at zero delay, the same entry is kept — and was before the fix', async () => {
+    // What an ordinary case sees, and why none ever failed: under `act` every
+    // effect has run before the next key, so the moment does not exist.
+    const user = userEvent.setup({ delay: null });
+    const onDay = vi.fn();
+    mount(<RetypeHost form="the warranty plan form" initial="2028-03-01" onDay={onDay} />);
+    for (const part of ['day', 'month', 'year'] as const) {
+      await user.click(dayPart(part));
+      await user.keyboard(`{Backspace}${NEW_DAY[part]}`);
+    }
+    expect(shownDay()).toBe('01/01/2027');
+    expect(onDay).toHaveBeenLastCalledWith('2027-01-01');
+  });
 });
 
 /**
