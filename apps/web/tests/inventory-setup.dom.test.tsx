@@ -382,7 +382,7 @@ describe('items', () => {
     renderScreen({ canManage: true });
     await screen.findByText('brakes');
     const panel = form('inventory.setup.item.new');
-    // Chosen from the category tree by name and code, never typed or picked by id.
+    // Chosen from the category tree by its name, never typed or picked by id.
     await user.click(await within(itemCategoryTree(panel)).findByText('Brakes'));
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-001');
     await user.type(
