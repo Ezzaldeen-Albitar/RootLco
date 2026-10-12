@@ -4892,14 +4892,24 @@ says `rpt.export` gates CSV export only, so it cannot be read as still gating th
 ### Sign-in, account recovery, the profile and the console account on Material UI (`P1-32-PRE-OD-AUTHA`)
 
 `/login`, `/forgot-password`, `/reset-password`, `/activate-account`, `/profile` and
-`/platform/account` moved onto the shared wrappers. The screens changed what they draw and nothing
-about how they decide: every Server Action (`loginAction`, `requestPasswordResetAction`,
-`completePasswordResetAction`, `updateOwnProfileAction`, `changeOwnPasswordAction`), its
-validation, its answers and its redirects are unchanged, and so are the page files, the
-`RecoveryTokenBridge` (the token is read from the query or the fragment, erased from the address
-bar, carried in a hidden field and never stored, logged or echoed), the locale field each form
-sends, the language control on the authentication layout, and the routes' permission and branch
-scope.
+`/platform/account` moved onto the shared wrappers. What the server decides did not change: every
+Server Action (`loginAction`, `requestPasswordResetAction`, `completePasswordResetAction`,
+`updateOwnProfileAction`, `changeOwnPasswordAction`), its validation, its answers and its redirects
+are unchanged, and so are the page files, the `RecoveryTokenBridge` (the token is read from the
+query or the fragment, erased from the address bar, carried in a hidden field and never stored,
+logged or echoed), the locale field each form sends, the language control on the authentication
+layout, and the routes' permission and branch scope.
+
+What did change besides what is drawn is how the boxes hold their values, and the first version of
+this slice was wrong to say nothing had. The legacy fields on the four Server Action forms were
+uncontrolled; the Material wrappers are controlled. React leaves a value that is already in a box
+when the page hydrates where it is and does not report it, so a controlled box was out of step
+with its own state, and the next render wrote the empty state back: with an address the browser
+had filled in before hydration, typing the password erased it, and pressing the reveal control
+erased a filled password. The review round below (`P1-32-PRE-OD-AUTHA-04`) closed it: each box of
+those four forms adopts what it already holds as its form mounts (`usePrefilledValue`, a layout
+effect that runs in the hydration commit, before any other render), so the value stays in the
+box, is what the form sends, and is what the form knows.
 
 What moved to which wrapper:
 
@@ -4913,7 +4923,8 @@ What moved to which wrapper:
   an identical second refusal is announced again, no `problem.detail`, the explanation line a
   heading key carries, and the correlation reference. A throttle and a conflict are drawn as a
   warning, every other failure as an error.
-- The submit button is `MuiSubmitButton` (disabled and `aria-busy` while the action is out,
+- The submit button is `MuiSubmitButton` (`disabled`, `aria-disabled` and `aria-busy` while the
+  action is out, as the legacy button sets all three,
   labelled with what it is doing). The legacy `FormFeedback` and `SubmitButton` stay: the
   administration screens still render them.
 - `AuthCard` is Material's `Paper` and still holds the one `h1` of every signed-out page; the
@@ -4927,7 +4938,15 @@ What each flow still does, held by the tests below in English and Arabic:
   that is not one). The address survives a refusal and the password is cleared — now by the form,
   on the attempt the refusal answers, since the box is controlled (`CLEARS_ON_REFUSAL`). The
   action still decides the destination (workspace or console) and replaces the sign-in entry in
-  history. The form is still a Server Action form, so it submits before the page has hydrated.
+  history. The form is still a Server Action form, so it submits before the page has hydrated. A
+  credential failure moves the cursor nowhere, exactly as before the move: no field is marked, so
+  there is no first refused field to go to, and the banner is what says it — `role="alert"` on the
+  banner as it is drawn, not added afterwards.
+- Values present before hydration, on the four Server Action forms: an address, a password, a
+  confirmation or a display name a browser, a password manager or the operator put in a box before
+  the page hydrated stays there through every later render (typing in another box, a reveal
+  control, a refusal), in the same element, and is what the action receives; a display name
+  changed that way counts as unsaved work.
 - Forgotten password: the form is replaced by one confirmation that never says whether an account
   exists; the action answers 404, 422, 401, 403 and 409 exactly as it answers 202. Only a throttle
   and an outage are said as themselves, because neither discloses an account.
@@ -4975,10 +4994,12 @@ The completion standard, as these screens now hold it:
   Arabic form signs in and lands in the Arabic workspace; it refuses with the one Arabic
   sentence).
 
-Tests: `apps/web/tests/authentication-forms.dom.test.tsx` (new, 51 cases: sign-in, forgotten
+Tests: `apps/web/tests/authentication-forms.dom.test.tsx` (new, 65 cases: sign-in, forgotten
 password, reset and activation through `RecoveryTokenBridge` including a fragment token, the
 reset actions' own single answers run for real against a mocked API client, the profile name, the
-card, and the duplicate-submit hold on its own), `apps/web/tests/platform-console.dom.test.tsx` (four console account cases added: Enter
+card, the duplicate-submit hold on its own, and — added in the review round — values present
+before hydration on each of the four forms and the credential-failure announcement),
+`apps/web/tests/platform-console.dom.test.tsx` (four console account cases added: Enter
 submits, two presses in one act send one change, the cursor on the first refused box before and
 after the server answers, every reveal control inside its own box in both directions),
 `apps/web/tests/e2e/foundation.spec.ts` (three Arabic cases),
@@ -5006,6 +5027,29 @@ Changed assertions, each with its reason:
   both directions" case now asserts what it named: the page direction per locale, one control per
   box, the control after its box in document order, inside Material's end adornment and never a
   start one, with no direction override on the box.
+- Review round `P1-32-PRE-OD-AUTHA-04` (strengthened and added, nothing removed):
+  - The set-password and profile "two presses" cases asserted the count only while the first
+    request was still out. React holds a second action until the first has answered, so both passed
+    with the hold removed. Each now also asserts the count is still 1 after the first answer, as
+    the sign-in case does. Measured by mutation: with the hold switched off both fail on exactly
+    that assertion, with 2 calls.
+  - Twelve new cases (six in each language) render the server markup, write a value into a box the
+    way a browser does before the page's script has run (the value set on the element, no event),
+    and only then hydrate. They then type in another box, press a reveal control, or submit, and
+    assert the value is still in the same element and is what the action receives: the sign-in
+    address while the password is typed and after the refusal; a filled sign-in password through
+    the reveal control; the forgotten-password address through a refusal; a filled new password
+    while its confirmation is typed; both new-password boxes through their reveal controls; and a
+    display name changed before hydration, which is unsaved work, sent and kept. Hydration that
+    fell back to rendering afresh is refused in each. All twelve fail on the previous code
+    (`9dc3eb30`), and fail again with the adoption switched off.
+  - A new sign-in case records what the banner is as it enters the document after a credential
+    failure (`role="alert"`, with the sentence) and that the cursor is still in the box Enter was
+    pressed in. The refusal cases also assert the emptied password boxes draw their label back
+    inside the box.
+  - "says it is working while the sign-in is out" also asserts `aria-disabled="true"` while the
+    action is out and its absence afterwards: `MuiSubmitButton` had dropped the attribute the
+    legacy `SubmitButton` sets, and it is restored.
 - No other assertion changed. `p1-27-owner-acceptance.dom.test.tsx` still holds the legacy
   `PasswordField` and its "used by every password field" case still passes on the migrated files.
 
@@ -5023,8 +5067,32 @@ Known limitations and recorded gaps:
 5. The Arabic browser cases were not run locally; the hosted browser smoke runs the anonymous three
    and the authenticated browser tier the two sign-in cases. No real-browser visual review of the
    six screens was made here.
-6. The recovery-token lifecycle itself (how long a link lives, AUTH01) is an open Owner decision and
-   is unchanged.
+6. [AUTH01](decision-pack-2026-10-08.md#auth01-signing-other-devices-out-after-a-password-change)
+   is an open Owner decision and is unchanged. It asks whether, after a password change, a
+   platform-operator revocation or a deactivation, every other device must lose access at once, or
+   whether access may continue until the access token expires. Today another device that is
+   already signed in keeps working after a platform operator's password change until its access
+   token expires (up to one hour at the current local setting); for organisation users, locking an
+   account or revoking sessions already takes effect on the next request. This slice changed
+   neither. An earlier version of this entry described AUTH01 as the lifetime of a recovery link;
+   that was wrong.
+7. How long a reset or invitation link stays valid is the identity provider's setting and is
+   unchanged; the decision pack holds no entry about it, so it is recorded here as a question
+   nobody has been asked, not as a decision.
+8. A credential failure moves the cursor nowhere (unchanged from before the move): the form marks
+   no field for it, and the announcement is the banner's `role="alert"`.
+9. The pre-hydration cases are DOM cases. The behaviour was derived from the installed React's
+   hydration code and measured in jsdom with the real `hydrateRoot`; it was not reproduced in a
+   real browser, where a password manager's own timing cannot be scripted.
+10. `/platform/account` was not changed by the review round. Its three boxes were controlled before
+    the move as well (the legacy `PasswordField` with `value`), and its form sends what the screen
+    holds, not the form's own data, so a value put in a box there before hydration is not adopted —
+    the same as before this slice.
+11. `/platform/account` has no real-browser evidence: the console sign-in case in
+    `tests/e2e/platform-console.spec.ts` skips unless a platform operator's credentials are given
+    to the run, and no workflow or script in this repository gives them, so it skips in every
+    hosted project. The export-principal sign-in in `tests/e2e/authenticated/reports-p1-31.spec.ts`
+    skips as well (no hosted job writes the companion handoff it needs).
 
 ### Review follow-ups on the inventory slices (`P1-32-PRE-OD-INVR`)
 
