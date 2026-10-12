@@ -30,17 +30,20 @@ import { AccountPicker, type ChosenAccount } from '../../users/components/Accoun
 import { listAuditEvents, readAuditEvent } from '../api';
 import {
   auditActionLabel,
-  auditDetailValue,
   auditEntityLabel,
   auditFieldLabel,
+  auditRecordTypeWords,
+  auditReferenceLabel,
+  groupAuditDetails,
   isAuditCodeField,
   isNamedAuditField,
-  shownAuditDetails,
+  isNamedAuditReference,
 } from '../labels';
 import { openingWindow, rangeProblem, type DayRange } from '../range';
 import {
   NO_AUDIT_FILTERS,
   type AuditDetail,
+  type AuditDetailEntry,
   type AuditFilters,
   type AuditRow,
   type AuditScopeOptions,
@@ -578,6 +581,7 @@ function AuditDetailDrawer({
 }) {
   const t = (key: keyof Messages) => translate(messages, key);
   const titleId = useId();
+  const referencesId = useId();
   const reducedMotion = useReducedMotion();
   const [generation, setGeneration] = useState(0);
   const [held, setHeld] = useState<HeldDetail | null>(null);
@@ -600,23 +604,11 @@ function AuditDetailDrawer({
 
   const loading = held === null || held.generation !== generation;
   const record = !loading && held.status === 'ok' ? held.record : null;
-  // The detail rows as the drawer draws them, and whether any record identifier
-  // was left out of them (`shownAuditDetails`); `null` while there is no record
-  // or its details are withheld.
+  // Every detail row the read returned, in its group (`groupAuditDetails`):
+  // the facts, then the record references. `null` while there is no record or
+  // its details are withheld.
   const detailRows =
-    record === null || record.details === undefined
-      ? null
-      : shownAuditDetails(record.details, t('audit.detail.identifierPlaceholder'));
-  // One value of a detail: a permission code as a code, left to right; a record
-  // type in the drawer's own words for one; anything else as written.
-  const say = (fieldName: string, value: string): ReactNode =>
-    isAuditCodeField(fieldName) ? (
-      <code dir="ltr" className="font-mono">
-        {value}
-      </code>
-    ) : (
-      auditDetailValue(messages, fieldName, value)
-    );
+    record === null || record.details === undefined ? null : groupAuditDetails(record.details);
 
   return (
     <Drawer
@@ -711,51 +703,59 @@ function AuditDetailDrawer({
                   <p className="text-body text-text-muted">{t('audit.detail.masked')}</p>
                 ) : record.details?.length === 0 ? (
                   <p className="text-body text-text-muted">{t('audit.detail.noDetails')}</p>
-                ) : detailRows.shown.length === 0 ? null : (
-                  <ul className="flex flex-col gap-2">
+                ) : (
+                  <>
                     {/*
-                      Every row that says what changed. Only the identifiers of
-                      records are left out (`shownAuditDetails`), and the
-                      sentence below the list says so when one was.
+                      Every row the read returned is drawn, each value with the
+                      characters it came with. The grouping below decides where
+                      a row is drawn and never whether: first what changed, then
+                      the references to other records.
                     */}
-                    {detailRows.shown.map((entry) => (
-                      <li
-                        key={entry.fieldName}
-                        className="rounded-md border border-border-subtle p-2"
+                    {detailRows.facts.length === 0 ? null : (
+                      <ul className="flex flex-col gap-2" data-testid="audit-detail-facts">
+                        {detailRows.facts.map((entry, index) => (
+                          <DetailEntry
+                            key={`${index}:${entry.fieldName}`}
+                            messages={messages}
+                            entry={entry}
+                            label={auditFieldLabel(messages, entry.fieldName)}
+                            named={isNamedAuditField(entry.fieldName)}
+                            asCode={isAuditCodeField(entry.fieldName)}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                    {detailRows.references.length === 0 ? null : (
+                      <section
+                        aria-labelledby={referencesId}
+                        className="mt-3 flex flex-col gap-2"
+                        data-testid="audit-detail-references"
                       >
-                        <p className="text-caption font-medium text-text-secondary">
-                          {auditFieldLabel(messages, entry.fieldName)}
+                        <h3
+                          id={referencesId}
+                          className="text-label font-medium text-text-secondary"
+                        >
+                          {t('audit.detail.references')}
+                        </h3>
+                        <p className="text-caption text-text-muted">
+                          {t('audit.detail.referencesHint')}
                         </p>
-                        {isNamedAuditField(entry.fieldName) ? null : (
-                          <p className="text-caption text-text-muted">
-                            {t('audit.detail.fieldCode')}{' '}
-                            <code dir="ltr" className="break-all font-mono">
-                              {entry.fieldName}
-                            </code>
-                          </p>
-                        )}
-                        <p className="break-all text-supporting text-text-primary">
-                          {entry.oldValue !== null ? (
-                            <>
-                              <span className="text-text-muted line-through">
-                                {say(entry.fieldName, entry.oldValue)}
-                              </span>{' '}
-                            </>
-                          ) : null}
-                          {entry.newValue === null ? '—' : say(entry.fieldName, entry.newValue)}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
+                        <ul className="flex flex-col gap-2">
+                          {detailRows.references.map((entry, index) => (
+                            <DetailEntry
+                              key={`${index}:${entry.fieldName}`}
+                              messages={messages}
+                              entry={entry}
+                              label={auditReferenceLabel(messages, entry.fieldName)}
+                              named={isNamedAuditReference(entry.fieldName)}
+                              asCode
+                            />
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                  </>
                 )}
-                {detailRows !== null && detailRows.identifiersLeftOut ? (
-                  <p
-                    className="mt-2 text-caption text-text-muted"
-                    data-testid="audit-detail-omitted"
-                  >
-                    {t('audit.detail.identifiersOmitted')}
-                  </p>
-                ) : null}
                 <p className="mt-2 text-caption text-text-muted">{t('audit.detail.maskedHint')}</p>
               </dd>
             </div>
@@ -763,6 +763,81 @@ function AuditDetailDrawer({
         )}
       </div>
     </Drawer>
+  );
+}
+
+/**
+ * One detail row, in either group.
+ *
+ * The value is drawn in an element of its own (`data-audit-verbatim`) holding
+ * exactly the characters the read returned — white space kept, nothing trimmed
+ * — and selectable as a whole where it is a code or a reference, for copying.
+ * Words said about a value (a record type's name) stand outside that element.
+ * A row whose field has no label of its own keeps the field's code beside it,
+ * under the label that names it a reference for support.
+ */
+function DetailEntry({
+  messages,
+  entry,
+  label,
+  named,
+  asCode,
+}: {
+  readonly messages: Messages;
+  readonly entry: AuditDetailEntry;
+  readonly label: string;
+  readonly named: boolean;
+  readonly asCode: boolean;
+}) {
+  const verbatim = (value: string): ReactNode => {
+    const drawn = asCode ? (
+      <code data-audit-verbatim dir="ltr" className="select-all whitespace-pre-wrap font-mono">
+        {value}
+      </code>
+    ) : (
+      <span data-audit-verbatim className="whitespace-pre-wrap">
+        {value}
+      </span>
+    );
+    const words = auditRecordTypeWords(messages, entry.fieldName, value);
+    return words === null ? (
+      drawn
+    ) : (
+      <>
+        {words} ({drawn})
+      </>
+    );
+  };
+  return (
+    <li
+      className="rounded-md border border-border-subtle p-2"
+      data-testid="audit-detail-row"
+      data-field={entry.fieldName}
+    >
+      <p className="text-caption font-medium text-text-secondary">{label}</p>
+      {named ? null : (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'audit.detail.fieldCode')}{' '}
+          <code dir="ltr" className="break-all font-mono">
+            {entry.fieldName}
+          </code>
+        </p>
+      )}
+      <p className="break-all text-supporting text-text-primary">
+        {entry.oldValueMasked !== null ? (
+          <>
+            <span data-audit-value="old" className="text-text-muted line-through">
+              {verbatim(entry.oldValueMasked)}
+            </span>{' '}
+          </>
+        ) : null}
+        {entry.newValueMasked === null ? (
+          '—'
+        ) : (
+          <span data-audit-value="new">{verbatim(entry.newValueMasked)}</span>
+        )}
+      </p>
+    </li>
   );
 }
 

@@ -205,34 +205,31 @@ export function isNamedAuditField(fieldName: string): boolean {
 }
 
 /**
- * Which details of a record the drawer draws, and how (`P1-32-PRE-OD-INVG`).
+ * How the drawer lays out a record's details (`P1-32-PRE-OD-INVG`).
  *
- * An audit log exists so that an administrator can see WHAT changed, so the
- * rule leaves out as little as it can: only the identifiers of records, which
- * nobody reading the log can use and which the read cannot say by name (it
- * names the actor and the account a record is about, and no other record).
+ * An audit record is evidence. The drawer draws every detail row the read
+ * returns, each value with the very characters it came with: no row is left
+ * out, no value is shortened, rewritten or taken apart. What this file decides
+ * is only WHERE a row is drawn, so a mistake here can misplace a row and can
+ * never lose one.
  *
- *  1. Never altered: the fields of `KEPT_AS_WRITTEN` — the audit vocabulary
- *     the service writes (a permission code, a record type, an export's
- *     subject) and business numbers whose names happen to end in "id".
- *  2. A row is left out when its field is named for a record identifier — the
- *     last step of the name is `id`, `ids` or `uuid`, or ends in `Id`, `Ids`,
- *     `_id`, `_ids` — AND its value holds an identifier (alone or in a list,
- *     any case, with or without dashes); and when its value is, as a whole, a
- *     dashed identifier, whatever the field is called (`requestedBy`).
- *  3. Free text is never dropped: an identifier quoted inside it is replaced by
- *     the catalogue's placeholder and the rest is kept.
- *  4. A structured value loses only its identifier members, by rule 2, at any
- *     depth, and keeps the rest exactly as written; it is left out only when
- *     nothing remains.
- *  5. Everything else is drawn as written: numbers, codes, digests (thirty-two
- *     hexadecimal characters under a field not named for an identifier are a
- *     digest, not an identifier), file names, dates.
+ * Two groups. First the facts — what changed. Then the record references: the
+ * rows that say which other record an event concerns by its identifier, which
+ * a reader cannot use as it stands and someone helping them can. The read
+ * names two people (the actor, and the account a user-account record is about)
+ * and no other record, so a reference cannot be replaced by a name here; it is
+ * drawn as it came, under a label saying what kind of record it points to.
  *
- * A value written without dashes is taken for an identifier only under a field
- * named for one, because nothing else tells it from a digest.
+ * A row is a record reference when every value it carries is an identifier or
+ * a list of them: under a field named for one (the last step of the name is
+ * `id`, `ids` or `uuid`, or ends in `Id`, `Ids`, `_id`, `_ids`) an identifier
+ * with or without dashes; under any other field (`requestedBy`) a dashed one
+ * only, because thirty-two hexadecimal characters with no dashes are otherwise
+ * a digest. The audit vocabulary the service writes as a value and business
+ * numbers are facts whatever they look like (`FACT_FIELDS`). Everything else
+ * is a fact too: a sentence quoting an identifier, a structured setting value
+ * with an identifier inside it, a numeric `customer_id`.
  */
-const DASHED_IDENTIFIER = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const WHOLE_DASHED_IDENTIFIER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WHOLE_BARE_IDENTIFIER = /^[0-9a-f]{32}$/i;
 const IDENTIFIER_NAME = /^(?:id|ids|uuid)$/i;
@@ -240,7 +237,7 @@ const IDENTIFIER_SUFFIX = /(?:[a-z0-9](?:Id|ID|Ids|IDs|Uuid|UUID)|_(?:id|ids|uui
 const LIST_SEPARATOR = /[\s,;]+/;
 
 /**
- * Fields drawn exactly as written (rule 1).
+ * Fields that are facts whatever their value looks like.
  *
  * The first five are written by the service today (`permission_code` on a
  * role's permission added, changed or removed; `requiredPermission` on a
@@ -248,9 +245,9 @@ const LIST_SEPARATOR = /[\s,;]+/;
  * report configuration; `entity_type` on an attachment link; `resource` on an
  * export decision). No writer records a tax, national or registration number
  * today; their usual names are listed so that one added later is not taken for
- * a record identifier.
+ * a record reference.
  */
-const KEPT_AS_WRITTEN: ReadonlySet<string> = new Set([
+const FACT_FIELDS: ReadonlySet<string> = new Set([
   'permission_code',
   'requiredPermission',
   'exportPermissionCode',
@@ -271,252 +268,133 @@ function lastStep(fieldName: string): string {
   return steps[steps.length - 1] ?? fieldName;
 }
 
-function isKeptAsWritten(fieldName: string): boolean {
-  return KEPT_AS_WRITTEN.has(lastStep(fieldName));
-}
-
-/** Whether the field is named for the identifier of a record (rule 2). */
 function namesARecordIdentifier(fieldName: string): boolean {
-  if (isKeptAsWritten(fieldName)) return false;
   const last = lastStep(fieldName);
   return IDENTIFIER_NAME.test(last) || IDENTIFIER_SUFFIX.test(last);
 }
 
-/** What is drawn for one value: the text, or nothing; and whether an identifier was left out. */
-interface Redacted {
-  readonly text: string | null;
-  readonly gone: boolean;
-  readonly leftOut: boolean;
+function isIdentifierList(value: string, bareToo: boolean): boolean {
+  const parts = value
+    .trim()
+    .split(LIST_SEPARATOR)
+    .filter((part) => part.length > 0);
+  return (
+    parts.length > 0 &&
+    parts.every(
+      (part) => WHOLE_DASHED_IDENTIFIER.test(part) || (bareToo && WHOLE_BARE_IDENTIFIER.test(part))
+    )
+  );
 }
 
-const AS_WRITTEN = (text: string | null): Redacted => ({ text, gone: false, leftOut: false });
-const GONE: Redacted = { text: null, gone: true, leftOut: true };
-
-function redactText(text: string, underIdentifier: boolean, placeholder: string): Redacted {
-  const whole = text.trim();
-  const parts = whole.split(LIST_SEPARATOR).filter((part) => part.length > 0);
-  if (underIdentifier) {
-    const holdsOne =
-      parts.some((part) => WHOLE_BARE_IDENTIFIER.test(part)) ||
-      whole.search(DASHED_IDENTIFIER) >= 0;
-    return holdsOne ? GONE : AS_WRITTEN(text);
-  }
-  // Nothing but identifiers — one, or a list of them — is not text to keep.
-  if (parts.length > 0 && parts.every((part) => WHOLE_DASHED_IDENTIFIER.test(part))) return GONE;
-  const kept = text.replace(DASHED_IDENTIFIER, placeholder);
-  return kept === text ? AS_WRITTEN(text) : { text: kept, gone: false, leftOut: true };
-}
-
-/**
- * A structured value, read so that it can be written back exactly: every
- * number and every string keeps the characters it was written with, which
- * reading it as numbers would not promise for an amount.
- */
-type Structured =
-  | {
-      readonly kind: 'object';
-      readonly members: readonly (readonly [string, string, Structured])[];
-    }
-  | { readonly kind: 'array'; readonly items: readonly Structured[] }
-  | { readonly kind: 'string'; readonly raw: string; readonly text: string }
-  | { readonly kind: 'literal'; readonly raw: string };
-
-const LITERAL = /^(?:-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)/;
-
-function readStructured(source: string): Structured | null {
-  let at = 0;
-  const skipSpace = (): void => {
-    while (at < source.length && /\s/.test(source.charAt(at))) at += 1;
-  };
-  const readString = (): { raw: string; text: string } | null => {
-    if (source.charAt(at) !== '"') return null;
-    const start = at;
-    at += 1;
-    while (at < source.length && source.charAt(at) !== '"') {
-      at += source.charAt(at) === '\\' ? 2 : 1;
-    }
-    if (at >= source.length) return null;
-    at += 1;
-    const raw = source.slice(start, at);
-    try {
-      const text: unknown = JSON.parse(raw);
-      return typeof text === 'string' ? { raw, text } : null;
-    } catch {
-      return null;
-    }
-  };
-  const readValue = (): Structured | null => {
-    skipSpace();
-    const opener = source.charAt(at);
-    if (opener === '{') {
-      at += 1;
-      const members: (readonly [string, string, Structured])[] = [];
-      skipSpace();
-      if (source.charAt(at) === '}') {
-        at += 1;
-        return { kind: 'object', members };
-      }
-      for (;;) {
-        skipSpace();
-        const key = readString();
-        if (key === null) return null;
-        skipSpace();
-        if (source.charAt(at) !== ':') return null;
-        at += 1;
-        const value = readValue();
-        if (value === null) return null;
-        members.push([key.raw, key.text, value]);
-        skipSpace();
-        const next = source.charAt(at);
-        at += 1;
-        if (next === '}') return { kind: 'object', members };
-        if (next !== ',') return null;
-      }
-    }
-    if (opener === '[') {
-      at += 1;
-      const items: Structured[] = [];
-      skipSpace();
-      if (source.charAt(at) === ']') {
-        at += 1;
-        return { kind: 'array', items };
-      }
-      for (;;) {
-        const item = readValue();
-        if (item === null) return null;
-        items.push(item);
-        skipSpace();
-        const next = source.charAt(at);
-        at += 1;
-        if (next === ']') return { kind: 'array', items };
-        if (next !== ',') return null;
-      }
-    }
-    if (opener === '"') {
-      const text = readString();
-      return text === null ? null : { kind: 'string', ...text };
-    }
-    const literal = LITERAL.exec(source.slice(at));
-    if (literal === null) return null;
-    at += literal[0].length;
-    return { kind: 'literal', raw: literal[0] };
-  };
-  const root = readValue();
-  skipSpace();
-  if (root === null || at !== source.length) return null;
-  return root.kind === 'object' || root.kind === 'array' ? root : null;
-}
-
-/** The value with its identifier members taken out (rule 4), or `null` when nothing remains. */
-function pruneStructured(
-  node: Structured,
-  underIdentifier: boolean,
-  placeholder: string
-): { readonly written: string | null; readonly leftOut: boolean } {
-  if (node.kind === 'literal') return { written: node.raw, leftOut: false };
-  if (node.kind === 'string') {
-    const kept = redactText(node.text, underIdentifier, placeholder);
-    if (kept.gone || kept.text === null) return { written: null, leftOut: true };
-    return kept.leftOut
-      ? { written: JSON.stringify(kept.text), leftOut: true }
-      : { written: node.raw, leftOut: false };
-  }
-  let leftOut = false;
-  const written: string[] = [];
-  if (node.kind === 'array') {
-    for (const item of node.items) {
-      const kept = pruneStructured(item, underIdentifier, placeholder);
-      leftOut ||= kept.leftOut;
-      if (kept.written !== null) written.push(kept.written);
-    }
-    if (written.length === 0 && node.items.length > 0) return { written: null, leftOut: true };
-    return { written: `[${written.join(',')}]`, leftOut };
-  }
-  for (const [rawKey, key, value] of node.members) {
-    const kept = pruneStructured(
-      value,
-      underIdentifier || namesARecordIdentifier(key),
-      placeholder
-    );
-    leftOut ||= kept.leftOut;
-    if (kept.written !== null) written.push(`${rawKey}:${kept.written}`);
-  }
-  if (written.length === 0 && node.members.length > 0) return { written: null, leftOut: true };
-  return { written: `{${written.join(',')}}`, leftOut };
-}
-
-function redactValue(
-  value: string | null,
-  underIdentifier: boolean,
-  placeholder: string
-): Redacted {
-  if (value === null) return AS_WRITTEN(null);
-  const text = value.trim();
-  if (text.startsWith('{') || text.startsWith('[')) {
-    const structured = readStructured(text);
-    if (structured !== null) {
-      const kept = pruneStructured(structured, underIdentifier, placeholder);
-      if (kept.written === null) return GONE;
-      // Untouched, it is drawn with the very characters it was written with.
-      return kept.leftOut ? { text: kept.written, gone: false, leftOut: true } : AS_WRITTEN(value);
-    }
-  }
-  return redactText(value, underIdentifier, placeholder);
-}
-
-/** A detail row as the read publishes it; only these three facts decide what is drawn. */
+/** A detail row as the read publishes it; these three facts decide its group. */
 interface AuditDetailFacts {
   readonly fieldName: string;
   readonly oldValueMasked: string | null;
   readonly newValueMasked: string | null;
 }
 
-/** A detail row as the drawer draws it. */
-export interface ShownAuditDetail {
-  readonly fieldName: string;
-  readonly oldValue: string | null;
-  readonly newValue: string | null;
+/** Whether the row is drawn among the record references. It is drawn either way. */
+export function isAuditRecordReference(entry: AuditDetailFacts): boolean {
+  if (FACT_FIELDS.has(lastStep(entry.fieldName))) return false;
+  const values = [entry.oldValueMasked, entry.newValueMasked].filter(
+    (value): value is string => value !== null
+  );
+  if (values.length === 0) return false;
+  const named = namesARecordIdentifier(entry.fieldName);
+  return values.every((value) => isIdentifierList(value, named));
 }
 
 /**
- * The rows the drawer draws, by the rule above, and whether any record
- * identifier was left out of them — a whole row, a member of a structured
- * value, or an identifier quoted in a sentence. `placeholder` is the
- * catalogue's word for an identifier taken out of a sentence.
+ * The rows in their two groups, each group in the order the read gave.
+ *
+ * Every row of `details` is in exactly one of the two, untouched: the same
+ * object the read returned.
  */
-export function shownAuditDetails(
-  details: readonly AuditDetailFacts[],
-  placeholder: string
-): { readonly shown: readonly ShownAuditDetail[]; readonly identifiersLeftOut: boolean } {
-  const shown: ShownAuditDetail[] = [];
-  let identifiersLeftOut = false;
-  for (const entry of details) {
-    if (isKeptAsWritten(entry.fieldName)) {
-      shown.push({
-        fieldName: entry.fieldName,
-        oldValue: entry.oldValueMasked,
-        newValue: entry.newValueMasked,
-      });
-      continue;
-    }
-    const underIdentifier = namesARecordIdentifier(entry.fieldName);
-    const before = redactValue(entry.oldValueMasked, underIdentifier, placeholder);
-    const after = redactValue(entry.newValueMasked, underIdentifier, placeholder);
-    identifiersLeftOut ||= before.leftOut || after.leftOut;
-    // Nothing left to say: every value the row carried was an identifier.
-    if ((before.gone || before.text === null) && (after.gone || after.text === null)) {
-      if (before.gone || after.gone) continue;
-    }
-    shown.push({
-      fieldName: entry.fieldName,
-      oldValue: before.gone ? placeholder : before.text,
-      newValue: after.gone ? placeholder : after.text,
-    });
-  }
-  return { shown, identifiersLeftOut };
+export function groupAuditDetails<T extends AuditDetailFacts>(
+  details: readonly T[]
+): { readonly facts: readonly T[]; readonly references: readonly T[] } {
+  const facts: T[] = [];
+  const references: T[] = [];
+  for (const entry of details) (isAuditRecordReference(entry) ? references : facts).push(entry);
+  return { facts, references };
 }
 
-/** The fields whose value is a permission code, and the one whose value is a record type. */
+/**
+ * What kind of record a reference points to, in words.
+ *
+ * The service writes 123 fields named for an identifier and five named for a
+ * person (`requestedBy`). The ones below are the frequent ones and the ones an
+ * administrator meets on access, stock and money records; the rest are drawn
+ * as "Reference" with the field's code under the support label, as a fact
+ * without a name is.
+ */
+const REFERENCE_KEYS: Readonly<Record<string, MessageKey>> = {
+  itemId: 'audit.reference.item',
+  locationId: 'audit.reference.location',
+  fromLocationId: 'audit.reference.fromLocation',
+  toLocationId: 'audit.reference.toLocation',
+  partner_id: 'audit.reference.customer',
+  customerPartnerId: 'audit.reference.customer',
+  payerPartnerId: 'audit.reference.payer',
+  invoicePayerPartnerId: 'audit.reference.payer',
+  receiptPayerPartnerId: 'audit.reference.payer',
+  workOrderId: 'audit.reference.workOrder',
+  work_order_id: 'audit.reference.workOrder',
+  vehicle_id: 'audit.reference.vehicle',
+  vehicleId: 'audit.reference.vehicle',
+  invoiceId: 'audit.reference.invoice',
+  receiptId: 'audit.reference.receipt',
+  obligationId: 'audit.reference.refundObligation',
+  reception_visit_id: 'audit.reference.receptionVisit',
+  receptionVisitId: 'audit.reference.receptionVisit',
+  user_id: 'audit.reference.userAccount',
+  user_account_id: 'audit.reference.userAccount',
+  role_id: 'audit.reference.role',
+  grant_id: 'audit.reference.roleGrant',
+  job_id: 'audit.reference.job',
+  uomId: 'audit.reference.unit',
+  serviceId: 'audit.reference.service',
+  quotationId: 'audit.reference.quotation',
+  quotationRevisionId: 'audit.reference.quotationRevision',
+  document_id: 'audit.reference.document',
+  document_version_id: 'audit.reference.documentVersion',
+  deliveryRecordId: 'audit.reference.deliveryRecord',
+  company_id: 'audit.reference.company',
+  companyId: 'audit.reference.company',
+  branch_id: 'audit.reference.branch',
+  branchId: 'audit.reference.branch',
+  template_id: 'audit.reference.template',
+  templateId: 'audit.reference.template',
+  template_version_id: 'audit.reference.templateVersion',
+  technician_profile_id: 'audit.reference.technician',
+  priceListId: 'audit.reference.priceList',
+  paymentMethodId: 'audit.reference.paymentMethod',
+  materialRequestId: 'audit.reference.materialRequest',
+  creditNoteId: 'audit.reference.creditNote',
+  itemCategoryId: 'audit.reference.itemCategory',
+  adjustmentId: 'audit.reference.stockAdjustment',
+  transferId: 'audit.reference.transfer',
+  reservationId: 'audit.reference.reservation',
+  department_id: 'audit.reference.department',
+  requestedBy: 'audit.reference.requestedBy',
+  approvedBy: 'audit.reference.approvedBy',
+  countedBy: 'audit.reference.countedBy',
+  createdBy: 'audit.reference.createdBy',
+};
+
+/** A reference's kind, in words, or "Reference". */
+export function auditReferenceLabel(messages: Messages, fieldName: string): string {
+  return translate(messages, known(REFERENCE_KEYS, fieldName) ?? 'audit.reference.other');
+}
+
+/** Whether a reference has a label of its own; one without keeps its field's code beside it. */
+export function isNamedAuditReference(fieldName: string): boolean {
+  return known(REFERENCE_KEYS, fieldName) !== null;
+}
+
+/** The reference fields with a label of their own, for the suite that counts them. */
+export const NAMED_AUDIT_REFERENCES: readonly string[] = Object.freeze(Object.keys(REFERENCE_KEYS));
+
 const PERMISSION_FIELDS: ReadonlySet<string> = new Set([
   'permission_code',
   'requiredPermission',
@@ -525,25 +403,31 @@ const PERMISSION_FIELDS: ReadonlySet<string> = new Set([
 const RECORD_TYPE_FIELD = 'entity_type';
 
 /**
- * A detail's value as the drawer says it.
+ * The words said before a record type's code, or `null` for any other field.
  *
- * A record type is said in the words the drawer already uses for one; where
- * the catalogue has no name of its own for it, the code follows in brackets so
- * that the sentence naming only its part of the product does not hide which
- * type it was. A permission is drawn by its code: the web holds no wording for
- * a permission — the permissions screen draws the description the service
+ * The code itself is always drawn after them, as it came: the words are the
+ * drawer's own for a record type, and where the catalogue has none of its own
+ * they name only the part of the product, which the code then makes exact.
+ */
+export function auditRecordTypeWords(
+  messages: Messages,
+  fieldName: string,
+  value: string
+): string | null {
+  return lastStep(fieldName) === RECORD_TYPE_FIELD ? auditEntityLabel(messages, value) : null;
+}
+
+/**
+ * Whether a detail's value is a code, drawn left to right as one.
+ *
+ * A permission is drawn by its code: the web holds no wording for a
+ * permission — the permissions screen draws the description the service
  * publishes with its catalogue (`iam.permission-list`), which this screen does
  * not read.
  */
-export function auditDetailValue(messages: Messages, fieldName: string, value: string): string {
-  if (lastStep(fieldName) !== RECORD_TYPE_FIELD) return value;
-  const words = auditEntityLabel(messages, value);
-  return known(ENTITY_KEYS, value) === null ? `${words} (${value})` : words;
-}
-
-/** Whether a detail's value is a code to be drawn left to right, as a code. */
 export function isAuditCodeField(fieldName: string): boolean {
-  return PERMISSION_FIELDS.has(lastStep(fieldName));
+  const last = lastStep(fieldName);
+  return PERMISSION_FIELDS.has(last) || last === RECORD_TYPE_FIELD;
 }
 
 /** The codes named by the catalogue, for the suite that checks them against the service's. */
