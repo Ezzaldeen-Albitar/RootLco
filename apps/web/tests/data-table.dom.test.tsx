@@ -1539,3 +1539,231 @@ describe('a search across a branch switch', () => {
     }
   );
 });
+
+describe('a list filter that comes back to the day it had settled on', () => {
+  /**
+   * A key the hook wants is always read.
+   *
+   * The hook keeps the criteria behind each key in a map of eight and drops the
+   * oldest. The key it asks for while the operator is still changing a filter
+   * is the SETTLED one, which can be many changes old; the read effect used to
+   * return when the map no longer held it — no read, no state — with the
+   * request name already spent. Coming back to that same settled key then
+   * changed nothing the effect watches, so nothing was ever sent: "Loading" for
+   * good, and a submit answered by a read "already in flight" that did not
+   * exist (`P1-32-PRE-OD-LFD`; on the site, the service catalogue's day filter
+   * retyped three times without a pause, ending on the day it began with).
+   *
+   * The shape below is that screen's: criteria that are never null — no day is
+   * the whole list — a submission of the whole list in hand from the change of
+   * working context every screen sees as it loads, one day settled, and then
+   * more than eight other days without a pause.
+   */
+  interface Filter {
+    readonly day?: string;
+  }
+
+  interface Sent {
+    readonly at: number;
+    readonly day: string;
+    answered: boolean;
+    readonly answer: (value: unknown) => void;
+  }
+
+  function FilterHarness({
+    day,
+    version,
+    sent,
+    startedAt,
+  }: {
+    readonly day: string;
+    readonly version: number;
+    readonly sent: Sent[];
+    readonly startedAt: number;
+  }) {
+    const criteria: Filter = day === '' ? {} : { day };
+    const search = useSearchRequest<Found, Filter>({
+      criteria,
+      version,
+      load: ((asked: Filter) =>
+        new Promise((resolve) => {
+          sent.push({
+            at: Date.now() - startedAt,
+            day: asked.day ?? 'whole list',
+            answered: false,
+            answer: resolve,
+          });
+        })) as never,
+    });
+    return (
+      <div>
+        <p data-testid="filter">{day === '' ? 'no day' : day}</p>
+        <p data-testid="phase">{search.phase}</p>
+        <p data-testid="rows">{search.rows.map((row) => row.id).join(',')}</p>
+        <button type="button" onClick={search.submit}>
+          ask now
+        </button>
+      </div>
+    );
+  }
+
+  interface Stage {
+    /** Every read sent so far: the day it asked for, or "whole list". */
+    readonly reads: () => readonly string[];
+    /** What the filter shows, the phase, and the day the rows on screen were read for. */
+    readonly shown: () => string;
+    readonly show: (day: string, version: number) => void;
+    readonly submit: () => void;
+    readonly wait: (ms: number) => Promise<void>;
+    readonly answerAll: () => Promise<void>;
+  }
+
+  async function staged(run: (stage: Stage) => Promise<void>) {
+    vi.useFakeTimers();
+    try {
+      const sent: Sent[] = [];
+      const startedAt = Date.now();
+      const host = (day: string, version: number) => (
+        <FilterHarness day={day} version={version} sent={sent} startedAt={startedAt} />
+      );
+      const view = renderLtr(host('', 0));
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      // One millisecond to an `act`, as in the block above, so a read is sent
+      // in the millisecond its timer fired.
+      const wait = async (ms: number) => {
+        if (ms === 0) await tick(0);
+        for (let passed = 0; passed < ms; passed += 1) await tick(1);
+      };
+      await run({
+        reads: () => sent.map((read) => read.day),
+        shown: () =>
+          [
+            screen.getByTestId('filter').textContent,
+            screen.getByTestId('phase').textContent,
+            screen.getByTestId('rows').textContent,
+          ].join(':'),
+        show: (day, version) => view.rerender(host(day, version)),
+        submit: () => {
+          fireEvent.click(screen.getByRole('button', { name: 'ask now' }));
+        },
+        wait,
+        answerAll: async () => {
+          for (const read of sent) {
+            if (read.answered) continue;
+            read.answered = true;
+            read.answer(okPage([{ id: read.day }]));
+          }
+          await wait(0);
+        },
+      });
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  /** Nine whole days a retyped date passes through — one more than the map keeps. */
+  const PASSED_THROUGH = [
+    '2028-03-15',
+    '2028-01-15',
+    '2028-11-15',
+    '0202-11-15',
+    '2026-11-15',
+    '2026-11-01',
+    '2026-01-01',
+    '0202-01-01',
+    '2027-01-01',
+  ] as const;
+
+  /** The screen as it stands once loaded: the whole list submitted, then one day settled. */
+  async function loadedOnADay(stage: Stage): Promise<void> {
+    await stage.answerAll();
+    // The change of working context: a submission of the criteria in hand.
+    stage.show('', 1);
+    await stage.answerAll();
+    stage.show('2028-03-01', 1);
+    await stage.wait(SEARCH_DEBOUNCE_MS);
+    await stage.answerAll();
+    expect(stage.reads()).toEqual(['whole list', 'whole list', '2028-03-01']);
+    expect(stage.shown()).toBe('2028-03-01:ready:2028-03-01');
+  }
+
+  it.each([0, 50, 150, 299])(
+    'nine days passed through %i ms apart, the day dropped once, and back on the settled day: it is read and shown',
+    async (gap) => {
+      await staged(async (stage) => {
+        await loadedOnADay(stage);
+
+        // No pause long enough to settle: the settled day stays the one asked,
+        // and nothing is sent.
+        for (const day of PASSED_THROUGH) {
+          await stage.wait(gap);
+          stage.show(day, 1);
+        }
+        await stage.answerAll();
+        expect(stage.reads()).toHaveLength(3);
+        expect(stage.shown()).toBe('2027-01-01:ready:2028-03-01');
+
+        // The day is dropped for a moment: the whole list is the submitted
+        // criteria, so it is read at once.
+        await stage.wait(gap);
+        stage.show('', 1);
+        await stage.answerAll();
+        expect(stage.reads()).toEqual(['whole list', 'whole list', '2028-03-01', 'whole list']);
+        expect(stage.shown()).toBe('no day:ready:whole list');
+
+        // On to another day, then back to the day that had settled. The hook is
+        // asking for the settled day again from the first of these; that read
+        // must go out although the map dropped the day eight keys ago.
+        await stage.wait(gap);
+        stage.show('0202-03-01', 1);
+        await stage.wait(gap);
+        stage.show('2028-03-01', 1);
+        await stage.answerAll();
+        expect(stage.reads()).toEqual([
+          'whole list',
+          'whole list',
+          '2028-03-01',
+          'whole list',
+          '2028-03-01',
+        ]);
+        expect(stage.shown()).toBe('2028-03-01:ready:2028-03-01');
+
+        // Nothing more is owed: the day shown is the day applied.
+        await stage.wait(3000);
+        await stage.answerAll();
+        expect(stage.reads()).toHaveLength(5);
+        expect(stage.shown()).toBe('2028-03-01:ready:2028-03-01');
+
+        // And a submit is a refresh of that day, not a press that sends nothing.
+        stage.submit();
+        await stage.answerAll();
+        expect(stage.reads().slice(5)).toEqual(['2028-03-01']);
+        expect(stage.shown()).toBe('2028-03-01:ready:2028-03-01');
+      });
+    }
+  );
+
+  it('the same entries 301 ms apart: each day settles and is read, and the last read is the day shown', async () => {
+    await staged(async (stage) => {
+      await loadedOnADay(stage);
+      for (const day of [...PASSED_THROUGH, '', '0202-03-01', '2028-03-01']) {
+        await stage.wait(SEARCH_DEBOUNCE_MS + 1);
+        await stage.answerAll();
+        stage.show(day, 1);
+      }
+      await stage.wait(3000);
+      await stage.answerAll();
+      expect(stage.reads().slice(3)).toEqual([
+        ...PASSED_THROUGH,
+        'whole list',
+        '0202-03-01',
+        '2028-03-01',
+      ]);
+      expect(stage.shown()).toBe('2028-03-01:ready:2028-03-01');
+    });
+  });
+});
