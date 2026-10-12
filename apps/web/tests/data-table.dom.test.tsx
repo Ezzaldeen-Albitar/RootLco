@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,7 +22,7 @@ import {
   settleRead,
   useSearchRequest,
 } from '@/lib/api/use-search-request';
-import { useDebouncedValue } from '@/lib/use-debounced-value';
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from '@/lib/use-debounced-value';
 import en from '../src/i18n/messages/en.json';
 import { renderLtr } from './render';
 
@@ -1070,5 +1070,327 @@ describe('a search that pages', () => {
     await user.click(screen.getByRole('button', { name: 'ask now' }));
     await waitFor(() => expect(screen.getByTestId('page')).toHaveTextContent('1'));
     expect(load.mock.calls[0]?.[1]).toBeNull();
+  });
+});
+
+describe('a search across a branch switch', () => {
+  /**
+   * The settled key belongs to the branch it was typed under.
+   *
+   * The invoice desk's "a reply still in flight when the branch changes is
+   * dropped" once counted two reads where it expects one. The second read was
+   * the hook's: with the term emptied by the switch there was no submission to
+   * stand on, so the hook fell back to the debounced key — which for the length
+   * of the debounce still named the term and the branch just left — asked for
+   * it again under the new version, and showed its answer under the new branch.
+   * It happened only when the switch came after the term had settled, which is
+   * why the case passed whenever the suite was quicker than the debounce.
+   *
+   * Time is faked, so every instant below is chosen rather than hoped for, and
+   * the debounce is the product's own 300 ms. A read is recorded with the
+   * instant it was sent, its term, and the branch it would be sent FOR — the
+   * criteria's where the scope travels in the criteria (`WorkOrderPicker` and
+   * the boards), the loader's where it is bound to the loader (`EntityPicker`
+   * and `SearchPicker` callers).
+   */
+  interface Asked {
+    readonly q: string;
+    readonly branch?: string;
+  }
+
+  interface Sent {
+    readonly at: number;
+    readonly q: string;
+    readonly scope: string;
+    readonly signal: AbortSignal;
+    answered: boolean;
+    readonly answer: (value: unknown) => void;
+  }
+
+  function SwitchHarness({
+    term,
+    branch,
+    version,
+    carries,
+    sent,
+    startedAt,
+  }: {
+    readonly term: string;
+    readonly branch: string;
+    readonly version: number;
+    /** Whether the branch travels in the criteria or is bound to the loader. */
+    readonly carries: boolean;
+    readonly sent: Sent[];
+    readonly startedAt: number;
+  }) {
+    const criteria: Asked | null =
+      term.length >= 2 ? { q: term, ...(carries ? { branch } : {}) } : null;
+    const search = useSearchRequest<Found, Asked>({
+      criteria,
+      version,
+      load: ((asked: Asked, _cursor: string | null, signal: AbortSignal) =>
+        new Promise((resolve) => {
+          sent.push({
+            at: Date.now() - startedAt,
+            q: asked.q,
+            scope: asked.branch ?? branch,
+            signal,
+            answered: false,
+            answer: resolve,
+          });
+        })) as never,
+    });
+    return (
+      <div>
+        <p data-testid="heading">{branch}</p>
+        <p data-testid="phase">{search.phase}</p>
+        <p data-testid="rows">{search.rows.map((row) => row.id).join(',')}</p>
+        <button type="button" onClick={search.submit}>
+          ask now
+        </button>
+      </div>
+    );
+  }
+
+  interface Stage {
+    /** Every read sent so far, as `<ms> <term>@<branch>`. */
+    readonly reads: () => readonly string[];
+    readonly sent: readonly Sent[];
+    /** The branch heading, the phase and the rows on screen, as one string. */
+    readonly shown: () => string;
+    /** One render: the term in the box, the branch in hand, its version. */
+    readonly show: (term: string, branch: string, version: number) => void;
+    readonly submit: () => void;
+    readonly wait: (ms: number) => Promise<void>;
+    /** Answers every read still open with rows named for what it asked. */
+    readonly answerAll: () => Promise<void>;
+  }
+
+  async function staged(carries: boolean, run: (stage: Stage) => Promise<void>) {
+    vi.useFakeTimers();
+    try {
+      const sent: Sent[] = [];
+      const startedAt = Date.now();
+      const host = (term: string, branch: string, version: number) => (
+        <SwitchHarness
+          term={term}
+          branch={branch}
+          version={version}
+          carries={carries}
+          sent={sent}
+          startedAt={startedAt}
+        />
+      );
+      const view = renderLtr(host('', 'A', 0));
+      // One millisecond to an `act`, so a render a timer causes is committed at
+      // the instant the timer fired and a read is stamped with the millisecond
+      // it was sent in. A single `act` over the whole wait would commit only at
+      // its end and stamp every read with the end of the wait.
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      const wait = async (ms: number) => {
+        // Zero still flushes what is already due: an answer, a pending render.
+        if (ms === 0) await tick(0);
+        for (let passed = 0; passed < ms; passed += 1) await tick(1);
+      };
+      await run({
+        sent,
+        reads: () => sent.map((read) => `${read.at} ${read.q}@${read.scope}`),
+        shown: () =>
+          [
+            screen.getByTestId('heading').textContent,
+            screen.getByTestId('phase').textContent,
+            screen.getByTestId('rows').textContent,
+          ].join(':'),
+        show: (term, branch, version) => view.rerender(host(term, branch, version)),
+        submit: () => {
+          fireEvent.click(screen.getByRole('button', { name: 'ask now' }));
+        },
+        wait,
+        answerAll: async () => {
+          for (const read of sent) {
+            if (read.answered) continue;
+            read.answered = true;
+            read.answer(okPage([{ id: `${read.scope}/${read.q}` }]));
+          }
+          await wait(0);
+        },
+      });
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  /** The instants after a switch at which the screen and the reads are checked. */
+  const AFTER_THE_SWITCH = [0, 100, SEARCH_DEBOUNCE_MS - 1, SEARCH_DEBOUNCE_MS + 1, 1000] as const;
+
+  /** How long after the last keystroke the branch is switched. */
+  const SWITCHED_AFTER = [0, 100, 299, 301, 600] as const;
+
+  it('is run against the debounce the product ships', () => {
+    // The instants above are written as numbers so the timeline reads as one;
+    // this is what ties them to the interval they straddle.
+    expect(SEARCH_DEBOUNCE_MS).toBe(300);
+  });
+
+  it.each(SWITCHED_AFTER)(
+    'a submitted term, the branch switched %i ms after the last keystroke: the one read is for the branch left, its reply is dropped, and nothing more is asked',
+    async (after) => {
+      await staged(true, async (stage) => {
+        for (const term of ['L', 'La', 'Lay', 'Layl', 'Layla']) stage.show(term, 'A', 0);
+        stage.submit();
+        await stage.wait(after);
+        expect(stage.reads()).toEqual(['0 Layla@A']);
+        expect(stage.shown()).toBe('A:loading:');
+
+        // The picker empties its term in the render the version moves in.
+        stage.show('', 'B', 1);
+        let elapsed = 0;
+        for (const instant of AFTER_THE_SWITCH) {
+          await stage.wait(instant - elapsed);
+          elapsed = instant;
+          // The reply for the branch left arrives now, and so would any other.
+          await stage.answerAll();
+          expect(stage.reads(), `reads ${instant} ms after the switch`).toEqual(['0 Layla@A']);
+          expect(stage.shown(), `shown ${instant} ms after the switch`).toBe('B:idle:');
+        }
+        expect(stage.sent[0]?.signal.aborted).toBe(true);
+      });
+    }
+  );
+
+  it.each(SWITCHED_AFTER)(
+    'a typed term, the branch switched %i ms after the last keystroke: no read for it is sent after the switch, and its answer is not shown under the new branch',
+    async (after) => {
+      await staged(true, async (stage) => {
+        for (const term of ['L', 'La', 'Lay', 'Layl', 'Layla']) stage.show(term, 'A', 0);
+        await stage.wait(after);
+        // Sent only once the pause has passed; before it, nothing was asked.
+        const settled = after >= SEARCH_DEBOUNCE_MS;
+        const before = settled ? ['300 Layla@A'] : [];
+        expect(stage.reads()).toEqual(before);
+        await stage.answerAll();
+        expect(stage.shown()).toBe(settled ? 'A:ready:A/Layla' : 'A:idle:');
+
+        stage.show('', 'B', 1);
+        let elapsed = 0;
+        for (const instant of AFTER_THE_SWITCH) {
+          await stage.wait(instant - elapsed);
+          elapsed = instant;
+          await stage.answerAll();
+          expect(stage.reads(), `reads ${instant} ms after the switch`).toEqual(before);
+          expect(stage.shown(), `shown ${instant} ms after the switch`).toBe('B:idle:');
+        }
+      });
+    }
+  );
+
+  it('a board that keeps its criteria reads the new branch at once, and a filter changed 100 ms later never re-reads the branch left', async () => {
+    await staged(true, async (stage) => {
+      stage.show('Layla', 'A', 0);
+      await stage.wait(600);
+      await stage.answerAll();
+      expect(stage.reads()).toEqual(['300 Layla@A']);
+      expect(stage.shown()).toBe('A:ready:A/Layla');
+
+      // The switch is a submission of the same criteria for the new branch.
+      stage.show('Layla', 'B', 1);
+      await stage.answerAll();
+      expect(stage.reads()).toEqual(['300 Layla@A', '600 Layla@B']);
+      expect(stage.shown()).toBe('B:ready:B/Layla');
+
+      // A filter moves before the new branch's key has settled. The settled
+      // key in hand is still the left branch's, and it must not be asked.
+      await stage.wait(100);
+      stage.show('Omar', 'B', 1);
+      await stage.answerAll();
+      expect(stage.reads()).toEqual(['300 Layla@A', '600 Layla@B']);
+      expect(stage.shown()).toBe('B:ready:B/Layla');
+      await stage.wait(SEARCH_DEBOUNCE_MS - 1);
+      await stage.answerAll();
+      expect(stage.reads()).toEqual(['300 Layla@A', '600 Layla@B']);
+      expect(stage.shown()).toBe('B:ready:B/Layla');
+
+      // The new filter's own pause, and then its own read — the only one.
+      await stage.wait(1);
+      expect(stage.reads()).toEqual(['300 Layla@A', '600 Layla@B', '1000 Omar@B']);
+      await stage.answerAll();
+      expect(stage.shown()).toBe('B:ready:B/Omar');
+      await stage.wait(1000);
+      expect(stage.reads()).toHaveLength(3);
+    });
+  });
+
+  it('the same term typed again under the new branch is a new question: it waits its own pause and is read for the new branch', async () => {
+    // The scope is bound to the loader here, so the key is the same characters
+    // under both branches — the settled entry must still be told apart.
+    await staged(false, async (stage) => {
+      stage.show('Layla', 'A', 0);
+      await stage.wait(600);
+      await stage.answerAll();
+      expect(stage.reads()).toEqual(['300 Layla@A']);
+      expect(stage.shown()).toBe('A:ready:A/Layla');
+
+      stage.show('', 'B', 1);
+      await stage.wait(100);
+      await stage.answerAll();
+      expect(stage.reads()).toEqual(['300 Layla@A']);
+      expect(stage.shown()).toBe('B:idle:');
+
+      stage.show('Layla', 'B', 1);
+      await stage.wait(SEARCH_DEBOUNCE_MS - 1);
+      await stage.answerAll();
+      expect(stage.reads()).toEqual(['300 Layla@A']);
+      expect(stage.shown()).toBe('B:idle:');
+
+      await stage.wait(1);
+      expect(stage.reads()).toEqual(['300 Layla@A', '1000 Layla@B']);
+      await stage.answerAll();
+      expect(stage.shown()).toBe('B:ready:B/Layla');
+    });
+  });
+
+  it('leaves ordinary typing where it was: one read at the pause, at once on a submit, and the superseded read abandoned', async () => {
+    await staged(true, async (stage) => {
+      for (const term of ['L', 'La', 'Lay']) stage.show(term, 'A', 0);
+      await stage.wait(100);
+      stage.show('Layl', 'A', 0);
+      await stage.wait(100);
+      stage.show('Layla', 'A', 0);
+      await stage.wait(SEARCH_DEBOUNCE_MS - 1);
+      expect(stage.reads()).toEqual([]);
+      await stage.wait(1);
+      expect(stage.reads()).toEqual(['500 Layla@A']);
+      await stage.answerAll();
+      expect(stage.shown()).toBe('A:ready:A/Layla');
+
+      // Typing on keeps the settled answer on screen until the next pause.
+      await stage.wait(100);
+      stage.show('Laylax', 'A', 0);
+      await stage.wait(SEARCH_DEBOUNCE_MS - 1);
+      expect(stage.reads()).toEqual(['500 Layla@A']);
+      expect(stage.shown()).toBe('A:ready:A/Layla');
+      await stage.wait(1);
+      expect(stage.reads()).toEqual(['500 Layla@A', '900 Laylax@A']);
+      expect(stage.shown()).toBe('A:loading:');
+
+      // A submit of a new term asks at once and abandons the read in flight.
+      await stage.wait(50);
+      stage.show('Omar', 'A', 0);
+      stage.submit();
+      await stage.wait(0);
+      expect(stage.reads()).toEqual(['500 Layla@A', '900 Laylax@A', '950 Omar@A']);
+      expect(stage.sent[1]?.signal.aborted).toBe(true);
+      await stage.answerAll();
+      expect(stage.shown()).toBe('A:ready:A/Omar');
+
+      // The pause that follows a submission finds it already answered.
+      await stage.wait(1000);
+      expect(stage.reads()).toHaveLength(3);
+      expect(stage.shown()).toBe('A:ready:A/Omar');
+    });
   });
 });

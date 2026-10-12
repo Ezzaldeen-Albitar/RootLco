@@ -382,7 +382,24 @@ export function useSearchRequest<Row, Criteria>(options: {
    * parameters.
    */
   const key = criteria === null ? null : JSON.stringify(criteria);
-  const settledKey = useDebouncedValue(key, debounceMs);
+  /*
+   * The settled key REMEMBERS THE VERSION IT WAS TYPED UNDER.
+   *
+   * What settles is the key behind the working-context version it was seen
+   * with, on ONE clock. A settled key from before a branch switch is still in
+   * hand for the length of the debounce after it, and it names the previous
+   * branch's question; carrying the version is what lets the lines below tell
+   * it from a key typed since, even when the two are the same characters (the
+   * same term typed again under the new branch settles as its own entry, after
+   * its own pause).
+   *
+   * While the version stands still the entry changes exactly when the key
+   * does, so typing settles on the same timer as it always has.
+   */
+  const settledEntry = useDebouncedValue(key === null ? null : `${version}#${key}`, debounceMs);
+  const settledKey =
+    settledEntry === null ? null : settledEntry.slice(settledEntry.indexOf('#') + 1);
+  const settledIsCurrent = settledEntry === null || settledEntry.startsWith(`${version}#`);
 
   /*
    * An explicit submission skips the wait.
@@ -450,10 +467,28 @@ export function useSearchRequest<Row, Criteria>(options: {
    * branch switch sent today's window again, then yesterday's (checkpoint
    * browser QA). While the settled key is still the submitted one, the answer
    * in hand keeps its name, and the next read is the new criteria's own.
+   *
+   * A SETTLED KEY FROM BEFORE THE SWITCH IS NEVER ASKED AGAIN.
+   *
+   * The fallback above used to be unconditional, and for the length of the
+   * debounce after a switch the settled key is still the PREVIOUS branch's.
+   * Two screens walked into it. A picker empties its term on a switch, so
+   * there is no submission to stand on, and the hook re-read the term the
+   * picker had just dropped — with the left branch's scope wherever the scope
+   * travels in the criteria — and showed the answer under the new branch until
+   * the debounce caught up. A board keeps its criteria through a switch, and a
+   * filter changed before the new key had settled sent the left branch's
+   * window once more before the chosen one.
+   *
+   * So a settled key that belongs to another version is not a key to fall back
+   * to. With a submission in hand (every switch with criteria is one) the read
+   * stays the submitted one, exactly as it does while the settled key still
+   * equals it; with none, nothing is asked until the operator's own next key
+   * settles.
    */
-  const leaving = forced !== null && !submitted && settledKey === forced.key;
+  const leaving = forced !== null && !submitted && (settledKey === forced.key || !settledIsCurrent);
   const nonce = forced !== null && (submitted || leaving) ? forced.nonce : 0;
-  const activeKey = submitted ? key : settledKey;
+  const activeKey = submitted ? key : leaving ? forced.key : settledIsCurrent ? settledKey : null;
   const wanted = activeKey === null ? null : `${activeKey}#${version}#${nonce}`;
 
   /*
