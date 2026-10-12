@@ -183,6 +183,82 @@ export async function revokeUserSessionsAction(
   );
 }
 
+// --- the account's own details ----------------------------------------------
+
+const profileSchema = z.object({
+  displayName: z.string().trim().min(1, 'field.required').max(200, 'form.violation.too_long'),
+  mfaRequired: z.boolean(),
+});
+
+/**
+ * `PATCH /api/v1/iam/users/{userId}` — `iam.user-update`, `iam.user.manage`.
+ *
+ * The two fields the operation accepts and nothing else: the name shown across
+ * the workspace and whether two-factor authentication is required. Only the
+ * fields that differ from what the screen displayed are sent, so the audit
+ * record states the change that was made rather than a rewrite of both.
+ *
+ * Version-guarded: `If-Match` carries the version the screen displayed. A stale
+ * version is a conflict with its own sentence and a way to load the latest —
+ * never a silent overwrite of somebody else's change. The service cannot tell a
+ * stale version from an account outside the caller's reach, and neither does
+ * this sentence.
+ */
+export async function updateUserProfileAction(
+  userId: string,
+  recordVersion: number,
+  input: {
+    readonly displayName: string;
+    readonly mfaRequired: boolean;
+  },
+  stored: {
+    readonly displayName: string;
+    readonly mfaRequired: boolean;
+  }
+): Promise<ActionState> {
+  if (!UUID.test(userId) || !Number.isInteger(recordVersion)) {
+    return invalid({}, 1, 'form.formError');
+  }
+  const parsed = profileSchema.safeParse(input);
+  if (!parsed.success) return invalid(issueKeysByField(parsed.error), 1);
+
+  const body = {
+    ...(parsed.data.displayName !== stored.displayName.trim()
+      ? { displayName: parsed.data.displayName }
+      : {}),
+    ...(parsed.data.mfaRequired !== stored.mfaRequired
+      ? { mfaRequired: parsed.data.mfaRequired }
+      : {}),
+  };
+  if (Object.keys(body).length === 0) {
+    return { status: 'invalid', messageKey: 'users.edit.unchanged', attempt: 1 };
+  }
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
+
+  const result = await client.send(
+    'PATCH',
+    `/api/v1/iam/users/${encodeURIComponent(userId)}`,
+    body,
+    {
+      ifMatch: recordVersion,
+    }
+  );
+  if (!result.ok) {
+    if (result.kind === 'conflict') {
+      return {
+        status: 'conflict',
+        messageKey: 'users.edit.conflict',
+        correlationId: result.correlationId,
+        attempt: 1,
+      };
+    }
+    return fromFailure(result, 1, result.kind === 'forbidden' ? 'state.denied.title' : undefined);
+  }
+  return success('users.edit.saved', 1);
+}
+
 // --- one place for the shared shape -----------------------------------------
 
 async function mutate(

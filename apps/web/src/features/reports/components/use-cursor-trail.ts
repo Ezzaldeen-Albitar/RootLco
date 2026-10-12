@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import type { ServerTable } from '@/components/data-table/use-server-table';
+import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import type { ReadState } from '@/lib/api/read-operation';
+import { settleRead } from '@/lib/api/use-search-request';
 
 /**
  * One cursor-paginated report read, a page at a time.
@@ -58,6 +61,10 @@ export interface CursorTrail<T> {
   readonly canGoForward: boolean;
   readonly goBack: () => void;
   readonly goForward: () => void;
+  /** The page in hand, counting from 1. Never a position in a total. */
+  readonly page: number;
+  /** Reads the current page again, with the cursor that opened it. */
+  readonly refresh: () => void;
 }
 
 /** What the caller reads off a successful response so the trail can advance. */
@@ -78,15 +85,20 @@ export function useCursorTrail<T>(
   const [held, setHeld] = useState<{ readonly key: string; readonly outcome: ReadState<T> } | null>(
     null
   );
+  const [generation, setGeneration] = useState(0);
 
   const cursor = trail[depth] ?? null;
-  const wanted = `${String(depth)}#${cursor ?? ''}`;
+  const wanted = `${String(depth)}#${cursor ?? ''}#${String(generation)}`;
 
   useEffect(() => {
     let cancelled = false;
     // Awaited before any state write, so nothing here is a synchronous state
-    // change inside an effect body.
-    void read(cursor).then((outcome) => {
+    // change inside an effect body. Settled, never left hanging: see "Every
+    // read settles" above.
+    void settleRead<ReadState<T>>(() => read(cursor), {
+      status: 'unavailable',
+      correlationId: null,
+    }).then((outcome) => {
       if (cancelled) return;
       setHeld({ key: wanted, outcome });
     });
@@ -114,6 +126,8 @@ export function useCursorTrail<T>(
     setDepth(depth - 1);
   }, [depth]);
 
+  const refresh = useCallback(() => setGeneration((value) => value + 1), []);
+
   return {
     loading,
     outcome,
@@ -121,5 +135,53 @@ export function useCursorTrail<T>(
     canGoForward: forward.hasMore && forward.nextCursor !== null,
     goBack,
     goForward,
+    page: depth + 1,
+    refresh,
+  };
+}
+
+/**
+ * One trail page, in the shape `OperationalGrid` renders (ADR-022 §9).
+ *
+ * The grid is driven by a `ServerTable`, and a report's rows are cursor pages,
+ * so the grid draws them — with an unknown count, "Page N", and Previous and
+ * Next that walk this trail's own cursors. The read stays the trail's: the whole
+ * envelope (the period, the zone, the moment the amounts are as of, the groups)
+ * belongs to the page whose rows are shown, and `useServerTable` would keep the
+ * rows and drop the rest — see "Why this is not `useServerTable`" above.
+ *
+ * Nothing about the request reaches the read but the page: the page size is the
+ * trail's fixed one and there is no sort, so the grid offers neither control
+ * (`honours`). A page move asks the trail for the page before or after; any
+ * other request is ignored, because no other control is drawn.
+ */
+export function trailTable<T, Row>(
+  trail: CursorTrail<T>,
+  rows: (data: T) => readonly Row[],
+  pageSize: number
+): ServerTable<Row> {
+  const request: TableRequest = { ...INITIAL_REQUEST, page: trail.page, pageSize };
+  const outcome = trail.outcome;
+  const status = trail.loading || outcome === null ? 'loading' : outcome.status;
+  return {
+    request,
+    setRequest: (next) => {
+      if (next.page === trail.page + 1) trail.goForward();
+      else if (next.page === trail.page - 1) trail.goBack();
+    },
+    response:
+      outcome !== null && outcome.status === 'ok'
+        ? {
+            rows: rows(outcome.data),
+            total: null,
+            page: trail.page,
+            pageSize,
+            hasMore: trail.canGoForward,
+          }
+        : null,
+    status: status === 'ok' ? 'idle' : status,
+    correlationId: outcome?.correlationId ?? undefined,
+    refresh: trail.refresh,
+    honours: { pageSize: false, sort: false },
   };
 }

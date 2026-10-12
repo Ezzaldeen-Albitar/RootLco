@@ -1,17 +1,31 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
-import { IDLE, type ActionState } from '@/lib/forms/action-result';
+import { IDLE, invalid, unreachable, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { DirectoryEmptyNotice } from '@/features/working-context/components/WorkingBranchField';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import { readSettings } from '../api';
 import type { SettingValueType, SettingView, SettingsScope } from '../types';
 import { writeSettingAction } from '../actions';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
+import { useSingleFlight } from './use-single-flight';
 
 /**
  * The settings editor.
@@ -45,6 +59,19 @@ import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
  * `assertScopeWithinAuthority` **before** `companyExists`, so a reference
  * outside the caller's authority is refused identically whether or not it names
  * a real company. Offering names buys the operator legibility, not access.
+ *
+ * ## On Material UI (ADR-022, P1-32-PRE-OD-ADM1)
+ *
+ * The scope, the setting, its kind and its value are the Material form fields;
+ * the sensitive mark is `FormCheckboxField`; the stored settings are Material's
+ * table (one bounded read, no cursor); a read that did not answer is the shared
+ * Material state, with Try again where trying again can help. The kind of value
+ * is said in words ("Text", "Yes or no"), never as the stored type name. A
+ * value typed and not saved — or a key, kind or sensitive mark changed from
+ * where the form started — is unsaved work: leaving the page or changing branch
+ * asks first, and discarding puts the form back. One write at a time
+ * (`useSingleFlight`). The screens that use this editor (Organisation, system
+ * settings, numbering rules, taxes, currencies) pass the same props as before.
  */
 
 export interface SuggestedKey {
@@ -54,8 +81,24 @@ export interface SuggestedKey {
   readonly hintKey?: string;
 }
 
+/**
+ * A check a key's value must pass before anything is sent, and the sentence said
+ * under the value box while that key is chosen (P1-32-PRE-OD-ADM5). Data, not a
+ * function, because it crosses from a Server Component. Kept apart from
+ * `SuggestedKey` on purpose: a suggestion is only where a value lives.
+ *
+ *   - `currency-codes` — a list of distinct three-letter codes, each one the
+ *     platform holds when its currency list was read (`knownCodes`).
+ */
+export interface ValueRule {
+  readonly rule: 'currency-codes';
+  readonly hintKey: string;
+}
+
 /** A stable empty set, so the refusal hook sees no new attempt on every render. */
 const NO_ERRORS: Readonly<Record<string, string>> = Object.freeze({});
+/** No key carries a rule unless the screen says so. */
+const NO_RULES: Readonly<Record<string, ValueRule>> = Object.freeze({});
 
 export function SettingsEditor({
   messages,
@@ -63,6 +106,9 @@ export function SettingsEditor({
   canWrite,
   keyPrefix,
   suggestions = [],
+  readOnlyKey = 'admin.readOnly',
+  valueRules = NO_RULES,
+  knownCodes = null,
 }: {
   readonly messages: Messages;
   readonly scope: SettingsScope;
@@ -70,6 +116,16 @@ export function SettingsEditor({
   /** Only keys under this prefix are listed. Empty string lists everything. */
   readonly keyPrefix: string;
   readonly suggestions?: readonly SuggestedKey[];
+  /**
+   * The sentence in place of the form when nothing is written here. The default
+   * is the permission sentence; a screen that shows settings it has no operation
+   * to apply says that instead (P1-32-PRE-OD-ADM5).
+   */
+  readonly readOnlyKey?: string;
+  /** Checks on the values of particular keys, by key. */
+  readonly valueRules?: Readonly<Record<string, ValueRule>>;
+  /** The currency codes the platform holds, for a `currency-codes` rule; null when not read. */
+  readonly knownCodes?: readonly string[] | null;
 }) {
   const t = (key: string) => translate(messages, key as keyof Messages);
 
@@ -94,23 +150,41 @@ export function SettingsEditor({
 
   const [scopeId, setScopeId] = useState(scopeOptions[0]?.value ?? '');
   const [settings, setSettings] = useState<readonly SettingView[] | null>(null);
-  const [readStatus, setReadStatus] = useState<'idle' | 'denied' | 'error'>('idle');
+  const [readStatus, setReadStatus] = useState<'idle' | 'denied' | 'unavailable' | 'error'>('idle');
+  const [readCorrelation, setReadCorrelation] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const [state, setState] = useState<ActionState>(IDLE);
-  const [saving, startSaving] = useTransition();
+  const saving = useSingleFlight();
 
-  const [form, setForm] = useState({
+  const initialForm: SettingForm = {
     settingKey: suggestions[0]?.key ?? '',
-    valueType: (suggestions[0]?.valueType ?? 'string') as SettingValueType,
+    valueType: suggestions[0]?.valueType ?? 'string',
     settingValue: '',
     isSensitive: false,
-  });
+  };
+  const [form, setForm] = useState<SettingForm>(initialForm);
+  // Where the form "started": the first suggestion until a save, then what that
+  // save stored (with the value box emptied). Unsaved work is measured against
+  // this, so a saved key, kind or sensitive mark is not mistaken for unsaved work.
+  const [baseline, setBaseline] = useState<SettingForm>(initialForm);
   // Question f: the cursor goes to the refused value, and its complaint goes once
   // the value changes (route sweep B3).
   const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(
     state.fieldErrors ?? NO_ERRORS,
     { settingValue: form.settingValue }
   );
+  // Typed and not saved is work a page change or a branch change would throw
+  // away, so it asks first; a confirmed discard puts the form back.
+  const dirty =
+    canWrite &&
+    (form.settingValue !== '' ||
+      form.settingKey !== baseline.settingKey ||
+      form.valueType !== baseline.valueType ||
+      form.isSensitive !== baseline.isSensitive);
+  useUnsavedGuard(dirty, () => {
+    setForm(baseline);
+    setState(IDLE);
+  });
 
   /*
    * A company's settings are read only where the server said the read would be
@@ -136,12 +210,19 @@ export function SettingsEditor({
       // inside an effect body.
       const result = await readSettings(scope, id);
       if (cancelled) return;
+      setReadCorrelation(result.correlationId);
       if (result.status === 'ok') {
         setSettings(result.data ?? []);
         setReadStatus('idle');
       } else {
         setSettings(null);
-        setReadStatus(result.status === 'denied' ? 'denied' : 'error');
+        setReadStatus(
+          result.status === 'denied'
+            ? 'denied'
+            : result.status === 'unavailable'
+              ? 'unavailable'
+              : 'error'
+        );
       }
     })();
     return () => {
@@ -150,16 +231,27 @@ export function SettingsEditor({
   }, [scope, scopeId, generation, unreadableCompany]);
 
   const visible = (settings ?? []).filter((setting) => setting.settingKey.startsWith(keyPrefix));
+  const reading =
+    selectedId.length > 0 && !unreadableCompany && settings === null && readStatus === 'idle';
+  // One normalised key for the hint and for the rule checked on submit, so the
+  // sentence shown beside the value is always the rule that will be applied.
+  const chosenKey = form.settingKey.trim();
+  const chosenHint =
+    valueRules[chosenKey]?.hintKey ?? suggestions.find((entry) => entry.key === chosenKey)?.hintKey;
+  const typeLabel = (type: string) =>
+    VALUE_TYPES.includes(type as SettingValueType)
+      ? t(`organization.setting.kind.${type}`)
+      : t('organization.setting.kind.unknown');
 
   return (
     <div className="flex flex-col gap-5">
       <div className="max-w-md">
         {scopeOptions.length > 0 ? (
-          <SelectField
+          <FormSelectField
             label={t(scope === 'company' ? 'admin.scope.company' : 'admin.scope.branch')}
             required
             value={scopeId}
-            onChange={(event) => setScopeId(event.target.value)}
+            onChange={setScopeId}
             options={scopeOptions}
             placeholder={t('form.select.placeholder')}
           />
@@ -184,74 +276,96 @@ export function SettingsEditor({
           {t('organization.settings.companyNotReadable')}
         </p>
       ) : null}
-      {!unreadableCompany && readStatus === 'denied' ? (
-        <p role="status" className="text-supporting text-text-secondary">
-          {t('state.denied.description')}
-        </p>
+      {!unreadableCompany && readStatus !== 'idle' ? (
+        <MuiReadFailureState
+          messages={messages}
+          status={readStatus}
+          correlationId={readCorrelation}
+          onRetry={() => {
+            setReadStatus('idle');
+            setGeneration((value) => value + 1);
+          }}
+        />
       ) : null}
-      {!unreadableCompany && readStatus === 'error' ? (
-        <p role="alert" className="text-supporting text-error">
-          {t('state.error.description')}
-        </p>
-      ) : null}
+      {reading ? <MuiLoadingState messages={messages} variant="inline" /> : null}
 
       {settings !== null && !unreadableCompany ? (
         visible.length === 0 ? (
-          <p className="text-body text-text-secondary">{t('state.empty.description')}</p>
+          <MuiEmptyState messages={messages} />
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border-subtle">
-            <table className="w-full border-collapse text-table-cell">
-              <caption className="sr-only">{t('organization.settings')}</caption>
-              <thead className="border-b border-table-border bg-table-header">
-                <tr>
-                  <Th>{t('organization.setting.key')}</Th>
-                  <Th>{t('organization.setting.value')}</Th>
-                  <Th>{t('organization.setting.type')}</Th>
-                  <Th>{t('organization.setting.version')}</Th>
-                </tr>
-              </thead>
-              <tbody>
+          <TableContainer className="rounded-xl border border-border-subtle">
+            <Table size="small" aria-label={t('organization.settings')}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t('organization.setting.key')}</TableCell>
+                  <TableCell>{t('organization.setting.value')}</TableCell>
+                  <TableCell>{t('organization.setting.type')}</TableCell>
+                  <TableCell className="text-end">{t('organization.setting.version')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {visible.map((setting) => (
-                  <tr key={setting.settingKey} className="border-t border-border-subtle">
-                    <td className="px-3 py-2 font-mono text-caption text-text-secondary">
-                      {setting.settingKey}
-                    </td>
-                    <td className="px-3 py-2 text-text-primary">
+                  <TableRow key={setting.settingKey}>
+                    <TableCell className="font-mono text-caption">
+                      <span dir="ltr">{setting.settingKey}</span>
+                    </TableCell>
+                    <TableCell>
                       {setting.isSensitive && !('settingValue' in setting) ? (
                         <span className="text-text-muted">
                           {t('organization.setting.withheld')}
                         </span>
                       ) : (
-                        <code className="break-all font-mono text-caption">
+                        <code className="break-all font-mono text-caption" dir="ltr">
                           {render(setting.settingValue)}
                         </code>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-text-secondary">{setting.valueType}</td>
-                    <td className="px-3 py-2 text-end tabular-nums text-text-secondary">
-                      {setting.version}
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell>{typeLabel(setting.valueType)}</TableCell>
+                    <TableCell className="text-end tabular-nums">{setting.version}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableContainer>
         )
       ) : null}
 
       {canWrite ? (
         <form
           ref={refusalFormRef}
+          noValidate
           className="flex max-w-xl flex-col gap-4 rounded-xl border border-border-subtle p-4"
           onSubmit={(event) => {
             event.preventDefault();
             const id = scopeId.trim();
             if (id.length === 0) return;
-            startSaving(async () => {
-              const result = await writeSettingAction(scope, id, form);
+            // The key is sent exactly as its rule was looked up: trimmed.
+            const input = { ...form, settingKey: chosenKey };
+            const previous = state;
+            // A value the chosen key's rule refuses is refused beside its box,
+            // and nothing is sent.
+            const ruleError = ruleRefusal(valueRules[chosenKey], input, knownCodes);
+            if (ruleError !== null) {
+              setState(invalid({ settingValue: ruleError }, (previous.attempt ?? 0) + 1));
+              return;
+            }
+            saving.run(async () => {
+              let result: ActionState;
+              try {
+                result = await writeSettingAction(scope, id, input);
+              } catch {
+                // Numbered from the attempt before it, so a second failure in a
+                // row is a fresh announcement rather than the same one kept.
+                result = unreachable((previous.attempt ?? 0) + 1);
+              }
               setState(result);
               if (result.status === 'success') {
-                setForm((current) => ({ ...current, settingValue: '' }));
+                setForm((current) => ({
+                  ...current,
+                  settingKey: input.settingKey,
+                  settingValue: '',
+                }));
+                setBaseline({ ...input, settingValue: '' });
                 setGeneration((value) => value + 1);
               }
             });
@@ -264,15 +378,15 @@ export function SettingsEditor({
           <FormFeedback state={state} messages={messages} />
 
           {suggestions.length > 0 ? (
-            <SelectField
+            <FormSelectField
               label={t('organization.setting.key')}
               description={t('organization.setting.keyHint')}
               value={form.settingKey}
-              onChange={(event) => {
-                const chosen = suggestions.find((entry) => entry.key === event.target.value);
+              onChange={(value) => {
+                const chosen = suggestions.find((entry) => entry.key === value);
                 setForm((current) => ({
                   ...current,
-                  settingKey: event.target.value,
+                  settingKey: value,
                   valueType: chosen?.valueType ?? current.valueType,
                 }));
               }}
@@ -282,32 +396,24 @@ export function SettingsEditor({
               }))}
             />
           ) : (
-            <TextField
+            <FormTextField
               label={t('organization.setting.key')}
               description={t('organization.setting.keyHint')}
               value={form.settingKey}
               spellCheck={false}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, settingKey: event.target.value }))
-              }
+              dir="ltr"
+              onChange={(value) => setForm((current) => ({ ...current, settingKey: value }))}
+              error={refusalErrors['settingKey'] ? t(refusalErrors['settingKey']) : undefined}
             />
           )}
 
-          <SelectField
+          <FormSelectField
             label={t('organization.setting.type')}
             value={form.valueType}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                valueType: event.target.value as SettingValueType,
-              }))
+            onChange={(value) =>
+              setForm((current) => ({ ...current, valueType: value as SettingValueType }))
             }
-            options={[
-              { value: 'string', label: 'string' },
-              { value: 'number', label: 'number' },
-              { value: 'boolean', label: 'boolean' },
-              { value: 'json', label: 'json' },
-            ]}
+            options={VALUE_TYPES.map((type) => ({ value: type, label: typeLabel(type) }))}
           />
 
           {/*
@@ -321,53 +427,91 @@ export function SettingsEditor({
             beside the control they had to change, and what they had typed stayed
             in the box with no mark on it.
           */}
-          <TextAreaField
+          <FormTextField
             label={t('organization.setting.value')}
-            description={t('organization.setting.valueHint')}
+            description={t(chosenHint ?? 'organization.setting.valueHint')}
             value={form.settingValue}
+            multiline
             rows={form.valueType === 'json' ? 5 : 2}
             spellCheck={false}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, settingValue: event.target.value }))
-            }
+            onChange={(value) => setForm((current) => ({ ...current, settingValue: value }))}
             error={refusalErrors['settingValue'] ? t(refusalErrors['settingValue']) : undefined}
           />
 
-          <CheckboxField
+          <FormCheckboxField
             label={t('organization.setting.sensitive')}
             checked={form.isSensitive}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, isSensitive: event.target.checked }))
-            }
+            onChange={(checked) => setForm((current) => ({ ...current, isSensitive: checked }))}
           />
 
           <div className="flex justify-end">
-            <button
+            <Button
               type="submit"
-              disabled={saving || scopeId.trim().length === 0}
-              aria-busy={saving || undefined}
-              className="rounded-lg bg-primary px-4 py-2 text-button font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
+              variant="contained"
+              disabled={saving.pending || scopeId.trim().length === 0}
+              aria-busy={saving.pending || undefined}
             >
-              {saving ? t('admin.saving') : t('admin.save')}
-            </button>
+              {saving.pending ? t('admin.saving') : t('admin.save')}
+            </Button>
           </div>
         </form>
       ) : (
-        <p className="text-supporting text-text-muted">{t('admin.readOnly')}</p>
+        <p className="text-supporting text-text-muted" data-testid="settings-read-only">
+          {t(readOnlyKey)}
+        </p>
       )}
     </div>
   );
 }
 
-function Th({ children }: { readonly children: React.ReactNode }) {
-  return (
-    <th
-      scope="col"
-      className="px-3 py-2 text-start text-table-header font-semibold uppercase tracking-wide text-table-header-text"
-    >
-      {children}
-    </th>
-  );
+interface SettingForm {
+  readonly settingKey: string;
+  readonly valueType: SettingValueType;
+  readonly settingValue: string;
+  readonly isSensitive: boolean;
+}
+
+/** The kinds a setting may declare, in the order the select offers them. */
+const VALUE_TYPES: readonly SettingValueType[] = ['string', 'number', 'boolean', 'json'];
+
+const CURRENCY_CODE = /^[A-Z]{3}$/;
+
+/**
+ * The catalogue key of what a suggestion's rule refuses in this value, or null.
+ *
+ * `currency-codes`: a list of distinct three-letter codes, stored as a
+ * structured value so the Organisation screen can read it back as a list
+ * (`readCurrencyChoices`). When the platform's currency list was read, each code
+ * must be one it holds; when it was not, the shape is all that can be checked,
+ * and nothing is refused for a list the screen does not have.
+ *
+ * This check is the screen's alone: the company settings write stores any
+ * well-formed value for this key without checking it, and an empty list (no
+ * enabled currency) passes here as it passes there. Neither is given a rule of
+ * its own until one is decided (recorded in route-checklist.md, ADM-5).
+ */
+function ruleRefusal(
+  valueRule: ValueRule | undefined,
+  form: SettingForm,
+  knownCodes: readonly string[] | null
+): string | null {
+  if (valueRule?.rule !== 'currency-codes') return null;
+  if (form.valueType !== 'json') return 'currencies.error.list';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(form.settingValue);
+  } catch {
+    return 'currencies.error.list';
+  }
+  if (!Array.isArray(parsed)) return 'currencies.error.list';
+  const seen = new Set<string>();
+  for (const code of parsed as unknown[]) {
+    if (typeof code !== 'string' || !CURRENCY_CODE.test(code)) return 'currencies.error.code';
+    if (seen.has(code)) return 'currencies.error.duplicate';
+    seen.add(code);
+    if (knownCodes !== null && !knownCodes.includes(code)) return 'currencies.error.notHeld';
+  }
+  return null;
 }
 
 /** Renders a stored value for display. Never parsed back. */

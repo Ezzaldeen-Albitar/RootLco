@@ -79,7 +79,10 @@ const listBranches = vi.fn();
 const listItemCategories = vi.fn();
 const createReservation = vi.fn();
 const releaseReservation = vi.fn();
+// P1-32-PRE-OD-INVF: units named through the list (UNIT-names).
+const listUnitsOfMeasure = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
   listItems: (...args: unknown[]) => listItems(...args),
   listAvailability: (...args: unknown[]) => listAvailability(...args),
   listReservations: (...args: unknown[]) => listReservations(...args),
@@ -348,6 +351,12 @@ async function chooseBranch(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // P1-32-PRE-OD-INVF: the screen names a unit by code through the unit list.
+  listUnitsOfMeasure.mockResolvedValue({
+    status: 'ok',
+    data: { items: [] },
+    correlationId: 'corr',
+  });
   PERMISSIONS = [];
   listItems.mockResolvedValue(page([item]));
   listAvailability.mockResolvedValue(page([cell]));

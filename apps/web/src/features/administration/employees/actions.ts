@@ -28,17 +28,25 @@ const createSchema = z.object({
   employmentRef: z.string().trim().min(1).max(64, 'field.tooLong').optional(),
 });
 
-export async function createEmployeeAction(
-  previous: ActionState,
-  form: FormData
-): Promise<ActionState> {
-  const attempt = (previous.attempt ?? 0) + 1;
+/**
+ * Adds an employee. The screen checks the same rules first and marks each field;
+ * this check is the one that decides, and a refusal comes back keyed by the same
+ * field names. A blank login account or reference is not sent at all.
+ */
+export async function createEmployee(input: {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly displayName: string;
+  readonly userAccountId: string;
+  readonly employmentRef: string;
+}): Promise<ActionState> {
+  const attempt = 1;
   const parsed = createSchema.safeParse({
-    companyId: String(form.get('companyId') ?? ''),
-    branchId: String(form.get('branchId') ?? ''),
-    displayName: String(form.get('displayName') ?? ''),
-    userAccountId: text(form.get('userAccountId')),
-    employmentRef: text(form.get('employmentRef')),
+    companyId: input.companyId,
+    branchId: input.branchId,
+    displayName: input.displayName,
+    userAccountId: text(input.userAccountId),
+    employmentRef: text(input.employmentRef),
   });
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
@@ -76,8 +84,7 @@ export async function setEmployeeStatusAction(
   return success('admin.saved', 1);
 }
 
-function text(value: FormDataEntryValue | null): string | undefined {
-  if (typeof value !== 'string') return undefined;
+function text(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }

@@ -874,7 +874,7 @@ describe('the check-in wizard asks before a step change discards typed work', ()
       EN['receptions.capture.failed']!
     );
     expect(readCaptureContract).toHaveBeenCalledTimes(1);
-    expect(leavingIsQuestioned()).toBe(false);
+    await waitFor(() => expect(leavingIsQuestioned()).toBe(false));
     await user.click(stepButton(2, 'receptions.steps.readings.title'));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(screen.getByText('second step body')).toBeInTheDocument();

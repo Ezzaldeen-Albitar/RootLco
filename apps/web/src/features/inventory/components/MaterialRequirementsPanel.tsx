@@ -66,7 +66,7 @@
  * gives it back to the button that opened it when it closes.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
@@ -80,6 +80,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { unitNameByCode, unitNameById, unitOptions, type NamedUnit } from '@/lib/unit-name';
 import { listServiceLines } from '@/features/work-orders/api';
 import type { WorkOrderServiceLine } from '@/features/work-orders/work-orders-contract';
 
@@ -110,6 +111,13 @@ import {
 } from '../inventory-contract';
 import { CategoryTreePicker } from './CategoryTreePicker';
 import { pathText, useAllItemCategories, type CategoryList } from './CategoryTree';
+import {
+  useItemNames,
+  useMakeNames,
+  useModelNames,
+  useServiceLineNames,
+  type NameAnswer,
+} from './requirement-names';
 import { OutcomeNote, Qty, UUID } from './shared';
 import {
   ItemFinder,
@@ -119,6 +127,21 @@ import {
   useFocusOnOpen,
   useReturnFocus,
 } from './stock-operations';
+import { useUnitList } from './unit-list';
+
+/**
+ * What the draw forms say about the chosen requirement, in words rather than its
+ * identifier (P1-32-PRE-OD-INVF, LANG-identifiers). Taken from what the card
+ * showed when it was chosen.
+ */
+export interface RequirementSummary {
+  /** The part, the part group, or the sentence saying it cannot be named here. */
+  readonly what: string;
+  /** The part's own name when one was read; null for a group or a name not read. */
+  readonly itemName: string | null;
+  /** The requirement unit in the reader's language; null when it cannot be named. */
+  readonly unit: string | null;
+}
 
 /** The requirement list as one of four outcomes; an empty branch and a refusal differ. */
 type Listing =
@@ -146,6 +169,9 @@ function failureOf(state: { readonly status: string; readonly correlationId?: st
   }
   return { status: 'unavailable', messageKey: 'inventory.material.unavailable', correlationId };
 }
+
+/** No capacity listed: the model names read nothing. */
+const NO_SPECIFICATIONS: readonly VehicleSpecification[] = [];
 
 /**
  * The confirmed capacities on file for the service kind being asked about.
@@ -181,6 +207,7 @@ export function MaterialRequirementsPanel({
   canDecideException,
   canReadWorkOrder,
   canReadItems,
+  canReadVehicleCatalogue = false,
   chosenId,
   onChoose,
   onChanged,
@@ -198,6 +225,12 @@ export function MaterialRequirementsPanel({
    * typed reference, and a listed family is shown by its reference.
    */
   readonly canReadItems: boolean;
+  /**
+   * `veh.vehicle.read` — whether the make catalogue is read, so a confirmed
+   * capacity the form lists is named by its make. Without it the make is said
+   * to be not available; its identifier is never shown.
+   */
+  readonly canReadVehicleCatalogue?: boolean;
   /** The signed-in person, so the panel can say why they cannot decide their own request. */
   readonly currentUserId: string;
   /** `inv.material.request` — asking, re-checking, withdrawing, asking for an exception. */
@@ -208,11 +241,27 @@ export function MaterialRequirementsPanel({
   readonly canDecideException: boolean;
   /** The requirement a draw will be measured against, chosen here. */
   readonly chosenId: string | null;
-  readonly onChoose: (requirement: MaterialRequirement) => void;
+  readonly onChoose: (requirement: MaterialRequirement, summary: RequirementSummary) => void;
   /** A write landed: the parts screen re-reads what depends on it. */
   readonly onChanged: () => void;
 }) {
   const [listing, setListing] = useState<Listing>({ phase: 'loading' });
+  /*
+   * The words each row is shown by (LANG-identifiers): the service line's
+   * description, the part's name and the unit's name, each read only when the
+   * operator may read it and a row needs it.
+   */
+  const rows = listing.phase === 'listed' ? listing.rows : null;
+  const units = useUnitList(canReadItems && rows !== null && rows.length > 0);
+  const serviceLineName = useServiceLineNames(
+    workOrderId,
+    canReadWorkOrder && rows !== null && rows.length > 0
+  );
+  const itemIds = useMemo(
+    () => (rows ?? []).flatMap((row) => (row.itemId === null ? [] : [row.itemId])),
+    [rows]
+  );
+  const itemName = useItemNames(itemIds, canReadItems);
   const [epoch, setEpoch] = useState(0);
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<OpenForm>({ kind: 'none' });
@@ -283,6 +332,7 @@ export function MaterialRequirementsPanel({
               messages={messages}
               workOrderId={workOrderId}
               canReadWorkOrder={canReadWorkOrder}
+              canReadVehicleCatalogue={canReadVehicleCatalogue}
               categories={categoryList}
               onCreated={afterWrite}
               onDiscard={() => setAdding(false)}
@@ -312,6 +362,9 @@ export function MaterialRequirementsPanel({
                     messages={messages}
                     requirement={row}
                     categories={categoryList}
+                    serviceLine={serviceLineName(row.serviceLineId)}
+                    item={row.itemId === null ? null : itemName(row.itemId)}
+                    units={units}
                     currentUserId={currentUserId}
                     canRequest={canRequest}
                     canApprove={canApprove}
@@ -341,6 +394,9 @@ function RequirementCard({
   messages,
   requirement,
   categories,
+  serviceLine,
+  item,
+  units,
   currentUserId,
   canRequest,
   canApprove,
@@ -356,6 +412,12 @@ function RequirementCard({
   readonly requirement: MaterialRequirement;
   /** The category tree, or `null` without `inv.item.read`. */
   readonly categories: CategoryList | null;
+  /** The service line's description, as far as it could be read. */
+  readonly serviceLine: NameAnswer;
+  /** The part's name, as far as it could be read; null when the requirement names a group or none. */
+  readonly item: NameAnswer | null;
+  /** The units the requirement unit is named from; null until read or without `inv.item.read`. */
+  readonly units: readonly NamedUnit[] | null;
   readonly currentUserId: string;
   readonly canRequest: boolean;
   readonly canApprove: boolean;
@@ -363,7 +425,7 @@ function RequirementCard({
   readonly chosen: boolean;
   readonly open: OpenForm;
   readonly onOpen: (next: OpenForm) => void;
-  readonly onChoose: (requirement: MaterialRequirement) => void;
+  readonly onChoose: (requirement: MaterialRequirement, summary: RequirementSummary) => void;
   readonly onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -411,15 +473,23 @@ function RequirementCard({
 
       <dl className="grid gap-2 sm:grid-cols-2">
         <Fact label={translate(messages, 'inventory.material.serviceLine')}>
-          <code className="font-mono text-caption" dir="ltr">
-            {requirement.serviceLineId}
-          </code>
+          <span data-testid="material-service-line">
+            <NamedValue
+              messages={messages}
+              answer={serviceLine}
+              unavailableKey="inventory.material.serviceLineUnavailable"
+            />
+          </span>
         </Fact>
         <Fact label={translate(messages, 'inventory.material.item')}>
-          {requirement.itemId ? (
-            <code className="font-mono text-caption" dir="ltr">
-              {requirement.itemId}
-            </code>
+          {item !== null ? (
+            <span data-testid="material-item">
+              <NamedValue
+                messages={messages}
+                answer={item}
+                unavailableKey="inventory.material.itemUnavailable"
+              />
+            </span>
           ) : requirement.itemCategoryId ? (
             <span>
               {translate(messages, 'inventory.material.itemFamily')}{' '}
@@ -470,7 +540,9 @@ function RequirementCard({
             type="button"
             variant={chosen ? 'contained' : 'outlined'}
             aria-pressed={chosen}
-            onClick={() => onChoose(requirement)}
+            onClick={() =>
+              onChoose(requirement, summaryOf(messages, requirement, item, categories, units))
+            }
           >
             {translate(messages, 'inventory.material.use')}
           </Button>
@@ -706,11 +778,9 @@ function RequirementSource({
 }) {
   if (requirement.basis === 'specification') {
     return requirement.specificationId ? (
-      <span>
-        {translate(messages, 'inventory.material.source.specification')}{' '}
-        <code className="font-mono text-caption" dir="ltr">
-          {requirement.specificationId}
-        </code>
+      <span data-testid="material-source-specification">
+        {/* The capacity is named by the sentence; its identifier is not shown (LANG-identifiers). */}
+        {translate(messages, 'inventory.material.source.specification')}
         {requirement.serviceCondition ? (
           <>
             {' · '}
@@ -782,8 +852,60 @@ function AllowanceBar({
  * path of names and the code beside it, so two families of the same name read
  * apart. While the tree is being read the panel says so; where it cannot be
  * read at all — no `inv.item.read`, or a refused or failed read — or no longer
- * holds the family, the reference the requirement carries is shown, as before.
+ * holds the family, the card says the family's details are not available; the
+ * reference the requirement carries is never shown in its place.
  */
+/** A name read for an identifier, the wait for it, or the sentence that it cannot be shown. */
+function NamedValue({
+  messages,
+  answer,
+  unavailableKey,
+}: {
+  readonly messages: Messages;
+  readonly answer: NameAnswer;
+  readonly unavailableKey: keyof Messages;
+}) {
+  if (answer.phase === 'named') return <bdi>{answer.name}</bdi>;
+  return (
+    <span className="text-text-muted">
+      {translate(messages, answer.phase === 'pending' ? 'state.loading' : unavailableKey)}
+    </span>
+  );
+}
+
+/** What the draw forms say about a requirement once it is chosen (`RequirementSummary`). */
+function summaryOf(
+  messages: Messages,
+  requirement: MaterialRequirement,
+  item: NameAnswer | null,
+  categories: CategoryList | null,
+  units: readonly NamedUnit[] | null
+): RequirementSummary {
+  const read = categories?.read ?? null;
+  const family =
+    requirement.itemCategoryId !== null &&
+    read !== null &&
+    read.status === 'ok' &&
+    read.forest.byId.has(requirement.itemCategoryId)
+      ? pathText(read.forest, requirement.itemCategoryId)
+      : null;
+  const itemName = item !== null && item.phase === 'named' ? item.name : null;
+  const what =
+    itemName ??
+    (requirement.itemId !== null
+      ? translate(messages, 'inventory.material.itemUnavailable')
+      : family !== null
+        ? `${translate(messages, 'inventory.material.itemFamily')} ${family}`
+        : requirement.itemCategoryId !== null
+          ? translate(messages, 'inventory.material.familyUnavailable')
+          : translate(messages, 'inventory.material.noItem'));
+  return {
+    what,
+    itemName,
+    unit: requirement.uomId === null ? null : unitNameById(messages, requirement.uomId, units),
+  };
+}
+
 function CategoryName({
   messages,
   categories,
@@ -800,9 +922,9 @@ function CategoryName({
   const category = read !== null && read.status === 'ok' ? read.forest.byId.get(categoryId) : null;
   if (read === null || read.status !== 'ok' || category === undefined || category === null) {
     return (
-      <code className="font-mono text-caption" dir="ltr">
-        {categoryId}
-      </code>
+      <span className="text-text-muted">
+        {translate(messages, 'inventory.material.familyUnavailable')}
+      </span>
     );
   }
   return (
@@ -1152,6 +1274,7 @@ function CreateRequirementForm({
   messages,
   workOrderId,
   canReadWorkOrder,
+  canReadVehicleCatalogue,
   categories,
   onCreated,
   onDiscard,
@@ -1160,6 +1283,8 @@ function CreateRequirementForm({
   readonly workOrderId: string;
   /** `wo.work_order.read` — whether the service lines are requested for the picker. */
   readonly canReadWorkOrder: boolean;
+  /** `veh.vehicle.read` — whether the listed capacities are named by their make. */
+  readonly canReadVehicleCatalogue: boolean;
   /** The whole category tree, or `null` without `inv.item.read` (the family is then typed). */
   readonly categories: CategoryList | null;
   readonly onCreated: () => void;
@@ -1293,6 +1418,15 @@ function CreateRequirementForm({
     : found !== null && found.condition === condition
       ? found.result
       : { phase: 'loading' };
+  // Read once the form lists a capacity to name, and only with the code that reads it.
+  const makeName = useMakeNames(
+    canReadVehicleCatalogue && match.phase === 'listed' && match.rows.length > 0
+  );
+  // A capacity's model is named from its make's model catalogue, under the same code.
+  const modelName = useModelNames(
+    match.phase === 'listed' ? match.rows : NO_SPECIFICATIONS,
+    canReadVehicleCatalogue
+  );
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -1553,20 +1687,29 @@ function CreateRequirementForm({
                   {match.rows.map((row) => (
                     <li key={row.id} className="text-body text-text-secondary">
                       <span className="tabular-nums">
-                        <Qty value={row.capacity} /> <bdi>{row.uomCode}</bdi>
+                        <Qty value={row.capacity} />{' '}
+                        <bdi>{unitNameByCode(messages, row.uomCode, units)}</bdi>
                       </span>
                       {' · '}
-                      <code className="font-mono text-caption" dir="ltr">
-                        {row.makeId}
-                      </code>
-                      {row.modelId ? (
-                        <>
-                          {' · '}
-                          <code className="font-mono text-caption" dir="ltr">
-                            {row.modelId}
-                          </code>
-                        </>
-                      ) : null}
+                      <span data-testid="material-match-make">
+                        <NamedValue
+                          messages={messages}
+                          answer={makeName(row.makeId)}
+                          unavailableKey="inventory.material.create.matchMakeUnavailable"
+                        />
+                      </span>
+                      {' · '}
+                      <span data-testid="material-match-model">
+                        {row.modelId ? (
+                          <NamedValue
+                            messages={messages}
+                            answer={modelName(row.makeId, row.modelId)}
+                            unavailableKey="inventory.material.create.matchModelUnavailable"
+                          />
+                        ) : (
+                          translate(messages, 'inventory.specifications.create.anyModel')
+                        )}
+                      </span>
                       {row.engineVariant ? (
                         <>
                           {' · '}
@@ -1601,10 +1744,7 @@ function CreateRequirementForm({
             required
             value={form.uomId}
             onChange={(next) => setForm((f) => ({ ...f, uomId: next }))}
-            options={units.map((unit) => ({
-              value: unit.id,
-              label: `${unit.code} — ${unit.name}`,
-            }))}
+            options={unitOptions(messages, units)}
             placeholder={translate(messages, 'inventory.material.create.chooseUom')}
             error={errorFor('uomId')}
           />

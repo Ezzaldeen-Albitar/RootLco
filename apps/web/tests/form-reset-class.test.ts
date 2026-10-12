@@ -340,6 +340,11 @@ const RENDERS_COMPONENT = /<([A-Z]\w*)/g;
  * settlement and hold it controlled, the shape the reception signature capture
  * uses.
  *
+ * One more left with the users slice (`P1-32-PRE-OD-ADM3`): the user list's status
+ * filter is a `FormSelectField` of the shared filter toolbar now, controlled and
+ * outside every form, and the invitation is held in component state and sent
+ * from its own handler (`onSubmit`), which no Server Action reset reaches.
+ *
  * Four entries left this list when the branch pair did.
  *
  * Two on the technician workspace and two on the QC queue each exempted a
@@ -395,11 +400,6 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'components/data-table/DataTable.tsx',
     match: '<select value={request.pageSize}',
     why: 'The shared table’s page-size control, at `DataTable.tsx:586`. The table is a SIBLING of every form that appears beside it — the derived reachability reaches this file because a form owner renders `<DataTable`, not because the table is inside the form — and its request state is owned by `useServerTable`, which no form reset touches.',
-  },
-  {
-    file: 'features/administration/users/components/UsersScreen.tsx',
-    match: "<SelectField label={t('users.filter.status')}",
-    why: 'The user-list status filter at `UsersScreen.tsx:177`, rendered in `UsersScreen` above the table. The only `<form action={…}>` in this file belongs to `InviteDialog`, a separate component mounted in a dialog, so the filter is not inside it — read off the element nesting rather than inferred from the file owning a form somewhere.',
   },
 ];
 
@@ -885,6 +885,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       'components/forms/Field.tsx',
       'features/vehicles/components/VehicleRelationsSections.tsx',
       'features/vehicles/components/VehicleCreateScreen.tsx',
+      // Still opened by the scan, so a form there that returned to a Server
+      // Action would be inventoried again (see below).
+      'features/administration/access/components/ApprovalLimitsScreen.tsx',
     ]) {
       expect(
         files.some((f) => f.replace(/\\/g, '/') === required),
@@ -903,7 +906,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       // The three appointment files left this list with the Material UI slice:
       // their forms submit through their own handler, so no reset reaches them
       // and they hold no guarded control — the case below holds them to that.
-      'features/administration/access/components/ApprovalLimitsScreen.tsx',
+      // The approval-limits screen left it the same way (P1-32-PRE-OD-ADM4): its
+      // create and end forms are held in component state and sent from their
+      // own handler, and it is still required in the scan above.
     ]) {
       expect(
         guarded.some((c) => c.file === required),

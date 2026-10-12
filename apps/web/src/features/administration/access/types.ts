@@ -26,7 +26,13 @@ export interface PermissionRow {
   readonly description: string;
 }
 
-/** One role's mapping over a permission. */
+/**
+ * One role's mapping over a permission.
+ *
+ * `recordVersion` is what `iam.role-permission-update` takes as `If-Match`
+ * when the effect is changed (`P1-32-PRE-OD-ADM4`). A mapping read without one
+ * is never offered the change: a guessed version is a conflict waiting to land.
+ */
 export interface RolePermissionRow {
   readonly id: string;
   readonly permissionCode?: string;
@@ -54,6 +60,15 @@ export interface ApprovalLimitRow {
   readonly effectiveFrom: string;
   readonly effectiveTo: string | null;
   readonly recordVersion: number;
+  /**
+   * The person's display name, resolved by the list itself (`P1-32-PRE-OD-ADM4`,
+   * route checklist prerequisite 9). `null` for a role's limit, and `null` when
+   * the caller does not hold `iam.user.read` — the screen then says the name is
+   * not available, and never prints `userId`. Absent from an older answer.
+   */
+  readonly userDisplayName?: string | null;
+  /** The role's name, under `iam.role.read`; `null` otherwise and for a person's limit. */
+  readonly roleName?: string | null;
 }
 
 /**

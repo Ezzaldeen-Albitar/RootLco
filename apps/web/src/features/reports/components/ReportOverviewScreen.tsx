@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { EmptyState } from '@/components/states/States';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import {
   useWorkingContext,
   useWorkingContextChange,
@@ -12,7 +18,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { runReport } from '../reports-api';
-import { fieldHeading, formatReportTime, groupDisplayLabel, runTitle } from '../report-labels';
+import { fieldHeading, groupDisplayLabel, runTitle } from '../report-labels';
 import {
   OVERVIEW_ROW_LIMIT,
   OVERVIEW_SECTIONS,
@@ -32,10 +38,11 @@ import {
 import {
   ContextFact,
   MachineName,
-  REPORT_TABLE_CELL,
-  REPORT_TABLE_HEADER,
+  ReportClockNote,
   ReportFailure,
   ReportLoading,
+  ReportTime,
+  ReportZoneName,
 } from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
 import { useWorkingReportScope } from './use-working-report-scope';
@@ -95,6 +102,16 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * is resolved against the caller's own authorized directory; one that is not there
  * renders the no-branch body rather than a guess, and there is no default branch
  * anywhere in this feature.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-REPA`)
+ *
+ * The scope form is the shared one (`ReportScopeForm`: `FormSelectField` and the
+ * `DateField` pickers on the branch's clock), the states are the Material ones,
+ * and each section's summary is the Material table: one bounded answer per
+ * report with no cursor, so nothing is paged and nothing more exists than what
+ * is drawn (the planner ruling of 2026-10-09). The banner names the period's zone
+ * in words with its offset, as the report screen does, and writes the two days
+ * for reading on that clock.
  */
 export function ReportOverviewScreen({
   locale,
@@ -175,6 +192,7 @@ export function ReportOverviewScreen({
     return (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={scopeOptions.status}
         correlationId={scopeOptions.correlationId}
       />
@@ -187,6 +205,7 @@ export function ReportOverviewScreen({
     return (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={catalogue.status}
         correlationId={catalogue.correlationId}
       />
@@ -202,7 +221,7 @@ export function ReportOverviewScreen({
 
   if (companies.length === 0 || reachable.length === 0) {
     return (
-      <EmptyState
+      <MuiEmptyState
         messages={messages}
         titleKey="reports.run.noScopesTitle"
         descriptionKey="reports.run.noScopesBody"
@@ -216,7 +235,7 @@ export function ReportOverviewScreen({
     // exists elsewhere is not something this screen may disclose, and choosing a
     // different branch would answer a question nobody asked.
     return (
-      <EmptyState
+      <MuiEmptyState
         messages={messages}
         titleKey="reports.run.noScopesTitle"
         descriptionKey="reports.run.noScopesBody"
@@ -226,7 +245,13 @@ export function ReportOverviewScreen({
 
   const initial = initialReportScope(
     scopeOptions.data,
-    fixedBranch === null ? {} : { branchId: fixedBranch.id }
+    fixedBranch !== null
+      ? { branchId: fixedBranch.id }
+      : // A working branch whose zone is not known starts the form on that
+        // branch with no day: there is no "today" to read on its clock.
+        working.kind === 'zoneUnknown'
+        ? working.pair
+        : {}
   );
   /*
    * What the caller's catalogue says about the four reports, as one value. An
@@ -258,7 +283,7 @@ export function ReportOverviewScreen({
       />
 
       {submitted === null ? (
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.overview.idleTitle"
           descriptionKey="reports.overview.idleBody"
@@ -551,17 +576,36 @@ function OverviewResults({
         <>
           <dl className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
             <ContextFact label={translate(messages, 'reports.context.from')}>
-              <span dir="ltr">{context.period.from}</span>
+              <ReportTime
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                value={context.period.from}
+                testId="overview-period-from"
+              />
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.to')}>
-              <span dir="ltr">{context.period.to}</span>
+              <ReportTime
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                value={context.period.to}
+                testId="overview-period-to"
+              />
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.timezone')}>
-              <MachineName value={context.period.timezone} />
+              <ReportZoneName
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                at={context.generatedAt}
+                testId="overview-zone"
+              />
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.company')}>
               {companyName === null ? (
-                <MachineName value={context.filters?.companyId ?? selection.companyId} />
+                // A name is said or said to be missing; the identifier is never shown.
+                <span lang={locale}>{translate(messages, 'reports.context.nameUnavailable')}</span>
               ) : (
                 <bdi>{companyName}</bdi>
               )}
@@ -570,7 +614,7 @@ function OverviewResults({
               {context.branch !== undefined ? (
                 <bdi>{context.branch.name}</bdi>
               ) : branchName === null ? (
-                <MachineName value={context.filters?.branchId ?? selection.branchId} />
+                <span lang={locale}>{translate(messages, 'reports.context.nameUnavailable')}</span>
               ) : (
                 <bdi>{branchName}</bdi>
               )}
@@ -583,14 +627,15 @@ function OverviewResults({
               )}
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.generatedAt')}>
-              <time dateTime={context.generatedAt}>
-                {formatReportTime(context.generatedAt, locale, context.period.timezone)}
-              </time>
+              <ReportTime
+                messages={messages}
+                locale={locale}
+                zone={context.period.timezone}
+                value={context.generatedAt}
+              />
             </ContextFact>
           </dl>
-          <p className="text-caption text-text-muted" lang={locale}>
-            {translate(messages, 'reports.context.periodNote')}
-          </p>
+          <ReportClockNote messages={messages} locale={locale} zone={context.period.timezone} />
         </>
       )}
 
@@ -602,7 +647,7 @@ function OverviewResults({
       {OVERVIEW_SECTIONS.every(
         (section) => definitionFor(definitions, section.reportCode) === null
       ) ? (
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.overview.noReportsTitle"
           descriptionKey="reports.overview.noReportsBody"
@@ -685,7 +730,10 @@ function OverviewSectionPanel({
         locale={locale}
         messages={messages}
         section={section}
-        caption={title ?? section.reportCode}
+        // The table is named in words: the report's name, or — for a report
+        // this build has no name for — what the section says it shows. The
+        // code is a machine name and is never read out as the table's name.
+        caption={title ?? translateDynamic(messages, section.captionKey)}
         definition={definition}
         outcome={outcome}
       />
@@ -742,6 +790,7 @@ function SectionBody({
     const failure = (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={outcome.status}
         correlationId={outcome.correlationId}
       />
@@ -846,34 +895,34 @@ function SummaryTable({
   const labelled = present.length === 1;
 
   return (
-    <div className="overflow-x-auto rounded-md border border-border-subtle">
-      <table className="w-full border-collapse">
+    <TableContainer className="rounded-md border border-border-subtle">
+      <Table size="small">
         <caption className="sr-only">{caption}</caption>
-        <thead className="bg-table-header">
-          <tr>
+        <TableHead>
+          <TableRow>
             {present.map((name) => {
               const heading = fieldHeading(messages, name);
               return (
-                <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                <TableCell key={name} scope="col">
                   {heading === null ? <MachineName value={name} /> : heading}
-                </th>
+                </TableCell>
               );
             })}
             {measureNames.map((name) => {
               const heading = fieldHeading(messages, name);
               return (
-                <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                <TableCell key={name} scope="col" align="right">
                   {heading === null ? <MachineName value={name} /> : heading}
-                </th>
+                </TableCell>
               );
             })}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHead>
+        <TableBody>
           {groups.map((group) => (
-            <tr key={JSON.stringify(group.key)} className="border-t border-border-subtle">
+            <TableRow key={JSON.stringify(group.key)} className="align-top">
               {present.map((name) => (
-                <td key={name} className={REPORT_TABLE_CELL}>
+                <TableCell key={name}>
                   <GroupKeyValue
                     locale={locale}
                     messages={messages}
@@ -881,12 +930,12 @@ function SummaryTable({
                     name={name}
                     labelled={labelled}
                   />
-                </td>
+                </TableCell>
               ))}
               {measureNames.map((name) => {
                 const measure = group.measures[name];
                 return (
-                  <td key={name} className={REPORT_TABLE_CELL}>
+                  <TableCell key={name} align="right">
                     {measure === undefined ? (
                       <span className="text-text-muted" lang={locale}>
                         {translate(messages, 'reports.groups.noMeasure')}
@@ -896,14 +945,14 @@ function SummaryTable({
                       // divides or turns seconds into hours.
                       <span dir="ltr">{measure}</span>
                     )}
-                  </td>
+                  </TableCell>
                 );
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
