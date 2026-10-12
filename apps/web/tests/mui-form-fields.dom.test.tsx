@@ -2691,6 +2691,76 @@ function HeldTree({
   );
 }
 
+describe('DateField: nothing wrong is never said over a day half typed', () => {
+  /*
+   * `onProblem(null)` means the entry is whole or empty, and a caller may act
+   * on it — the service catalogue drops its day filter when the field says
+   * nothing is wrong and holds no day. Clearing a part and typing a first digit
+   * that still makes no day (the `0` of `01`, the `2` of `2027`) used to report
+   * 'incomplete', then `null`, then 'invalidDate': the picker holds a value
+   * that is not a date for one render before it names the problem, and for
+   * that render the field said nothing was wrong while it handed back no day.
+   *
+   * Each report is noted with the value the form held when it arrived, which
+   * is what a caller's own handler sees. No part is ever left with every part
+   * blank here, so "nothing wrong" over "no value" has no honest reading.
+   */
+  function ReportHost({ moment, notes }: { readonly moment: boolean; readonly notes: string[] }) {
+    const [value, setValue] = useState(moment ? '2026-09-22T06:30:00Z' : '2026-11-15');
+    const note = (problem: DayProblem | MomentProblem) => {
+      notes.push(`${problem === null ? 'nothing wrong' : problem} over ${value || 'no value'}`);
+    };
+    return moment ? (
+      <ZonedDateTimeField
+        messages={en}
+        label="Visit time"
+        value={value}
+        timezone="Asia/Riyadh"
+        onChange={setValue}
+        onProblem={note}
+      />
+    ) : (
+      <DateField label="Visit day" value={value} onChange={setValue} onProblem={note} />
+    );
+  }
+
+  async function retypePart(
+    user: ReturnType<typeof userEvent.setup>,
+    part: HTMLElement,
+    digits: string
+  ): Promise<void> {
+    await user.click(part);
+    await user.keyboard('{Backspace}');
+    await user.keyboard(digits);
+  }
+
+  it('a day retyped part by part: every report of nothing wrong comes over a whole day', async () => {
+    const user = userEvent.setup();
+    const notes: string[] = [];
+    mount(<ReportHost moment={false} notes={notes} />);
+    // Each first digit leaves its part no number yet: 0_, 0_, 2___.
+    await retypePart(user, dayPart('day'), '01');
+    await retypePart(user, dayPart('month'), '01');
+    await retypePart(user, dayPart('year'), '2027');
+    expect(shownDay()).toBe('01/01/2027');
+    expect(notes.filter((note) => note === 'nothing wrong over no value')).toEqual([]);
+    // It did complain while each part was unfinished, and withdrew it each time.
+    expect(notes.filter((note) => note.endsWith('over no value')).length).toBeGreaterThan(0);
+    expect(notes.at(-1)).toBe('nothing wrong over 2027-01-01');
+  });
+
+  it('a moment whose day is retyped: the same, on the moment field', async () => {
+    const user = userEvent.setup();
+    const notes: string[] = [];
+    mount(<ReportHost moment notes={notes} />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    await retypePart(user, within(group).getAllByRole('spinbutton')[0] as HTMLElement, '01');
+    expect(notes.filter((note) => note === 'nothing wrong over no value')).toEqual([]);
+    expect(notes.filter((note) => note.endsWith('over no value')).length).toBeGreaterThan(0);
+    expect(notes.at(-1)).toBe('nothing wrong over 2026-09-01T09:30:00+03:00');
+  });
+});
+
 describe('TreePicker — the shape of the tree', () => {
   it('files each row under its parent, in the caller’s order', () => {
     const shape = treeShape(TREE_ITEMS);
