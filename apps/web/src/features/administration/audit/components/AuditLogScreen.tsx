@@ -28,7 +28,17 @@ import { intlLocale } from '@/lib/format';
 import { useServerTable, type ServerPageStatus } from '../../shared/use-server-table';
 import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { listAuditEvents, readAuditEvent } from '../api';
-import { auditActionLabel, auditEntityLabel, auditFieldLabel, isNamedAuditField } from '../labels';
+import {
+  auditActionLabel,
+  auditEntityLabel,
+  auditFieldLabel,
+  auditRecordTypeWords,
+  auditReferenceLabel,
+  groupAuditDetails,
+  isAuditCodeField,
+  isNamedAuditField,
+  type AuditDetailShown,
+} from '../labels';
 import { openingWindow, rangeProblem, type DayRange } from '../range';
 import {
   NO_AUDIT_FILTERS,
@@ -570,6 +580,7 @@ function AuditDetailDrawer({
 }) {
   const t = (key: keyof Messages) => translate(messages, key);
   const titleId = useId();
+  const referencesId = useId();
   const reducedMotion = useReducedMotion();
   const [generation, setGeneration] = useState(0);
   const [held, setHeld] = useState<HeldDetail | null>(null);
@@ -592,6 +603,11 @@ function AuditDetailDrawer({
 
   const loading = held === null || held.generation !== generation;
   const record = !loading && held.status === 'ok' ? held.record : null;
+  // Every detail row the read returned, in its group (`groupAuditDetails`):
+  // the facts, then the record references. `null` while there is no record or
+  // its details are withheld.
+  const detailRows =
+    record === null || record.details === undefined ? null : groupAuditDetails(record.details);
 
   return (
     <Drawer
@@ -682,41 +698,64 @@ function AuditDetailDrawer({
                   the caller may not read them, or the record has none. They
                   render differently.
                 */}
-                {record.details === undefined ? (
+                {detailRows === null ? (
                   <p className="text-body text-text-muted">{t('audit.detail.masked')}</p>
-                ) : record.details.length === 0 ? (
+                ) : record.details?.length === 0 ? (
                   <p className="text-body text-text-muted">{t('audit.detail.noDetails')}</p>
                 ) : (
-                  <ul className="flex flex-col gap-2">
-                    {record.details.map((entry) => (
-                      <li
-                        key={entry.fieldName}
-                        className="rounded-md border border-border-subtle p-2"
+                  <>
+                    {/*
+                      Every row the read returned is drawn, each value with the
+                      characters it came with. The grouping below decides where
+                      a row is drawn and never whether: first what changed, then
+                      the references to other records.
+                    */}
+                    {detailRows.facts.length === 0 ? null : (
+                      <ul className="flex flex-col gap-2" data-testid="audit-detail-facts">
+                        {detailRows.facts.map((entry, index) => (
+                          <DetailEntry
+                            key={`${index}:${entry.fieldName}`}
+                            messages={messages}
+                            entry={entry}
+                            label={auditFieldLabel(messages, entry.fieldName)}
+                            named={isNamedAuditField(entry.fieldName)}
+                            asCode={isAuditCodeField(entry.fieldName)}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                    {detailRows.references.length === 0 ? null : (
+                      <section
+                        aria-labelledby={referencesId}
+                        className="mt-3 flex flex-col gap-2"
+                        data-testid="audit-detail-references"
                       >
-                        <p className="text-caption font-medium text-text-secondary">
-                          {auditFieldLabel(messages, entry.fieldName)}
+                        <h3
+                          id={referencesId}
+                          className="text-label font-medium text-text-secondary"
+                        >
+                          {t('audit.detail.references')}
+                        </h3>
+                        <p className="text-caption text-text-muted">
+                          {t('audit.detail.referencesHint')}
                         </p>
-                        {isNamedAuditField(entry.fieldName) ? null : (
-                          <p className="text-caption text-text-muted">
-                            {t('audit.detail.fieldCode')}{' '}
-                            <code dir="ltr" className="break-all font-mono">
-                              {entry.fieldName}
-                            </code>
-                          </p>
-                        )}
-                        <p className="break-all text-supporting text-text-primary">
-                          {entry.oldValueMasked !== null ? (
-                            <>
-                              <span className="text-text-muted line-through">
-                                {entry.oldValueMasked}
-                              </span>{' '}
-                            </>
-                          ) : null}
-                          {entry.newValueMasked ?? '—'}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
+                        <ul className="flex flex-col gap-2">
+                          {detailRows.references.map((entry, index) => (
+                            <DetailEntry
+                              key={`${index}:${entry.fieldName}`}
+                              messages={messages}
+                              entry={entry}
+                              label={auditReferenceLabel(messages, entry.fieldName)}
+                              // The written field code on every reference row: two
+                              // rows of one kind must never read alike.
+                              named={false}
+                              asCode
+                            />
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                  </>
                 )}
                 <p className="mt-2 text-caption text-text-muted">{t('audit.detail.maskedHint')}</p>
               </dd>
@@ -725,6 +764,90 @@ function AuditDetailDrawer({
         )}
       </div>
     </Drawer>
+  );
+}
+
+/**
+ * One detail row, in either group.
+ *
+ * Each value is drawn in an element of its own (`data-audit-verbatim`) holding
+ * exactly the characters the read returned — white space kept, nothing trimmed.
+ * A code or a reference is drawn left to right and can be selected whole, for
+ * copying; any other value is isolated in its own direction (`<bdi>`), so an
+ * identifier or a code quoted inside Arabic text is not reordered on screen
+ * while the text itself is untouched. Words said about a value (a record type's
+ * name) stand outside that element.
+ *
+ * No value and an empty value are different facts and are drawn differently:
+ * `null` after the change is a dash and `null` before it is nothing, while an
+ * empty string is drawn as the blank it is, in its own element.
+ *
+ * A row whose label does not say which field it was keeps the field's code
+ * beside it, under the label that names it a reference for support: a fact the
+ * catalogue does not name, and every record reference.
+ */
+function DetailEntry({
+  messages,
+  entry,
+  label,
+  named,
+  asCode,
+}: {
+  readonly messages: Messages;
+  readonly entry: AuditDetailShown;
+  readonly label: string;
+  readonly named: boolean;
+  readonly asCode: boolean;
+}) {
+  const verbatim = (value: string): ReactNode => {
+    const drawn = asCode ? (
+      <code data-audit-verbatim dir="ltr" className="select-all whitespace-pre-wrap font-mono">
+        {value}
+      </code>
+    ) : (
+      <bdi data-audit-verbatim className="whitespace-pre-wrap">
+        {value}
+      </bdi>
+    );
+    const words = auditRecordTypeWords(messages, entry.fieldName, value);
+    return words === null ? (
+      drawn
+    ) : (
+      <>
+        {words} ({drawn})
+      </>
+    );
+  };
+  return (
+    <li
+      className="rounded-md border border-border-subtle p-2"
+      data-testid="audit-detail-row"
+      data-field={entry.fieldName}
+    >
+      <p className="text-caption font-medium text-text-secondary">{label}</p>
+      {named ? null : (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'audit.detail.fieldCode')}{' '}
+          <code dir="ltr" className="break-all font-mono">
+            {entry.fieldName}
+          </code>
+        </p>
+      )}
+      <p className="break-all text-supporting text-text-primary">
+        {entry.oldValue !== null ? (
+          <>
+            <span data-audit-value="old" className="text-text-muted line-through">
+              {verbatim(entry.oldValue)}
+            </span>{' '}
+          </>
+        ) : null}
+        {entry.newValue === null ? (
+          '—'
+        ) : (
+          <span data-audit-value="new">{verbatim(entry.newValue)}</span>
+        )}
+      </p>
+    </li>
   );
 }
 

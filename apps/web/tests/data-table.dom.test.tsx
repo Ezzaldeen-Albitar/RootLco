@@ -1460,7 +1460,11 @@ describe('a search across a branch switch', () => {
     async (_where, carries) => {
       /*
        * The screens that keep their criteria through a switch — the boards, and
-       * counter sales and the service catalogue, whose scope is the loader's.
+       * the service catalogue, whose scope is the loader's. Counter sales binds
+       * its scope to the loader too, but this sequence cannot reach it: it
+       * remounts its search on a branch switch (`CounterSalesScreen` keys
+       * `BranchCounter` on the company and branch), so nothing typed before
+       * the switch is still in hand after it.
        * "La" settles and is answered; "Lay" is typed; the branch is switched
        * before "Lay" settles; "Layl" is typed before the switch has settled.
        * The only settled entry in hand is still "La", from the branch left.

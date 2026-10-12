@@ -22,6 +22,16 @@
  * The `<svg>` carries `role="img"` and a label naming the symbology and the
  * code, so a screen reader states what the picture is instead of reading a
  * hundred rectangles.
+ *
+ * ## The parts are named for the label stylesheet
+ *
+ * `data-barcode="symbol" | "bars" | "text"` mark the drawn symbol, its bars and
+ * the readable line; where the bars are refused, `"refusal"` marks the sentence
+ * that stands in their place. The print stylesheet sizes them in millimetres on
+ * the label presets that need it (`styles/print/_index.scss`, the 50 x 25 mm
+ * label); this component still owns no geometry of its own beyond the screen
+ * default. On that label the sentence is one row ending in an ellipsis, so it
+ * is also the element's `title`: the whole of it stays within reach.
  */
 import { encodeBarcode, type Symbology } from '@/lib/barcode/encode';
 import type { Messages } from '@/i18n/get-messages';
@@ -51,12 +61,13 @@ export function BarcodeImage({
      * symbology would produce a label that scans back as something other than
      * what it claims, which is worse than a label that carries only the number.
      */
+    const sentence = translateDynamic(messages, `inventory.labels.refusal.${result.refusal}`);
     return (
-      <div className="flex flex-col gap-1">
-        <p className="text-caption text-error">
-          {translateDynamic(messages, `inventory.labels.refusal.${result.refusal}`)}
+      <div data-barcode="symbol" className="flex flex-col gap-1">
+        <p data-barcode="refusal" title={sentence} className="text-caption text-error">
+          {sentence}
         </p>
-        <code className="font-mono text-body tracking-widest" dir="ltr">
+        <code data-barcode="text" className="font-mono text-body tracking-widest" dir="ltr">
           {text}
         </code>
       </div>
@@ -65,8 +76,9 @@ export function BarcodeImage({
 
   const { bars, span } = result.barcode;
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div data-barcode="symbol" className="flex flex-col items-center gap-1">
       <svg
+        data-barcode="bars"
         role="img"
         aria-label={`${translate(messages, 'inventory.labels.barcodeLabel')} ${text}`}
         viewBox={`0 0 ${span} ${BAR_HEIGHT_MODULES}`}
@@ -84,7 +96,7 @@ export function BarcodeImage({
           />
         ))}
       </svg>
-      <code className="font-mono text-caption tracking-widest" dir="ltr">
+      <code data-barcode="text" className="font-mono text-caption tracking-widest" dir="ltr">
         {text}
       </code>
     </div>

@@ -513,6 +513,24 @@ every Owner decision it names stays open.
    D', first parent of D', records-only, local QA) are filled from git and the run of #561, which
    merged as `2376b1ad`. Its State stays as written, like every State in the register.
 
+**Note, 2026-10-12 (P1-32-PRE-OD-INVG; no ledger row, register row or result changed).** The
+runtime retest of the ten CP-20261009-1 FAIL rows, run on the local acceptance site at `c4600bb7`
+(its evidence is kept outside the repository), listed open points; branch
+`feature/owner-directive-residual-fixes-inv-g`, cut from `develop` at
+`22229fca82f6edd53c3f6fb9564d05d93270da8a`, carries fixes for five of them — the category code on
+the material requirement cards, the unit code beside the unit name, the untranslated dimension
+column, the count identifier fragment on `/attention`, and the layout of the 50 × 25 mm label (its
+bars under the padding, no row cut) — implemented, not yet runtime-retested. The runtime matrix
+row LANG-identifiers stays FAIL until a signed-in retest at a revision containing the merge says
+otherwise. A sixth point, from the same day's run of the new screens (case A-07c: a raw record
+identifier among the details of the audit record drawer), is **not closed**: the drawer now draws
+every detail unaltered, with the references to other records grouped after the facts, each
+labelled and with its field's code, and the identifiers stay on the screen until the read can name the records an event
+concerns, which is a planned backend change. Five Owner decisions are left open and listed with
+the detail in `route-checklist.md`, section `P1-32-PRE-OD-INVG`: the pack quantity and bar width
+on the 50 × 25 mm label, naming the records an audit event concerns, the support reference, the
+removed "Count reference" fragment, and the location's name on a count difference row.
+
 ### Features delivered or planned under this directive
 
 The delivery matrix above owns verification state; ADR-023 owns the implementation state of each D-item; the architecture assessment owns what each FC change is. This table owns the design fields that directive section 12 asks for. The `state:` pointers in the first column cite ADR-023's mapping table at develop `d5ce97b7` (`:751-773`, re-anchored 2026-10-08); the other ADR-023 line numbers in this table are not re-anchored here.

@@ -632,4 +632,277 @@ describe('P1-32-PRE-OD-INVF: a run of labels prints as labels only', () => {
       expect(child?.contains(sheet ?? null)).toBe(false);
     }
   });
+
+  /**
+   * P1-32-PRE-OD-INVG — runtime retest O4. On the 50 x 25 mm label the bars
+   * began at the top edge of the label and the last row was cut off: about
+   * 34 mm of rows at the type sizes of the screen, centred in a 25 mm cell, are
+   * cut at both ends. The rows of that label are now sized in millimetres by
+   * the stylesheet and the column starts at the top, under the padding.
+   *
+   * The label keeps the rows that were readable on it — the bars, the code,
+   * the name and the stock code — and bars no shorter than were printed
+   * before. It does not gain the pack quantity: that fits only with shorter
+   * bars, which is an open Owner decision and not made here.
+   *
+   * What a DOM test can hold is the arithmetic the stylesheet states and that
+   * its rules reach the elements the screen really draws. What a browser lays
+   * out — the height and width of the bars on paper — is covered by no tier of
+   * this repository: the browser tier's print-layout spec counts the pages and
+   * finds the stock code on each, and nothing measures the bars.
+   */
+  describe('P1-32-PRE-OD-INVG: the 50 x 25 mm label starts under its padding and cuts no row', () => {
+    const LABEL_BLOCK_MM = 25;
+    /**
+     * What was printed of the bars before: a 12.7 mm drawing in a column that
+     * began 4.35 mm above the edge of the label (12.69 mm of overflow, half at
+     * each end, less the 2 mm padding).
+     */
+    const BARS_PRINTED_BEFORE_MM = 8.35;
+    const mm = (value: string | undefined): number => {
+      const found = /^(\d+(?:\.\d+)?)mm$/.exec(value ?? '');
+      if (!found) throw new Error(`not a length in millimetres: ${String(value)}`);
+      return parseFloat(found[1] as string);
+    };
+    /**
+     * What the stylesheet declares for `property` on `element`: the last
+     * declaration among the label rules that match it, screen rules first and
+     * the print rules after them, as the sheet is written. Every label rule
+     * that sets one of these properties has the same specificity, so the order
+     * in the sheet is the cascade.
+     */
+    const declared = (element: Element, property: string): string | undefined => {
+      let value: string | undefined;
+      for (const print of [false, true]) {
+        for (const rule of labelRules) {
+          if (rule.print !== print || rule.declarations[property] === undefined) continue;
+          if (element.matches(rule.raw)) value = rule.declarations[property];
+        }
+      }
+      return value;
+    };
+
+    async function drawLabels(
+      locale: 'en' | 'ar',
+      preset: '50x25' | '70x40' | 'a4' = '50x25',
+      over: Record<string, unknown> = {}
+    ): Promise<HTMLElement[]> {
+      const T = locale === 'en' ? EN : AR;
+      const user = userEvent.setup();
+      listUnitsOfMeasure.mockResolvedValue({
+        status: 'ok',
+        data: { items: [{ id: 'u', code: 'each', name: 'Each' }] },
+        correlationId: 'corr',
+      });
+      readItemLabel.mockResolvedValue(okRead(label({ unit: { id: 'u', code: 'each' }, ...over })));
+      const { container } =
+        locale === 'en'
+          ? renderLtr(<LabelsScreen locale="en" messages={en} />)
+          : renderRtl(<LabelsScreen locale="ar" messages={ar} />);
+      await user.click(
+        screen.getByLabelText(new RegExp(`^${T['inventory.scan.label'] as string}`))
+      );
+      await user.keyboard(`${GOOD_EAN}{Enter}`);
+      await waitFor(() =>
+        expect(container.querySelector('[data-label-sheet] [data-label="cell"]')).not.toBeNull()
+      );
+      if (preset !== '50x25') {
+        await user.selectOptions(
+          screen.getByLabelText(new RegExp(`^${T['inventory.labels.format.size'] as string}`)),
+          preset
+        );
+      }
+      const cells = `[data-label-sheet="${preset}"] [data-label="cell"]`;
+      await waitFor(() => expect(container.querySelector(cells)).not.toBeNull());
+      return [...container.querySelectorAll<HTMLElement>(cells)];
+    }
+
+    /** One row of text: a single line of a stated height that nothing can squeeze or wrap. */
+    function expectOneUncutLine(row: Element): number {
+      expect(declared(row, 'white-space')).toBe('nowrap');
+      expect(declared(row, 'overflow')).toBe('hidden');
+      expect(declared(row, 'text-overflow')).toBe('ellipsis');
+      expect(declared(row, 'flex')).toBe('none');
+      expect(declared(row, 'max-inline-size')).toBe('100%');
+      // The line is taller than its type, so no glyph is cut by its own row.
+      expect(mm(declared(row, 'font-size'))).toBeLessThan(mm(declared(row, 'line-height')));
+      // Legible on paper: no smaller than 2.5 mm (about 7 pt).
+      expect(mm(declared(row, 'font-size'))).toBeGreaterThanOrEqual(2.5);
+      return mm(declared(row, 'line-height'));
+    }
+
+    /** The block extent of everything in the cell, as the stylesheet states it. */
+    function expectFitsTheLabel(cell: HTMLElement, symbolBlock: number, rows: Element[]): void {
+      const padding = mm(declared(cell, 'padding'));
+      const gap = mm(declared(cell, 'gap'));
+      const content =
+        symbolBlock +
+        rows.reduce((sum, row) => sum + expectOneUncutLine(row), 0) +
+        gap * rows.length;
+      // Padding above and below, and room to spare for the 1 px cutting guide
+      // the screen draws on each side (0.53 mm in all).
+      expect(padding + content + padding).toBeLessThanOrEqual(LABEL_BLOCK_MM - 0.6);
+    }
+
+    for (const locale of ['en', 'ar'] as const) {
+      it(`${locale}: the label carries the bars, the code, the name and the stock code, and no pack quantity`, async () => {
+        const [cell] = (await drawLabels(locale)) as [HTMLElement];
+        const lines = [...cell.querySelectorAll('[data-label="line"]')];
+        expect(lines.map((line) => line.textContent)).toEqual(['Brake pad', 'BRK-001']);
+        expect(cell.querySelector('[data-barcode="text"]')).toHaveTextContent(GOOD_EAN);
+        expect(cell.querySelector('[data-barcode="bars"]')).not.toBeNull();
+        // The stock code is the last thing in the label: no row is drawn after
+        // it, cut or uncut.
+        expect(cell.lastElementChild).toBe(lines[1]);
+        expect(cell.textContent).not.toContain('1.000');
+        // The name reads from its own first letter in either page language, so
+        // the ellipsis of a long name takes its end and never its beginning.
+        expect(lines[0]).toHaveAttribute('dir', 'auto');
+      });
+
+      it(`${locale}: no row is cut: the rows the label draws add up to less than the label`, async () => {
+        const [cell] = (await drawLabels(locale)) as [HTMLElement];
+        expect(mm(declared(cell, 'block-size'))).toBe(LABEL_BLOCK_MM);
+
+        // The column of the cell: the drawn symbol, then the name and the stock code.
+        const column = [...cell.children];
+        const symbol = column[0] as HTMLElement;
+        expect(symbol.getAttribute('data-barcode')).toBe('symbol');
+        const rows = column.slice(1);
+        expect(rows).toHaveLength(2);
+
+        // Inside the symbol: the bars, then the readable code.
+        expect(symbol.children).toHaveLength(2);
+        const [bars, code] = [...symbol.children] as [Element, Element];
+        expect(bars.getAttribute('data-barcode')).toBe('bars');
+        expect(code.getAttribute('data-barcode')).toBe('text');
+        expect(declared(bars, 'flex')).toBe('none');
+        expect(declared(symbol, 'flex')).toBe('none');
+
+        expectFitsTheLabel(
+          cell,
+          mm(declared(bars, 'block-size')) + mm(declared(symbol, 'gap')) + expectOneUncutLine(code),
+          rows
+        );
+      });
+
+      it(`${locale}: the bars are no shorter than were printed before, and no narrower`, async () => {
+        const [cell] = (await drawLabels(locale)) as [HTMLElement];
+        const symbol = cell.firstElementChild as HTMLElement;
+        const bars = symbol.firstElementChild as Element;
+        expect(mm(declared(bars, 'block-size'))).toBeGreaterThanOrEqual(BARS_PRINTED_BEFORE_MM);
+        // The symbol keeps the whole width inside the padding whatever its
+        // height, so a module is never narrower than it was.
+        expect(declared(symbol, 'inline-size')).toBe('100%');
+        expect(bars).toHaveClass('w-full');
+      });
+
+      it(`${locale}: the bars start under the padding, a clear margin below the top edge`, async () => {
+        const [cell] = (await drawLabels(locale)) as [HTMLElement];
+        // The column starts at the top, so what is above the bars is the
+        // padding of the cell: nothing is centred over the edge and cut.
+        expect(declared(cell, 'justify-content')).toBe('flex-start');
+        expect(declared(cell, 'flex-direction')).toBe('column');
+        expect(mm(declared(cell, 'padding'))).toBeGreaterThanOrEqual(2);
+        // The bars are the first thing in the label.
+        const first = cell.firstElementChild as HTMLElement;
+        expect(first.getAttribute('data-barcode')).toBe('symbol');
+        expect(first.firstElementChild?.getAttribute('data-barcode')).toBe('bars');
+        // No label rule, on screen or on paper, takes the padding away.
+        for (const rule of labelRules) {
+          if (!cell.matches(rule.raw)) continue;
+          for (const property of ['padding', 'padding-block', 'padding-block-start']) {
+            if (rule.declarations[property] !== undefined) {
+              expect(mm(rule.declarations[property])).toBeGreaterThanOrEqual(2);
+            }
+          }
+        }
+      });
+
+      it(`${locale}: a code that cannot be drawn leaves a label with no cut row either`, async () => {
+        const [cell] = (await drawLabels(locale, '50x25', {
+          primaryBarcode: {
+            identifierId: 'id-1',
+            kind: 'ean',
+            value: BAD_EAN,
+            normalizedValue: BAD_EAN,
+            symbology: 'ean13',
+          },
+        })) as [HTMLElement];
+        const sentence = (locale === 'en' ? EN : AR)['inventory.labels.refusal.checkDigit'];
+        const column = [...cell.children];
+        const symbol = column[0] as HTMLElement;
+        expect(symbol.getAttribute('data-barcode')).toBe('symbol');
+        expect(symbol.querySelector('[data-barcode="bars"]')).toBeNull();
+        // In place of the bars: the sentence, as one row, and the number.
+        expect(symbol.children).toHaveLength(2);
+        const [refusal, code] = [...symbol.children] as [HTMLElement, Element];
+        expect(refusal.getAttribute('data-barcode')).toBe('refusal');
+        expect(refusal).toHaveTextContent(sentence as string);
+        // Ending in an ellipsis on this label, the whole sentence stays within reach.
+        expect(refusal).toHaveAttribute('title', sentence as string);
+        expect(code.getAttribute('data-barcode')).toBe('text');
+        expect(code).toHaveTextContent(BAD_EAN);
+        const rows = column.slice(1);
+        expect(rows.map((row) => row.textContent)).toEqual(['Brake pad', 'BRK-001']);
+        expectFitsTheLabel(
+          cell,
+          expectOneUncutLine(refusal) + mm(declared(symbol, 'gap')) + expectOneUncutLine(code),
+          rows
+        );
+      });
+    }
+
+    it.each(['70x40', 'a4'] as const)(
+      'the %s label is as it was: it ends with the pack quantity, and none of its rows is restated',
+      async (preset) => {
+        const [cell] = (await drawLabels('en', preset)) as [HTMLElement];
+        const lines = [...cell.querySelectorAll('[data-label="line"]')];
+        expect(lines.map((line) => line.textContent)).toEqual([
+          'Brake pad',
+          'BRK-001',
+          '1.000 Each',
+        ]);
+        expect(cell.lastElementChild).toBe(lines[2]);
+        for (const element of [cell, ...cell.querySelectorAll('*')]) {
+          for (const property of ['font-size', 'line-height', 'white-space', 'justify-content']) {
+            const value = declared(element, property);
+            // `justify-content: center` is the rule every label cell shares.
+            if (property === 'justify-content' && element === cell) expect(value).toBe('center');
+            else expect(value, `${property} on ${element.tagName}`).toBeUndefined();
+          }
+        }
+      }
+    );
+
+    it('only the 50 x 25 mm rows are restated in the sheet', () => {
+      const restated = labelRules.filter(
+        (rule) =>
+          rule.declarations['line-height'] !== undefined ||
+          rule.declarations['font-size'] !== undefined ||
+          rule.declarations['justify-content'] === 'flex-start'
+      );
+      expect(restated.length).toBeGreaterThan(0);
+      for (const rule of restated) expect(rule.selector).toContain('[data-label-sheet=50x25]');
+    });
+
+    it('a roll of 50 x 25 mm labels is still one label to a page, with no page after the last', async () => {
+      const cells = await drawLabels('en');
+      expect(cells).toHaveLength(1);
+      const cell = cells[0] as HTMLElement;
+      // Its page is the label, with no margin; nothing in the reworked rules
+      // asks for a break, before or after.
+      expect(declared(cell, 'page')).toBe('label-50x25');
+      for (const rule of labelRules) {
+        if (!rule.selector.includes('[data-label-sheet=50x25]')) continue;
+        expect(rule.declarations['break-after']).toBeUndefined();
+        expect(rule.declarations['page-break-after']).toBeUndefined();
+        if (rule.selector.endsWith('[data-label=cell] + [data-label=cell]')) {
+          expect(rule.declarations['break-before']).toBe('page');
+        } else {
+          expect(rule.declarations['break-before']).toBeUndefined();
+        }
+      }
+    });
+  });
 });

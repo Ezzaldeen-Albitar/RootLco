@@ -301,11 +301,13 @@ function ItemHeader({
             {translate(messages, 'inventory.setup.categories.browse')}
           </Link>
         </Fact>
+        {/*
+         * The unit by its name in the page language, and nothing beside it
+         * (P1-32-PRE-OD-INVG, runtime retest O1): the unit's code is a machine
+         * code, and the header read "لتر litre".
+         */}
         <Fact label={translate(messages, 'inventory.identifiers.item.unit')}>
-          <bdi data-testid="item-header-unit">{unitName(messages, item.unitOfMeasure)}</bdi>{' '}
-          <code className="font-mono text-caption" dir="ltr">
-            {item.unitOfMeasure.code}
-          </code>
+          <bdi data-testid="item-header-unit">{unitName(messages, item.unitOfMeasure)}</bdi>
         </Fact>
         <Fact label={translate(messages, 'inventory.identifiers.item.type')}>
           {translateDynamic(messages, `inventory.itemType.${item.itemType}`)}

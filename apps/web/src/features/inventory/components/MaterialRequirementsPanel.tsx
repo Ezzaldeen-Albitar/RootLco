@@ -849,11 +849,13 @@ function AllowanceBar({
 
 /**
  * The item family a requirement names, by its place in the category tree: the
- * path of names and the code beside it, so two families of the same name read
- * apart. While the tree is being read the panel says so; where it cannot be
- * read at all — no `inv.item.read`, or a refused or failed read — or no longer
- * holds the family, the card says the family's details are not available; the
- * reference the requirement carries is never shown in its place.
+ * path of names, so two families of the same name under different parents read
+ * apart. The family's code is not shown (P1-32-PRE-OD-INVG): it is the machine
+ * code typed when the category was created, and the card names things in words.
+ * While the tree is being read the panel says so; where it cannot be read at
+ * all — no `inv.item.read`, or a refused or failed read — or no longer holds
+ * the family, the card says the family's details are not available; neither
+ * the code nor the reference the requirement carries is shown in its place.
  */
 /** A name read for an identifier, the wait for it, or the sentence that it cannot be shown. */
 function NamedValue({
@@ -929,10 +931,7 @@ function CategoryName({
   }
   return (
     <span data-testid="material-category-path">
-      <bdi>{pathText(read.forest, categoryId)}</bdi>{' '}
-      <code className="font-mono text-caption" dir="ltr">
-        {category.code}
-      </code>
+      <bdi>{pathText(read.forest, categoryId)}</bdi>
     </span>
   );
 }

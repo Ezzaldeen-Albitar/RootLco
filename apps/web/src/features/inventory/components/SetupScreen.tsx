@@ -79,7 +79,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import { unitName, unitOptions } from '@/lib/unit-name';
+import { unitName, unitNameById, unitOptions } from '@/lib/unit-name';
 import {
   createItem,
   createItemCategory,
@@ -100,6 +100,7 @@ import {
   MAX_NAME,
   QUANTITY,
   SKU_CODE,
+  UNIT_DIMENSIONS,
   type CreatedStockLocation,
   type InventoryItem,
   type ItemCategory,
@@ -560,6 +561,21 @@ function CategoryForm({
  * Units
  * ------------------------------------------------------------------ */
 
+/**
+ * A unit's measurement dimension in the page language (P1-32-PRE-OD-INVG,
+ * runtime retest O2): the read publishes the stored word (`volume`, `mass`),
+ * which the Arabic table drew as it was stored. A dimension the catalogue does
+ * not word — one added to the schema after this screen — is said as "Other",
+ * never drawn as the stored word.
+ */
+function dimensionName(messages: Messages, dimension: string): string {
+  const known = (UNIT_DIMENSIONS as readonly string[]).includes(dimension);
+  return translateDynamic(
+    messages,
+    `inventory.setup.units.dimension.${known ? dimension : 'other'}`
+  );
+}
+
 function UnitsSection({ messages, units }: { readonly messages: Messages; readonly units: Units }) {
   const { read } = units;
   return (
@@ -624,8 +640,8 @@ function UnitsSection({ messages, units }: { readonly messages: Messages; readon
                   <TableCell>
                     <bdi>{unitName(messages, unit)}</bdi>
                   </TableCell>
-                  <TableCell>
-                    <bdi>{unit.dimension}</bdi>
+                  <TableCell data-testid="setup-unit-dimension">
+                    {dimensionName(messages, unit.dimension)}
                   </TableCell>
                   <TableCell>
                     {translateDynamic(messages, `inventory.setup.units.scope.${unit.scope}`)}
@@ -718,10 +734,21 @@ function ItemsSection({
                   <TableCell>
                     <bdi>{item.name}</bdi>
                   </TableCell>
+                  {/*
+                   * The unit by its name in the page language, from the unit
+                   * list this screen holds (P1-32-PRE-OD-INVG): the echo of a
+                   * created item carries the unit's code only, and a code is
+                   * not a name. A unit the list does not hold is said in
+                   * words, never by its code.
+                   */}
                   <TableCell>
-                    <code className="font-mono text-caption" dir="ltr">
-                      {item.unitOfMeasure.code}
-                    </code>
+                    <bdi data-testid="setup-created-item-unit">
+                      {unitNameById(
+                        messages,
+                        item.unitOfMeasure.id,
+                        units.read.phase === 'listed' ? units.read.items : null
+                      ) ?? translate(messages, 'inventory.setup.items.unitNotNamed')}
+                    </bdi>
                   </TableCell>
                   <TableCell>
                     {translateDynamic(messages, `inventory.itemType.${item.itemType}`)}

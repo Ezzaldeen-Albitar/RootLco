@@ -22,6 +22,16 @@ export type LabelPreset = (typeof LABEL_PRESETS)[number];
  * `PrintDocument` with no `reference`: a sheet of labels carries no repeated
  * identity row, and its title is for the screen only (the print stylesheet
  * leaves it off the paper).
+ *
+ * A label carries the bars, the code, the name and the stock code, and the two
+ * larger sizes end with the pack quantity and its unit. The 50 x 25 mm label
+ * does not carry that last row (P1-32-PRE-OD-INVG): it never fitted there —
+ * it was cut off, on screen and on paper — and it fits only with shorter bars.
+ * Whether the smallest label should carry it, on a larger label or with
+ * shorter bars and a scan test, is an open Owner decision; until it is made
+ * the row is not drawn where it cannot be read. The rows below the code are
+ * marked `data-label="line"` so the print stylesheet can give each a fixed
+ * height on that label.
  */
 export function LabelRun({
   locale,
@@ -54,14 +64,27 @@ export function LabelRun({
                 value={printed.normalizedValue}
                 readable={printed.value}
               />
-              <p className="text-caption font-medium text-text-primary">{label.name}</p>
-              <p className="text-caption text-text-secondary" dir="ltr">
+              {/*
+               * `dir="auto"`: a name reads from its own first letter, whatever
+               * the page language, so a name too long for the smallest label
+               * loses its end to the ellipsis and never its beginning.
+               */}
+              <p
+                data-label="line"
+                dir="auto"
+                className="text-caption font-medium text-text-primary"
+              >
+                {label.name}
+              </p>
+              <p data-label="line" className="text-caption text-text-secondary" dir="ltr">
                 {label.sku}
               </p>
-              <p className="text-caption text-text-muted">
-                <bdi dir="ltr">{label.packQuantity}</bdi>{' '}
-                <bdi>{unitNameByCode(messages, label.unit.code, units)}</bdi>
-              </p>
+              {preset === '50x25' ? null : (
+                <p data-label="line" className="text-caption text-text-muted">
+                  <bdi dir="ltr">{label.packQuantity}</bdi>{' '}
+                  <bdi>{unitNameByCode(messages, label.unit.code, units)}</bdi>
+                </p>
+              )}
             </div>
           ))}
         </div>

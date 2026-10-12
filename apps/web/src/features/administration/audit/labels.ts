@@ -151,6 +151,12 @@ const FIELD_KEYS: Readonly<Record<string, MessageKey>> = {
   range_to: 'audit.field.rangeTo',
   returned: 'audit.field.returned',
   detail_rows_returned: 'audit.field.detailRowsReturned',
+  // The audit vocabulary the service writes as a value (`P1-32-PRE-OD-INVG`).
+  permission_code: 'audit.field.permissionCode',
+  requiredPermission: 'audit.field.requiredPermission',
+  exportPermissionCode: 'audit.field.exportPermissionCode',
+  entity_type: 'audit.field.entityType',
+  resource: 'audit.field.resource',
 };
 
 /** The part of the product a code belongs to — its first segment — or `null`. */
@@ -196,6 +202,295 @@ export function auditFieldLabel(messages: Messages, fieldName: string): string {
 /** Whether a field has a label of its own; one without keeps its code as a labelled reference. */
 export function isNamedAuditField(fieldName: string): boolean {
   return known(FIELD_KEYS, fieldName) !== null;
+}
+
+/**
+ * How the drawer lays out a record's details (`P1-32-PRE-OD-INVG`).
+ *
+ * An audit record is evidence. The drawer draws every detail row the read
+ * returns, each value with the very characters it came with: no row is left
+ * out, no value is shortened, rewritten or taken apart. What this file decides
+ * is only WHERE a row is drawn, so a mistake here can misplace a row and can
+ * never lose one.
+ *
+ * Two groups. First the facts — what changed. Then the record references: the
+ * rows that say which other record an event concerns by its identifier, which
+ * a reader cannot use as it stands and someone helping them can. The read
+ * names two people (the actor, and the account a user-account record is about)
+ * and no other record, so a reference cannot be replaced by a name here; it is
+ * drawn as it came, under a label saying what kind of record it points to.
+ *
+ * A row is a record reference when every value it carries is an identifier or
+ * a list of them: under a field named for one (the last step of the name is
+ * `id`, `ids` or `uuid`, or ends in `Id`, `Ids`, `_id`, `_ids`) an identifier
+ * with or without dashes; under any other field (`requestedBy`) a dashed one
+ * only, because thirty-two hexadecimal characters with no dashes are otherwise
+ * a digest. The audit vocabulary the service writes as a value and business
+ * numbers are facts whatever they look like (`FACT_FIELDS`). Everything else
+ * is a fact too: a sentence quoting an identifier, a structured setting value
+ * with an identifier inside it, a numeric `customer_id`.
+ */
+const WHOLE_DASHED_IDENTIFIER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const WHOLE_BARE_IDENTIFIER = /^[0-9a-f]{32}$/i;
+const IDENTIFIER_NAME = /^(?:id|ids|uuid)$/i;
+const IDENTIFIER_SUFFIX = /(?:[a-z0-9](?:Id|ID|Ids|IDs|Uuid|UUID)|_(?:id|ids|uuid))$/;
+const LIST_SEPARATOR = /[\s,;]+/;
+
+/**
+ * Fields that are facts whatever their value looks like.
+ *
+ * The first five are written by the service today (`permission_code` on a
+ * role's permission added, changed or removed; `requiredPermission` on a
+ * discount threshold and a discount approval; `exportPermissionCode` on a
+ * report configuration; `entity_type` on an attachment link; `resource` on an
+ * export decision). No writer records a tax, national or registration number
+ * today; their usual names are listed so that one added later is not taken for
+ * a record reference.
+ */
+const FACT_FIELDS: ReadonlySet<string> = new Set([
+  'permission_code',
+  'requiredPermission',
+  'exportPermissionCode',
+  'entity_type',
+  'resource',
+  'vatId',
+  'vat_id',
+  'taxId',
+  'tax_id',
+  'nationalId',
+  'national_id',
+  'registrationId',
+  'registration_id',
+]);
+
+function lastStep(fieldName: string): string {
+  const steps = fieldName.split(/[.[\]/]+/).filter((step) => step.length > 0);
+  return steps[steps.length - 1] ?? fieldName;
+}
+
+function namesARecordIdentifier(fieldName: string): boolean {
+  const last = lastStep(fieldName);
+  return IDENTIFIER_NAME.test(last) || IDENTIFIER_SUFFIX.test(last);
+}
+
+function isIdentifierList(value: string, bareToo: boolean): boolean {
+  const parts = value
+    .trim()
+    .split(LIST_SEPARATOR)
+    .filter((part) => part.length > 0);
+  return (
+    parts.length > 0 &&
+    parts.every(
+      (part) => WHOLE_DASHED_IDENTIFIER.test(part) || (bareToo && WHOLE_BARE_IDENTIFIER.test(part))
+    )
+  );
+}
+
+/**
+ * A detail row as the read is declared to publish it. What arrives is not
+ * trusted to be that: see `auditValueText`.
+ */
+interface AuditDetailFacts {
+  readonly fieldName: string;
+  readonly oldValueMasked: string | null;
+  readonly newValueMasked: string | null;
+}
+
+/**
+ * A detail row as the drawer draws it: the field and the two values as text.
+ *
+ * `null` is "no value" — the read's own `null`, or nothing at all — and is the
+ * only thing drawn as a dash. An empty string is a value: it is drawn, blank.
+ * The two are different facts about a record and stay different on screen.
+ */
+export interface AuditDetailShown {
+  readonly fieldName: string;
+  readonly oldValue: string | null;
+  readonly newValue: string | null;
+}
+
+/**
+ * Whatever arrived, as the text that is drawn — never a throw.
+ *
+ * A string is itself, character for character. `null` and a missing value are
+ * `null`. Anything else is not what the read is declared to send, and is still
+ * evidence: it is written out once (a number or a flag as it prints, a
+ * structure as JSON) and drawn, where an exception would have emptied the
+ * whole drawer.
+ */
+export function auditValueText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    try {
+      const written: unknown = JSON.stringify(value);
+      if (typeof written === 'string') return written;
+    } catch {
+      // Not writable as JSON (a cycle, a big integer inside): as it prints.
+    }
+  }
+  return String(value);
+}
+
+function shownOf(entry: unknown): AuditDetailShown {
+  const row = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
+  return {
+    fieldName: auditValueText(row['fieldName']) ?? '',
+    oldValue: auditValueText(row['oldValueMasked']),
+    newValue: auditValueText(row['newValueMasked']),
+  };
+}
+
+/** Whether the row is drawn among the record references. It is drawn either way. */
+export function isAuditRecordReference(entry: AuditDetailShown): boolean {
+  if (FACT_FIELDS.has(lastStep(entry.fieldName))) return false;
+  const values = [entry.oldValue, entry.newValue].filter(
+    (value): value is string => value !== null
+  );
+  if (values.length === 0) return false;
+  const named = namesARecordIdentifier(entry.fieldName);
+  return values.every((value) => isIdentifierList(value, named));
+}
+
+/**
+ * The rows in their two groups, each group in the order the read gave.
+ *
+ * Every row of `details` is in exactly one of the two, whatever it holds: the
+ * grouping is total, and a row it cannot make sense of is a fact.
+ */
+export function groupAuditDetails(details: readonly AuditDetailFacts[]): {
+  readonly facts: readonly AuditDetailShown[];
+  readonly references: readonly AuditDetailShown[];
+} {
+  const facts: AuditDetailShown[] = [];
+  const references: AuditDetailShown[] = [];
+  for (const entry of details) {
+    const shown = shownOf(entry);
+    (isAuditRecordReference(shown) ? references : facts).push(shown);
+  }
+  return { facts, references };
+}
+
+/**
+ * What kind of record a reference points to, in words.
+ *
+ * The service writes 123 fields named for an identifier and five named for a
+ * person (`requestedBy`). The ones below are the frequent ones and the ones an
+ * administrator meets on access, stock and money records; the rest are drawn
+ * as "Reference".
+ *
+ * A label says what kind of record a reference points to; it does not say
+ * which field it was. Two fields of one record can share a kind (a customer
+ * under two names), so the drawer draws the written field code on EVERY
+ * reference row, beside the label, and no two rows can read alike whatever
+ * this map says. The two payers a third-party allocation records
+ * (`sal.payment.third_party_allocated`) have a label each all the same.
+ */
+const REFERENCE_KEYS: Readonly<Record<string, MessageKey>> = {
+  itemId: 'audit.reference.item',
+  locationId: 'audit.reference.location',
+  fromLocationId: 'audit.reference.fromLocation',
+  toLocationId: 'audit.reference.toLocation',
+  partner_id: 'audit.reference.customer',
+  customerPartnerId: 'audit.reference.customer',
+  payerPartnerId: 'audit.reference.payer',
+  invoicePayerPartnerId: 'audit.reference.invoicePayer',
+  receiptPayerPartnerId: 'audit.reference.receiptPayer',
+  workOrderId: 'audit.reference.workOrder',
+  work_order_id: 'audit.reference.workOrder',
+  vehicle_id: 'audit.reference.vehicle',
+  vehicleId: 'audit.reference.vehicle',
+  invoiceId: 'audit.reference.invoice',
+  receiptId: 'audit.reference.receipt',
+  obligationId: 'audit.reference.refundObligation',
+  reception_visit_id: 'audit.reference.receptionVisit',
+  receptionVisitId: 'audit.reference.receptionVisit',
+  user_id: 'audit.reference.userAccount',
+  user_account_id: 'audit.reference.userAccount',
+  role_id: 'audit.reference.role',
+  grant_id: 'audit.reference.roleGrant',
+  job_id: 'audit.reference.job',
+  uomId: 'audit.reference.unit',
+  serviceId: 'audit.reference.service',
+  quotationId: 'audit.reference.quotation',
+  quotationRevisionId: 'audit.reference.quotationRevision',
+  document_id: 'audit.reference.document',
+  document_version_id: 'audit.reference.documentVersion',
+  deliveryRecordId: 'audit.reference.deliveryRecord',
+  company_id: 'audit.reference.company',
+  companyId: 'audit.reference.company',
+  branch_id: 'audit.reference.branch',
+  branchId: 'audit.reference.branch',
+  template_id: 'audit.reference.template',
+  templateId: 'audit.reference.template',
+  template_version_id: 'audit.reference.templateVersion',
+  technician_profile_id: 'audit.reference.technician',
+  priceListId: 'audit.reference.priceList',
+  paymentMethodId: 'audit.reference.paymentMethod',
+  materialRequestId: 'audit.reference.materialRequest',
+  creditNoteId: 'audit.reference.creditNote',
+  itemCategoryId: 'audit.reference.itemCategory',
+  adjustmentId: 'audit.reference.stockAdjustment',
+  transferId: 'audit.reference.transfer',
+  reservationId: 'audit.reference.reservation',
+  department_id: 'audit.reference.department',
+  requestedBy: 'audit.reference.requestedBy',
+  approvedBy: 'audit.reference.approvedBy',
+  countedBy: 'audit.reference.countedBy',
+  createdBy: 'audit.reference.createdBy',
+};
+
+/**
+ * A reference's kind, in words, or "Reference".
+ *
+ * Looked up by the field as written and then by the last step of its path, so
+ * `lines[0].itemId` is an item like `itemId` is.
+ */
+export function auditReferenceLabel(messages: Messages, fieldName: string): string {
+  return translate(
+    messages,
+    known(REFERENCE_KEYS, fieldName) ??
+      known(REFERENCE_KEYS, lastStep(fieldName)) ??
+      'audit.reference.other'
+  );
+}
+
+/** The reference fields with a label of their own, for the suite that counts them. */
+export const NAMED_AUDIT_REFERENCES: readonly string[] = Object.freeze(Object.keys(REFERENCE_KEYS));
+
+const PERMISSION_FIELDS: ReadonlySet<string> = new Set([
+  'permission_code',
+  'requiredPermission',
+  'exportPermissionCode',
+]);
+const RECORD_TYPE_FIELD = 'entity_type';
+
+/**
+ * The words said before a record type's code, or `null` for any other field.
+ *
+ * The code itself is always drawn after them, as it came: the words are the
+ * drawer's own for a record type, and where the catalogue has none of its own
+ * they name only the part of the product, which the code then makes exact.
+ */
+export function auditRecordTypeWords(
+  messages: Messages,
+  fieldName: string,
+  value: string
+): string | null {
+  return lastStep(fieldName) === RECORD_TYPE_FIELD ? auditEntityLabel(messages, value) : null;
+}
+
+/**
+ * Whether a detail's value is a code, drawn left to right as one.
+ *
+ * A permission is drawn by its code: the web holds no wording for a
+ * permission — the permissions screen draws the description the service
+ * publishes with its catalogue (`iam.permission-list`), which this screen does
+ * not read.
+ */
+export function isAuditCodeField(fieldName: string): boolean {
+  const last = lastStep(fieldName);
+  return PERMISSION_FIELDS.has(last) || last === RECORD_TYPE_FIELD;
 }
 
 /** The codes named by the catalogue, for the suite that checks them against the service's. */
