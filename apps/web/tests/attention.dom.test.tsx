@@ -567,31 +567,75 @@ describe('differences found by a count', () => {
     ).toHaveAttribute('href', '/en/inventory/counts');
   });
 
-  it('names the count each difference came from, so two of them are not one row', async () => {
-    /*
-     * Two counts, same shelf, same item, same day. The card used to draw a
-     * generic label beside a date on both, which made a row that cannot be
-     * matched to the count it came from — and a link to a list of counts is not
-     * a link to THE count until the row says which one.
-     */
-    readCountDiscrepancyAlerts.mockResolvedValue(
-      discrepancies([
-        discrepancyRow({ countId: 'aaaaaaaa-1111', lineId: 'line-1', varianceQty: '-2.000' }),
-        discrepancyRow({ countId: 'bbbbbbbb-2222', lineId: 'line-2', varianceQty: '-5.000' }),
-      ])
-    );
-    const user = userEvent.setup();
-    renderScreen();
-    await chooseTheBranch(user);
-
-    const frame = card('attention.discrepancy.title');
-    const first = await within(frame).findByText('Count reference aaaaaaaa');
-    const second = within(frame).getByText('Count reference bbbbbbbb');
-    expect(first.closest('tr')).not.toBe(second.closest('tr'));
-    // And the count is placed, not only numbered: where it was taken is on the
-    // row beside the reference rather than filed under the item.
-    expect(first.closest('tr')).toHaveTextContent('A-01');
-  });
+  /*
+   * P1-32-PRE-OD-INVG (runtime retest O6). Each row used to end "Count
+   * reference" followed by the first eight characters of the count's
+   * identifier — a fragment of a machine identifier. A count has no number of
+   * its own, so the row now says which count by the two facts the counts screen
+   * lists a count by, where it was taken and when to the minute, and nothing of
+   * the identifier is drawn.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`says which count by its place and its moment, and shows nothing of its identifier (${locale})`, async () => {
+      const FIRST_ID = 'c803b2f1-4a6e-4c1d-9b0a-5d2e7f8a9b0c';
+      const SECOND_ID = 'd914c3a2-5b7f-4d2e-8c1b-6e3f8a9b0c1d';
+      const FIRST_AT = '2026-09-17T08:00:00.000Z';
+      const SECOND_AT = '2026-09-17T13:45:00.000Z';
+      // Two counts of the same shelf and the same item on the same day.
+      readCountDiscrepancyAlerts.mockResolvedValue(
+        discrepancies([
+          discrepancyRow({ countId: FIRST_ID, lineId: 'line-1', countedOn: FIRST_AT }),
+          discrepancyRow({
+            countId: SECOND_ID,
+            lineId: 'line-2',
+            countedOn: SECOND_AT,
+            varianceQty: '-5.000',
+          }),
+        ])
+      );
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        inBranch(
+          <AttentionScreen
+            locale={locale}
+            messages={messagesFor(locale)}
+            canReadStock
+            canReadCapacity
+            canReadBranches
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const T = messagesFor(locale) as unknown as Record<string, string>;
+      const heading = await screen.findByRole('heading', {
+        name: T['attention.discrepancy.title'] as string,
+      });
+      const frame = heading.closest('section') as HTMLElement;
+      const counts = await within(frame).findAllByTestId('discrepancy-count');
+      expect(counts).toHaveLength(2);
+      const [first, second] = counts as [HTMLElement, HTMLElement];
+      // Two rows, each placed and timed: the same shelf, their own moments.
+      expect(first.closest('tr')).not.toBe(second.closest('tr'));
+      expect(first.textContent).toContain('A-01');
+      expect(second.textContent).toContain('A-01');
+      expect(first.textContent).toContain(onClock(FIRST_AT, locale, FAR_ZONE));
+      expect(second.textContent).toContain(onClock(SECOND_AT, locale, FAR_ZONE));
+      expect(first.textContent).not.toBe(second.textContent);
+      // Nothing of either identifier, in whole or in part, and no label for one.
+      const text = frame.textContent ?? '';
+      for (const id of [FIRST_ID, SECOND_ID]) {
+        expect(text).not.toContain(id);
+        expect(text).not.toContain(id.slice(0, 8));
+      }
+      expect(text).not.toMatch(/[0-9a-f]{8}/);
+      expect(text).not.toContain('Count reference');
+      expect(text).not.toContain('مرجع الجرد');
+      for (const cell of counts) {
+        // The count's cell holds its link and the place-and-moment line only.
+        expect(cell.parentElement?.querySelectorAll('span')).toHaveLength(1);
+      }
+    });
+  }
 
   it('says when no correction was raised instead of leaving the decision blank', async () => {
     readCountDiscrepancyAlerts.mockResolvedValue(

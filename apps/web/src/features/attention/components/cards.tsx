@@ -441,19 +441,6 @@ export function LowStockCard({
  * 2. Count discrepancies
  * ------------------------------------------------------------------ */
 
-/**
- * A short, stable handle for the count a difference came from.
- *
- * The read carries no count NUMBER — there is none in the schema — so the only
- * thing that separates two counts of the same shelf on the same day is the
- * identifier the row already holds. The leading run of it is shown rather than
- * the whole, because the purpose is telling two rows apart on one screen and a
- * full identifier read aloud does that no better.
- */
-export function countReference(countId: string): string {
-  return countId.slice(0, 8);
-}
-
 export function CountDiscrepancyCard({
   messages,
   locale,
@@ -512,20 +499,21 @@ export function CountDiscrepancyCard({
               </Link>
               {/*
                * WHICH count, in the two facts the counts screen itself lists a
-               * count by — where it was taken and when. A generic label beside a
-               * date left two counts of the same day telling the same story, and
-               * a row that cannot be matched to the count it came from is not a
-               * link to anything. The short reference below is the tie-break the
-               * read carries when even those two agree.
+               * count by — where it was taken and when, to the minute. A generic
+               * label beside a date left two counts of the same day telling the
+               * same story, and a row that cannot be matched to the count it
+               * came from is not a link to anything.
+               *
+               * Nothing of the count's identifier is shown (P1-32-PRE-OD-INVG,
+               * runtime retest O6). A count has no number of its own — there is
+               * none in the schema — and the line that stood here, "Count
+               * reference" followed by the first characters of the identifier,
+               * was a fragment of a machine identifier that an operator could
+               * neither read out nor look up anywhere.
                */}
-              <span className="block text-caption text-text-muted">
+              <span className="block text-caption text-text-muted" data-testid="discrepancy-count">
                 <bdi dir="ltr">{row.locationCode}</bdi> ·{' '}
                 <bdi data-moment-zone={zone}>{momentText(row.countedOn, locale, zone)}</bdi>
-              </span>
-              <span className="block text-caption text-text-muted" dir="ltr">
-                {formatMessage(t('attention.discrepancy.countRef'), {
-                  ref: countReference(row.countId),
-                })}
               </span>
             </Cell>
             <Cell>

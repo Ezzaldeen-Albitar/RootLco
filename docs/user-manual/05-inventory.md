@@ -1988,8 +1988,8 @@ Empty: **"Nothing in this branch has reached its reorder level."**
 records. The decision says what happened to the correction it
 raised."_ <!-- attention.discrepancy.rule -->
 
-Columns: **Item**, **Count reference**, **Difference**, **Decision** — or **"No correction was
-raised"**. There is a link to **Open stock counts**.
+Columns: **Count** (where the count was taken and when it began), **Item**, **Difference**,
+**Decision** — or **"No correction was raised"**. There is a link to **Open stock counts**.
 
 Empty: **"No finished count in this branch found a difference."**
 

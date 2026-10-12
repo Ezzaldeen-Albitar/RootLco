@@ -281,7 +281,6 @@
   "attention.consumption.rule": "Listed when the quantity issued in the last {days} days is at least {multiple} times the usual amount of the {periods} periods before it, and is at least {minimum} units.",
   "attention.consumption.ruleUnread": "Items that left in the latest period far faster than in the periods before it.",
   "attention.consumption.title": "Leaving faster than usual",
-  "attention.discrepancy.countRef": "Count reference {ref}",
   "attention.discrepancy.empty": "No finished count in this branch found a difference.",
   "attention.discrepancy.noAdjustment": "No correction was raised",
   "attention.discrepancy.openCount": "Open stock counts",
