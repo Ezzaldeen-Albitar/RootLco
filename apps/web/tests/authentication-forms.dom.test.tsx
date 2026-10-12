@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useActionState, useRef, useState, type ReactElement } from 'react';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -22,10 +23,16 @@ import {
  * `/login`, `/forgot-password`, `/reset-password`, `/activate-account` and
  * `/profile` moved onto the ADR-022 wrappers (`FormTextField`,
  * `FormPasswordField`, the Material banner and submit button, and `AuthCard` on
- * `Paper`). Moving them changed what they draw and nothing about how they
- * decide, so every case here is a behaviour the legacy forms already had, held
- * in English and in Arabic:
+ * `Paper`). Moving them changed what they draw; what the Server Actions decide
+ * did not change. Every case here is a behaviour the legacy forms already had,
+ * held in English and in Arabic:
  *
+ *   - a value a browser or a password manager put in a box BEFORE the page
+ *     hydrated is still there after any later render, and is what is sent. The
+ *     first version of this move lost it (every box had become controlled, so
+ *     the next render wrote the empty state back); each box now adopts what it
+ *     already holds as its form mounts (`usePrefilledValue`), and
+ *     `hydratedWith` below is how a case stands in that state;
  *   - a refused sign-in names nothing about which half was wrong;
  *   - a forgotten-password request is answered the same whether or not an
  *     account exists;
@@ -106,6 +113,52 @@ const renderIn = (locale: Locale, ui: ReactElement) =>
   locale === 'en' ? renderInLtr(withMui(ui, 'en')) : renderInRtl(withMui(ui, 'ar'));
 const words = (locale: Locale) => (locale === 'en' ? EN : AR);
 const LOCALES: readonly Locale[] = ['en', 'ar'];
+
+/**
+ * The page as a browser has it before its script has run, then hydrated.
+ *
+ * The server's markup goes into the document; `filled` is written into the
+ * named boxes the way a browser or a password manager writes it — the value
+ * set on the element, no event, nothing React could have heard — and only THEN
+ * does React attach (`hydrateRoot`, through Testing Library so the tree is
+ * unmounted with every other).
+ *
+ * A hydration that gave up and rendered afresh would build new, empty boxes
+ * and prove nothing, so it is refused here (no recoverable error), and the
+ * boxes are returned so a case can show the one it reads afterwards is the very
+ * element that was filled.
+ */
+function hydratedWith(
+  locale: Locale,
+  ui: ReactElement,
+  filled: Readonly<Record<string, string>>
+): Readonly<Record<string, HTMLInputElement>> {
+  const tree = withMui(ui, locale);
+  const container = document.createElement('div');
+  container.innerHTML = renderToString(tree);
+  document.body.appendChild(container);
+
+  const boxes: Record<string, HTMLInputElement> = {};
+  for (const [name, value] of Object.entries(filled)) {
+    const box = container.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+    if (box === null) throw new Error(`The server markup holds no box named ${name}.`);
+    box.value = value;
+    boxes[name] = box;
+  }
+
+  const onRecoverableError = vi.fn();
+  (locale === 'en' ? renderInLtr : renderInRtl)(tree, {
+    container,
+    hydrate: true,
+    onRecoverableError,
+  });
+  expect(onRecoverableError).not.toHaveBeenCalled();
+  return boxes;
+}
+
+/** Whether Material draws a box's label raised (`true`) or inside the box. */
+const labelRaised = (box: HTMLElement) =>
+  document.querySelector(`label[for="${box.id}"]`)?.getAttribute('data-shrink');
 
 /**
  * A Server Action that stays unanswered until the test answers it.
@@ -240,6 +293,116 @@ describe.each(LOCALES)('sign-in (%s)', (locale) => {
     expect(password()).not.toHaveAttribute('aria-invalid');
     expect(email()).toHaveValue('operator@example.test');
     expect(password()).toHaveValue('');
+    // The emptied box draws its label back inside it, as an empty box does —
+    // the reset that emptied it sent no event Material could have heard.
+    expect(labelRaised(email())).toBe('true');
+    expect(labelRaised(password())).toBe('false');
+  });
+
+  it('announces a credential failure as an alert the moment it is drawn, and moves the cursor nowhere', async () => {
+    const user = userEvent.setup();
+    loginAction.mockResolvedValue({
+      status: 'error',
+      messageKey: 'auth.login.error.failed',
+      attempt: 1,
+    });
+    renderLogin();
+    // What the banner is as it enters the document: a role added afterwards
+    // would not be announced.
+    const drawn: { role: string | null; text: string }[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          const banner = node.matches('[data-testid="form-feedback"]')
+            ? node
+            : node.querySelector('[data-testid="form-feedback"]');
+          if (banner) {
+            drawn.push({ role: banner.getAttribute('role'), text: banner.textContent ?? '' });
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    await user.type(email(), 'operator@example.test');
+    const box = password();
+    await user.type(box, 'wrong-password{Enter}');
+    await screen.findByRole('alert');
+    observer.disconnect();
+
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]?.role).toBe('alert');
+    expect(drawn[0]?.text).toContain(t['auth.login.error.failed'] as string);
+    // No field is marked for a credential failure, so nothing takes the cursor:
+    // it is still in the box Enter was pressed in, and that box is the same one.
+    expect(password()).toBe(box);
+    expect(box).toHaveFocus();
+    expect(box).toHaveValue('');
+  });
+
+  /*
+   * Before hydration. A sign-in form is the one a browser fills in by itself,
+   * and it is drawn (and usable) before the page's script has run.
+   */
+  const hydratedLogin = (filled: Readonly<Record<string, string>>) =>
+    hydratedWith(locale, <LoginForm locale={locale} messages={messagesFor(locale)} />, filled);
+
+  it('keeps an address filled in before the page hydrated while the password is typed, sends it, and keeps it after the refusal', async () => {
+    const user = userEvent.setup();
+    loginAction.mockResolvedValue({
+      status: 'error',
+      messageKey: 'auth.login.error.failed',
+      attempt: 1,
+    });
+    const boxes = hydratedLogin({ email: 'filled-early@example.test' });
+    expect(email()).toBe(boxes.email);
+
+    await user.type(password(), 'a-password');
+    expect(email()).toBe(boxes.email);
+    expect(email()).toHaveValue('filled-early@example.test');
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(1));
+    expect(sent(loginAction)).toEqual({
+      locale,
+      email: 'filled-early@example.test',
+      password: 'a-password',
+    });
+    await screen.findByRole('alert');
+    expect(email()).toHaveValue('filled-early@example.test');
+    expect(password()).toHaveValue('');
+  });
+
+  it('keeps a password filled in before the page hydrated when it is revealed, in the same box, and sends it', async () => {
+    const user = userEvent.setup();
+    loginAction.mockResolvedValue({
+      status: 'error',
+      messageKey: 'auth.login.error.failed',
+      attempt: 1,
+    });
+    const boxes = hydratedLogin({
+      email: 'filled-early@example.test',
+      password: 'filled-before-hydration',
+    });
+    // Material draws both labels raised: it read the boxes as it mounted.
+    expect(labelRaised(email())).toBe('true');
+    expect(labelRaised(password())).toBe('true');
+
+    await user.click(screen.getByTestId('password-reveal-toggle'));
+    expect(password()).toBe(boxes.password);
+    expect(password()).toHaveAttribute('type', 'text');
+    expect(password()).toHaveValue('filled-before-hydration');
+    expect(email()).toBe(boxes.email);
+    expect(email()).toHaveValue('filled-early@example.test');
+
+    await user.click(submit());
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(1));
+    expect(sent(loginAction)).toEqual({
+      locale,
+      email: 'filled-early@example.test',
+      password: 'filled-before-hydration',
+    });
   });
 
   it('puts the cursor on the first refused field and withdraws the complaint once it is edited', async () => {
@@ -315,6 +478,8 @@ describe.each(LOCALES)('sign-in (%s)', (locale) => {
       name: t['auth.login.submitting'] as string,
     });
     expect(working).toBeDisabled();
+    // Said both ways, as the legacy button says it.
+    expect(working).toHaveAttribute('aria-disabled', 'true');
     expect(working).toHaveAttribute('aria-busy', 'true');
     expect(loginAction).toHaveBeenCalledTimes(1);
 
@@ -323,6 +488,7 @@ describe.each(LOCALES)('sign-in (%s)', (locale) => {
       await answer.promise;
     });
     await waitFor(() => expect(submit()).toBeEnabled());
+    expect(submit()).not.toHaveAttribute('aria-disabled');
     expect(submit()).not.toHaveAttribute('aria-busy');
   });
 });
@@ -374,6 +540,32 @@ describe.each(LOCALES)('forgotten password (%s)', (locale) => {
       t['auth.forgot.error.invalid'] as string
     );
     expect(screen.getAllByText(t['auth.forgot.error.email'] as string).length).toBeGreaterThan(0);
+  });
+
+  it('sends an address filled in before the page hydrated, and still shows it once the refusal is drawn', async () => {
+    const user = userEvent.setup();
+    requestPasswordResetAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'auth.forgot.error.invalid',
+      fieldErrors: { email: 'auth.forgot.error.email' },
+      attempt: 1,
+    });
+    const boxes = hydratedWith(locale, <ForgotPasswordForm messages={messagesFor(locale)} />, {
+      email: 'filled-early@example.test',
+    });
+    expect(email()).toBe(boxes.email);
+    expect(labelRaised(email())).toBe('true');
+
+    await user.click(submit());
+    await waitFor(() => expect(requestPasswordResetAction).toHaveBeenCalledTimes(1));
+    expect(sent(requestPasswordResetAction)).toEqual({ email: 'filled-early@example.test' });
+
+    // The refusal is a render like any other: it must not write an empty box
+    // over the address.
+    await waitFor(() => expect(email()).toHaveFocus());
+    expect(email()).toBe(boxes.email);
+    expect(email()).toHaveAttribute('aria-invalid', 'true');
+    expect(email()).toHaveValue('filled-early@example.test');
   });
 
   it('sends one request for two presses', async () => {
@@ -513,6 +705,9 @@ describe.each(LOCALES)('choosing a password from a link (%s)', (locale) => {
     expect(banner).toHaveTextContent('corr-token');
     expect(password()).toHaveValue('');
     expect(confirmation()).toHaveValue('');
+    // And each emptied box draws its label back inside it.
+    expect(labelRaised(password())).toBe('false');
+    expect(labelRaised(confirmation())).toBe('false');
     expect(
       screen.getByRole('link', { name: t['auth.reset.requestAnother'] as string })
     ).toHaveAttribute('href', `/${locale}/forgot-password`);
@@ -539,12 +734,17 @@ describe.each(LOCALES)('choosing a password from a link (%s)', (locale) => {
     expect(screen.getByText(t['auth.reset.error.mismatch'] as string)).toBeInTheDocument();
   });
 
-  it('sends one completion for two presses', async () => {
+  it('sends one completion for two presses, and none once the first is answered', async () => {
     const answer = held();
     completePasswordResetAction.mockReturnValue(answer.promise);
     renderBridge(TOKEN);
     await twice(submit());
     expect(completePasswordResetAction).toHaveBeenCalledTimes(1);
+    // Still one once everything queued behind the presses has run, while the
+    // first completion is still out.
+    await act(async () => undefined);
+    expect(completePasswordResetAction).toHaveBeenCalledTimes(1);
+
     await act(async () => {
       answer.answer({ status: 'error', messageKey: 'auth.reset.error.token', attempt: 1 });
       await answer.promise;
@@ -552,6 +752,87 @@ describe.each(LOCALES)('choosing a password from a link (%s)', (locale) => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       t['auth.reset.error.token'] as string
     );
+    /*
+     * The count that matters is the one AFTER the answer. React holds a second
+     * action until the first has answered, so a count taken while the first is
+     * out is 1 with or without the hold; without it the second press is sent
+     * now, spending the link a second time.
+     */
+    await act(async () => undefined);
+    expect(completePasswordResetAction).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * Before hydration. A browser offers to fill a new password in, and fills
+   * both boxes, as soon as the form is drawn.
+   */
+  const hydratedBridge = (filled: Readonly<Record<string, string>>) =>
+    hydratedWith(
+      locale,
+      <RecoveryTokenBridge
+        locale={locale}
+        messages={messagesFor(locale)}
+        serverToken={TOKEN}
+        submitLabelKey="auth.reset.submit"
+        doneTitleKey="auth.reset.done"
+        doneBodyKey="auth.reset.doneDetail"
+      />,
+      filled
+    );
+
+  it('keeps a password filled in before the page hydrated while its confirmation is typed, and sends both', async () => {
+    const user = userEvent.setup();
+    completePasswordResetAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'auth.reset.done',
+      attempt: 1,
+    });
+    const boxes = hydratedBridge({ password: 'filled-before-hydration' });
+    expect(password()).toBe(boxes.password);
+    expect(labelRaised(password())).toBe('true');
+
+    await user.type(confirmation(), 'filled-before-hydration');
+    expect(password()).toBe(boxes.password);
+    expect(password()).toHaveValue('filled-before-hydration');
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(completePasswordResetAction).toHaveBeenCalledTimes(1));
+    expect(sent(completePasswordResetAction)).toEqual({
+      token: TOKEN,
+      password: 'filled-before-hydration',
+      confirmPassword: 'filled-before-hydration',
+    });
+  });
+
+  it('keeps both passwords filled in before the page hydrated when one is revealed, in the same boxes, and sends both', async () => {
+    const user = userEvent.setup();
+    completePasswordResetAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'auth.reset.done',
+      attempt: 1,
+    });
+    const boxes = hydratedBridge({
+      password: 'filled-before-hydration',
+      confirmPassword: 'filled-before-hydration',
+    });
+
+    const [first, second] = screen.getAllByTestId('password-reveal-toggle');
+    await user.click(first as HTMLElement);
+    expect(password()).toBe(boxes.password);
+    expect(password()).toHaveAttribute('type', 'text');
+    expect(password()).toHaveValue('filled-before-hydration');
+    await user.click(second as HTMLElement);
+    expect(confirmation()).toBe(boxes.confirmPassword);
+    expect(confirmation()).toHaveAttribute('type', 'text');
+    expect(confirmation()).toHaveValue('filled-before-hydration');
+
+    await user.click(submit());
+    await waitFor(() => expect(completePasswordResetAction).toHaveBeenCalledTimes(1));
+    expect(sent(completePasswordResetAction)).toEqual({
+      token: TOKEN,
+      password: 'filled-before-hydration',
+      confirmPassword: 'filled-before-hydration',
+    });
   });
 });
 
@@ -782,17 +1063,70 @@ describe.each(LOCALES)('the profile name (%s)', (locale) => {
     expect(name()).toHaveValue('Layla Haddad Haddad');
   });
 
-  it('sends one save for two presses', async () => {
+  it('sends one save for two presses, and none once the first is answered', async () => {
     const answer = held();
     updateOwnProfileAction.mockReturnValue(answer.promise);
     renderProfile();
     await twice(save());
     expect(updateOwnProfileAction).toHaveBeenCalledTimes(1);
+    // Still one once everything queued behind the presses has run, while the
+    // first save is still out.
+    await act(async () => undefined);
+    expect(updateOwnProfileAction).toHaveBeenCalledTimes(1);
+
     await act(async () => {
       answer.answer({ status: 'success', messageKey: 'profile.saved', attempt: 1 });
       await answer.promise;
     });
     expect(await screen.findByTestId('form-feedback')).toHaveAttribute('role', 'status');
+    /*
+     * The count that matters is the one AFTER the answer: React holds a second
+     * action until the first has answered, so without the hold the second save
+     * is sent now — against a version the first save has already moved.
+     */
+    await act(async () => undefined);
+    expect(updateOwnProfileAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a name changed before the page hydrated as the draft: unsaved work, sent, and kept after a refusal', async () => {
+    const user = userEvent.setup();
+    updateOwnProfileAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { displayName: 'profile.error.displayNameLength' },
+      attempt: 1,
+    });
+    const boxes = hydratedWith(
+      locale,
+      inBranch(
+        <>
+          <ProfileForm
+            locale={locale}
+            messages={messagesFor(locale)}
+            displayName="Layla Haddad"
+            recordVersion={4}
+          />
+          <UnsavedProbe />
+        </>,
+        { locale }
+      ),
+      { displayName: 'Layla H.' }
+    );
+    expect(name()).toBe(boxes.displayName);
+    // The form knows what the box holds: it is not the saved name any more.
+    expect(await unsaved()).toBe('true');
+    expect(name()).toHaveValue('Layla H.');
+
+    await user.click(save());
+    await waitFor(() => expect(updateOwnProfileAction).toHaveBeenCalledTimes(1));
+    expect(sent(updateOwnProfileAction)).toEqual({
+      locale,
+      recordVersion: '4',
+      displayName: 'Layla H.',
+    });
+    await waitFor(() => expect(name()).toHaveFocus());
+    expect(name()).toBe(boxes.displayName);
+    expect(name()).toHaveValue('Layla H.');
   });
 });
 
