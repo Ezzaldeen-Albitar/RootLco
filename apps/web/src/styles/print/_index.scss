@@ -202,9 +202,55 @@
   text-align: center;
 }
 
+// The 50 x 25 mm label is the one preset whose content does not fit at the
+// screen's type sizes (P1-32-PRE-OD-INVG, runtime retest O4): five rows at the
+// caption size are taller than 25 mm, and a centred column that overflows is
+// cut at BOTH ends — the bars started at the label's top edge and the
+// pack-quantity line was cut off below. So this preset states every block
+// extent in millimetres and starts its column at the top:
+//
+//   2 padding + 6.5 bars + 0.4 + 3 code + 0.4 + 3 name + 0.4 + 3 stock code
+//   + 0.4 + 3 pack quantity = 22.1 mm, inside the 25 mm label with its 2 mm
+//   padding below (0.9 mm to spare on paper, less the border on screen).
+//
+// The 2 mm above the bars is the cell's padding, kept clear because the column
+// starts at the top. Code 128 and the EAN/UPC family define their quiet zones
+// at the two ENDS of the symbol, not above it; those are part of the drawn
+// symbol (`lib/barcode/encode.ts`) and are not changed here.
+//
+// The symbol takes the whole width inside the padding. Left to size itself, a
+// drawing keeps the proportions of its own box, so bars made shorter would
+// also have become narrower — and a narrower bar is the one a scanner stops
+// reading.
 [data-label-sheet='50x25'] [data-label='cell'] {
+  justify-content: flex-start;
+  gap: 0.4mm;
   inline-size: 50mm;
   block-size: 25mm;
+}
+
+[data-label-sheet='50x25'] [data-barcode='symbol'] {
+  flex: none;
+  gap: 0.4mm;
+  inline-size: 100%;
+}
+
+[data-label-sheet='50x25'] [data-barcode='bars'] {
+  flex: none;
+  block-size: 6.5mm;
+}
+
+// One line each, never wrapped: a long name ends in an ellipsis rather than
+// pushing the lines below it off the label.
+[data-label-sheet='50x25'] [data-barcode='text'],
+[data-label-sheet='50x25'] [data-label='line'] {
+  overflow: hidden;
+  flex: none;
+  max-inline-size: 100%;
+  font-size: 2.3mm;
+  line-height: 3mm;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-label-sheet='70x40'] [data-label='cell'] {

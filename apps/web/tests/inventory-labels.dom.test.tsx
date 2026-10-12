@@ -632,4 +632,173 @@ describe('P1-32-PRE-OD-INVF: a run of labels prints as labels only', () => {
       expect(child?.contains(sheet ?? null)).toBe(false);
     }
   });
+
+  /**
+   * P1-32-PRE-OD-INVG — runtime retest O4. On the 50 x 25 mm label the bars
+   * started at the top edge of the label and the pack-quantity line was not on
+   * the label at all, on screen or on paper: five rows at the type sizes of the
+   * screen are taller than 25 mm, and a centred column that overflows is cut at
+   * both ends. The rows of that label are now sized in millimetres by the
+   * stylesheet and the column starts at the top.
+   *
+   * What a DOM test can hold is the arithmetic the stylesheet states and that
+   * its rules reach the elements the screen really draws; what a browser lays
+   * out stays with the next runtime print retest.
+   */
+  describe('P1-32-PRE-OD-INVG: the 50 x 25 mm label holds every row it draws', () => {
+    const LABEL_BLOCK_MM = 25;
+    const mm = (value: string | undefined): number => {
+      const found = /^(\d+(?:\.\d+)?)mm$/.exec(value ?? '');
+      if (!found) throw new Error(`not a length in millimetres: ${String(value)}`);
+      return parseFloat(found[1] as string);
+    };
+    /**
+     * What the stylesheet declares for `property` on `element`: the last
+     * declaration among the label rules that match it, screen rules first and
+     * the print rules after them, as the sheet is written. Every label rule
+     * that sets one of these properties has the same specificity, so the order
+     * in the sheet is the cascade.
+     */
+    const declared = (element: Element, property: string): string | undefined => {
+      let value: string | undefined;
+      for (const print of [false, true]) {
+        for (const rule of labelRules) {
+          if (rule.print !== print || rule.declarations[property] === undefined) continue;
+          if (element.matches(rule.raw)) value = rule.declarations[property];
+        }
+      }
+      return value;
+    };
+
+    async function drawRoll(locale: 'en' | 'ar'): Promise<HTMLElement[]> {
+      const user = userEvent.setup();
+      listUnitsOfMeasure.mockResolvedValue({
+        status: 'ok',
+        data: { items: [{ id: 'u', code: 'each', name: 'Each' }] },
+        correlationId: 'corr',
+      });
+      readItemLabel.mockResolvedValue(okRead(label({ unit: { id: 'u', code: 'each' } })));
+      const { container } =
+        locale === 'en'
+          ? renderLtr(<LabelsScreen locale="en" messages={en} />)
+          : renderRtl(<LabelsScreen locale="ar" messages={ar} />);
+      const box = screen.getByLabelText(
+        new RegExp(`^${(locale === 'en' ? EN : AR)['inventory.scan.label'] as string}`)
+      );
+      await user.click(box);
+      await user.keyboard(`${GOOD_EAN}{Enter}`);
+      await screen.findAllByRole('img');
+      await waitFor(() =>
+        expect(
+          container.querySelector('[data-label-sheet="50x25"] [data-label="cell"]')
+        ).not.toBeNull()
+      );
+      return [
+        ...container.querySelectorAll<HTMLElement>(
+          '[data-label-sheet="50x25"] [data-label="cell"]'
+        ),
+      ];
+    }
+
+    for (const locale of ['en', 'ar'] as const) {
+      it(`${locale}: the pack quantity and its unit are the last row of the label`, async () => {
+        const [cell] = (await drawRoll(locale)) as [HTMLElement];
+        const lines = [...cell.querySelectorAll('[data-label="line"]')];
+        expect(lines.map((line) => line.textContent)).toEqual([
+          'Brake pad',
+          'BRK-001',
+          `1.000 ${locale === 'en' ? 'Each' : (AR['units.name.each'] as string)}`,
+        ]);
+        // The last row is the last thing in the label: nothing is drawn after it.
+        expect(cell.lastElementChild).toBe(lines[2]);
+        // The name reads from its own first letter in either page language, so
+        // the ellipsis of a long name takes its end and never its beginning.
+        expect(lines[0]).toHaveAttribute('dir', 'auto');
+      });
+
+      it(`${locale}: the rows the label draws add up to no more than the label`, async () => {
+        const [cell] = (await drawRoll(locale)) as [HTMLElement];
+        expect(mm(declared(cell, 'block-size'))).toBe(LABEL_BLOCK_MM);
+        const padding = mm(declared(cell, 'padding'));
+        const gap = mm(declared(cell, 'gap'));
+
+        // The column of the cell: the drawn symbol, then the three text rows.
+        const column = [...cell.children];
+        const symbol = column[0] as HTMLElement;
+        expect(symbol.getAttribute('data-barcode')).toBe('symbol');
+        const rows = column.slice(1);
+        expect(rows).toHaveLength(3);
+
+        // Inside the symbol: the bars, then the readable code.
+        expect(symbol.children).toHaveLength(2);
+        const [bars, code] = [...symbol.children] as [Element, Element];
+        expect(bars.getAttribute('data-barcode')).toBe('bars');
+        expect(code.getAttribute('data-barcode')).toBe('text');
+        const symbolBlock =
+          mm(declared(bars, 'block-size')) +
+          mm(declared(symbol, 'gap')) +
+          mm(declared(code, 'line-height'));
+
+        // Every text row is one line of a stated height: it cannot wrap into a
+        // second line, and it cannot be squeezed by the rows around it.
+        for (const row of [code, ...rows]) {
+          expect(declared(row, 'white-space')).toBe('nowrap');
+          expect(declared(row, 'overflow')).toBe('hidden');
+          expect(declared(row, 'flex')).toBe('none');
+          expect(mm(declared(row, 'font-size'))).toBeLessThan(mm(declared(row, 'line-height')));
+          // Legible on paper: no smaller than 2 mm (about 5.7 pt).
+          expect(mm(declared(row, 'font-size'))).toBeGreaterThanOrEqual(2);
+        }
+        expect(declared(bars, 'flex')).toBe('none');
+        expect(declared(symbol, 'flex')).toBe('none');
+        // Shorter bars must not become narrower bars: the symbol keeps the
+        // whole width inside the padding, whatever its height.
+        expect(declared(symbol, 'inline-size')).toBe('100%');
+        // Bars no shorter than the 6.35 mm (a quarter inch) usually asked of a
+        // hand-scanned linear symbol.
+        expect(mm(declared(bars, 'block-size'))).toBeGreaterThanOrEqual(6.35);
+
+        const content =
+          symbolBlock +
+          rows.reduce((sum, row) => sum + mm(declared(row, 'line-height')), 0) +
+          gap * rows.length;
+        // Padding above and below, and room to spare for the 1 px cutting
+        // guide the screen draws on each side (0.53 mm in all).
+        expect(padding + content + padding).toBeLessThanOrEqual(LABEL_BLOCK_MM - 0.6);
+      });
+
+      it(`${locale}: the bars start a clear margin below the top edge of the label`, async () => {
+        const [cell] = (await drawRoll(locale)) as [HTMLElement];
+        // The column starts at the top, so what is above the bars is the
+        // padding of the cell: nothing is centred over the edge and cut.
+        expect(declared(cell, 'justify-content')).toBe('flex-start');
+        expect(declared(cell, 'flex-direction')).toBe('column');
+        expect(mm(declared(cell, 'padding'))).toBeGreaterThanOrEqual(2);
+        // The bars are the first thing in the label.
+        const first = cell.firstElementChild as HTMLElement;
+        expect(first.getAttribute('data-barcode')).toBe('symbol');
+        expect(first.firstElementChild?.getAttribute('data-barcode')).toBe('bars');
+        // No label rule, on screen or on paper, takes the padding away.
+        for (const rule of labelRules) {
+          if (!cell.matches(rule.raw)) continue;
+          for (const property of ['padding', 'padding-block', 'padding-block-start']) {
+            if (rule.declarations[property] !== undefined) {
+              expect(mm(rule.declarations[property])).toBeGreaterThanOrEqual(2);
+            }
+          }
+        }
+      });
+    }
+
+    it('the larger labels keep their own sizes: only the 50 x 25 mm rows are restated', () => {
+      const restated = labelRules.filter(
+        (rule) =>
+          rule.declarations['line-height'] !== undefined ||
+          rule.declarations['font-size'] !== undefined ||
+          rule.declarations['justify-content'] === 'flex-start'
+      );
+      expect(restated.length).toBeGreaterThan(0);
+      for (const rule of restated) expect(rule.selector).toContain('[data-label-sheet=50x25]');
+    });
+  });
 });

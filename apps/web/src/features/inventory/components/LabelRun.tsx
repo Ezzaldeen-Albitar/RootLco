@@ -22,6 +22,12 @@ export type LabelPreset = (typeof LABEL_PRESETS)[number];
  * `PrintDocument` with no `reference`: a sheet of labels carries no repeated
  * identity row, and its title is for the screen only (the print stylesheet
  * leaves it off the paper).
+ *
+ * Every label, whatever its size, carries the same five rows: the bars, the
+ * code, the name, the stock code and the pack quantity with its unit. The
+ * three text rows below the code are marked `data-label="line"` so the print
+ * stylesheet can give each a fixed height on the 50 x 25 mm label, where the
+ * rows did not fit and the pack quantity was cut off (P1-32-PRE-OD-INVG).
  */
 export function LabelRun({
   locale,
@@ -54,11 +60,22 @@ export function LabelRun({
                 value={printed.normalizedValue}
                 readable={printed.value}
               />
-              <p className="text-caption font-medium text-text-primary">{label.name}</p>
-              <p className="text-caption text-text-secondary" dir="ltr">
+              {/*
+               * `dir="auto"`: a name reads from its own first letter, whatever
+               * the page language, so a name too long for the smallest label
+               * loses its end to the ellipsis and never its beginning.
+               */}
+              <p
+                data-label="line"
+                dir="auto"
+                className="text-caption font-medium text-text-primary"
+              >
+                {label.name}
+              </p>
+              <p data-label="line" className="text-caption text-text-secondary" dir="ltr">
                 {label.sku}
               </p>
-              <p className="text-caption text-text-muted">
+              <p data-label="line" className="text-caption text-text-muted">
                 <bdi dir="ltr">{label.packQuantity}</bdi>{' '}
                 <bdi>{unitNameByCode(messages, label.unit.code, units)}</bdi>
               </p>
