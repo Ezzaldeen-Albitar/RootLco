@@ -456,6 +456,63 @@ escaped unreserved characters decoded, repeated and trailing slashes removed —
 self-reads, passes every other request through, and logs each refusal once without the query text,
 parameter values or headers; the in-route guards stay, and the row stays as recorded.
 
+**Note, 2026-10-12 (P1-32-PRE-OD-CP-20261012-1; resolution record for the batch from `2376b1ad` to
+`3ed152b5`; no ledger State, register State or runtime result changed).** This note records what
+was found during the batch and where each point was fixed or left open. It decides nothing, and
+every Owner decision it names stays open.
+
+1. **What CP-20261012-1 proves.** Hosted verification only: the protected verification dispatch
+   https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/38213419377 at
+   `3ed152b59be6bcdd453c68e40b8b79a6ad075719` decided Go, and 15 of 15 jobs concluded success. None
+   of the fourteen pull requests merged since `2376b1ad` (#554, #552, #553, #562, #564, #563, #566,
+   #567, #565, #558, #557, #560, #568 and #556) carries a migration: `supabase/migrations` holds
+   the same 187 files at both revisions. For this checkpoint nothing was applied to the acceptance
+   database, the running site was not rebuilt and no browser acceptance was run. Per the
+   outside-repository evidence of CP-20261009-1, the acceptance database was last recorded at 187
+   migrations and the site was last built at `2376b1ad`.
+2. **The shared date field (#568, merged as `28c47cef`).** On `develop` before #568, a day field
+   with no time zone of its own could draw and send the day before the one typed. It happened on
+   some machine clocks, while the header read "All my branches" or no branch was chosen yet, so only
+   for an operator with more than one branch. Three screens write a business date through such a
+   field: approval limits, a price list and a warranty plan. #568 fixes the field. **Stored data
+   has not been checked.** A business date entered before the fix on approval limits, a price list
+   or a warranty plan, under "All my branches" on an affected machine clock, may be a day early. A
+   read-only check of the stored dates waits for the Owner's word, and none has been run.
+3. **Search after a branch switch (#571, open).** After a branch switch the shared search hook can
+   show the previous branch's answer for a moment; the pull request measures one wasted read per
+   switch and up to 300 ms of another branch's rows on screen. #571 is open at `b13624e2` and is
+   not part of this checkpoint's D.
+4. **Screens with no browser evidence.** No local signed-in browser acceptance has been run for the
+   report catalogue, the overview and the single report (#558), report snapshots and refunds
+   (#557), `/platform/account` (#560), or the return to the intended page after sign-in
+   (`/login` with `intended`, #556). Each pull request says what the hosted tiers did and did not
+   run for its screens. All of them are owed at the next local runtime QA.
+5. **Owner decisions still open, with the facts found.** FIN03 and FIN04
+   (`decision-pack-2026-10-08.md`): the server refuses a requester who approves or rejects their own
+   refund request; the payout is offered to any holder of `sal.payment.record`, the requester and
+   the approver included, and the server enforces no separate person for recording it (#557).
+   AUTH01 (the same file): a password reset leaves another device that is already signed in served
+   until its token expires, which #556 pins as today's behaviour in
+   `tests/backend/iam-auth-provider.test.ts`; the decision pack records the same for a platform
+   operator's password change. Nothing was decided or changed for any of the three.
+6. **The CP-20261009-1 runtime result stands.** 93 rows: 77 PASS, 10 FAIL, 6 NOT RUN (checkpoint
+   table above, row `2376b1ad`). None of the ten FAIL cases (UNIT-names, SETUP-cat-errors,
+   SETUP-item-errors, SPEC-no-makes, COUNT-focus, LBL-sheet-print, LBL-roll-print, ATT-clock,
+   LANG-identifiers, FRX1-c) has been retested. The fixes merged by #562 (`eb0a21fc`) are
+   implemented, not runtime-verified.
+7. **Two corrections to the CP-20261009-1 evidence.** The evidence outside the repository
+   (`orchestration/evidence/owner-directive-cp-20261009-1-inventory-runtime/RESULT-MATRIX.md`) was
+   corrected on 2026-10-10 after independent verification. First, the census of records the run
+   created had left out one audit record (`inv.movement_history.read`) and eight sign-in sessions;
+   the correct totals are 228 audit records and 251 sessions. Second, the statement that
+   screenshots were captured after the page had settled is not proven: the settle wait is
+   best-effort. Before this pull request this file carried neither claim for CP-20261009-1, so no
+   sentence here needed correcting; the new checkpoint-table row `2376b1ad` states the corrected
+   figures. The corrections live in the local evidence folder and change no test result.
+8. **The CP-20261009-1 register row.** Its blank cells (records pull request and its STRICT run,
+   D', first parent of D', records-only, local QA) are filled from git and the run of #561, which
+   merged as `2376b1ad`. Its State stays as written, like every State in the register.
+
 ### Features delivered or planned under this directive
 
 The delivery matrix above owns verification state; ADR-023 owns the implementation state of each D-item; the architecture assessment owns what each FC change is. This table owns the design fields that directive section 12 asks for. The `state:` pointers in the first column cite ADR-023's mapping table at develop `d5ce97b7` (`:751-773`, re-anchored 2026-10-08); the other ADR-023 line numbers in this table are not re-anchored here.
