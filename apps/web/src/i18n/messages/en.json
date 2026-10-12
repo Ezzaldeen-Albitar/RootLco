@@ -351,6 +351,7 @@
   "audit.detail.masked": "Withheld",
   "audit.detail.maskedHint": "Some values are withheld unless your account may view sensitive data.",
   "audit.detail.noDetails": "This record carries no detail rows.",
+  "audit.detail.referencesOmitted": "Details that hold only internal references or codes are not shown here.",
   "audit.detail.subject": "About",
   "audit.detail.title": "Audit record",
   "audit.empty.body": "Nothing was recorded on these days. Choose earlier days to look further back.",

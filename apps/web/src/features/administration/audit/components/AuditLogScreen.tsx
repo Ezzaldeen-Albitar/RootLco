@@ -28,7 +28,13 @@ import { intlLocale } from '@/lib/format';
 import { useServerTable, type ServerPageStatus } from '../../shared/use-server-table';
 import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { listAuditEvents, readAuditEvent } from '../api';
-import { auditActionLabel, auditEntityLabel, auditFieldLabel, isNamedAuditField } from '../labels';
+import {
+  auditActionLabel,
+  auditEntityLabel,
+  auditFieldLabel,
+  isNamedAuditField,
+  shownAuditDetails,
+} from '../labels';
 import { openingWindow, rangeProblem, type DayRange } from '../range';
 import {
   NO_AUDIT_FILTERS,
@@ -592,6 +598,11 @@ function AuditDetailDrawer({
 
   const loading = held === null || held.generation !== generation;
   const record = !loading && held.status === 'ok' ? held.record : null;
+  // The detail rows a reader can use, and how many references were left out
+  // (`shownAuditDetails`); `null` while there is no record or its details are
+  // withheld.
+  const detailRows =
+    record === null || record.details === undefined ? null : shownAuditDetails(record.details);
 
   return (
     <Drawer
@@ -682,13 +693,19 @@ function AuditDetailDrawer({
                   the caller may not read them, or the record has none. They
                   render differently.
                 */}
-                {record.details === undefined ? (
+                {detailRows === null ? (
                   <p className="text-body text-text-muted">{t('audit.detail.masked')}</p>
-                ) : record.details.length === 0 ? (
+                ) : record.details?.length === 0 ? (
                   <p className="text-body text-text-muted">{t('audit.detail.noDetails')}</p>
-                ) : (
+                ) : detailRows.shown.length === 0 ? null : (
                   <ul className="flex flex-col gap-2">
-                    {record.details.map((entry) => (
+                    {/*
+                      Only the rows a reader can use: a row that is a reference
+                      to another record — an identifier under a machine field
+                      name — is left out (`shownAuditDetails`), and the sentence
+                      below the list says so.
+                    */}
+                    {detailRows.shown.map((entry) => (
                       <li
                         key={entry.fieldName}
                         className="rounded-md border border-border-subtle p-2"
@@ -718,6 +735,14 @@ function AuditDetailDrawer({
                     ))}
                   </ul>
                 )}
+                {detailRows !== null && detailRows.omitted > 0 ? (
+                  <p
+                    className="mt-2 text-caption text-text-muted"
+                    data-testid="audit-detail-omitted"
+                  >
+                    {t('audit.detail.referencesOmitted')}
+                  </p>
+                ) : null}
                 <p className="mt-2 text-caption text-text-muted">{t('audit.detail.maskedHint')}</p>
               </dd>
             </div>

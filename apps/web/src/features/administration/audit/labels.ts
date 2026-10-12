@@ -198,6 +198,92 @@ export function isNamedAuditField(fieldName: string): boolean {
   return known(FIELD_KEYS, fieldName) !== null;
 }
 
+/**
+ * Which details of a record the drawer draws (`P1-32-PRE-OD-INVG`).
+ *
+ * A detail row is a field name and its old and new values, as the service wrote
+ * them. Some of those rows are references between records — `obligationId` and
+ * the identifier it holds — and the drawer drew them as they came: a machine
+ * field name and a full identifier, which nobody reading the log can use. The
+ * read names two people (the actor and the account a record is about, both
+ * drawn in the drawer's own rows) and nothing else, so a reference to any other
+ * record cannot be said by name here. Such a row is left out, and the drawer
+ * says that it left something out.
+ *
+ * A row is left out when:
+ *
+ *  - its field names an identifier — the last step of the name is `id`, `ids`
+ *    or `uuid`, or ends in `Id`, `Ids`, `_id`, `_ids` (so `obligationId`,
+ *    `invoice_id`, `allocation.id`, `lines[0].itemId`; not `paid` or `valid`);
+ *  - either value holds an identifier anywhere in it, whatever the field is
+ *    called — a note quoting one, or a structured value with one inside;
+ *  - either value is a structured value with an identifier field inside it;
+ *  - the field is one the catalogue does not name and a value is a dotted
+ *    machine code (`sal.refund_request.approved`). A field the catalogue names
+ *    keeps such a value: a setting's key is what "Setting" is there to show.
+ */
+const IDENTIFIER_ANYWHERE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[0-9a-f]{32}\b/i;
+const IDENTIFIER_NAME = /^(?:id|ids|uuid)$/i;
+const IDENTIFIER_SUFFIX = /(?:[a-z0-9](?:Id|ID|Ids|IDs|Uuid|UUID)|_(?:id|ids|uuid))$/;
+const MACHINE_CODE = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/;
+
+function namesAnIdentifier(fieldName: string): boolean {
+  const steps = fieldName.split(/[.[\]/]+/).filter((step) => step.length > 0);
+  const last = steps[steps.length - 1] ?? fieldName;
+  return IDENTIFIER_NAME.test(last) || IDENTIFIER_SUFFIX.test(last);
+}
+
+function holdsAnIdentifierField(node: unknown): boolean {
+  if (Array.isArray(node)) return node.some(holdsAnIdentifierField);
+  if (node === null || typeof node !== 'object') return false;
+  return Object.entries(node).some(
+    ([key, inner]) => (inner !== null && namesAnIdentifier(key)) || holdsAnIdentifierField(inner)
+  );
+}
+
+function holdsAnIdentifier(value: string | null): boolean {
+  if (value === null) return false;
+  if (IDENTIFIER_ANYWHERE.test(value)) return true;
+  const text = value.trim();
+  if (!text.startsWith('{') && !text.startsWith('[')) return false;
+  try {
+    return holdsAnIdentifierField(JSON.parse(text) as unknown);
+  } catch {
+    // Not a structured value after all: it is drawn as the text it is.
+    return false;
+  }
+}
+
+function isMachineCode(value: string | null): boolean {
+  return value !== null && MACHINE_CODE.test(value.trim());
+}
+
+/** A detail row as the read publishes it; only these three facts decide whether it is drawn. */
+interface AuditDetailFacts {
+  readonly fieldName: string;
+  readonly oldValueMasked: string | null;
+  readonly newValueMasked: string | null;
+}
+
+/** Whether the drawer draws this detail row, by the rule above. */
+export function isShownAuditDetail(entry: AuditDetailFacts): boolean {
+  if (namesAnIdentifier(entry.fieldName)) return false;
+  if (holdsAnIdentifier(entry.oldValueMasked) || holdsAnIdentifier(entry.newValueMasked)) {
+    return false;
+  }
+  if (isNamedAuditField(entry.fieldName)) return true;
+  return !isMachineCode(entry.oldValueMasked) && !isMachineCode(entry.newValueMasked);
+}
+
+/** The rows the drawer draws, and how many it left out. */
+export function shownAuditDetails<T extends AuditDetailFacts>(
+  details: readonly T[]
+): { readonly shown: readonly T[]; readonly omitted: number } {
+  const shown = details.filter(isShownAuditDetail);
+  return { shown, omitted: details.length - shown.length };
+}
+
 /** The codes named by the catalogue, for the suite that checks them against the service's. */
 export const NAMED_AUDIT_ACTIONS: readonly string[] = Object.freeze(Object.keys(ACTION_KEYS));
 export const NAMED_AUDIT_ENTITIES: readonly string[] = Object.freeze(Object.keys(ENTITY_KEYS));

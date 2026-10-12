@@ -946,6 +946,216 @@ describe('people by name, never by identifier (P1-32-PRE-OD-ADM6)', () => {
 });
 
 /**
+ * P1-32-PRE-OD-INVG — the drawer drew a refund request's `obligationId` as it
+ * came: "Another detail", the machine field name, and a full identifier
+ * (CP-20261012-1 new-screens run, A-07c). A detail that is a reference to
+ * another record is left out, whatever its field is called and wherever the
+ * identifier sits in the value; the drawer says it left something out.
+ */
+describe('P1-32-PRE-OD-INVG: a detail that is a reference to another record is not drawn', () => {
+  const OBLIGATION = 'a4b074be-5842-4588-909b-80055f46b76a';
+  const INVOICE_WAS = 'b5c185cf-6953-4699-8a1c-91166a57c87b';
+  const INVOICE_NOW = 'c6d296d0-7a64-47aa-9b2d-a2277b68d98c';
+  const QUOTED = 'd7e3a7e1-8b75-48bb-ac3e-b3388c79ea9d';
+  const refundApproved = {
+    ...row,
+    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    seq: '6000',
+    action: 'sal.refund_request.approved',
+    entityType: 'sal.refund_request',
+  };
+  const detail = (
+    fieldName: string,
+    newValueMasked: string,
+    oldValueMasked: string | null = null
+  ) => ({
+    fieldName,
+    oldValueMasked,
+    newValueMasked,
+    valueClassification: 'internal',
+  });
+  /** The rows a reader can use: three the catalogue names and two it does not. */
+  const READABLE = [
+    detail('amount', '***'),
+    detail('approvalState', 'approved', 'pending'),
+    detail('currency', 'JOD'),
+    // Not identifiers, though their names end in the same two letters.
+    detail('paid', 'true'),
+    detail('valid', 'false'),
+  ];
+  /** References, in every shape a row can carry one. */
+  const REFERENCES = [
+    // An identifier field, camel case and snake case.
+    detail('obligationId', OBLIGATION),
+    detail('invoiceId', INVOICE_NOW, INVOICE_WAS),
+    detail('customer_id', '70411'),
+    // A nested identifier: by the path of the field, and inside a structured value.
+    detail('allocation.id', '17'),
+    detail('lines[0].itemId', '9031'),
+    detail('snapshot', '{"invoice":{"id":"INV-000031"},"total":"4.9390"}'),
+    // An identifier under a field that is not named for one — the catalogue
+    // names `reason`, and the row is left out all the same.
+    detail('reason', `see ${QUOTED}`),
+    detail('source', `{"moved":["${QUOTED}"]}`),
+    // A machine code under a field the catalogue does not name.
+    detail('trigger', 'sal.refund_request.approved'),
+  ];
+  const MACHINE_TEXT = [
+    OBLIGATION,
+    INVOICE_WAS,
+    INVOICE_NOW,
+    QUOTED,
+    'obligationId',
+    'invoiceId',
+    'customer_id',
+    '70411',
+    'allocation.id',
+    'itemId',
+    'snapshot',
+    'INV-000031',
+    'trigger',
+  ];
+
+  async function openDrawer(
+    locale: 'en' | 'ar',
+    details: readonly unknown[]
+  ): Promise<HTMLElement> {
+    const T = locale === 'en' ? EN : AR;
+    listAuditEvents.mockResolvedValue(okPage([refundApproved]));
+    readAuditEvent.mockResolvedValue({
+      status: 'ok',
+      record: { ...refundApproved, details },
+      correlationId: 'corr-d',
+    });
+    const user = userEvent.setup();
+    if (locale === 'en') {
+      renderScreen();
+    } else {
+      renderRtl(
+        withMui(
+          <AuditLogScreen
+            locale="ar"
+            messages={ar}
+            initialFrom="2026-09-01"
+            initialTo="2026-09-08"
+          />,
+          'ar'
+        )
+      );
+    }
+    const table = await screen.findByRole('grid', { name: T['audit.title'] as string });
+    await user.click(
+      await within(table).findByRole('button', {
+        name: new RegExp(`^${escape(T['admin.open'] as string)}`),
+      })
+    );
+    const drawer = await screen.findByRole('dialog', { name: T['audit.detail.title'] as string });
+    await within(drawer).findByText(T['audit.detail.details'] as string, { selector: 'dt' });
+    return drawer;
+  }
+  /** The block under "Details": the list, and the sentences below it. */
+  const detailsBlock = (drawer: HTMLElement, locale: 'en' | 'ar'): HTMLElement =>
+    within(drawer).getByText((locale === 'en' ? EN : AR)['audit.detail.details'] as string, {
+      selector: 'dt',
+    }).nextElementSibling as HTMLElement;
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: draws the details a reader can use and leaves out every reference`, async () => {
+      const T = locale === 'en' ? EN : AR;
+      // Interleaved, as a record carries them.
+      const mixed = [
+        READABLE[0],
+        REFERENCES[0],
+        REFERENCES[1],
+        READABLE[1],
+        REFERENCES[2],
+        REFERENCES[3],
+        REFERENCES[4],
+        READABLE[2],
+        REFERENCES[5],
+        REFERENCES[6],
+        READABLE[3],
+        REFERENCES[7],
+        REFERENCES[8],
+        READABLE[4],
+      ];
+      const drawer = await openDrawer(locale, mixed);
+      const block = detailsBlock(drawer, locale);
+      const items = within(block).getAllByRole('listitem');
+      expect(items).toHaveLength(READABLE.length);
+      // The catalogue's words for the fields it names; "Another detail" for the rest.
+      expect(items[0]).toHaveTextContent(T['audit.field.amount'] as string);
+      expect(items[1]).toHaveTextContent(T['audit.field.other'] as string);
+      expect(items[1]).toHaveTextContent('approved');
+      expect(items[2]).toHaveTextContent(T['audit.field.currency'] as string);
+      expect(items[2]).toHaveTextContent('JOD');
+      expect(items[3]).toHaveTextContent('true');
+      expect(items[4]).toHaveTextContent('false');
+      // No identifier, no identifier field name and no machine code under Details.
+      const text = block.textContent ?? '';
+      for (const machine of MACHINE_TEXT) expect(text, machine).not.toContain(machine);
+      expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      expect(text).not.toContain('sal.refund_request.approved');
+      // Nor anywhere else in the drawer.
+      for (const id of [OBLIGATION, INVOICE_WAS, INVOICE_NOW, QUOTED]) {
+        expect(drawer.textContent, id).not.toContain(id);
+      }
+      // And the drawer says it left something out.
+      expect(within(block).getByTestId('audit-detail-omitted')).toHaveTextContent(
+        T['audit.detail.referencesOmitted'] as string
+      );
+      expect(within(block).queryByText(T['audit.detail.noDetails'] as string)).toBeNull();
+    });
+
+    it(`${locale}: a record whose details are all references says so, not that it has none`, async () => {
+      const T = locale === 'en' ? EN : AR;
+      const drawer = await openDrawer(locale, REFERENCES);
+      const block = detailsBlock(drawer, locale);
+      expect(within(block).queryAllByRole('listitem')).toHaveLength(0);
+      expect(within(block).getByTestId('audit-detail-omitted')).toHaveTextContent(
+        T['audit.detail.referencesOmitted'] as string
+      );
+      expect(within(block).queryByText(T['audit.detail.noDetails'] as string)).toBeNull();
+      const text = block.textContent ?? '';
+      for (const machine of MACHINE_TEXT) expect(text, machine).not.toContain(machine);
+    });
+  }
+
+  it('a record with nothing left out says nothing about leaving anything out', async () => {
+    const drawer = await openDrawer('en', READABLE);
+    const block = detailsBlock(drawer, 'en');
+    expect(within(block).getAllByRole('listitem')).toHaveLength(READABLE.length);
+    expect(within(block).queryByTestId('audit-detail-omitted')).toBeNull();
+  });
+
+  it('a field the catalogue names keeps a dotted value; one it does not name loses it', async () => {
+    const drawer = await openDrawer('en', [
+      detail('setting_key', 'finance.rounding_mode'),
+      detail('trigger', 'finance.rounding_mode'),
+    ]);
+    const block = detailsBlock(drawer, 'en');
+    const items = within(block).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent(EN['audit.field.settingKey'] as string);
+    expect(items[0]).toHaveTextContent('finance.rounding_mode');
+    expect(within(block).getByTestId('audit-detail-omitted')).toBeVisible();
+  });
+
+  it('the grid draws no detail at all: its cells are the moment, the people, and words', async () => {
+    listAuditEvents.mockResolvedValue(okPage([refundApproved]));
+    renderScreen();
+    const table = await screen.findByRole('grid', { name: EN['audit.title'] as string });
+    await within(table).findByText('Another change in sales and payments');
+    const text = table.textContent ?? '';
+    expect(text).not.toContain(refundApproved.id);
+    expect(text).not.toContain(ACTOR_ID);
+    expect(text).not.toContain(RECORD_ID);
+    expect(text).not.toContain('sal.refund_request');
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  });
+});
+
+/**
  * Codes in words (`P1-32-PRE-OD-ADM6`): the action, the record type and each
  * detail's field are named from the catalogue, in both languages; a code the
  * catalogue does not name is said by its part of the product, or plainly; and

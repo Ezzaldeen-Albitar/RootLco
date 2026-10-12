@@ -351,6 +351,7 @@
   "audit.detail.masked": "محجوب",
   "audit.detail.maskedHint": "تُحجَب بعض القيم ما لم يكن حسابك مخوّلًا لعرض البيانات الحسّاسة.",
   "audit.detail.noDetails": "لا يحمل هذا السجل أي صفوف تفاصيل.",
+  "audit.detail.referencesOmitted": "التفاصيل التي لا تحمل سوى مراجع أو رموز داخلية لا تُعرض هنا.",
   "audit.detail.subject": "بخصوص",
   "audit.detail.title": "سجل تدقيق",
   "audit.empty.body": "لم يُسجَّل شيء في هذه الأيام. اختر أيامًا أسبق للبحث أبعد في الماضي.",
