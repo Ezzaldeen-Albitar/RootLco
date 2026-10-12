@@ -1,6 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type Ref, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type Ref,
+  type RefObject,
+} from 'react';
+import { flushSync } from 'react-dom';
 import { useForkRef } from '@mui/material/utils';
 import dayjs, { type Dayjs } from 'dayjs';
 import timezonePlugin from 'dayjs/plugin/timezone';
@@ -164,6 +173,28 @@ import {
  * selects the focused part's text itself whenever no selection already spans
  * it — the same selection the picker makes, through the browser's own
  * selection and no picker internals.
+ *
+ * ## A key pressed is never lost to an effect that ran late
+ *
+ * Clearing one part of a day, or typing a digit that makes the parts no day
+ * at all, the picker publishes "no value" and leaves itself a note of which
+ * part changed, so that when the value comes back empty it blanks that part
+ * and keeps the others. It reads the note while it renders — and wipes it in
+ * an effect after EVERY one of its renders. React runs the effects of a
+ * render made for a key at once; the effects of a render made for anything
+ * else (a report kept in state by the form, an error that appeared, data that
+ * arrived) it leaves for a moment later, and it runs any still waiting just
+ * before the next render. A key that landed in that moment lost its note
+ * between the handler that wrote it and the render that needed it, and the
+ * picker then rebuilt every part from the empty value: all of them blank. With
+ * 01/03/2028 held, the month cleared and 01 typed at once, the field showed
+ * DD/01/YYYY and handed back nothing (measured, with this form's own report
+ * kept in state as the callers keep it). It needed the key within a few
+ * milliseconds of the one before: a script, a paste, a fast hand.
+ *
+ * So the field lets nothing wait: before the picker hears a key, a paste or
+ * any other input, the effects still pending are run (`useSettledBeforeInput`).
+ * The note is then written and read with nothing in between.
  */
 
 // The foundation extends these too (`ui-foundation/dayjs-locale.ts`); a
@@ -595,6 +626,9 @@ type PartsReportingProps = PickersTextFieldProps & {
  * It also answers a refused form's focus request, so the cursor is placed by
  * the picker and not from outside it. See "After a refusal the cursor lands on
  * the part to finish".
+ *
+ * And it runs the effects still pending before the picker takes any input. See
+ * "A key pressed is never lost to an effect that ran late".
  */
 function PartsReportingTextField({
   onPartsBlank,
@@ -619,7 +653,33 @@ function PartsReportingTextField({
     root.addEventListener(FOCUS_REQUEST_EVENT, answer);
     return () => root.removeEventListener(FOCUS_REQUEST_EVENT, answer);
   }, [onFocusRequest]);
+  useSettledBeforeInput(rootRef);
   return <PickersTextField {...props} ref={handleRef} />;
+}
+
+/** Every event through which the picker takes input from the operator. */
+const INPUT_EVENTS = ['keydown', 'beforeinput', 'input', 'paste', 'cut', 'drop'] as const;
+
+/**
+ * Runs React's pending effects before the picker inside `root` handles an
+ * input event. See "A key pressed is never lost to an effect that ran late".
+ *
+ * The listeners are on the capturing phase of the field's own root, which the
+ * event reaches before the picker's handlers do. React offers no call that
+ * only runs pending effects; a synchronous update does it as its first step,
+ * so one is made — to a counter nothing reads, in this component alone.
+ */
+function useSettledBeforeInput(root: RefObject<HTMLElement | null>): void {
+  const [, turn] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => {
+    const element = root.current;
+    if (element === null) return undefined;
+    const settle = () => flushSync(turn);
+    for (const type of INPUT_EVENTS) element.addEventListener(type, settle, true);
+    return () => {
+      for (const type of INPUT_EVENTS) element.removeEventListener(type, settle, true);
+    };
+  }, [root]);
 }
 
 /**
