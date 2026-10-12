@@ -7486,3 +7486,58 @@ Known limitations, one line each:
   sign-in form (a cancelled submit in React's `onSubmit`) was dropped in the merge in its favour; the
   two-presses case in `sign-in-notices.dom.test.tsx` is unchanged and runs against it.
 - The anonymous end-to-end cases run on hosted CI. They were not run on the development machine.
+
+**Synchronisation and review round (`P1-32-PRE-OD-AUTHB-04`).**
+
+develop was merged after the AUTHA slice. The sign-in form is AUTHA's Material form (controlled
+boxes, `usePrefilledValue`, `useSubmitOnce`, `aria-disabled` on the button) and this slice's part of
+it is the hidden intended-page field and the `intendedPath` prop; the two notices and everything
+outside the form merged unchanged. The web test-file count in `deliverable-manifest.md` is 208 (206
+on develop, plus `intended-path.test.ts` and `sign-in-notices.dom.test.tsx`), and the evidence
+manifest was regenerated.
+
+Two follow-ups the AUTHA review assigned to this slice:
+
+1. A value written into a box after its form mounted, with no event. AUTHA's review record named it
+   as a regression it left open: `usePrefilledValue` looked once, at mount, so such a value was
+   erased by the next render of its box, where the uncontrolled boxes before AUTHA had kept it. The
+   hook now makes the same comparison (the box holds something other than the state: adopt it) from
+   a capture-phase listener on the form for `focusin`, `pointerdown` and `keydown`, for every box
+   that uses it: sign-in, forgotten password, set password and the profile name. It only moves the
+   state to what the box shows and only when they differ, so it changes nothing while the operator
+   types, and a box a refusal or a success cleared stays clear. The value is read, compared and
+   handed to the state; it is kept nowhere else. The comment in the hook that said a value arriving
+   after hydration needed nothing was wrong and is corrected. This closes that residual for a
+   render that a focus, a press or a key in the form comes before. A render nothing in the form
+   comes before (a refresh of the page's data, a submit sent with none of the three events) still
+   writes the state over such a value.
+2. `/platform/account`. AUTHA's limitation 10 above recorded that its three password boxes did not
+   adopt a value present before hydration. They now do, through the same hook, and so they also
+   take a value written later with no event. That form sends its state, not its form data, so
+   before this a value the browser had filled in was refused as a blank box and then erased.
+   Limitation 10 is superseded by this entry; limitation 11 (no real-browser evidence for that
+   page) stands.
+
+Tests, each in English and Arabic unless said otherwise:
+`apps/web/tests/authentication-forms.dom.test.tsx` gains twelve cases (65 to 89 executed). A value
+is set on the element after mount with no event, and then: the other box is typed in; the reveal
+control is pressed; Sign in is pressed with nothing else touched, the boxes are read while the
+request is out, and the password the refusal cleared is looked for again after focus, a press and a
+key; each of the three events alone; a key that a listener on the box itself stops from travelling;
+the forgotten-password address through a refusal; a new password while its confirmation is typed,
+and both through a success that leaves no trace of them in the document; and a profile name, which
+becomes unsaved work once the form is touched. `apps/web/tests/platform-console.dom.test.tsx` gains
+one English case: the three boxes are filled in the server's markup before hydration, the change
+sends them, and a success empties them for good.
+
+Measured by mutation, the hook restored byte for byte after each: with the listener removed all
+twenty-four executed cases in the first file fail and the sixty-five older ones pass; with any one
+of the three events removed the two cases for that event fail; with the listener moved to the
+bubble phase the two stopped-key cases fail; with the hook switched off in the console form its
+case fails because the change is never sent; and with the comparison removed (adopt whatever the
+box shows) the console case fails with all three passwords back in their boxes after a successful
+change, which is the reason the comparison is there.
+
+Not run for this round: any Playwright tier, the backend and database tiers, and any check in a real
+browser. A writer that reports nothing was reproduced in jsdom by setting the value on the element;
+no extension was tried.
