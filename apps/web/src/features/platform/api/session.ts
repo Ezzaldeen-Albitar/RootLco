@@ -3,7 +3,15 @@ import type { ApiClient } from '@/lib/api/client';
 import { authorizedClient } from '@/lib/api/server-client';
 import type { Locale } from '@/i18n/config';
 import { landingPath } from '@/features/authentication/api/landing';
-import { SESSION_ENDED_SEGMENT } from '@/features/authentication/api/session-ended';
+import {
+  isPlatformPath,
+  localisedIntendedPath,
+  permitsIntendedPath,
+  safeIntendedPath,
+  sessionEndedPath,
+  signInPath,
+} from '@/features/authentication/api/intended-path';
+import { requestedPath } from '@/features/authentication/api/requested-path';
 
 /**
  * The platform operator's session, read server-side before the console renders
@@ -77,9 +85,14 @@ export async function readPlatformSession(
 export async function requirePlatformSession(locale: Locale): Promise<PlatformSession> {
   const state = await readPlatformSession();
   if (state.ok) return state.session;
-  if (state.problem === 'expired') redirect(`/${locale}/${SESSION_ENDED_SEGMENT}`);
-  if (state.problem === 'signed-out') redirect(`/${locale}/login?reason=signed-out`);
-  redirect(`/${locale}/login?reason=forbidden`);
+  // The console page being refused travels to sign-in, re-checked at every hop,
+  // so the operator returns to it (P1-32-PRE-OD-AUTHB). A refusal carries none:
+  // signing in again as the same account would be refused again.
+  if (state.problem === 'expired') redirect(sessionEndedPath(locale, await requestedPath()));
+  if (state.problem === 'signed-out') {
+    redirect(signInPath(locale, 'signed-out', await requestedPath()));
+  }
+  redirect(signInPath(locale, 'forbidden'));
 }
 
 /**
@@ -92,6 +105,12 @@ export async function requirePlatformSession(locale: Locale): Promise<PlatformSe
  * A session answer that carries no readable permission list keeps the workspace
  * root, where the dashboard page applies the same rule.
  *
+ * When sign-in was asked for on the way to a page (`intended`), that page wins
+ * over the landing — but only when it is a safe application path AND the new
+ * session's navigation offers it (`permitsIntendedPath`); a console page only
+ * for a platform session, a workspace page only for a tenant one. Anything else
+ * lands exactly as before (P1-32-PRE-OD-AUTHB).
+ *
  * Only when the tenant read opens nothing and the platform session succeeds does
  * the sign-in go to the console. Anything else keeps today's destination, where
  * the workspace layout explains the problem.
@@ -102,17 +121,46 @@ export async function requirePlatformSession(locale: Locale): Promise<PlatformSe
  * used to answer 403 and now answers its own facts with no code; both mean the
  * workspace holds nothing for this account, and both still ask the platform.
  */
-export async function destinationAfterSignIn(client: ApiClient, locale: Locale): Promise<string> {
+export async function destinationAfterSignIn(
+  client: ApiClient,
+  locale: Locale,
+  intended: unknown = null
+): Promise<string> {
+  // Re-checked here, the one place it is followed, whatever the caller did.
+  const safe = safeIntendedPath(intended);
+  const wanted = safe === null ? null : localisedIntendedPath(safe, locale);
+
   const tenant = await client.get<unknown>(TENANT_SESSION_PATH, { retries: 0 });
   if (tenant.ok) {
     const permissions = permissionsOf(tenant.data);
     if (permissions === null) return `/${locale}`;
-    if (permissions.length > 0) return landingPath(locale, permissions);
-    const platform = await readPlatformSession(client);
-    return platform.ok ? `/${locale}/platform` : `/${locale}`;
+    if (permissions.length > 0) {
+      return wanted !== null && permitsIntendedPath(wanted, permissions, 'workspace')
+        ? wanted
+        : landingPath(locale, permissions);
+    }
+    return consoleOrRoot(client, locale, wanted);
   }
+  return consoleOrRoot(client, locale, wanted);
+}
+
+/**
+ * The console — at the intended console page when the platform session may
+ * open it — or, when the platform session does not answer, the workspace root,
+ * where the workspace layout explains the refusal.
+ */
+async function consoleOrRoot(
+  client: ApiClient,
+  locale: Locale,
+  wanted: string | null
+): Promise<string> {
   const platform = await readPlatformSession(client);
-  return platform.ok ? `/${locale}/platform` : `/${locale}`;
+  if (!platform.ok) return `/${locale}`;
+  return wanted !== null &&
+    isPlatformPath(wanted) &&
+    permitsIntendedPath(wanted, platform.session.platformPermissions, 'console')
+    ? wanted
+    : `/${locale}/platform`;
 }
 
 /** The permission codes a tenant session answer carries, or null if it has none. */

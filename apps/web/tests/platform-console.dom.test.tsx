@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -2590,6 +2591,72 @@ describe('the account form on Material UI (P1-32-PRE-OD-AUTHA)', () => {
       });
       unmount();
     }
+  });
+});
+
+describe('the account form takes what its boxes already hold (P1-32-PRE-OD-AUTHB-04)', () => {
+  /*
+   * This form sends its STATE. A value a browser put in a box before the page's
+   * script ran is in the box and not in the state, so the change was refused as
+   * a blank box and the box was then emptied. The server's markup is filled the
+   * way a browser fills it (the value set on the element, no event) and only
+   * then hydrated; a hydration that gave up and drew new, empty boxes would
+   * prove nothing, so it is refused.
+   */
+  it('sends what the three boxes held before the page hydrated, and a success empties them for good', async () => {
+    const user = userEvent.setup();
+    let answer: (value: unknown) => void = () => undefined;
+    const answered = new Promise((resolve) => (answer = resolve));
+    changeOwnPasswordAction.mockReturnValue(answered);
+
+    const tree = <AccountSecurityScreen messages={messages} session={ACCOUNT_SESSION} />;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tree);
+    document.body.appendChild(container);
+    const filled = [ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT];
+    const boxes = accountFields();
+    boxes.forEach((box, index) => {
+      box.value = filled[index] as string;
+    });
+    const onRecoverableError = vi.fn();
+    renderLtr(tree, { container, hydrate: true, onRecoverableError });
+    expect(onRecoverableError).not.toHaveBeenCalled();
+    expect(accountFields()).toEqual(boxes);
+
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+    await waitFor(() => expect(changeOwnPasswordAction).toHaveBeenCalledTimes(1));
+    expect(changeOwnPasswordAction).toHaveBeenCalledWith({
+      currentPassword: ACCOUNT_CURRENT,
+      newPassword: ACCOUNT_NEXT,
+      confirmPassword: ACCOUNT_NEXT,
+    });
+    expect(screen.queryByText(L('platform.error.required'))).toBeNull();
+    expect(boxes.map((box) => box.value)).toEqual(filled);
+
+    /*
+     * The answer, and then focus, a press and a key in a box in the same turn,
+     * before React has drawn the emptied boxes: the boxes still show the old
+     * values at that moment, and taking them then would put all three back.
+     */
+    await act(async () => {
+      answer({ status: 'success', messageKey: 'platform.account.done', attempt: 1 });
+      await answered;
+      for (const box of boxes) {
+        fireEvent.focusIn(box);
+        fireEvent.pointerDown(box);
+        fireEvent.keyDown(box, { key: 'Shift' });
+      }
+    });
+    expect(await screen.findByTestId('account-password-done')).toBeInTheDocument();
+    expect(accountFields()).toEqual(boxes);
+    expect(boxes.map((box) => box.value)).toEqual(['', '', '']);
+    // And nothing done in the form afterwards brings them back.
+    for (const box of boxes) {
+      fireEvent.focusIn(box);
+      fireEvent.pointerDown(box);
+      fireEvent.keyDown(box, { key: 'Shift' });
+    }
+    expect(boxes.map((box) => box.value)).toEqual(['', '', '']);
   });
 });
 

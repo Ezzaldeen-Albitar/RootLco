@@ -10,6 +10,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { loginAction } from '../actions/login';
+import { INTENDED_PATH_PARAM } from '../api/intended-path';
 import { MuiFormFeedback } from './MuiFormFeedback';
 import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
 import { usePrefilledValue } from './use-prefilled-value';
@@ -44,9 +45,16 @@ import { usePrefilledValue } from './use-prefilled-value';
 export function LoginForm({
   locale,
   messages,
+  intendedPath = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /**
+   * The page sign-in was asked for on the way to, already checked by the page
+   * against the application-path allow-list. The action checks it again and
+   * follows it only when the new session may open it (P1-32-PRE-OD-AUTHB).
+   */
+  readonly intendedPath?: string | null;
 }) {
   /*
    * Both boxes are controlled, so React's reset of the form after the action
@@ -83,6 +91,9 @@ export function LoginForm({
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-5" noValidate>
       <input type="hidden" name="locale" value={locale} />
+      {intendedPath ? (
+        <input type="hidden" name={INTENDED_PATH_PARAM} value={intendedPath} />
+      ) : null}
 
       <MuiFormFeedback state={state} messages={messages} />
 

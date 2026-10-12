@@ -1775,7 +1775,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------- |
 | `/activate-account`                                   | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
 | `/forgot-password`                                    | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
-| `/login`                                              | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
+| `/login`                                              | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA); notices and intended page (AUTHB)    | focused suites, en and ar — see below       |
 | `/reset-password`                                     | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                                | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators"          | focused suites, en and ar                   |
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, `FormDialog`, `DateField`, states                        | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table (ADM4); the person picker moved in ADM3 first | focused suites, en and ar — see below       |
@@ -7424,3 +7424,211 @@ Known limitations and recorded gaps of this slice, one line each:
 - The server write does not validate `currency.enabled_codes`, and `[]` is accepted; see above.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds.
   They run in hosted CI.
+
+### Session lifecycle and the intended page after sign-in (`P1-32-PRE-OD-AUTHB`)
+
+This slice covers what an operator meets when a sign-in is required on the way to a page, and pins
+the session lifecycle that decides when that happens. No backend behaviour, no token lifetime and no
+permission code changed. AUTH01 ([decision pack](decision-pack-2026-10-08.md#auth01-signing-other-devices-out-after-a-password-change))
+stays an open Owner decision, and the lifecycle evidence is recorded in its section.
+
+| Route                            | What changed                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| every dashboard and console page | When the page sends the operator to sign in (no session, a session that ended, or the backend could not confirm it), the page's own path goes with the redirect as `intended`. A refused session (`forbidden`) carries none, because signing in again as the same account would open nothing. `src/proxy.ts` records the path, never the query string.                                            |
+| `/session-ended`                 | Clears the rejected cookie as before. It never goes to the intended page; it re-checks the value and hands it to the sign-in address. A value that fails the check is dropped and the operator lands on `?reason=expired` as before.                                                                                                                                                              |
+| `/login`                         | A second notice says the operator will return to the page they were opening when this account may open it. The page's address is never echoed. The reason sentences now name what ends a session (inactivity, expiry, an administrator ending it, locking or archiving the account) and say plainly that an account with no access has been given none. Pressing Sign in twice sends one sign-in. |
+| sign-in action                   | After the credentials are accepted, the operator goes to the intended page only when it is a safe application path and the new session's navigation offers it, judged by the most specific entry (a console page only for a platform session, a workspace page only for a tenant one). Otherwise they land where they always did.                                                                 |
+
+The allow-list (`features/authentication/api/intended-path.ts`) accepts only `/{en|ar}/{area}/…`
+built from letters, digits, `-` and `_`, where `{area}` is a workspace screen, the console or the
+profile. It refuses an absolute address, `//host`, a backslash, a scheme, any percent-encoding, dot
+segments, empty segments, a query, a fragment, white space and control characters, the sign-in and
+session-ended pages, and anything over 512 characters. The address is checked by `requireSession`,
+the session-ended handler, the sign-in page, the sign-in action and `destinationAfterSignIn`. Only
+the last of these follows it.
+
+The allow-listed intended path narrows the P1-26 ruling that the authentication flow carries no
+redirect destination. The planner accepted that narrowing under package WP05 of the completion plan
+of 2026-10-08 (outside the repository), "preserve locale and safe intended navigation". The
+password-reset and activation pages still carry no destination, and the session-ended handler still
+never follows the intended path: it only re-checks it and hands it to the sign-in address.
+
+The reason sentences name only what the AUTH01 evidence in the decision pack shows ending a session
+or refusing a sign-in: inactivity, expiry, an administrator ending the sessions, and an account that
+is locked or archived. The account model has no suspended status, and a suspended organisation keeps
+its sessions, so neither sentence mentions suspension.
+
+Tests: `apps/web/tests/intended-path.test.ts` (each rejection, the accepted shapes, the permission
+rule); `apps/web/tests/session.test.ts` (the redirect from a protected render, the session-ended
+handler's re-check, sign-out); `apps/web/tests/platform-login-routing.test.ts` (sign-in follows
+only a page the new session may open, in both languages and both surfaces);
+`apps/web/tests/sign-in-notices.dom.test.tsx` (every notice in en and ar, no echo, the hidden field,
+one sign-in for two presses inside one `act()`); `apps/web/tests/e2e/foundation.spec.ts` and
+`apps/web/tests/e2e/platform-console.spec.ts` (the anonymous redirects in en and ar, hostile values
+ignored); `tests/unit/od-session-lifecycle.test.ts` and `tests/backend/iam-auth-provider.test.ts`
+("the session lifecycle as it stands today").
+
+Changed assertions: `foundation.spec.ts` and `platform-console.spec.ts` expected
+`/en/login?reason=signed-out` after opening a protected page without a session. They now expect the
+same address with `&intended=` naming the page that was opened.
+
+Known limitations, one line each:
+
+- This slice did not move `/login` onto Material UI. The AUTHA slice did (see its section above),
+  and since develop was merged after it the hidden intended-page field sits in that Material form;
+  the two notices are still page markup.
+- The "sign in again" link in a read's ended-session state (`MuiStates`, `SearchStates`) still opens
+  plain `/login`. A session that ends during a client-side read does not carry the page yet.
+- The page cannot say which account was locked or archived: the backend answers every ended session
+  and every refused sign-in identically on purpose. The sentences name the causes for everyone.
+- The one-press hold on the sign-in form is now the AUTHA slice's `useSubmitOnce`, which the
+  forgotten-password, set-password and profile forms share. The hold this slice first wrote into the
+  sign-in form (a cancelled submit in React's `onSubmit`) was dropped in the merge in its favour; the
+  two-presses case in `sign-in-notices.dom.test.tsx` is unchanged and runs against it.
+- The anonymous end-to-end cases run on hosted CI. They were not run on the development machine.
+
+**Synchronisation and review round (`P1-32-PRE-OD-AUTHB-04`).**
+
+develop was merged after the AUTHA slice. The sign-in form is AUTHA's Material form (controlled
+boxes, `usePrefilledValue`, `useSubmitOnce`, `aria-disabled` on the button) and this slice's part of
+it is the hidden intended-page field and the `intendedPath` prop; the two notices and everything
+outside the form merged unchanged. The web test-file count in `deliverable-manifest.md` is 208 (206
+on develop, plus `intended-path.test.ts` and `sign-in-notices.dom.test.tsx`), and the evidence
+manifest was regenerated.
+
+Two follow-ups the AUTHA review assigned to this slice:
+
+1. A value written into a box after its form mounted, with no event. AUTHA's review record named it
+   as a regression it left open: `usePrefilledValue` looked once, at mount, so such a value was
+   erased by the next render of its box, where the uncontrolled boxes before AUTHA had kept it. The
+   hook now makes the same comparison (the box holds something other than the state: adopt it) from
+   a capture-phase listener on the form for `focusin`, `pointerdown` and `keydown`, for every box
+   that uses it: sign-in, forgotten password, set password and the profile name. It only moves the
+   state to what the box shows and only when they differ, so it changes nothing while the operator
+   types, and a box a refusal or a success cleared stays clear. The value is read, compared and
+   handed to the state; it is kept nowhere else. The comment in the hook that said a value arriving
+   after hydration needed nothing was wrong and is corrected. This closes that residual for a
+   render that a focus, a press or a key in the form comes before. A render nothing in the form
+   comes before (a refresh of the page's data, a submit sent with none of the three events) still
+   writes the state over such a value.
+2. `/platform/account`. AUTHA's limitation 10 above recorded that its three password boxes did not
+   adopt a value present before hydration. They now do, through the same hook, and so they also
+   take a value written later with no event. That form sends its state, not its form data, so
+   before this a value the browser had filled in was refused as a blank box and then erased.
+   Limitation 10 is superseded by this entry; limitation 11 (no real-browser evidence for that
+   page) stands.
+
+Tests, each in English and Arabic unless said otherwise:
+`apps/web/tests/authentication-forms.dom.test.tsx` gains twelve cases (65 to 89 executed). A value
+is set on the element after mount with no event, and then: the other box is typed in; the reveal
+control is pressed; Sign in is pressed with nothing else touched, the boxes are read while the
+request is out, and the password the refusal cleared is looked for again after focus, a press and a
+key; each of the three events alone; a key that a listener on the box itself stops from travelling;
+the forgotten-password address through a refusal; a new password while its confirmation is typed,
+and both through a success that leaves no trace of them in the document; and a profile name, which
+becomes unsaved work once the form is touched. `apps/web/tests/platform-console.dom.test.tsx` gains
+one English case: the three boxes are filled in the server's markup before hydration, the change
+sends them, and a success empties them for good.
+
+Measured by mutation, the hook restored byte for byte after each: with the listener removed all
+twenty-four executed cases in the first file fail and the sixty-five older ones pass; with any one
+of the three events removed the two cases for that event fail; with the listener moved to the
+bubble phase the two stopped-key cases fail; with the hook switched off in the console form its
+case fails because the change is never sent; and with the comparison removed (adopt whatever the
+box shows) the console case fails with all three passwords back in their boxes after a successful
+change, which is the reason the comparison is there.
+
+Not run for this round: any Playwright tier, the backend and database tiers, and any check in a real
+browser. A writer that reports nothing was reproduced in jsdom by setting the value on the element;
+no extension was tried.
+
+**Review round (`P1-32-PRE-OD-AUTHB-05`).** The sign-in page looked the `reason` word up with `in`,
+which also answers for every name an object inherits. A link carrying `?reason=toString`,
+`constructor`, `hasOwnProperty` or `valueOf` drew an empty notice, and `?reason=__proto__` handed
+React an object, so the sign-in page failed to draw at all. Nothing from the address was ever shown.
+The line dates from P1-26 and was found by this slice's policy scan. The word is now matched as one
+of the map's own keys, given once as a string: a repeated `reason` parameter, which arrives as a
+list, is no reason either (the page used to read the first of them). The `intended` parameter was
+already a string checked against a set and is unchanged. `apps/web/tests/sign-in-notices.dom.test.tsx`
+gains thirteen cases in each language (36 to 62 executed): the five inherited names, four repeated
+forms, and an unknown word, a known word in another case, an empty reason and none at all; each
+draws no notice and still draws the form. Against the page as it was, sixteen of them fail (the five
+names and the three repeated forms that begin with a known word, in both languages), two of them
+with React's own error for `__proto__`; the unknown-word cases pass either way, as that part already
+held. The four known words still draw their catalogue sentences (the cases above them, unchanged).
+
+Open adoption item: the reason notice and the intended-page notice on `/login` are page markup
+(`<p role="status">` with token classes), not Material `Alert`s as the other signed-out pages'
+notices are. Planner ruling: they stay as they are in this slice.
+
+Open, older than this slice and not changed by it:
+
+- Sign-out clears the cookie and then asks the backend to end the session without reading the
+  answer (`features/authentication/actions/logout.ts`). When that request fails, the browser is
+  signed out and the server-side session ends only by expiry or by inactivity.
+- An outage on the console's session read sends the operator to sign-in with `reason=forbidden`
+  (`features/platform/api/session.ts`, `requirePlatformSession`), so it reads as an account without
+  access rather than as the service being unavailable.
+- The intended path is a path of this application and nothing else, but a path can hold a record's
+  identifier (a customer or a work order page), and that identifier then travels in the sign-in
+  address and so in the browser's history and in anything that records addresses.
+- AUTH01 is an open Owner decision. Today a password change or a password reset does not sign the
+  account's other devices out; each stays signed in until its own sign-in runs out.
+
+**Review round (`P1-32-PRE-OD-AUTHB-06`).** An independent review of the slice asked for one
+correction and for cases it found missing.
+
+- The requested-path header. `src/proxy.ts` and `requested-path-header.ts` said the proxy replaces
+  any copy of the header a client sent. That holds only where the proxy runs, and its matcher leaves
+  a router prefetch out (`next-router-prefetch`, or `purpose: prefetch`): on those requests a
+  client's own copy reaches the render as it was sent. Both comments, and the reader's, now say so:
+  the header is untrusted input, and it has one reader, `requestedPath()`
+  (`features/authentication/api/requested-path.ts`), which passes it through `safeIntendedPath`. The
+  two guards (`requireSession`, `requirePlatformSession`) read it only through that function, and
+  the addresses they build re-check it. What a spoofed header can do is therefore name a page of
+  this application, which a hand-typed `?intended=` can do as well. The matcher and the routing are
+  unchanged.
+- One product rule changed. Sign-in followed any path beneath `/profile` for a workspace session
+  (`permitsIntendedPath` compared the area only). The profile is one page with nothing beneath it,
+  so `/en/profile/x` passed the allow-list, was followed, and landed the operator on "not found"
+  straight after signing in. Only the profile page itself is followed now; anything beneath it lands
+  where sign-in always did.
+- No other input was accepted that should not be. Twenty-two more shapes are written out as refused
+  in `intended-path.test.ts` (a scheme with no slashes, bare trailing line breaks, leading and
+  trailing spaces, a tab, an encoded NUL, an at sign, a path parameter, upper- and mixed-case
+  language and area, API paths, read endpoints), with the length bound at exactly 512 accepted and
+  513 refused.
+
+Tests: `apps/web/tests/proxy.test.ts` is new (the path and never the query string; a client's copy
+replaced where the proxy runs; the matcher's exclusion, read through Next's own matcher) and moves
+the web test-file count in `deliverable-manifest.md` from 208 to 209, with the evidence manifest
+regenerated. `session.test.ts` gains the reader's cases: nine spoofed values read as no page and
+carried to no sign-in address on any way out of a protected render. `intended-path.test.ts` and
+`platform-login-routing.test.ts` gain the cases above. Measured by mutation, each product file
+restored byte for byte: with the old profile rule three cases fail; with the query string recorded
+four fail; with a client's copy kept five fail; with the reader trusting the header its nine direct
+cases fail, and the cases at the guards still pass because the address builders check again.
+
+Open, recorded by this round and not changed by it:
+
+- The session-ended handler clears the cookie when the request is same-origin, typed into the
+  address bar or sent without `Sec-Fetch-Site`, without asking whether the token was in fact
+  rejected. A same-origin link, or a client that sends no such header, signs a valid session out of
+  that browser, and nothing is revoked on the server. It is as on develop; a cross-site request only
+  gets the redirect.
+- `scripts/ci/check-p1-26-frontend.mjs` forbids a redirect parameter by its NAME (`returnTo`,
+  `redirectTo`, `next_url`, `redirect_uri`). `intended` is none of those, so that gate does not see
+  it: the allow-listed intended path rests on the planner's ruling recorded above (completion plan
+  WP05) and on the tests named here, not on a gate.
+- No browser run signs in with `?intended=` and lands on that page; the routing is held by
+  `platform-login-routing.test.ts`, which stops at the redirect address.
+- The console account form and the console sign-in have no browser evidence.
+- A path that passes the allow-list and that the session's navigation offers, but that names no
+  page (a record that does not exist, a deeper path under a real screen), is followed and that
+  screen answers as it does for any such address.
+- `tests/unit/od-session-lifecycle.test.ts` pins the request path by reading source text (the
+  handler calls the authenticator before it resolves the context; the resolver's refusal line), not
+  by running it. The behaviour is run by `tests/backend/iam-auth-provider.test.ts`, which needs a
+  database.
+- `LoginForm.tsx` imports the parameter name from `intended-path.ts`, which brings both navigation
+  models into the sign-in bundle. Noted, not measured.

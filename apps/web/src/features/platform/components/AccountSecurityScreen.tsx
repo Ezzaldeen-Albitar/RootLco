@@ -6,6 +6,7 @@ import AlertTitle from '@mui/material/AlertTitle';
 import Button from '@mui/material/Button';
 import { FormPasswordField } from '@/components/forms/mui/FormPasswordField';
 import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
+import { usePrefilledValue } from '@/features/authentication/components/use-prefilled-value';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { changeOwnPasswordAction } from '../actions';
@@ -126,6 +127,29 @@ export function AccountSecurityScreen({
       return next;
     });
   };
+
+  /*
+   * A value a box holds that this screen was never told about — filled in
+   * before the page hydrated, or written afterwards with no event — is taken
+   * exactly as if it had been typed (P1-32-PRE-OD-AUTHB-04). This form sends
+   * its STATE, not its form data, so without this such a value was refused as a
+   * blank box and then erased by the render that drew the refusal. The
+   * comparison inside the hook is what keeps a box emptied by a successful
+   * change empty: nothing is adopted while the box and the state agree.
+   */
+  usePrefilledValue(
+    formRef,
+    'currentPassword',
+    currentPassword,
+    edit('currentPassword', setCurrentPassword)
+  );
+  usePrefilledValue(formRef, 'newPassword', newPassword, edit('newPassword', setNewPassword));
+  usePrefilledValue(
+    formRef,
+    'confirmPassword',
+    confirmPassword,
+    edit('confirmPassword', setConfirmPassword)
+  );
 
   const submit = () => {
     if (sending.current || action.pending) return;

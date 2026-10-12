@@ -7,6 +7,7 @@ import { env } from '@/lib/env';
 import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
 import { DEFAULT_LOCALE, isLocale, type Locale } from '@/i18n/config';
 import { destinationAfterSignIn } from '@/features/platform/api/session';
+import { INTENDED_PATH_PARAM, safeIntendedPath } from '../api/intended-path';
 import { issueKeysByField, loginSchema } from '../schemas/credentials';
 
 /**
@@ -108,7 +109,19 @@ export async function loginAction(previous: ActionState, form: FormData): Promis
   // operator goes to the workspace exactly as before, and a platform operator —
   // whose workspace session read is refused — goes to the console
   // (P1-32-PRE-061).
-  redirect(await destinationAfterSignIn(clientWithToken(result.data.accessToken), locale));
+  //
+  // The page the operator was opening when sign-in was asked for travels in the
+  // form, and is re-checked twice before it is followed: here for its shape, and
+  // in `destinationAfterSignIn` against the new session's own navigation
+  // (P1-32-PRE-OD-AUTHB). A value that fails either is ignored, never refused:
+  // the operator still signs in and lands where they always did.
+  redirect(
+    await destinationAfterSignIn(
+      clientWithToken(result.data.accessToken),
+      locale,
+      safeIntendedPath(form.get(INTENDED_PATH_PARAM))
+    )
+  );
 }
 
 function localeFrom(value: FormDataEntryValue | null): Locale {
