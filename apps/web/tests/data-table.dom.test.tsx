@@ -1166,7 +1166,12 @@ describe('a search across a branch switch', () => {
     readonly answerAll: () => Promise<void>;
   }
 
-  async function staged(carries: boolean, run: (stage: Stage) => Promise<void>) {
+  async function staged(
+    carries: boolean,
+    run: (stage: Stage) => Promise<void>,
+    /** The version the screen opens under; the provider counts on from it. */
+    opensAt = 0
+  ) {
     vi.useFakeTimers();
     try {
       const sent: Sent[] = [];
@@ -1181,7 +1186,7 @@ describe('a search across a branch switch', () => {
           startedAt={startedAt}
         />
       );
-      const view = renderLtr(host('', 'A', 0));
+      const view = renderLtr(host('', 'A', opensAt));
       // One millisecond to an `act`, so a render a timer causes is committed at
       // the instant the timer fired and a read is stamped with the millisecond
       // it was sent in. A single `act` over the whole wait would commit only at
@@ -1393,4 +1398,140 @@ describe('a search across a branch switch', () => {
       expect(stage.shown()).toBe('A:ready:A/Omar');
     });
   });
+
+  it.each([
+    ['in the criteria', true],
+    ['bound to the loader', false],
+  ] as const)(
+    'A, then B, then A again, the scope %s: the term settled on the first visit is asked after neither switch, and typing it again is a new question',
+    async (_where, carries) => {
+      // The version is the provider's counter — 1, 2, 3 — and never the branch.
+      // The second visit to A is version 3, so the entry settled under version 1
+      // is not current again, although the branch and the characters are.
+      await staged(
+        carries,
+        async (stage) => {
+          stage.show('Layla', 'A', 1);
+          await stage.wait(600);
+          await stage.answerAll();
+          expect(stage.reads()).toEqual(['300 Layla@A']);
+          expect(stage.shown()).toBe('A:ready:A/Layla');
+
+          // To B: the picker empties its term in the render the version moves in.
+          stage.show('', 'B', 2);
+          await stage.answerAll();
+          expect(stage.reads()).toEqual(['300 Layla@A']);
+          expect(stage.shown()).toBe('B:idle:');
+
+          // Back to A while the entry settled on the first visit is still in hand.
+          await stage.wait(100);
+          stage.show('', 'A', 3);
+          await stage.answerAll();
+          expect(stage.reads()).toEqual(['300 Layla@A']);
+          expect(stage.shown()).toBe('A:idle:');
+
+          // The same term, typed again 50 ms later: its own pause, then one read.
+          await stage.wait(50);
+          stage.show('Layla', 'A', 3);
+          await stage.answerAll();
+          expect(stage.reads()).toEqual(['300 Layla@A']);
+          expect(stage.shown()).toBe('A:idle:');
+          await stage.wait(SEARCH_DEBOUNCE_MS - 1);
+          await stage.answerAll();
+          expect(stage.reads()).toEqual(['300 Layla@A']);
+          expect(stage.shown()).toBe('A:idle:');
+          await stage.wait(1);
+          expect(stage.reads()).toEqual(['300 Layla@A', '1050 Layla@A']);
+          await stage.answerAll();
+          expect(stage.shown()).toBe('A:ready:A/Layla');
+          await stage.wait(1000);
+          expect(stage.reads()).toHaveLength(2);
+        },
+        1
+      );
+    }
+  );
+
+  it.each([
+    ['in the criteria', true],
+    ['bound to the loader', false],
+  ] as const)(
+    'typed, switched and typed again inside the pause, the scope %s: the shorter term that had settled earlier is not read under the new branch',
+    async (_where, carries) => {
+      /*
+       * The screens that keep their criteria through a switch — the boards, and
+       * counter sales and the service catalogue, whose scope is the loader's.
+       * "La" settles and is answered; "Lay" is typed; the branch is switched
+       * before "Lay" settles; "Layl" is typed before the switch has settled.
+       * The only settled entry in hand is still "La", from the branch left.
+       */
+      await staged(carries, async (stage) => {
+        stage.show('La', 'A', 0);
+        await stage.wait(400);
+        await stage.answerAll();
+        expect(stage.reads()).toEqual(['300 La@A']);
+        expect(stage.shown()).toBe('A:ready:A/La');
+
+        stage.show('Lay', 'A', 0);
+        await stage.wait(100);
+        expect(stage.reads()).toEqual(['300 La@A']);
+
+        // The switch is a submission of what is in the box now.
+        stage.show('Lay', 'B', 1);
+        await stage.answerAll();
+        expect(stage.reads()).toEqual(['300 La@A', '500 Lay@B']);
+        expect(stage.shown()).toBe('B:ready:B/Lay');
+
+        // Typed on 100 ms later. "La" must not be asked of the new branch, and
+        // the answer in hand stays the new branch's own.
+        await stage.wait(100);
+        stage.show('Layl', 'B', 1);
+        await stage.answerAll();
+        expect(stage.reads()).toEqual(['300 La@A', '500 Lay@B']);
+        expect(stage.shown()).toBe('B:ready:B/Lay');
+        await stage.wait(SEARCH_DEBOUNCE_MS - 1);
+        await stage.answerAll();
+        expect(stage.reads()).toEqual(['300 La@A', '500 Lay@B']);
+        expect(stage.shown()).toBe('B:ready:B/Lay');
+
+        await stage.wait(1);
+        expect(stage.reads()).toEqual(['300 La@A', '500 Lay@B', '900 Layl@B']);
+        await stage.answerAll();
+        expect(stage.shown()).toBe('B:ready:B/Layl');
+        await stage.wait(1000);
+        expect(stage.reads()).toHaveLength(3);
+      });
+    }
+  );
+
+  it.each([0, 100, 299] as const)(
+    'a shorter term had settled, the rest was typed, and the branch switched %i ms after the last keystroke: the settled term is not asked again',
+    async (after) => {
+      // The first table's quick rows found nothing to fall back to only because
+      // nothing had settled. Here "La" has, and the pause for "Layla" has not
+      // run out when the picker empties its term on the switch.
+      await staged(true, async (stage) => {
+        stage.show('La', 'A', 0);
+        await stage.wait(400);
+        await stage.answerAll();
+        expect(stage.reads()).toEqual(['300 La@A']);
+        expect(stage.shown()).toBe('A:ready:A/La');
+
+        for (const term of ['Lay', 'Layl', 'Layla']) stage.show(term, 'A', 0);
+        await stage.wait(after);
+        expect(stage.reads()).toEqual(['300 La@A']);
+        expect(stage.shown()).toBe('A:ready:A/La');
+
+        stage.show('', 'B', 1);
+        let elapsed = 0;
+        for (const instant of AFTER_THE_SWITCH) {
+          await stage.wait(instant - elapsed);
+          elapsed = instant;
+          await stage.answerAll();
+          expect(stage.reads(), `reads ${instant} ms after the switch`).toEqual(['300 La@A']);
+          expect(stage.shown(), `shown ${instant} ms after the switch`).toBe('B:idle:');
+        }
+      });
+    }
+  );
 });

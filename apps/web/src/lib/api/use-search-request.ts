@@ -344,6 +344,17 @@ export function useSearchRequest<Row, Criteria>(options: {
    * flight AND bypasses the debounce, so the first read after a switch is for
    * the branch that is now selected rather than for the one the settled key
    * still remembers.
+   *
+   * THE CONTRACT: a value that NEVER RECURS for the lifetime of the hook — a
+   * counter that only moves forward, which is what `WorkingContextProvider`
+   * supplies (`version`, incremented on every change). It is NOT a branch
+   * identifier, and nothing derived from one may be passed here. The settled
+   * key is remembered together with the version it was typed under, and a key
+   * is only ever asked while its version is the one in force; a value that
+   * came back — the same number for the same branch on a second visit — would
+   * make a key settled during the earlier visit current again, and it would be
+   * read as if the operator had just typed it. Two visits to one branch are
+   * two versions.
    */
   readonly version?: number;
   readonly debounceMs?: number;
