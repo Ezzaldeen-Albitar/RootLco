@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useActionState, useRef, useState, type ReactElement } from 'react';
 import { renderToString } from 'react-dom/server';
@@ -154,6 +154,28 @@ function hydratedWith(
   });
   expect(onRecoverableError).not.toHaveBeenCalled();
   return boxes;
+}
+
+/**
+ * A value put in a box AFTER its form has mounted, the way a writer that
+ * reports nothing puts it: set on the element, no event. React's own record of
+ * the box moves with the write (it wraps the property), exactly as it does in
+ * a browser, and the component is told nothing.
+ */
+function writtenSilently(box: HTMLElement, value: string): void {
+  if (!(box instanceof HTMLInputElement)) throw new Error('Only a text box can be written to.');
+  box.value = value;
+}
+
+/**
+ * Focus arriving, a pointer pressed and a key pressed in a box, with nothing
+ * typed: the three things a form hears before anything else happens in it.
+ * The key is one that types nothing.
+ */
+function touchWithoutTyping(box: HTMLElement): void {
+  fireEvent.focusIn(box);
+  fireEvent.pointerDown(box);
+  fireEvent.keyDown(box, { key: 'Shift', code: 'ShiftLeft' });
 }
 
 /** Whether Material draws a box's label raised (`true`) or inside the box. */
@@ -405,6 +427,178 @@ describe.each(LOCALES)('sign-in (%s)', (locale) => {
     });
   });
 
+  /*
+   * After the form has mounted, with no event (P1-32-PRE-OD-AUTHB-04). Some
+   * extensions write a value straight onto the element and report nothing, so
+   * the box holds what its state does not. Each case below writes that way
+   * (`writtenSilently`) and then does what an operator does next.
+   */
+  const refusal = { status: 'error', messageKey: 'auth.login.error.failed', attempt: 1 } as const;
+
+  it('keeps an address written into its box with no event while the password is typed, sends it, and keeps it after the refusal', async () => {
+    const user = userEvent.setup();
+    loginAction.mockResolvedValue(refusal);
+    renderLogin();
+    const address = email();
+    writtenSilently(address, 'written-late@example.test');
+
+    await user.type(password(), 'a-password');
+    expect(email()).toBe(address);
+    expect(address).toHaveValue('written-late@example.test');
+    expect(labelRaised(address)).toBe('true');
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(1));
+    expect(sent(loginAction)).toEqual({
+      locale,
+      email: 'written-late@example.test',
+      password: 'a-password',
+    });
+    await screen.findByRole('alert');
+    expect(address).toHaveValue('written-late@example.test');
+    expect(password()).toHaveValue('');
+  });
+
+  it('keeps a password written into its box with no event while the address is typed, and sends it', async () => {
+    const user = userEvent.setup();
+    loginAction.mockResolvedValue(refusal);
+    renderLogin();
+    const secret = password();
+    writtenSilently(secret, 'written-with-no-event');
+
+    await user.type(email(), 'operator@example.test');
+    expect(password()).toBe(secret);
+    expect(secret).toHaveValue('written-with-no-event');
+    expect(labelRaised(secret)).toBe('true');
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(1));
+    expect(sent(loginAction)).toEqual({
+      locale,
+      email: 'operator@example.test',
+      password: 'written-with-no-event',
+    });
+    await screen.findByRole('alert');
+    expect(email()).toHaveValue('operator@example.test');
+    expect(secret).toHaveValue('');
+  });
+
+  it('keeps a password written into its box with no event when it is revealed, in the same box, and sends it beside an address written the same way', async () => {
+    const user = userEvent.setup();
+    loginAction.mockResolvedValue(refusal);
+    renderLogin();
+    const address = email();
+    const secret = password();
+    writtenSilently(address, 'written-late@example.test');
+    writtenSilently(secret, 'written-with-no-event');
+
+    await user.click(screen.getByTestId('password-reveal-toggle'));
+    expect(password()).toBe(secret);
+    expect(secret).toHaveAttribute('type', 'text');
+    expect(secret).toHaveValue('written-with-no-event');
+    expect(email()).toBe(address);
+    expect(address).toHaveValue('written-late@example.test');
+
+    await user.click(submit());
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(1));
+    expect(sent(loginAction)).toEqual({
+      locale,
+      email: 'written-late@example.test',
+      password: 'written-with-no-event',
+    });
+    await screen.findByRole('alert');
+    expect(address).toHaveValue('written-late@example.test');
+    expect(secret).toHaveValue('');
+  });
+
+  it.each([
+    ['focus arriving', (box: HTMLElement) => fireEvent.focusIn(box)],
+    ['a pointer pressed', (box: HTMLElement) => fireEvent.pointerDown(box)],
+    ['a key pressed', (box: HTMLElement) => fireEvent.keyDown(box, { key: 'Shift' })],
+  ] as const)('takes a password written with no event at %s in the form, alone', (_what, reach) => {
+    renderLogin();
+    const secret = password();
+    writtenSilently(secret, 'written-with-no-event');
+    // That one event and no other; then a render of the box that nothing
+    // else comes before (a bare click on the reveal control).
+    reach(email());
+    fireEvent.click(screen.getByTestId('password-reveal-toggle'));
+    expect(password()).toBe(secret);
+    expect(secret).toHaveAttribute('type', 'text');
+    expect(secret).toHaveValue('written-with-no-event');
+  });
+
+  it('takes a password written with no event even when something on the box stops the key from travelling', () => {
+    renderLogin();
+    const address = email();
+    const secret = password();
+    // A listener on the box itself that lets the key go no further, as a script
+    // injected into the page may have. The form hears the key on its way DOWN
+    // to the box (the capture phase), so that cannot keep it from the form.
+    address.addEventListener('keydown', (event) => event.stopPropagation());
+    writtenSilently(secret, 'written-with-no-event');
+    fireEvent.keyDown(address, { key: 'Shift' });
+    fireEvent.click(screen.getByTestId('password-reveal-toggle'));
+    expect(password()).toBe(secret);
+    expect(secret).toHaveValue('written-with-no-event');
+  });
+
+  it('sends what was written into both boxes with no event when Sign in is pressed, shows it while the sign-in is out, and never brings back the password the refusal cleared', async () => {
+    const user = userEvent.setup();
+    const first = held();
+    loginAction.mockReturnValueOnce(first.promise);
+    renderLogin();
+    const address = email();
+    const secret = password();
+    writtenSilently(address, 'written-late@example.test');
+    writtenSilently(secret, 'written-with-no-event');
+
+    // Nothing else is touched first: the press on the button is the only thing
+    // the form hears before it is sent.
+    await user.click(submit());
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(1));
+    expect(sent(loginAction)).toEqual({
+      locale,
+      email: 'written-late@example.test',
+      password: 'written-with-no-event',
+    });
+    // While the sign-in is out the form is drawn again (its button says it is
+    // working), and both boxes still show what was sent.
+    expect(address).toHaveValue('written-late@example.test');
+    expect(secret).toHaveValue('written-with-no-event');
+    // A move of focus, a press and a key inside the form while it is out
+    // change nothing.
+    touchWithoutTyping(secret);
+    expect(address).toHaveValue('written-late@example.test');
+    expect(secret).toHaveValue('written-with-no-event');
+
+    // The refusal and a key pressed in the same turn, before React has drawn
+    // the answer: the clearing is not undone by what the box still shows.
+    await act(async () => {
+      first.answer(refusal);
+      await first.promise;
+      touchWithoutTyping(secret);
+    });
+    await screen.findByRole('alert');
+    expect(address).toHaveValue('written-late@example.test');
+    expect(secret).toHaveValue('');
+    // Nor by anything done in the form afterwards.
+    touchWithoutTyping(secret);
+    touchWithoutTyping(address);
+    expect(secret).toHaveValue('');
+    expect(address).toHaveValue('written-late@example.test');
+
+    // What the form holds is what it sends next: the address, and no password.
+    loginAction.mockResolvedValueOnce({ ...refusal, attempt: 2 });
+    await user.click(submit());
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(2));
+    expect(sent(loginAction, 1)).toEqual({
+      locale,
+      email: 'written-late@example.test',
+      password: '',
+    });
+  });
+
   it('puts the cursor on the first refused field and withdraws the complaint once it is edited', async () => {
     const user = userEvent.setup();
     loginAction.mockResolvedValue({
@@ -566,6 +760,29 @@ describe.each(LOCALES)('forgotten password (%s)', (locale) => {
     expect(email()).toBe(boxes.email);
     expect(email()).toHaveAttribute('aria-invalid', 'true');
     expect(email()).toHaveValue('filled-early@example.test');
+  });
+
+  it('sends an address written into the box with no event after the form mounted, and still shows it once the refusal is drawn', async () => {
+    const user = userEvent.setup();
+    requestPasswordResetAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'auth.forgot.error.invalid',
+      fieldErrors: { email: 'auth.forgot.error.email' },
+      attempt: 1,
+    });
+    renderForgot();
+    const address = email();
+    writtenSilently(address, 'written-late@example.test');
+
+    await user.click(submit());
+    await waitFor(() => expect(requestPasswordResetAction).toHaveBeenCalledTimes(1));
+    expect(sent(requestPasswordResetAction)).toEqual({ email: 'written-late@example.test' });
+
+    await waitFor(() => expect(email()).toHaveFocus());
+    expect(email()).toBe(address);
+    expect(address).toHaveAttribute('aria-invalid', 'true');
+    expect(address).toHaveValue('written-late@example.test');
+    expect(labelRaised(address)).toBe('true');
   });
 
   it('sends one request for two presses', async () => {
@@ -833,6 +1050,73 @@ describe.each(LOCALES)('choosing a password from a link (%s)', (locale) => {
       password: 'filled-before-hydration',
       confirmPassword: 'filled-before-hydration',
     });
+  });
+
+  // After the form has mounted, with no event (P1-32-PRE-OD-AUTHB-04).
+
+  it('keeps a password written into its box with no event while its confirmation is typed, sends both, and clears both on a refusal for good', async () => {
+    const user = userEvent.setup();
+    completePasswordResetAction.mockResolvedValue({
+      status: 'error',
+      messageKey: 'auth.reset.error.token',
+      attempt: 1,
+    });
+    renderBridge(TOKEN);
+    const first = password();
+    writtenSilently(first, 'written-with-no-event');
+
+    await user.type(confirmation(), 'written-with-no-event');
+    expect(password()).toBe(first);
+    expect(first).toHaveValue('written-with-no-event');
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(completePasswordResetAction).toHaveBeenCalledTimes(1));
+    expect(sent(completePasswordResetAction)).toEqual({
+      token: TOKEN,
+      password: 'written-with-no-event',
+      confirmPassword: 'written-with-no-event',
+    });
+    await screen.findByRole('alert');
+    expect(first).toHaveValue('');
+    expect(confirmation()).toHaveValue('');
+    // The refused password stays gone whatever is done in the form next.
+    touchWithoutTyping(first);
+    touchWithoutTyping(confirmation());
+    expect(first).toHaveValue('');
+    expect(confirmation()).toHaveValue('');
+  });
+
+  it('shows both passwords written with no event while the completion is out, sends them, and leaves no trace of them once the password is set', async () => {
+    const user = userEvent.setup();
+    const answer = held();
+    completePasswordResetAction.mockReturnValue(answer.promise);
+    renderBridge(TOKEN);
+    const first = password();
+    const second = confirmation();
+    writtenSilently(first, 'written-with-no-event');
+    writtenSilently(second, 'written-with-no-event');
+
+    await user.click(submit());
+    await waitFor(() => expect(completePasswordResetAction).toHaveBeenCalledTimes(1));
+    expect(sent(completePasswordResetAction)).toEqual({
+      token: TOKEN,
+      password: 'written-with-no-event',
+      confirmPassword: 'written-with-no-event',
+    });
+    // The form is drawn again while the completion is out; neither box is
+    // emptied by that.
+    expect(first).toHaveValue('written-with-no-event');
+    expect(second).toHaveValue('written-with-no-event');
+
+    await act(async () => {
+      answer.answer({ status: 'success', messageKey: 'auth.reset.done', attempt: 1 });
+      await answer.promise;
+      touchWithoutTyping(first);
+    });
+    expect(await screen.findByTestId('set-password-done')).toBeInTheDocument();
+    expect(document.querySelector('input[name="password"]')).toBeNull();
+    expect(document.querySelector('input[name="confirmPassword"]')).toBeNull();
+    expect(document.body.innerHTML).not.toContain('written-with-no-event');
   });
 });
 
@@ -1127,6 +1411,38 @@ describe.each(LOCALES)('the profile name (%s)', (locale) => {
     await waitFor(() => expect(name()).toHaveFocus());
     expect(name()).toBe(boxes.displayName);
     expect(name()).toHaveValue('Layla H.');
+  });
+
+  it('takes a name written into the box with no event as the draft once the form is touched: unsaved work, sent, and kept after a refusal', async () => {
+    const user = userEvent.setup();
+    updateOwnProfileAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { displayName: 'profile.error.displayNameLength' },
+      attempt: 1,
+    });
+    renderProfile();
+    const box = name();
+    writtenSilently(box, 'Layla H.');
+    // Nothing has reached the form yet, so it still knows only the saved name.
+    expect(await unsaved()).toBe('false');
+    expect(box).toHaveValue('Layla H.');
+
+    // Focus arrives in the box (P1-32-PRE-OD-AUTHB-04): the form now knows.
+    await user.click(box);
+    expect(await unsaved()).toBe('true');
+    expect(box).toHaveValue('Layla H.');
+
+    await user.click(save());
+    await waitFor(() => expect(updateOwnProfileAction).toHaveBeenCalledTimes(1));
+    expect(sent(updateOwnProfileAction)).toEqual({
+      locale,
+      recordVersion: '4',
+      displayName: 'Layla H.',
+    });
+    await waitFor(() => expect(name()).toHaveFocus());
+    expect(name()).toBe(box);
+    expect(box).toHaveValue('Layla H.');
   });
 });
 
