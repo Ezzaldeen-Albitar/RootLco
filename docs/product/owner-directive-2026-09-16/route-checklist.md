@@ -1575,8 +1575,9 @@ and a listbox), and the call sites and their suites move one at a time.
   themselves under the box; the server's pages are walked with its cursor.
 
 **Form fields** (`apps/web/src/components/forms/mui/`: `FormTextField`, `FormNumberField`,
-`FormMoneyField`, `FormSelectField`, and since the reception intake slice `FormCheckboxField` and
-`FormRadioGroupField`) keep `FieldFrame`'s contract.
+`FormMoneyField`, `FormSelectField`, since the reception intake slice `FormCheckboxField` and
+`FormRadioGroupField`, and since the sign-in slice `FormPasswordField`) keep `FieldFrame`'s
+contract.
 
 - F1. The label names the control; a required field carries a decorative asterisk and
   `aria-required`, never the native `required`.
@@ -1594,6 +1595,12 @@ and a listbox), and the call sites and their suites move one at a time.
   short closed list (`FormRadioGroupField`) is a `radiogroup` named by its legend whose options may
   carry a sentence read with them; both carry F2–F4, and a refused radio group is marked with
   `data-invalid` as well, so `useFocusFirstInvalid` enters its chosen (or first) radio.
+- F8. A password (`FormPasswordField`, added by the sign-in slice) carries F1–F4 and keeps
+  `PasswordField`'s reveal control: inside the box at its logical end, a `type="button"` that never
+  submits, `aria-pressed` with `aria-controls` naming the box, an accessible name that follows the
+  state, `autoComplete` unchanged by the toggle, and the same input element patched rather than
+  replaced. It is controlled; whether a refusal keeps or clears the value is the caller's decision,
+  recorded per call site in `form-reset-class.test.ts` (`CLEARS_ON_REFUSAL`).
 
 **States** (`apps/web/src/components/states/MuiStates.tsx`) are `States.tsx` on Material UI, with
 the same catalogue entries.
@@ -1766,10 +1773,10 @@ The preserved-behaviour cell names the contract items above that a migration mus
 
 | Route                                                 | Applicable MUI components                                                                                | Preserved behaviour                              | Implementation status                                                        | Verification                                |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------- |
-| `/activate-account`                                   | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/forgot-password`                                    | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/login`                                              | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/reset-password`                                     | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
+| `/activate-account`                                   | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
+| `/forgot-password`                                    | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
+| `/login`                                              | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
+| `/reset-password`                                     | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                                | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators"          | focused suites, en and ar                   |
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, `FormDialog`, `DateField`, states                        | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table (ADM4); the person picker moved in ADM3 first | focused suites, en and ar — see below       |
 | `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, `DateField`, drawer, states                              | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (ADM6)                                        | focused suites, en and ar — see below       |
@@ -1817,7 +1824,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/payments`                                           | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states                 | F1–F6; G1–G9, G12; P1–P10; D1–D4; S1–S4          | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/pricing/[priceListId]`                              | form fields, `EntityPicker`, `DateField`, states                                                         | F1–F6; P1–P10; E1–E4; S1–S4                      | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/pricing`                                            | form fields, `OperationalGrid`, `EntityPicker`, `DateField`, states                                      | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table                                               | focused suites, en and ar — see below       |
-| `/profile`                                            | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
+| `/profile`                                            | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
 | `/quotations/[quotationId]`                           | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, `ConfirmDialog`, states            | F1–F6; G1–G9, G12; P1–P10; E1–E4; D1–D4; S1–S4   | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/quotations`                                         | form fields, `OperationalGrid`, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                  | F1–F6; G1–G9; P1–P10; D1–D5; S1–S4               | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/reception/walk-in`                                  | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9, G11; P1–P10; S1–S4                 | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -1853,7 +1860,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/attention`                                          | states                                                                                                   | S1–S4                                            | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/work-orders/quality`                                | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/gallery`                                            | all four                                                                                                 | G, P, F, S                                       | shown in the gallery, not a screen                                           | `gallery-and-print.dom.test.tsx` (en, ar)   |
-| `/platform/account`                                   | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
+| `/platform/account`                                   | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
 | `/platform/audit`                                     | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/platform/organizations/[tenantId]`                  | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/platform/organizations/new`                         | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
@@ -4881,6 +4888,211 @@ row holding a refund's moment with the `UTC` label was not looked at in a browse
 Checklist correction (WP00 scan): the FD16B table further down said the save and Restate need
 `rpt.export`; both rows now say `rpt.report.configure`, the gate since FD16C, and the operation row
 says `rpt.export` gates CSV export only, so it cannot be read as still gating the save.
+
+### Sign-in, account recovery, the profile and the console account on Material UI (`P1-32-PRE-OD-AUTHA`)
+
+`/login`, `/forgot-password`, `/reset-password`, `/activate-account`, `/profile` and
+`/platform/account` moved onto the shared wrappers. What the server decides did not change: every
+Server Action (`loginAction`, `requestPasswordResetAction`, `completePasswordResetAction`,
+`updateOwnProfileAction`, `changeOwnPasswordAction`), its validation, its answers and its redirects
+are unchanged, and so are the page files, the `RecoveryTokenBridge` (the token is read from the
+query or the fragment, erased from the address bar, carried in a hidden field and never stored,
+logged or echoed), the locale field each form sends, the language control on the authentication
+layout, and the routes' permission and branch scope.
+
+What did change besides what is drawn is how the boxes hold their values, and the first version of
+this slice was wrong to say nothing had. The legacy fields on the four Server Action forms were
+uncontrolled; the Material wrappers are controlled. React leaves a value that is already in a box
+when the page hydrates where it is and does not report it, so a controlled box was out of step
+with its own state, and the next render wrote the empty state back: with an address the browser
+had filled in before hydration, typing the password erased it, and pressing the reveal control
+erased a filled password. The review round below (`P1-32-PRE-OD-AUTHA-04`) closed it: each box of
+those four forms adopts what it already holds as its form mounts (`usePrefilledValue`, a layout
+effect that runs in the hydration commit, before any other render), so the value stays in the
+box, is what the form sends, and is what the form knows.
+
+What moved to which wrapper:
+
+- A new wrapper, `FormPasswordField` (`components/forms/mui/FormPasswordField.tsx`, F8 above), on
+  every password box: the sign-in password, the new password and its confirmation, and the three
+  boxes of the console account form. The legacy `PasswordField` stays for the screens that have not
+  moved.
+- The text boxes are `FormTextField`: the two addresses and the profile's display name.
+- The outcome banner is `MuiFormFeedback` (`features/authentication/components/`), `FormFeedback`
+  on Material's `Alert`: `status` for a success and `alert` for a failure, keyed on the attempt so
+  an identical second refusal is announced again, no `problem.detail`, the explanation line a
+  heading key carries, and the correlation reference. A throttle and a conflict are drawn as a
+  warning, every other failure as an error.
+- The submit button is `MuiSubmitButton` (`disabled`, `aria-disabled` and `aria-busy` while the
+  action is out, as the legacy button sets all three,
+  labelled with what it is doing). The legacy `FormFeedback` and `SubmitButton` stay: the
+  administration screens still render them.
+- `AuthCard` is Material's `Paper` and still holds the one `h1` of every signed-out page; the
+  missing-token notice, the "check your email" confirmation, the password-set confirmation and the
+  console's "password changed" confirmation are Material `Alert`s with `role="status"`.
+
+What each flow still does, held by the tests below in English and Arabic:
+
+- Sign-in: every credential failure is one sentence ("Those details did not sign you in") with no
+  field marked; a field is marked only for the operator's own typing (a blank password, an address
+  that is not one). The address survives a refusal and the password is cleared — now by the form,
+  on the attempt the refusal answers, since the box is controlled (`CLEARS_ON_REFUSAL`). The
+  action still decides the destination (workspace or console) and replaces the sign-in entry in
+  history. The form is still a Server Action form, so it submits before the page has hydrated. A
+  credential failure moves the cursor nowhere, exactly as before the move: no field is marked, so
+  there is no first refused field to go to, and the banner is what says it — `role="alert"` on the
+  banner as it is drawn, not added afterwards.
+- Values present before hydration, on the four Server Action forms: an address, a password, a
+  confirmation or a display name a browser, a password manager or the operator put in a box before
+  the page hydrated stays there through every later render (typing in another box, a reveal
+  control, a refusal), in the same element, and is what the action receives; a display name
+  changed that way counts as unsaved work.
+- Forgotten password: the form is replaced by one confirmation that never says whether an account
+  exists; the action answers 404, 422, 401, 403 and 409 exactly as it answers 202. Only a throttle
+  and an outage are said as themselves, because neither discloses an account.
+- A reset or invitation link: a link with no token shows no form and offers a new link; an expired,
+  an invalid and an already-used link are one sentence ("This link has expired or has already been
+  used") with the way to a new link under it — the backend does not tell them apart and the page
+  does not guess; a password the provider refuses is a different sentence, because the link was
+  fine; both password boxes are cleared after any refusal. The password rule (8 to 200 characters,
+  the two must match) is the schema's, unchanged, and the hint is the box's description.
+- Profile: the name is sent with the version it was read at — the edit's baseline version
+  (`useEditBaseline`), never a newer one a refresh brought while it was being typed — and a refusal
+  keeps what was typed.
+- Console account: the three local checks (a blank box, a confirmation that does not match, a new
+  password equal to the current one) and the two provider refusals marking different boxes are
+  unchanged; a success empties the three boxes.
+
+The completion standard, as these screens now hold it:
+
+- Duplicate submits: the four Server Action forms hold a second press with `useSubmitOnce`, a
+  native `submit` listener on the form that stops any submission while one is out (at the form, so
+  React's root listener never sees it); the console account form holds it with a ref set before
+  the change is sent. The hold depends on React reading a form action from its root listener in
+  the bubble phase, after the form's own listener has run; a capture-phase reading would let the
+  second submit through. `authentication-forms.dom.test.tsx` pins it on its own: two presses
+  reach the action twice without the hook and once with it, and the second never bubbles to the
+  root. Cancelling the second submit in React's own `onSubmit` was measured NOT to
+  hold under two presses in one task: React reads a cancelled submit in the same task as one that
+  started a transition as "the handler started its own", and resets the form's pending status, so
+  the button came back enabled while the first request was still out. The tests press twice inside
+  ONE `act()`; the working state (disabled, `aria-busy`, "Signing in…") is asserted after an
+  ordinary press, because jsdom never paints React's pending form status for a press made inside a
+  synchronous `act()` — measured with one press as well as two.
+- Field errors and focus: the sign-in, forgotten-password and set-password forms now move the cursor
+  to the first refused field and withdraw a complaint once its field is edited
+  (`useActionRefusal`), as the profile and console account forms already did.
+- Unsaved work: a changed display name is declared to the shell (`useUnsavedGuard`), so leaving the
+  page by a link, back or forward, or a reload asks first; a confirmed save re-bases the form, so
+  nothing asks afterwards. The signed-out forms declare nothing: there is no shell, and a typed
+  password is deliberately not kept.
+- Keyboard: Enter in any box submits, as before; each reveal control is a real button in the tab
+  order after its box.
+- Arabic and English, right to left, in every DOM case; the anonymous browser smoke gains three
+  Arabic cases (the sign-in form and its reveal control at the inline end, the reset and activation
+  pages without a token, the forgotten-password page), and the authenticated browser tier two (the
+  Arabic form signs in and lands in the Arabic workspace; it refuses with the one Arabic
+  sentence).
+
+Tests: `apps/web/tests/authentication-forms.dom.test.tsx` (new, 65 cases: sign-in, forgotten
+password, reset and activation through `RecoveryTokenBridge` including a fragment token, the
+reset actions' own single answers run for real against a mocked API client, the profile name, the
+card, the duplicate-submit hold on its own, and — added in the review round — values present
+before hydration on each of the four forms and the credential-failure announcement),
+`apps/web/tests/platform-console.dom.test.tsx` (four console account cases added: Enter
+submits, two presses in one act send one change, the cursor on the first refused box before and
+after the server answers, every reveal control inside its own box in both directions),
+`apps/web/tests/e2e/foundation.spec.ts` (three Arabic cases),
+`apps/web/tests/e2e/authenticated/shared-ux.spec.ts` (two Arabic sign-in cases). The new file moved the P1-27 web
+test-file count from 205 to 206 (`deliverable-manifest.md`, evidence manifest regenerated).
+
+Changed assertions, each with its reason:
+
+- `form-reset-class.test.ts`: the component matcher and `COMPONENT_KIND` also read
+  `FormTextField` (text) and `FormPasswordField` (password). Without it the scan would have stopped
+  seeing every box on these forms, and the two cases about them ("keeps the EMAIL beside a password
+  guarded", "records a decision for every password control") would have failed on an empty set.
+  Nothing was removed from either list.
+- `form-reset-class.test.ts`: the two `CLEARS_ON_REFUSAL` entries match `<FormPasswordField`
+  instead of `<PasswordField`, because that is the control the two files now render; each reason
+  says the clearing is now the form's own, on the refused attempt.
+- With the scan reading `FormTextField`, `FormNumberField`'s one call to it was reported: it passed
+  `value` through a spread, which the scan cannot see as controlled. `FormNumberField` now passes
+  `value` and `onChange` by name; the box was controlled before and is controlled now, so nothing
+  it does changed (`mui-form-fields.dom.test.tsx` and `inventory-transfers.dom.test.tsx` pass).
+- Review round (strengthened, nothing removed): the sign-in "two presses" case now also asserts the
+  count stays at 1 after everything queued has run while the first is out and after it is
+  answered, and that the second attempt is exactly 2 while it is out and after it is answered
+  (it used to pass on the first increment). The console "reveal control at the logical end, in
+  both directions" case now asserts what it named: the page direction per locale, one control per
+  box, the control after its box in document order, inside Material's end adornment and never a
+  start one, with no direction override on the box.
+- Review round `P1-32-PRE-OD-AUTHA-04` (strengthened and added, nothing removed):
+  - The set-password and profile "two presses" cases asserted the count only while the first
+    request was still out. React holds a second action until the first has answered, so both passed
+    with the hold removed. Each now also asserts the count is still 1 after the first answer, as
+    the sign-in case does. Measured by mutation: with the hold switched off both fail on exactly
+    that assertion, with 2 calls.
+  - Twelve new cases (six in each language) render the server markup, write a value into a box the
+    way a browser does before the page's script has run (the value set on the element, no event),
+    and only then hydrate. They then type in another box, press a reveal control, or submit, and
+    assert the value is still in the same element and is what the action receives: the sign-in
+    address while the password is typed and after the refusal; a filled sign-in password through
+    the reveal control; the forgotten-password address through a refusal; a filled new password
+    while its confirmation is typed; both new-password boxes through their reveal controls; and a
+    display name changed before hydration, which is unsaved work, sent and kept. Hydration that
+    fell back to rendering afresh is refused in each. All twelve fail on the previous code
+    (`9dc3eb30`), and fail again with the adoption switched off.
+  - A new sign-in case records what the banner is as it enters the document after a credential
+    failure (`role="alert"`, with the sentence) and that the cursor is still in the box Enter was
+    pressed in. The refusal cases also assert the emptied password boxes draw their label back
+    inside the box.
+  - "says it is working while the sign-in is out" also asserts `aria-disabled="true"` while the
+    action is out and its absence afterwards: `MuiSubmitButton` had dropped the attribute the
+    legacy `SubmitButton` sets, and it is restored.
+- No other assertion changed. `p1-27-owner-acceptance.dom.test.tsx` still holds the legacy
+  `PasswordField` and its "used by every password field" case still passes on the migrated files.
+
+Known limitations and recorded gaps:
+
+1. Only the forms moved on `/profile` and `/platform/account`: the profile page's read-only notice
+   and its identity, scope and permission panels, and the console account page's refusal
+   (`PermissionDeniedState`), are still the legacy markup.
+2. The `/login` notice for `?reason=` is page markup and is the intended-navigation and reason
+   slice's (AUTH-B, built separately); it did not change here.
+3. The console account form declares no unsaved work: the console has no working-context registry
+   (its suite refuses `useUnsavedGuard` by design), so leaving it with typed passwords asks nothing,
+   as before.
+4. The account menu in the shell (`AccountMenu`) and the session-ended page were not in this slice.
+5. The Arabic browser cases were not run locally; the hosted browser smoke runs the anonymous three
+   and the authenticated browser tier the two sign-in cases. No real-browser visual review of the
+   six screens was made here.
+6. [AUTH01](decision-pack-2026-10-08.md#auth01-signing-other-devices-out-after-a-password-change)
+   is an open Owner decision and is unchanged. It asks whether, after a password change, a
+   platform-operator revocation or a deactivation, every other device must lose access at once, or
+   whether access may continue until the access token expires. Today another device that is
+   already signed in keeps working after a platform operator's password change until its access
+   token expires (up to one hour at the current local setting); for organisation users, locking an
+   account or revoking sessions already takes effect on the next request. This slice changed
+   neither. An earlier version of this entry described AUTH01 as the lifetime of a recovery link;
+   that was wrong.
+7. How long a reset or invitation link stays valid is the identity provider's setting and is
+   unchanged; the decision pack holds no entry about it, so it is recorded here as a question
+   nobody has been asked, not as a decision.
+8. A credential failure moves the cursor nowhere (unchanged from before the move): the form marks
+   no field for it, and the announcement is the banner's `role="alert"`.
+9. The pre-hydration cases are DOM cases. The behaviour was derived from the installed React's
+   hydration code and measured in jsdom with the real `hydrateRoot`; it was not reproduced in a
+   real browser, where a password manager's own timing cannot be scripted.
+10. `/platform/account` was not changed by the review round. Its three boxes were controlled before
+    the move as well (the legacy `PasswordField` with `value`), and its form sends what the screen
+    holds, not the form's own data, so a value put in a box there before hydration is not adopted —
+    the same as before this slice.
+11. `/platform/account` has no real-browser evidence: the console sign-in case in
+    `tests/e2e/platform-console.spec.ts` skips unless a platform operator's credentials are given
+    to the run, and no workflow or script in this repository gives them, so it skips in every
+    hosted project. The export-principal sign-in in `tests/e2e/authenticated/reports-p1-31.spec.ts`
+    skips as well (no hosted job writes the companion handoff it needs).
 
 ### Review follow-ups on the inventory slices (`P1-32-PRE-OD-INVR`)
 

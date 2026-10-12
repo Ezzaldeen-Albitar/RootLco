@@ -144,6 +144,70 @@ test.describe('authentication', () => {
     await expect(page.getByLabel('New password')).toHaveCount(0);
   });
 
+  /*
+   * Arabic, on the Material UI sign-in screens (P1-32-PRE-OD-AUTHA). The cases
+   * above were English only; these hold the same frame right to left, with the
+   * words read from the Arabic catalogue as the operator sees them.
+   */
+  test('the Arabic sign-in form labels every control, right to left, and needs no mouse', async ({
+    page,
+  }) => {
+    const console = watchConsole(page);
+    await page.goto('/ar/login');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByLabel('البريد الإلكتروني')).toBeVisible();
+    const password = page.getByRole('textbox', { name: 'كلمة المرور', exact: true });
+    await expect(password).toBeVisible();
+    await expect(password).toHaveAttribute('type', 'password');
+    await expect(page.getByRole('button', { name: 'تسجيل الدخول' })).toBeEnabled();
+    await expect(page.getByRole('link', { name: 'هل نسيت كلمة المرور؟' })).toHaveAttribute(
+      'href',
+      '/ar/forgot-password'
+    );
+
+    // The reveal control sits inside the field, at the inline END — the left
+    // edge of the box in Arabic — and names the state it moves to.
+    const toggle = page.getByTestId('password-reveal-toggle');
+    await expect(toggle).toHaveAttribute(
+      'aria-controls',
+      (await password.getAttribute('id')) ?? ''
+    );
+    const box = await password.boundingBox();
+    const control = await toggle.boundingBox();
+    expect(box && control && control.x < box.x + box.width / 2).toBe(true);
+    await page.getByRole('button', { name: 'إظهار كلمة المرور' }).click();
+    await expect(password).toHaveAttribute('type', 'text');
+    await expect(page.getByRole('button', { name: 'إخفاء كلمة المرور' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(console.errors, 'the console must be clean').toEqual([]);
+  });
+
+  test('the Arabic reset and activation pages refuse a link with no token', async ({ page }) => {
+    for (const path of ['/ar/reset-password', '/ar/activate-account']) {
+      await page.goto(path);
+      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+      await expect(page.getByText('هذا الرابط غير مكتمل')).toBeVisible();
+      await expect(page.getByLabel('كلمة المرور الجديدة')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'طلب رابط جديد' })).toHaveAttribute(
+        'href',
+        '/ar/forgot-password'
+      );
+    }
+  });
+
+  test('the Arabic forgotten-password page asks for an address only', async ({ page }) => {
+    await page.goto('/ar/forgot-password');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByLabel('البريد الإلكتروني')).toBeVisible();
+    await expect(page.getByRole('textbox')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: 'العودة إلى تسجيل الدخول' })).toHaveAttribute(
+      'href',
+      '/ar/login'
+    );
+  });
+
   test('does not scroll horizontally at any reviewed width', async ({ page }) => {
     await page.goto('/en/login');
     const overflow = await page.evaluate(
