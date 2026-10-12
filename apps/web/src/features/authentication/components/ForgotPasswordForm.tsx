@@ -11,6 +11,7 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { requestPasswordResetAction } from '../actions/password-reset';
 import { MuiFormFeedback } from './MuiFormFeedback';
 import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
+import { usePrefilledValue } from './use-prefilled-value';
 
 /**
  * Request a password-reset link, on Material UI (ADR-022).
@@ -28,7 +29,9 @@ import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
 export function ForgotPasswordForm({ messages }: { readonly messages: Messages }) {
   /*
    * Controlled, so the address survives React's reset of the form after a
-   * refused submit.
+   * refused submit. An address the browser filled in before the page hydrated
+   * is adopted into the state as the form mounts (`usePrefilledValue`), so a
+   * later render cannot write an empty box over it.
    */
   const [email, setEmail] = useState('');
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
@@ -37,6 +40,7 @@ export function ForgotPasswordForm({ messages }: { readonly messages: Messages }
   );
   const { edited, errorKey, formRef } = useActionRefusal(state);
   useSubmitOnce(formRef, state, pending);
+  usePrefilledValue(formRef, 'email', email, setEmail);
 
   if (state.status === 'success') {
     return (

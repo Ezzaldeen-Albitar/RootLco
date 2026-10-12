@@ -13,6 +13,7 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { completePasswordResetAction } from '../actions/password-reset';
 import { MuiFormFeedback } from './MuiFormFeedback';
 import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
+import { usePrefilledValue } from './use-prefilled-value';
 
 /**
  * Set a password with a recovery token, on Material UI (ADR-022).
@@ -79,6 +80,14 @@ export function SetPasswordForm({
 
   const { edited, errorKey, formRef } = useActionRefusal(state);
   useSubmitOnce(formRef, state, pending);
+  /*
+   * A browser offers to fill a new password in as soon as the form is drawn,
+   * which is before the page has hydrated. What a box already holds as the
+   * form mounts is adopted into the state, so no later render — typing in the
+   * other box, a reveal control — writes an empty box over it.
+   */
+  usePrefilledValue(formRef, 'password', password, setPassword);
+  usePrefilledValue(formRef, 'confirmPassword', confirmPassword, setConfirmPassword);
 
   if (state.status === 'success') {
     return (

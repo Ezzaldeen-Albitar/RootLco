@@ -12,6 +12,7 @@ import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { updateOwnProfileAction } from '../actions/profile';
 import { MuiFormFeedback } from './MuiFormFeedback';
 import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
+import { usePrefilledValue } from './use-prefilled-value';
 
 /**
  * The one editable part of a profile, on Material UI (ADR-022).
@@ -77,6 +78,10 @@ export function ProfileForm({
   // it is edited (route sweep B3).
   const { edited, errorKey, formRef } = useActionRefusal(state);
   useSubmitOnce(formRef, state, pending);
+  // A name edited before the page hydrated is the draft, and it is unsaved work.
+  usePrefilledValue(formRef, 'displayName', edit.values.displayName, (value) =>
+    edit.setValues({ displayName: value })
+  );
   const error = errorKey('displayName');
 
   return (

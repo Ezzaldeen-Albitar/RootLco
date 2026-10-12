@@ -12,6 +12,7 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { loginAction } from '../actions/login';
 import { MuiFormFeedback } from './MuiFormFeedback';
 import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
+import { usePrefilledValue } from './use-prefilled-value';
 
 /**
  * The sign-in form, on Material UI (ADR-022).
@@ -65,6 +66,15 @@ export function LoginForm({
 
   const { edited, errorKey, formRef } = useActionRefusal(state);
   useSubmitOnce(formRef, state, pending);
+  /*
+   * A sign-in form is the one a browser or a password manager fills in by
+   * itself, and it is drawn before the page has hydrated. What a box already
+   * holds as the form mounts is adopted into the state, so no later render
+   * writes an empty box over it — typing the password does not erase a filled
+   * address, and revealing a filled password does not erase it.
+   */
+  usePrefilledValue(formRef, 'email', email, setEmail);
+  usePrefilledValue(formRef, 'password', password, setPassword);
   const fieldError = (name: string) => {
     const key = errorKey(name);
     return key ? translateDynamic(messages, key) : undefined;
