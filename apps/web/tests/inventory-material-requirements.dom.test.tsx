@@ -1113,15 +1113,21 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
       });
     });
 
-    it(`says a listed family by its path and code, never its reference (${locale})`, async () => {
+    // P1-32-PRE-OD-INVG (runtime retest O7): the card drew the family's code
+    // (`oils`) beside the path of names. A code is what was typed when the
+    // category was made, not a name; the card says the family in words only.
+    it(`says a listed family by its path of names, never its code or its reference (${locale})`, async () => {
       const T = CATALOGUE[locale];
       listMaterialRequirements.mockImplementation(async () =>
         listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
       );
-      renderIn(locale);
+      const { container } = renderIn(locale);
       const path = await screen.findByTestId('material-category-path');
-      expect(path).toHaveTextContent('Engine fluids / Oils');
-      expect(path).toHaveTextContent('oils');
+      expect(path.textContent).toBe('Engine fluids / Oils');
+      expect(path.querySelector('code')).toBeNull();
+      // Nowhere on the panel: neither family's code is drawn beside a name.
+      expect(container.textContent).not.toContain('engine_fluids');
+      expect(container.textContent).not.toMatch(/oils/);
       expect(
         screen.getByText(T['inventory.material.itemFamily'] as string, { exact: false })
       ).toBeVisible();
