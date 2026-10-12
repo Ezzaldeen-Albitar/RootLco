@@ -388,7 +388,8 @@ test.describe('runtime language switching', () => {
  * Each case spends ONE sign-in per project from the `auth-adjacent` ration (ten
  * per sixty seconds per client address, shared by the whole tier), and the
  * refusal uses an address no account holds, so it writes no failure row against
- * a real account.
+ * a real account — with a password that is nobody's, because the account's own
+ * is not needed to be refused.
  */
 test.describe('signing in, in Arabic', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
@@ -427,9 +428,11 @@ test.describe('signing in, in Arabic', () => {
   });
 
   test('refuses a sign-in on the Arabic form with the one Arabic sentence', async ({ page }) => {
-    const { email, password } = ownerLogin();
+    const { email } = ownerLogin();
     const unknown = `no-account-${email}`;
-    await fill(page, unknown, password);
+    // Any string is refused for an address no account holds, so the real
+    // account's password is never sent where it is not needed.
+    await fill(page, unknown, 'not-a-real-password');
     await expect(
       page.getByRole('alert').filter({ hasText: say('ar', 'auth.login.error.failed') })
     ).toBeVisible({ timeout: 20_000 });
