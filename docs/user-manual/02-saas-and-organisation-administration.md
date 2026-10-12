@@ -862,6 +862,13 @@ withheld values are revealed; the first administrator holds that too. **Where** 
 - _"The service publishes no export operation for audit records, so none is offered here."_ <!-- audit.noExport -->
   There is no way to download the audit log.
 - If you pick a company you must also pick a branch: _"Choose a branch for the selected company."_ <!-- audit.filter.chooseBranch -->
+- Under **Details** the facts of the change come first. Rows that point at another record by an
+  internal reference are grouped after them under **Record references** <!-- audit.detail.references -->
+  — _"Internal references that identify the records this event concerns. Quote them to support if
+  you need help."_ <!-- audit.detail.referencesHint --> Each row there shows the kind of record, the
+  field's code and the reference exactly as it was recorded; you can select it to copy it. The
+  screen cannot yet say those records by name. Nothing is hidden: every detail of the record is
+  drawn, as it was written — a detail with no value reads "—", and an empty one is left blank.
 - Values you are not cleared to see read **"Withheld"** <!-- audit.detail.masked --> — _"Some values
   are withheld unless your account may view sensitive data."_ <!-- audit.detail.maskedHint --> **If
   it goes wrong**

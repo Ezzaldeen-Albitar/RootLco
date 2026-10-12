@@ -524,8 +524,8 @@ bars under the padding, no row cut) — implemented, not yet runtime-retested. T
 row LANG-identifiers stays FAIL until a signed-in retest at a revision containing the merge says
 otherwise. A sixth point, from the same day's run of the new screens (case A-07c: a raw record
 identifier among the details of the audit record drawer), is **not closed**: the drawer now draws
-every detail unaltered, with the references to other records grouped and labelled after the
-facts, and the identifiers stay on the screen until the read can name the records an event
+every detail unaltered, with the references to other records grouped after the facts, each
+labelled and with its field's code, and the identifiers stay on the screen until the read can name the records an event
 concerns, which is a planned backend change. Five Owner decisions are left open and listed with
 the detail in `route-checklist.md`, section `P1-32-PRE-OD-INVG`: the pack quantity and bar width
 on the 50 × 25 mm label, naming the records an audit event concerns, the support reference, the

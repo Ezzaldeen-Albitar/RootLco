@@ -5253,7 +5253,15 @@ found:
   them to support if you need help.", come the rows whose every value is an identifier or a list of
   them: under a field named for one (`id`, `ids`, `uuid`, or ending `Id`, `Ids`, `_id`, `_ids`) with
   or without dashes, and under any other field (`requestedBy`) a dashed one. Each has a label saying
-  what kind of record it points to, and its value is drawn whole and can be selected for copying.
+  what kind of record it points to (looked up by the field as written, then by the last step of
+  its path), **and the field's code as written on every reference row**, so two references of one
+  kind in one record cannot read alike: the first form of the grouping drew the payer of the
+  receipt and the payer of the invoice on `sal.payment.third_party_allocated` both as "Payer" with
+  no code. Those two also have a label each now. The value is drawn whole and can be selected for
+  copying. Any other value is isolated in its own direction (`<bdi>`), so an identifier or a code
+  quoted in Arabic text is not reordered on screen while its text is untouched. A value that is
+  not text, or is missing, is drawn too — written out once — where it used to throw and empty the
+  drawer; no value is a dash and an empty value is a blank, as before.
   The classification decides the group and never whether a row is drawn. Among the facts stay the
   audit vocabulary the service writes as a value — `permission_code`, `requiredPermission`,
   `exportPermissionCode`, `entity_type`, `resource`, each under a catalogue label — business
@@ -5278,9 +5286,14 @@ found:
     by its code under the label "Permission".
   - The record's own `entityId` is not drawn anywhere on the screen.
 
-  The rows are written by 284 `appendAudit` and `auditForOperation` call sites in 75 files under
-  `apps/api/src/modules` (1,019 detail entries, 445 distinct field names). 123 fields are named for
-  an identifier and five for a person. 47 of the 123 and four of the five have a label of their own
+  The rows are written in about 75 files under `apps/api/src`: about 1,000 detail entries with
+  about 440 distinct field names, in about 290 detail arrays. The figures depend on how a writer is
+  recognised — an object holding a `field` literal and a `classification`, matched within one
+  object, gives 74 files, 1,008 entries and 440 names; counting `field` literals and files with a
+  classification literal separately gave 75, 1,019 and 445; a same-line match gives 76, 1,013 and 444. All three give 123 fields named for an identifier and five for a person. A scan of every
+  detail array against the label maps found one record in which two different fields shared a
+  label — the two payers above — and none after they were given a label each, among references
+  and among facts alike. 47 of the 123 and four of the five have a label of their own
   (item, location, customer, payer, work order, vehicle, invoice, receipt, refund obligation, user
   account, role, role grant, company, branch and the like; requested by, approved by, counted by,
   created by); the other 76, and `independent_sign_off_by`, read "Reference" with the field's code
@@ -5297,7 +5310,7 @@ switch, so of the screens whose scope is the loader's only the service catalogue
 New catalogue keys, English and Arabic: `inventory.setup.items.unitNotNamed`,
 `inventory.setup.units.dimension.{area,count,length,mass,other,time,volume}`,
 `audit.detail.references`, `audit.detail.referencesHint`,
-`audit.field.{entityType,exportPermissionCode,permissionCode,requiredPermission,resource}` and 42
+`audit.field.{entityType,exportPermissionCode,permissionCode,requiredPermission,resource}` and 44
 keys under `audit.reference.*`. Removed from both: `attention.discrepancy.countRef`. The mass
 dimension is "الكتلة": the Arabic catalogue says "الوزن" nowhere, so there was no existing term to
 follow, and "الكتلة" is the dimension's own name.
@@ -5315,18 +5328,24 @@ before and at full width; the column starting under the padding; a refused code'
 larger sizes as they were; and one label to a page with no page after the last. 13 of them fail
 against `22229fca`.
 
-`audit-log.dom` holds the drawer in 24 cases built from the rows the service writes: a role's
+`audit-log.dom` holds the drawer in 32 cases built from the rows the service writes: a role's
 permission added, changed and removed; a role granted; a stock adjustment with its item, location
-and people; the approved refund of the screenshot; identifiers in every spelling; a setting value
-with identifiers inside it; numbers, digests, file names and long hexadecimal values; the
-service's vocabulary; and one property held over rows made by a fixed-seed generator (three runs
-of forty rows, with padding, line breaks, markup-looking text, an empty value and a field
-repeated): each field with its old and new value is drawn exactly once with its characters
-intact, in the order given within its group. Measured by four single-line mutations of the
-product, each restored byte for byte: with one fact row not drawn 21 cases fail; with the
-references classified and not drawn, 18; with a value trimmed before it is drawn, 4; with an
-identifier quoted in a sentence replaced, 7. The three property runs fail under every one of the
-four.
+and people; the approved refund of the screenshot; a third-party allocation with its two payers;
+two fields of one kind in one record; identifiers in every spelling; an identifier quoted in
+Arabic text; values that are not text or are missing; a setting value with identifiers inside it;
+numbers, digests, file names and long hexadecimal values; the service's vocabulary; and one
+property held over rows made by a fixed-seed generator (three runs of forty rows): each field
+with its old and new value is drawn exactly once with its characters intact, in the order given
+within its group, no value as a dash and an empty value as a blank. Every run holds, at places
+the seed chooses, an empty value before and after the change, a row with no value on either side,
+a row whose field is the empty string, a value over 200 characters, Arabic text quoting an
+identifier, one field twice and values that are not text. Measured by seven single-line mutations
+of the product, each restored byte for byte, the three property runs failing under each of the
+first six: an empty value before the change not drawn, 3 cases fail; an empty value after it
+drawn as a dash, 3; one fact row not drawn, 26; the references classified and not drawn, 23; a
+value trimmed before it is drawn, 4; an identifier quoted in a sentence replaced, 10. With the
+field's code drawn only on a reference with no label of its own, 18 cases fail, the allocation
+and the two-fields cases among them.
 
 What no tier of this repository covers: the height and width of the bars as a browser lays them
 out and as a printer prints them. The DOM cases hold the arithmetic the stylesheet states; the
