@@ -1990,3 +1990,85 @@ describe('P1-32-PRE-OD-INVG: a created item names its unit, never the unit code'
     });
   }
 });
+
+/**
+ * P1-32-PRE-OD-INVG — runtime retest O2: the Dimension column of the units
+ * table drew the stored English word (`volume`, `count`) in the Arabic
+ * interface. The six dimensions the schema allows are worded by the catalogue
+ * in both languages; a dimension it does not know is said as "Other".
+ */
+describe('P1-32-PRE-OD-INVG: the units table words each dimension in the page language', () => {
+  const DIMENSIONS = ['count', 'mass', 'volume', 'length', 'area', 'time'] as const;
+  const oneUnitPerDimension = DIMENSIONS.map((dimension, index) => ({
+    id: `0000000${index}-0000-4000-8000-000000000000`,
+    scope: 'tenant',
+    code: `u_${dimension}`,
+    name: `Unit ${index + 1}`,
+    dimension,
+  }));
+  const renderIn = (locale: 'en' | 'ar') =>
+    locale === 'en'
+      ? renderScreen()
+      : renderRtl(
+          <SetupScreen
+            locale="ar"
+            messages={ar}
+            canManage={false}
+            canReadStock={false}
+            canReadBranches={false}
+          />
+        );
+  const unitsTable = (locale: 'en' | 'ar') =>
+    screen.findByRole('table', {
+      name: (locale === 'en' ? EN : AR)['inventory.setup.units.caption'] as string,
+    });
+
+  it('the contract lists exactly the six dimensions the schema allows', async () => {
+    const { UNIT_DIMENSIONS } = await import('@/features/inventory/inventory-contract');
+    expect([...UNIT_DIMENSIONS].sort()).toEqual([...DIMENSIONS].sort());
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: every dimension is drawn by its catalogue word, never the stored one`, async () => {
+      const T = locale === 'en' ? EN : AR;
+      listUnitsOfMeasure.mockResolvedValue(okRead({ items: oneUnitPerDimension }));
+      renderIn(locale);
+      const table = await unitsTable(locale);
+      const cells = await within(table).findAllByTestId('setup-unit-dimension');
+      expect(cells.map((cell) => cell.textContent)).toEqual(
+        DIMENSIONS.map((dimension) => T[`inventory.setup.units.dimension.${dimension}`])
+      );
+      for (const [index, dimension] of DIMENSIONS.entries()) {
+        const word = T[`inventory.setup.units.dimension.${dimension}`] as string;
+        expect(word.length).toBeGreaterThan(0);
+        // Not the stored machine word (lower case in the read), in either language.
+        expect(cells[index]?.textContent).not.toBe(dimension);
+        // And in Arabic, no Latin letter at all.
+        if (locale === 'ar') expect(word).not.toMatch(/[A-Za-z]/);
+      }
+    });
+
+    it(`${locale}: a dimension the catalogue does not word is said as other, not drawn as stored`, async () => {
+      const T = locale === 'en' ? EN : AR;
+      listUnitsOfMeasure.mockResolvedValue(
+        okRead({
+          items: [{ ...oneUnitPerDimension[0], dimension: 'luminous_intensity' }],
+        })
+      );
+      renderIn(locale);
+      const table = await unitsTable(locale);
+      const cell = await within(table).findByTestId('setup-unit-dimension');
+      expect(cell.textContent).toBe(T['inventory.setup.units.dimension.other']);
+      expect(table.textContent).not.toContain('luminous_intensity');
+    });
+  }
+
+  it('the two catalogues word the same dimensions, each in its own language', () => {
+    for (const dimension of [...DIMENSIONS, 'other']) {
+      const key = `inventory.setup.units.dimension.${dimension}`;
+      expect(EN[key]).toBeTruthy();
+      expect(AR[key]).toBeTruthy();
+      expect(AR[key]).not.toBe(EN[key]);
+    }
+  });
+});

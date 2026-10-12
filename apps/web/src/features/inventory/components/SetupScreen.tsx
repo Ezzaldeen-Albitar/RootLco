@@ -100,6 +100,7 @@ import {
   MAX_NAME,
   QUANTITY,
   SKU_CODE,
+  UNIT_DIMENSIONS,
   type CreatedStockLocation,
   type InventoryItem,
   type ItemCategory,
@@ -560,6 +561,21 @@ function CategoryForm({
  * Units
  * ------------------------------------------------------------------ */
 
+/**
+ * A unit's measurement dimension in the page language (P1-32-PRE-OD-INVG,
+ * runtime retest O2): the read publishes the stored word (`volume`, `mass`),
+ * which the Arabic table drew as it was stored. A dimension the catalogue does
+ * not word — one added to the schema after this screen — is said as "Other",
+ * never drawn as the stored word.
+ */
+function dimensionName(messages: Messages, dimension: string): string {
+  const known = (UNIT_DIMENSIONS as readonly string[]).includes(dimension);
+  return translateDynamic(
+    messages,
+    `inventory.setup.units.dimension.${known ? dimension : 'other'}`
+  );
+}
+
 function UnitsSection({ messages, units }: { readonly messages: Messages; readonly units: Units }) {
   const { read } = units;
   return (
@@ -624,8 +640,8 @@ function UnitsSection({ messages, units }: { readonly messages: Messages; readon
                   <TableCell>
                     <bdi>{unitName(messages, unit)}</bdi>
                   </TableCell>
-                  <TableCell>
-                    <bdi>{unit.dimension}</bdi>
+                  <TableCell data-testid="setup-unit-dimension">
+                    {dimensionName(messages, unit.dimension)}
                   </TableCell>
                   <TableCell>
                     {translateDynamic(messages, `inventory.setup.units.scope.${unit.scope}`)}

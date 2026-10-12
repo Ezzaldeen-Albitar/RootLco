@@ -490,6 +490,16 @@ export interface ItemCategory {
 export const UNIT_SCOPES = ['platform', 'tenant'] as const;
 export type UnitScope = (typeof UNIT_SCOPES)[number];
 
+/**
+ * The measurement dimensions a unit can have — the six
+ * `ck_units_of_measure_dimension` allows
+ * (`supabase/migrations/20260723093000_inv_reference.sql`). The read publishes
+ * the dimension as a plain string; these are the ones the catalogue words
+ * (`inventory.setup.units.dimension.<dimension>`).
+ */
+export const UNIT_DIMENSIONS = ['count', 'mass', 'volume', 'length', 'area', 'time'] as const;
+export type UnitDimension = (typeof UNIT_DIMENSIONS)[number];
+
 /** One row of `inv.uom-list` (`UnitOfMeasureView`): the platform set plus the tenant units. */
 export interface UnitOfMeasureOption {
   readonly id: string;
