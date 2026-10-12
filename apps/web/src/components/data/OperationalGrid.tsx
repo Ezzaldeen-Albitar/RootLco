@@ -147,6 +147,13 @@ export interface OperationalColumn<Row> {
   readonly cell: (row: Row) => ReactNode;
   /** Relative width. One unless stated. */
   readonly flex?: number;
+  /**
+   * The longest line a cell of this column draws, in characters, where it must
+   * be read whole: a moment, a sentence. The column is never laid out narrower
+   * than that (`columnMinWidth`), and the grid scrolls sideways instead of
+   * cutting the text off. Unstated, the column keeps the floor every column has.
+   */
+  readonly minChars?: number;
   /** Not drawn below this breakpoint — see "Narrow viewports". */
   readonly hideBelow?: 'sm' | 'md' | 'lg';
 }
@@ -254,6 +261,20 @@ export function rowActionsMinWidth(labelRows: readonly (readonly string[])[]): n
     widest = Math.max(widest, width);
   }
   return Math.max(SPACE_PX['24'], widest);
+}
+
+/**
+ * The narrowest a column may be for a line of `characters` characters: the same
+ * estimate the row-actions column uses — `space-2` per character, which is
+ * wider than the average glyph of a 14 px line in either script, plus the
+ * cell's padding — and never below the floor. Exported so the width is tested
+ * on the function as well as on the render.
+ */
+export function columnMinWidth(characters: number): number {
+  return Math.max(
+    SPACE_PX['24'],
+    Math.ceil(characters) * ACTION_CHARACTER_PX + ACTION_CELL_PADDING_PX
+  );
 }
 
 /**
@@ -389,7 +410,7 @@ export function OperationalGrid<Row>({
       hideable: false,
       disableColumnMenu: true,
       flex: column.flex ?? 1,
-      minWidth: SPACE_PX['24'],
+      minWidth: column.minChars === undefined ? SPACE_PX['24'] : columnMinWidth(column.minChars),
       align: column.numeric ? 'right' : 'left',
       headerAlign: column.numeric ? 'right' : 'left',
       ...(column.numeric ? { cellClassName: 'tabular-nums' } : {}),

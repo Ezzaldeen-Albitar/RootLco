@@ -45,7 +45,7 @@ vi.mock('@mui/x-data-grid', async (original) => ({
   },
 }));
 
-const { OperationalGrid, ROW_ACTIONS_FIELD, rowActionsMinWidth } =
+const { OperationalGrid, ROW_ACTIONS_FIELD, columnMinWidth, rowActionsMinWidth } =
   await import('@/components/data/OperationalGrid');
 
 interface Visit {
@@ -126,5 +126,54 @@ describe('the row-actions column is handed a width its labels fit in', () => {
     expect(handed.find((column) => column.field === ROW_ACTIONS_FIELD)?.minWidth).toBe(
       SPACE_PX['24']
     );
+  });
+});
+
+/**
+ * A column that must be read whole says how long its longest line is
+ * (`minChars`), and is handed a width that line fits in by the same estimate
+ * the row-actions column uses (P1-32-PRE-OD-INVH: a moment in a 96 px column
+ * was cut off after its first words). As above, what is proved is the width the
+ * grid is HANDED; the width a browser draws is not something jsdom can show.
+ */
+describe('a column is handed a width its longest line fits in', () => {
+  it('estimates a line at space-2 a character plus the cell padding, never below the floor', () => {
+    expect(columnMinWidth(0)).toBe(SPACE_PX['24']);
+    expect(columnMinWidth(5)).toBe(SPACE_PX['24']);
+    expect(columnMinWidth(23)).toBe(23 * SPACE_PX['2'] + SPACE_PX['5']);
+    expect(columnMinWidth(30.2)).toBe(31 * SPACE_PX['2'] + SPACE_PX['5']);
+    // A longer line is never handed a narrower column.
+    for (let characters = 1; characters < 60; characters += 1) {
+      expect(columnMinWidth(characters + 1)).toBeGreaterThanOrEqual(columnMinWidth(characters));
+      expect(columnMinWidth(characters)).toBeGreaterThanOrEqual(characters * SPACE_PX['2']);
+    }
+  });
+
+  it('hands the column that asks for one its own floor, and leaves the others theirs', () => {
+    const moment = '9 Oct 2026, 19:20 GMT+3';
+    renderLtr(
+      <OperationalGrid<Visit>
+        messages={getMessages('en')}
+        label="Visits"
+        columns={[
+          { id: 'reference', headerKey: 'column.reference', cell: (row) => row.reference },
+          {
+            id: 'when',
+            headerKey: 'column.reference',
+            minChars: moment.length,
+            cell: () => moment,
+          },
+        ]}
+        rowId={(row) => row.id}
+        table={table(ROWS)}
+      />
+    );
+    const when = handed.find((column) => column.field === 'when');
+    expect(when?.minWidth).toBe(columnMinWidth(moment.length));
+    expect(when?.minWidth ?? 0).toBeGreaterThan(moment.length * SPACE_PX['2']);
+    expect(when?.minWidth ?? 0).toBeGreaterThan(SPACE_PX['24']);
+    // It still shares the remaining width as before.
+    expect(when?.flex).toBe(1);
+    expect(handed.find((column) => column.field === 'reference')?.minWidth).toBe(SPACE_PX['24']);
   });
 });
