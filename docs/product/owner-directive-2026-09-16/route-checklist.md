@@ -5227,6 +5227,10 @@ code, API contract, branch scope or migration changed.
   name too long for one line ends in an ellipsis, as does the sentence that stands in place of bars
   that cannot be drawn. The bars are no shorter than what was printed before and no module is
   narrower: an EAN-13 symbol goes from 35.9 mm to 46 mm wide and a Code 128 symbol stays 46 mm.
+  The wider EAN-13 was not asked for; it follows from giving the symbol the whole width, and it is
+  part of the label decision below. Its quiet zones are inside the 46 mm: 5.66 mm is clear on each
+  side with the padding, against 4.48 mm asked on the left (1.19 mm to spare) and 2.85 mm on the
+  right.
   **The pack-quantity row is not drawn on this size** (it still ends the 70 × 40 mm and A4 labels,
   which are unchanged): a fourth text row fits only with shorter bars, and that trade is not made
   here — see the open decisions below. The symbologies drawn (Code 128, EAN-13, EAN-8, UPC-A)
@@ -5234,48 +5238,53 @@ code, API contract, branch scope or migration changed.
   of the drawn symbol and are unchanged, and the margin above the bars is the padding.
 
 A sixth point comes from the run of the new screens on the same day (CP-20261012-1, case A-07c;
-evidence outside the repository), on the same terms — implemented, not yet runtime-retested:
+evidence outside the repository). **It is not closed by this change**, and its runtime row stays as
+found:
 
 - **The audit record drawer (`/administration/audit-log`, `audit/labels.ts`,
   `AuditLogScreen.tsx`).** Under Details the drawer drew a refund request's `obligationId` as it
-  came: "Another detail", the field's code and a full identifier. The log exists to say what
-  changed, so the rule leaves out record identifiers and nothing else:
-  1. Never altered: the audit vocabulary the service writes as a value — `permission_code`,
-     `requiredPermission`, `exportPermissionCode`, `entity_type`, `resource` — each under a
-     catalogue label, and business numbers whose names end in "id" (`vatId`, `national_id` and the
-     like; no writer records one today).
-  2. A row is left out when its field is named for a record identifier (`id`, `ids`, `uuid`, or
-     ending `Id`, `Ids`, `_id`, `_ids`, at the last step of a path) and its value holds an
-     identifier, alone or in a list, in any case, with or without dashes; and when its whole value
-     is a dashed identifier under any field (`requestedBy`).
-  3. Free text is never dropped: an identifier quoted in a reason or a note is replaced by
-     "[reference]" / "[مرجع]" and every other word is kept.
-  4. A structured value loses only its identifier members, at any depth, and keeps the rest with
-     the characters it was written with; it is left out only when nothing remains. No writer
-     records a structured value today.
-  5. Everything else is drawn as written: numbers (a numeric `customer_id` too), codes, digests,
-     file names. Thirty-two hexadecimal characters are taken for an identifier only under a field
-     named for one; elsewhere they are a digest.
+  came: "Another detail", the field's code and a full identifier. An audit record is evidence, so
+  the drawer leaves nothing of it out and rewrites nothing: every detail row the read returns is
+  drawn, each value with the characters it came with. Two earlier forms of this change left
+  identifiers out; both were withdrawn on review, because without a name to put in their place the
+  record no longer said which role, which grantee, which item or who had asked. What changes is the
+  layout only. The facts come first. After them, under the heading "Record references" / "مراجع
+  السجلات" and the line "Internal references that identify the records this event concerns. Quote
+  them to support if you need help.", come the rows whose every value is an identifier or a list of
+  them: under a field named for one (`id`, `ids`, `uuid`, or ending `Id`, `Ids`, `_id`, `_ids`) with
+  or without dashes, and under any other field (`requestedBy`) a dashed one. Each has a label saying
+  what kind of record it points to, and its value is drawn whole and can be selected for copying.
+  The classification decides the group and never whether a row is drawn. Among the facts stay the
+  audit vocabulary the service writes as a value — `permission_code`, `requiredPermission`,
+  `exportPermissionCode`, `entity_type`, `resource`, each under a catalogue label — business
+  numbers, digests, file names, a sentence that quotes an identifier, and a structured value such
+  as a setting's (`organization-settings-service.ts` writes `setting_value` as JSON), drawn whole
+  whatever is inside it. A record type is said in the drawer's own words for one and its code
+  follows in brackets, as written.
 
-  When an identifier was left out — a row, a member or a quoted one — the drawer says "Record
-  identifiers are not shown here." / "معرّفات السجلات لا تُعرض هنا.", and only then; a record whose
-  rows are all identifiers says that rather than that it has no details. A record type is said in
-  the drawer's own words for one, with its code in brackets where the catalogue has no name of its
-  own for it. A permission is drawn by its code under the label "Permission": the web holds no
-  wording for a permission — the permissions screen draws the description the service publishes
-  with its catalogue (`iam.permission-list`), which the audit screen does not read. Nothing is
-  resolved to a name: the read (`iam.audit-event-detail`) names the actor and the account a record
-  is about, both drawn in the drawer's own rows, and no other record.
+  So the identifier the run recorded is still on the screen: under "Refund obligation" among the
+  references, no longer as "Another detail" among the facts. Closing the point needs the read to
+  name the records an event concerns, which is a change to the API and is recorded as a planned
+  backend change and an Owner decision below. The gaps found:
+  - `iam.role.permission_changed` records which permission changed and not on which role
+    (`access-administration-service.ts`, the `appendAudit` after the effect update); the added and
+    removed events record `role_id`.
+  - The read (`iam.audit-event-detail`) names the actor and, for a record of type
+    `iam.user_account`, the account it is about (`subjectLabel` in `AuditLogScreen.tsx`). It names
+    no role, no grantee of a role grant, no item, location, invoice or obligation, and none of the
+    people in `requestedBy`, `approvedBy`, `countedBy` or `createdBy`.
+  - No wording for a permission reaches the audit read: the description of a permission is
+    published with the permission catalogue (`iam.permission-list`) only, so a permission is drawn
+    by its code under the label "Permission".
+  - The record's own `entityId` is not drawn anywhere on the screen.
 
   The rows are written by 284 `appendAudit` and `auditForOperation` call sites in 75 files under
-  `apps/api/src/modules` (1,019 detail entries, 445 distinct field names, 123 of them named for an
-  identifier). Their shapes, each held by a case: a role's permission added, changed or removed
-  (`access-administration-service.ts`); a state or decision with a typed reason; a reference to
-  another record (`obligationId`, `invoice_id`); a person under a name that does not say so
-  (`requestedBy`, `approvedBy`, `countedBy`); identifiers joined by commas
-  (`releasedReservationIds`); words joined by commas (`changed_columns`, `fields`); amounts,
-  quantities and counts; business numbers and codes (`receiptNumber`, `display_number`); permission
-  and record-type vocabulary; digests and content facts (`rows_digest`, `content_type`).
+  `apps/api/src/modules` (1,019 detail entries, 445 distinct field names). 123 fields are named for
+  an identifier and five for a person. 47 of the 123 and four of the five have a label of their own
+  (item, location, customer, payer, work order, vehicle, invoice, receipt, refund obligation, user
+  account, role, role grant, company, branch and the like; requested by, approved by, counted by,
+  created by); the other 76, and `independent_sign_off_by`, read "Reference" with the field's code
+  under the support label.
 
   The grid draws no detail. Its last column, the support reference, draws the reference as it came,
   which at runtime is an identifier; that is unchanged and belongs to the support-reference decision
@@ -5287,11 +5296,11 @@ switch, so of the screens whose scope is the loader's only the service catalogue
 
 New catalogue keys, English and Arabic: `inventory.setup.items.unitNotNamed`,
 `inventory.setup.units.dimension.{area,count,length,mass,other,time,volume}`,
-`audit.detail.identifiersOmitted`, `audit.detail.identifierPlaceholder` and
-`audit.field.{entityType,exportPermissionCode,permissionCode,requiredPermission,resource}`. Removed
-from both: `attention.discrepancy.countRef`. The mass dimension is "الكتلة": the Arabic catalogue
-says "الوزن" nowhere, so there was no existing term to follow, and "الكتلة" is the dimension's own
-name.
+`audit.detail.references`, `audit.detail.referencesHint`,
+`audit.field.{entityType,exportPermissionCode,permissionCode,requiredPermission,resource}` and 42
+keys under `audit.reference.*`. Removed from both: `attention.discrepancy.countRef`. The mass
+dimension is "الكتلة": the Arabic catalogue says "الوزن" nowhere, so there was no existing term to
+follow, and "الكتلة" is the dimension's own name.
 
 Tests, in the existing DOM files (en and ar): `inventory-material-requirements.dom` (the family by
 its path of names, no code on the panel), `inventory-item-codes.dom` (the header's unit cell holds
@@ -5303,11 +5312,21 @@ byte for byte. `inventory-labels.dom` holds the smallest label in 14 cases: the 
 that it carries no pack quantity; that the rows the stylesheet states add up to less than the
 label, each one line that cannot wrap or be squeezed; bars no shorter than the 8.35 mm printed
 before and at full width; the column starting under the padding; a refused code's label; the two
-larger sizes as they were; and one label to a page with no page after the last. `audit-log.dom`
-holds the drawer in 20 cases built from the rows the service writes. Measured by mutation, the
-product files restored byte for byte each time: against `22229fca`, 13 of the label cases and 18 of
-the audit cases fail; against the first form of this change (`153b2f79`: 6.5 mm bars with a pack
-row, and a rule that hid whole rows), 8 and 17 fail.
+larger sizes as they were; and one label to a page with no page after the last. 13 of them fail
+against `22229fca`.
+
+`audit-log.dom` holds the drawer in 24 cases built from the rows the service writes: a role's
+permission added, changed and removed; a role granted; a stock adjustment with its item, location
+and people; the approved refund of the screenshot; identifiers in every spelling; a setting value
+with identifiers inside it; numbers, digests, file names and long hexadecimal values; the
+service's vocabulary; and one property held over rows made by a fixed-seed generator (three runs
+of forty rows, with padding, line breaks, markup-looking text, an empty value and a field
+repeated): each field with its old and new value is drawn exactly once with its characters
+intact, in the order given within its group. Measured by four single-line mutations of the
+product, each restored byte for byte: with one fact row not drawn 21 cases fail; with the
+references classified and not drawn, 18; with a value trimmed before it is drawn, 4; with an
+identifier quoted in a sentence replaced, 7. The three property runs fail under every one of the
+four.
 
 What no tier of this repository covers: the height and width of the bars as a browser lays them
 out and as a printer prints them. The DOM cases hold the arithmetic the stylesheet states; the
@@ -5318,12 +5337,14 @@ physical printer or scanner was used.
 
 Open Owner decisions:
 
-1. **Pack quantity on the 50 × 25 mm label.** Whether the smallest label should carry the pack
-   quantity, which needs either a larger label or shorter bars and a physical scan test.
-2. **Record identifiers for an auditor.** The drawer no longer draws them, and the record's own
-   `entityId` was never drawn, so the drawer says what kind of record an event concerns and not
-   which one. Whether an auditor needs identifiers reachable some other way — a copy action, a
-   support view — or records named by the read, which needs the API to publish names.
+1. **Pack quantity on the 50 × 25 mm label, and the width of its bars.** Whether the smallest
+   label should carry the pack quantity, which needs either a larger label or shorter bars and a
+   physical scan test; and whether an EAN-13 symbol should take the whole width, as it now does.
+2. **Naming the records an audit event concerns.** The drawer draws their identifiers as
+   references and cannot say them by name. Closing the retest's point needs the read to publish
+   names — the subject of every record type, the role, the grantee, the people — and
+   `iam.role.permission_changed` to record its role. A planned backend change; until then the
+   identifiers stay on the screen.
 3. **The support reference.** "Reference:" followed by a full identifier at the end of a refusal
    (retest point O5), and the support reference in the audit grid's last column and in the drawer.
    Of a kind with it and also unchanged: the drawer's action code, record type code and a detail
