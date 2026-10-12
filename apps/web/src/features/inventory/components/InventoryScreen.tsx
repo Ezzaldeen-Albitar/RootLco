@@ -269,13 +269,19 @@ export function InventoryScreen({
       {notice ? (
         <p role="status" className="text-caption text-text-muted" lang={locale}>
           {translateDynamic(messages, notice.messageKey)}
-          {notice.reservationId ? (
-            <>
-              {' '}
+          {/*
+           * How much was reserved, which the answer carries. The reservation's
+           * identifier stood here (P1-32-PRE-OD-INVH): a reservation has no
+           * number of its own, and an identifier is nothing an operator can use.
+           */}
+          {notice.quantity ? (
+            <span data-testid="reservation-notice-quantity">
+              {' · '}
+              {translate(messages, 'inventory.reserve.figure.quantity')}{' '}
               <code className="font-mono" dir="ltr">
-                {notice.reservationId}
+                {notice.quantity}
               </code>
-            </>
+            </span>
           ) : null}
         </p>
       ) : null}
@@ -317,7 +323,8 @@ export function InventoryScreen({
 /** What a write left to say, shown above the panels it caused to re-read. */
 interface WriteNotice {
   readonly messageKey: string;
-  readonly reservationId: string | null;
+  /** The quantity the write answered with, where it answered with one. */
+  readonly quantity: string | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -543,15 +550,8 @@ function ItemResults({
           </span>
         ),
       },
-      {
-        id: 'id',
-        headerKey: 'inventory.items.column.id',
-        cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.id}
-          </code>
-        ),
-      },
+      // No identifier column (P1-32-PRE-OD-INVH): an item is known by its stock
+      // code, the first column, and nothing on this screen asks for its identifier.
     ],
     [messages, locale, units]
   );
@@ -949,7 +949,7 @@ function ReservationsPanel({
             setReserving(false);
             onChanged({
               messageKey: echo.replayed ? 'inventory.reserve.replayed' : 'inventory.reserve.booked',
-              reservationId: echo.id,
+              quantity: echo.quantity,
             });
           }}
         />
@@ -1005,7 +1005,7 @@ function ReservationResults({
       setOutcome(null);
       onChanged(
         result.created.replayed
-          ? { messageKey: 'inventory.release.replayed', reservationId: result.created.id }
+          ? { messageKey: 'inventory.release.replayed', quantity: null }
           : null
       );
     }
@@ -1036,12 +1036,15 @@ function ReservationResults({
         headerKey: 'inventory.reservations.column.workOrder',
         cell: (row) =>
           row.workOrderId ? (
+            // The row carries the work order's identifier and not its number, so
+            // the link says what it does; the stock code tells one row's link from
+            // the next for a screen reader.
             <Link
               href={`/${locale}/work-orders/${row.workOrderId}`}
-              className="font-mono text-caption text-primary underline-offset-2 hover:underline"
-              dir="ltr"
+              className="text-caption text-primary underline-offset-2 hover:underline"
+              aria-label={`${translate(messages, 'inventory.reservations.openWorkOrder')}: ${row.sku}`}
             >
-              {row.workOrderId}
+              {translate(messages, 'inventory.reservations.openWorkOrder')}
             </Link>
           ) : (
             <span className="text-text-muted">
