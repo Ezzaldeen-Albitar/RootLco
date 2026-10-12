@@ -1988,8 +1988,10 @@ Empty: **"Nothing in this branch has reached its reorder level."**
 records. The decision says what happened to the correction it
 raised."_ <!-- attention.discrepancy.rule -->
 
-Columns: **Count** (where the count was taken and when it began), **Item**, **Difference**,
-**Decision** — or **"No correction was raised"**. There is a link to **Open stock counts**.
+Columns: **Count** (the code you gave the location, and the moment the count was reconciled),
+**Item**, **Difference**, **Decision** — or **"No correction was raised"**. There is a link to
+**Open stock counts**. The stock counts screen lists a count by the moment it was started, so the
+two times differ.
 
 Empty: **"No finished count in this branch found a difference."**
 

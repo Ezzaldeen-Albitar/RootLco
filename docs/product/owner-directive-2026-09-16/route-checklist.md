@@ -5205,10 +5205,15 @@ code, API contract, branch scope or migration changed.
   "Other" / "أخرى" rather than the stored word.
 - **Differences found by a count (`/attention`, `cards.tsx`; retest point O6).** Each row ended
   "Count reference" and the first eight characters of the count's identifier. A count has no number
-  of its own, and the read (`inv.count-discrepancy-alert-read`) carries the location code and the
-  moment the count began, both already on the row. The fragment and its message
-  (`attention.discrepancy.countRef`) are removed; a row says which count by its location and its
-  moment on the branch clock, and shows nothing of the identifier.
+  of its own. The read (`inv.count-discrepancy-alert-read`) carries the code the operator gave the
+  location and, under the name `countedOn`, the moment the count was reconciled
+  (`inventory-alert-service.ts`, `row.reconciledAt`); both were already on the row. The fragment
+  and its message (`attention.discrepancy.countRef`) are removed, and the row shows the location
+  code and the reconciled moment on the branch clock, and nothing of the identifier. The stock
+  counts screen lists a count by the moment its snapshot was taken ("Started"), which is another
+  moment, so the row does not match that list by time and does not claim to. The retest classed
+  this point a design question; removing the fragment was decided in this change and can be
+  reverted on its own (one commit).
 - **The 50 × 25 mm label (`/inventory/labels`, `LabelRun.tsx`, `styles/print/_index.scss`; retest
   point O4).** No document in the repository states what a label of each size carries: the
   directive asks for printable labels (`README.md`, "Barcodes") and the manual lists the three

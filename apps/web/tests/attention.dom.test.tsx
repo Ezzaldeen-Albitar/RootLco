@@ -571,9 +571,9 @@ describe('differences found by a count', () => {
    * P1-32-PRE-OD-INVG (runtime retest O6). Each row used to end "Count
    * reference" followed by the first eight characters of the count's
    * identifier — a fragment of a machine identifier. A count has no number of
-   * its own, so the row now says which count by the two facts the counts screen
-   * lists a count by, where it was taken and when to the minute, and nothing of
-   * the identifier is drawn.
+   * its own, so the row says which count by the code of the location and the
+   * moment the count was reconciled, to the minute, and nothing of the
+   * identifier is drawn.
    */
   for (const locale of ['en', 'ar'] as const) {
     it(`says which count by its place and its moment, and shows nothing of its identifier (${locale})`, async () => {

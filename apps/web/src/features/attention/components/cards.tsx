@@ -498,11 +498,12 @@ export function CountDiscrepancyCard({
                 {t('attention.discrepancy.openCount')}
               </Link>
               {/*
-               * WHICH count, in the two facts the counts screen itself lists a
-               * count by — where it was taken and when, to the minute. A generic
-               * label beside a date left two counts of the same day telling the
-               * same story, and a row that cannot be matched to the count it
-               * came from is not a link to anything.
+               * WHICH count: the code the operator gave the location, and the
+               * moment the count was reconciled (`countedOn` is the read's name
+               * for it), to the minute. A generic label beside a date left two
+               * counts of the same day telling the same story. The counts
+               * screen lists a count by the moment its snapshot was taken,
+               * which is another moment: this row does not claim to match it.
                *
                * Nothing of the count's identifier is shown (P1-32-PRE-OD-INVG,
                * runtime retest O6). A count has no number of its own — there is
