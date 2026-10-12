@@ -23,11 +23,15 @@ export type LabelPreset = (typeof LABEL_PRESETS)[number];
  * identity row, and its title is for the screen only (the print stylesheet
  * leaves it off the paper).
  *
- * Every label, whatever its size, carries the same five rows: the bars, the
- * code, the name, the stock code and the pack quantity with its unit. The
- * three text rows below the code are marked `data-label="line"` so the print
- * stylesheet can give each a fixed height on the 50 x 25 mm label, where the
- * rows did not fit and the pack quantity was cut off (P1-32-PRE-OD-INVG).
+ * A label carries the bars, the code, the name and the stock code, and the two
+ * larger sizes end with the pack quantity and its unit. The 50 x 25 mm label
+ * does not carry that last row (P1-32-PRE-OD-INVG): it never fitted there —
+ * it was cut off, on screen and on paper — and it fits only with shorter bars.
+ * Whether the smallest label should carry it, on a larger label or with
+ * shorter bars and a scan test, is an open Owner decision; until it is made
+ * the row is not drawn where it cannot be read. The rows below the code are
+ * marked `data-label="line"` so the print stylesheet can give each a fixed
+ * height on that label.
  */
 export function LabelRun({
   locale,
@@ -75,10 +79,12 @@ export function LabelRun({
               <p data-label="line" className="text-caption text-text-secondary" dir="ltr">
                 {label.sku}
               </p>
-              <p data-label="line" className="text-caption text-text-muted">
-                <bdi dir="ltr">{label.packQuantity}</bdi>{' '}
-                <bdi>{unitNameByCode(messages, label.unit.code, units)}</bdi>
-              </p>
+              {preset === '50x25' ? null : (
+                <p data-label="line" className="text-caption text-text-muted">
+                  <bdi dir="ltr">{label.packQuantity}</bdi>{' '}
+                  <bdi>{unitNameByCode(messages, label.unit.code, units)}</bdi>
+                </p>
+              )}
             </div>
           ))}
         </div>

@@ -203,25 +203,30 @@
 }
 
 // The 50 x 25 mm label is the one preset whose content does not fit at the
-// screen's type sizes (P1-32-PRE-OD-INVG, runtime retest O4): five rows at the
-// caption size are taller than 25 mm, and a centred column that overflows is
-// cut at BOTH ends — the bars started at the label's top edge and the
-// pack-quantity line was cut off below. So this preset states every block
-// extent in millimetres and starts its column at the top:
+// screen's type sizes (P1-32-PRE-OD-INVG, runtime retest O4). Its column was
+// about 34 mm of rows centred in a 25 mm cell, and a centred column that
+// overflows is cut at BOTH ends: the bars began above the label's top edge, so
+// 8.35 mm of their 12.7 mm was printed and nothing lay between them and the
+// edge, and the last row was cut off below.
 //
-//   2 padding + 6.5 bars + 0.4 + 3 code + 0.4 + 3 name + 0.4 + 3 stock code
-//   + 0.4 + 3 pack quantity = 22.1 mm, inside the 25 mm label with its 2 mm
-//   padding below (0.9 mm to spare on paper, less the border on screen).
+// This preset therefore states every block extent in millimetres and starts
+// its column at the top, under the padding:
 //
-// The 2 mm above the bars is the cell's padding, kept clear because the column
-// starts at the top. Code 128 and the EAN/UPC family define their quiet zones
-// at the two ENDS of the symbol, not above it; those are part of the drawn
-// symbol (`lib/barcode/encode.ts`) and are not changed here.
+//   2 padding + 8.5 bars + 0.4 + 3.5 code + 0.4 + 3.5 name + 0.4 + 3.5 stock
+//   code = 22.2 mm, inside the 25 mm label with its 2 mm padding below
+//   (0.8 mm to spare on paper, less the cutting guide on screen).
 //
-// The symbol takes the whole width inside the padding. Left to size itself, a
-// drawing keeps the proportions of its own box, so bars made shorter would
-// also have become narrower — and a narrower bar is the one a scanner stops
-// reading.
+// The bars are no shorter than the 8.35 mm that was printed before, and they
+// take the whole width inside the padding: left to size itself a drawing keeps
+// the proportions of its own box, and a narrower bar is the one a scanner
+// stops reading. Code 128 and the EAN/UPC family define their quiet zones at
+// the two ENDS of the symbol, not above it; those are part of the drawn symbol
+// (`lib/barcode/encode.ts`) and are not changed here.
+//
+// The label carries the bars, the code, the name and the stock code. It does
+// not carry the pack quantity the larger labels end with (`LabelRun`): a
+// fourth text row fits only with shorter bars, and whether to make that trade
+// is a decision for the Owner with a scanner in hand, not for a stylesheet.
 [data-label-sheet='50x25'] [data-label='cell'] {
   justify-content: flex-start;
   gap: 0.4mm;
@@ -237,18 +242,21 @@
 
 [data-label-sheet='50x25'] [data-barcode='bars'] {
   flex: none;
-  block-size: 6.5mm;
+  block-size: 8.5mm;
 }
 
 // One line each, never wrapped: a long name ends in an ellipsis rather than
-// pushing the lines below it off the label.
+// pushing the rows below it off the label. The sentence drawn in place of bars
+// that cannot be drawn honestly is one such row, so a code that is refused
+// leaves the label shorter than one with bars, never taller.
 [data-label-sheet='50x25'] [data-barcode='text'],
+[data-label-sheet='50x25'] [data-barcode='refusal'],
 [data-label-sheet='50x25'] [data-label='line'] {
   overflow: hidden;
   flex: none;
   max-inline-size: 100%;
-  font-size: 2.3mm;
-  line-height: 3mm;
+  font-size: 2.8mm;
+  line-height: 3.5mm;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
