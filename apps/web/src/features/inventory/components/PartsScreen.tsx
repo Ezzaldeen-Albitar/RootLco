@@ -1775,11 +1775,14 @@ function MaterialRequestActions({
       <h2 id="parts-request-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'inventory.parts.request.heading')}
       </h2>
+      {/*
+       * The request is the one this draw just opened, which the heading says.
+       * Its identifier was drawn after the sentence as a "reference"
+       * (P1-32-PRE-OD-INVH): a request has no number of its own, and an
+       * identifier is nothing an operator can read out or look up.
+       */}
       <p className="text-caption text-text-muted">
-        {translate(messages, 'inventory.parts.request.explain')}{' '}
-        <code className="font-mono" dir="ltr">
-          {requestId}
-        </code>
+        {translate(messages, 'inventory.parts.request.explain')}
       </p>
       <FormTextField
         label={translate(messages, 'inventory.parts.request.reason')}
@@ -1859,6 +1862,43 @@ function PartIssuesPanel({
   const table = useServerTable<PartIssue>(load, { initial: INITIAL_REQUEST });
   const [returning, setReturning] = useState<PartIssue | null>(null);
   const zone = useStockDisplayZone(target);
+  /*
+   * Which reservation an issue was drawn from (P1-32-PRE-OD-INVH).
+   *
+   * An issue's row carries the reservation's identifier and nothing else about
+   * it, and the column drew that identifier. A reservation has no number of its
+   * own; what an operator can use is how much it held and when it was made,
+   * which the reservation list publishes (`inv.stock-reservation-list`, here
+   * for the work order in every state, since a reservation an issue consumed is
+   * no longer active). It is read only when a listed issue names a reservation,
+   * and again when the issues are read again. Where it cannot say — refused,
+   * not answered yet, or the reservation is beyond its first page — the row
+   * says the issue was drawn from a reservation, in words, and never falls back
+   * to the identifier.
+   */
+  const [reservations, setReservations] = useState<ReadonlyMap<string, StockReservation> | null>(
+    null
+  );
+  const companyId = target?.companyId ?? '';
+  const branchId = target?.branchId ?? '';
+  const issues = table.response?.rows ?? null;
+  const drawnFromOne = issues !== null && issues.some((row) => row.reservationId !== null);
+  useEffect(() => {
+    if (!drawnFromOne || companyId === '' || branchId === '') return;
+    let live = true;
+    void listReservations(
+      { companyId, branchId },
+      { workOrderId },
+      { ...INITIAL_REQUEST, pageSize: 100 },
+      null
+    ).then((page) => {
+      if (!live) return;
+      setReservations(page.status === 'ok' ? new Map(page.rows.map((row) => [row.id, row])) : null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [drawnFromOne, companyId, branchId, workOrderId, issues]);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   /*
    * The return form opens from a row of the grid, whose buttons the grid owns;
@@ -1910,16 +1950,31 @@ function PartIssuesPanel({
       {
         id: 'reservation',
         headerKey: 'inventory.parts.issues.column.reservation',
-        cell: (row) =>
-          row.reservationId ? (
-            <code className="font-mono text-caption" dir="ltr">
-              {row.reservationId}
-            </code>
-          ) : (
-            <span className="text-text-muted">
-              {translate(messages, 'inventory.parts.issues.noReservation')}
+        cell: (row) => {
+          if (!row.reservationId) {
+            return (
+              <span className="text-text-muted">
+                {translate(messages, 'inventory.parts.issues.noReservation')}
+              </span>
+            );
+          }
+          const reserved = reservations?.get(row.reservationId);
+          return (
+            <span data-testid="issue-reservation">
+              {reserved === undefined ? (
+                translate(messages, 'inventory.parts.issues.fromReservation')
+              ) : (
+                <>
+                  {translateWithValues(messages, 'inventory.parts.issues.reserved', {
+                    quantity: reserved.quantity,
+                  })}
+                  {' · '}
+                  <StockMoment value={reserved.createdAt} locale={locale} zone={zone} />
+                </>
+              )}
             </span>
-          ),
+          );
+        },
       },
       {
         id: 'issuedAt',
@@ -1927,7 +1982,7 @@ function PartIssuesPanel({
         cell: (row) => <StockMoment value={row.issuedAt} locale={locale} zone={zone} />,
       },
     ],
-    [locale, messages, zone]
+    [locale, messages, zone, reservations]
   );
 
   /*

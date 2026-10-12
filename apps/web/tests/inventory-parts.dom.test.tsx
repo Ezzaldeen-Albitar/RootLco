@@ -2046,7 +2046,13 @@ describe('a work-order draw needs a requirement', () => {
     const region = await screen.findByRole('region', {
       name: EN['inventory.parts.request.heading'] as string,
     });
-    expect(within(region).getByText(MATERIAL_REQUEST_ID)).toBeVisible();
+    // The request is said by its heading and its sentence. Its identifier was
+    // drawn after the sentence as a "reference" and no longer is (INV-H).
+    expect(within(region).getByText(EN['inventory.parts.request.explain'] as string)).toBeVisible();
+    expect(region.textContent).not.toContain(MATERIAL_REQUEST_ID);
+    expect(region.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
+    expect(EN['inventory.parts.request.explain']).not.toMatch(/Reference/);
+    expect(AR['inventory.parts.request.explain']).not.toMatch(/المرجع/);
     await user.click(
       within(region).getByRole('button', { name: EN['inventory.parts.request.close'] as string })
     );
@@ -2604,5 +2610,132 @@ describe('P1-32-PRE-OD-INVF: the chosen allowance and its unit in words', () => 
     const refusal = await screen.findByRole('alert');
     expect(refusal.textContent ?? '').toContain(`1.000 ${AR['units.name.litre'] as string}`);
     expect(refusal.textContent ?? '').not.toContain('litre');
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVH — the runtime retest of CP-20261012-2 (finding F2): the
+ * "Reservation" column of "Parts issued" drew the reservation's identifier.
+ *
+ * An issue's row carries that identifier and nothing else about the
+ * reservation, so the panel reads the work order's reservations
+ * (`inv.stock-reservation-list`, in every state: a reservation an issue
+ * consumed is no longer active) and says how much the reservation held and
+ * when it was made, on the branch clock. Where that read cannot say, the row
+ * says the issue was drawn from a reservation, in words. The identifier is
+ * drawn in neither case.
+ */
+describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by its identifier', () => {
+  const CATALOGUE = { en: EN, ar: AR } as const;
+  const RESERVED_AT = '2026-09-01T08:30:00Z';
+  const UNLISTED_RESERVATION = '77777777-7777-4777-8777-777777777777';
+  const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const issues = [
+    partIssue({ id: 'issue-1', sku: 'BRK-001', reservationId: RESERVATION_ID }),
+    partIssue({ id: 'issue-2', sku: 'BRK-002', reservationId: UNLISTED_RESERVATION }),
+    partIssue({ id: 'issue-3', sku: 'BRK-003', reservationId: null }),
+  ];
+
+  function renderIn(locale: 'en' | 'ar') {
+    const render = locale === 'en' ? renderInLtr : renderInRtl;
+    return render(
+      inBranch(
+        <PartsScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          workOrderId={WORK_ORDER_ID}
+          workOrder={workOrder as never}
+          workOrderRefused={false}
+          canOperate={false}
+          canReadWorkOrder={true}
+          canReadBranches={false}
+          currentUserId={USER_ID}
+          canRequestMaterial={false}
+          canApproveMaterial={false}
+          canDecideMaterialException={false}
+        />,
+        { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+      )
+    );
+  }
+  async function issuesGrid(locale: 'en' | 'ar'): Promise<HTMLElement> {
+    const region = await screen.findByRole('region', {
+      name: CATALOGUE[locale]['inventory.parts.issues.heading'] as string,
+    });
+    const grid = await within(region).findByRole('grid');
+    await within(grid).findByText('BRK-003');
+    return grid;
+  }
+  const rowOf = (grid: HTMLElement, sku: string): HTMLElement =>
+    within(grid).getByText(sku).closest('[role="row"]') as HTMLElement;
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: a listed reservation is said by what it held and when; an unlisted one in words`, async () => {
+      const T = CATALOGUE[locale];
+      listPartIssues.mockImplementation(async () => page(issues));
+      // The reservation the first issue consumed, as the list publishes it afterwards.
+      listReservations.mockImplementation(async () =>
+        page([{ ...reservation, status: 'consumed', quantity: '2.000', createdAt: RESERVED_AT }])
+      );
+      renderIn(locale);
+      const grid = await issuesGrid(locale);
+      const reserved = (T['inventory.parts.issues.reserved'] as string).replace(
+        '{quantity}',
+        '2.000'
+      );
+      await waitFor(() => expect(rowOf(grid, 'BRK-001')).toHaveTextContent(reserved));
+      // When it was made: on the work order's branch clock, named, never the browser's.
+      const first = within(rowOf(grid, 'BRK-001')).getByTestId('issue-reservation');
+      expectOnClock(first, RESERVED_AT, locale);
+      // A reservation the list did not return: said in words.
+      expect(within(rowOf(grid, 'BRK-002')).getByTestId('issue-reservation').textContent).toBe(
+        T['inventory.parts.issues.fromReservation']
+      );
+      // An issue drawn from none says so, as before.
+      expect(rowOf(grid, 'BRK-003')).toHaveTextContent(
+        T['inventory.parts.issues.noReservation'] as string
+      );
+      expect(within(rowOf(grid, 'BRK-003')).queryByTestId('issue-reservation')).toBeNull();
+      // No identifier anywhere in the table: not a reservation's, not an issue's.
+      const text = grid.textContent ?? '';
+      expect(text).not.toContain(RESERVATION_ID);
+      expect(text).not.toContain(UNLISTED_RESERVATION);
+      expect(text).not.toMatch(UUID_ANYWHERE);
+      // The reservations of the work order in its branch, in every state.
+      expect(listReservations).toHaveBeenCalledWith(
+        { companyId: COMPANY_ID, branchId: BRANCH_ID },
+        { workOrderId: WORK_ORDER_ID },
+        expect.objectContaining({ pageSize: 100 }),
+        null
+      );
+    });
+
+    it(`${locale}: when the reservations cannot be read, every such issue says so in words`, async () => {
+      const T = CATALOGUE[locale];
+      listPartIssues.mockImplementation(async () => page(issues));
+      listReservations.mockImplementation(async () => ({
+        status: 'denied' as const,
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr-denied',
+      }));
+      renderIn(locale);
+      const grid = await issuesGrid(locale);
+      await waitFor(() => expect(listReservations).toHaveBeenCalled());
+      for (const sku of ['BRK-001', 'BRK-002']) {
+        expect(within(rowOf(grid, sku)).getByTestId('issue-reservation').textContent).toBe(
+          T['inventory.parts.issues.fromReservation']
+        );
+      }
+      expect(grid.textContent ?? '').not.toMatch(UUID_ANYWHERE);
+    });
+  }
+
+  it('reads no reservation when no listed issue was drawn from one', async () => {
+    listPartIssues.mockImplementation(async () => page([partIssue({ sku: 'BRK-003' })]));
+    renderIn('en');
+    await issuesGrid('en');
+    expect(listReservations).not.toHaveBeenCalled();
   });
 });
