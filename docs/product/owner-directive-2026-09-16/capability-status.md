@@ -627,7 +627,8 @@ runtime retest of CP-20261012-2 found two more raw identifiers on the inventory 
 reservation's identifier in the "Reservation" column of "Parts issued" on `/inventory/parts`, and
 a category's code in brackets after its name in the category trees of `/inventory/setup`. Branch
 `feature/owner-directive-residual-fixes-inv-h`, cut from `develop` at
-`4928486af50b274a8bf174c4b4c1fbe45770598c`, carries a fix for each — implemented, not yet
+`4928486af50b274a8bf174c4b4c1fbe45770598c`, carries a fix for each, and for the same kind of
+identifier on the stock screen and the opening stock screen — implemented, not yet
 runtime-retested; the runtime row LANG-identifiers stays FAIL until retested and until the Owner
 decides the Reference identifier on refusals. The detail is in `route-checklist.md`, section
 `P1-32-PRE-OD-INVH`.

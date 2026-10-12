@@ -5392,33 +5392,44 @@ The runtime retest of CP-20261012-2 (run on the local acceptance site; its evide
 the repository) observed the five inventory fixes of `P1-32-PRE-OD-INVG` in the browser and found
 two more raw identifiers on the inventory screens, so its row LANG-identifiers still reads FAIL.
 Both are addressed on branch `feature/owner-directive-residual-fixes-inv-h`, cut from `develop` at
-`4928486a`. **Implemented, not yet runtime-retested; the runtime row LANG-identifiers stays FAIL
-until retested and until the Owner decides the Reference identifier on refusals.** Web source,
-tests and documents only: no route, operation, permission code, API contract, branch scope or
-migration changed.
+`4928486a`, with the same kind of identifier on the neighbouring screens. **Implemented, not yet
+runtime-retested; the runtime row LANG-identifiers stays FAIL until retested and until the Owner
+decides the Reference identifier on refusals.** Web source, tests and documents only: no route,
+operation, permission code, API contract, branch scope or migration changed.
 
 - **The reservation an issue was drawn from (`/inventory/parts`, `PartsScreen.tsx`; retest finding
-  F2).** The "Reservation" column of "Parts issued" drew the reservation's identifier. The column
-  says whether an issue was drawn from a reservation and which. An issue's row
-  (`inv.work-order-part-issue-list`) carries the reservation's identifier and nothing else about
-  it, and a reservation has no number of its own. What an operator can use is how much the
-  reservation held and when it was made, which the reservation list publishes
-  (`inv.stock-reservation-list`). The panel now reads that list for the work order in its branch,
-  in every state — a reservation an issue consumed is no longer active — only when a listed issue
-  names a reservation, and again when the issues are read again; the cell reads "Reserved 2.000 ·"
-  and the moment on the branch clock. Where the list cannot say — refused, not answered yet, or
-  the reservation is beyond its first hundred — the cell reads "Drawn from a reservation" /
-  "صُرف من حجز". An issue drawn from none reads "No reservation", as before. The identifier is
-  drawn in no case.
+  F2).** The "Reservation" column of "Parts issued" drew the reservation's identifier. An issue's
+  row (`inv.work-order-part-issue-list`) carries that identifier and nothing else about the
+  reservation, and a reservation has no number of its own. What an operator can use is how much
+  the reservation held and when it was made, which the reservation list publishes
+  (`inv.stock-reservation-list`). The cell now reads, on two lines, "Reserved 2.000" and the moment
+  on the branch clock; where the list cannot say, "Drawn from a reservation" / "صُرف من حجز"; and
+  for an issue drawn from none, "No reservation", as before. The identifier is drawn in no case.
+  - _The read._ The list is asked for the work order in every state — a reservation an issue
+    consumed is no longer active — which is why it is not the issue form's read: the form asks the
+    same list for the active reservations only, the ones that can still be issued from. Two
+    questions, two reads, and with the form open exactly two. The table's is made once for the
+    reservations the listed issues name: not when none names one, not again when the screen is
+    drawn again or the issues are read again and name the same ones, and again when they name
+    another or the last read did not answer.
+  - _Its branch_ comes from the issue rows, which carry it, and not from the work-order header: a
+    holder of `inv.stock.read` who may not read work orders has no header and would otherwise never
+    see more than the fallback. Rows that did not share a branch would not be guessed at; nothing
+    is read and they say it in words.
+  - _Every outcome settles_ (`settleRead`): a refusal, a read that fails in transit or does not
+    answer, and one abandoned because the screen was taken down all leave the words, with no
+    notice and nothing on the console.
+  - _Width._ The evidence shows a moment in a column about 135 px wide, cut off after "GM". The
+    grid lays every column out no narrower than 96 px and has no wrapping or tooltip of its own;
+    its own convention for a width is an estimate from token values, never a measurement. A column
+    can now say how long its longest line is (`minChars` on `OperationalGrid`, 8 px a character
+    plus the cell's padding), and the two columns of this table that draw a moment ask for the
+    longest moment on the page, about 204 px in English; the grid scrolls sideways before it cuts
+    one off. The whole text is also the cell's `title`. What a browser draws can only be shown by
+    the runtime retest.
 - **The material a draw opened (the same screen).** After a governed reservation or issue, the
   section "The material this draw opened" ended its sentence "Reference:" and the material
-  request's identifier. A request has no number of its own; the heading and the sentence say which
-  request it is — the one this draw just opened — and the identifier and the word "Reference" are
-  gone from the screen and from both catalogues.
-- Read again on that screen and found without an identifier: the reservation choice of the issue
-  form (stock code, location code and quantity), the notices after a reservation, an issue and a
-  return (quantities), the return form and the returns picker (stock code, name, job number,
-  moment, quantities).
+  request's identifier. Both are gone from the screen and from the two catalogues.
 - **A category in a tree (`CategoryTreePicker.tsx`).** The parent-category tree and the item form's
   category tree on `/inventory/setup` drew each category's code in brackets after its name
   ("odqa spare parts (odqa_parts)"). The code is not generated: it is typed on that screen, in the
@@ -5427,42 +5438,100 @@ migration changed.
   is the thing being managed, and it keeps the column; so does the category screen
   (`/inventory/categories`), whose tree draws the code beside the name and searches by it. A tree
   in which a category is chosen now names it and nothing else, an inactive one still saying so.
-  The one case the code still serves there is two categories of the same name under the same
-  parent, which nothing else on the row tells apart: there, and only there, the code follows the
-  name in brackets, as a unit picker does for two units of one name. The same component draws the
-  item-family tree of a new material requirement (`/inventory/parts`) and the category tree of a
-  recorded capacity (`/inventory/vehicle-specifications`), which change with it.
+  The one case the code still serves there is two categories under one parent that an operator
+  would read as the same name: there, and only there, the code follows the name in brackets, as a
+  unit picker does for two units of one name. "The same" is compared after the repository's own
+  name folding (`foldSearchText`: case, runs of white space, tatweel and the Arabic vowel marks,
+  the alef forms) on the composed form of the text, so "Pads" and "Pads " or "PADS", and "فلاتر"
+  and "فلاتـر", count as one; the name itself is drawn exactly as stored. The same component
+  draws the item-family tree of a new material requirement (`/inventory/parts`) and the category
+  tree of a recorded capacity (`/inventory/vehicle-specifications`), which change with it.
+- **The same on the stock screen (`/inventory`, `InventoryScreen.tsx`).** The notice after a
+  reservation ended "Reservation recorded:" and the reservation's identifier; it now says how much
+  was reserved, which the answer carries. The reservations table drew a work order's identifier as
+  the text of its link; the row carries the identifier and not the work order's number, so the
+  link reads "Open work order" / "فتح أمر العمل" and is named with the stock code for a screen
+  reader. The item grid had a column headed "Identifier" holding each item's identifier; an item
+  is known by its stock code, nothing on the screen asks for the identifier, and the column and
+  its heading are removed.
+- **And on the opening stock screen (`OpeningStockScreen.tsx`).** A batch's identifier stood under
+  "Batch id" beside its batch code; the code is what the operator typed and knows it by, and the
+  identifier and its label are removed.
 
-New catalogue keys, English and Arabic: `inventory.parts.issues.fromReservation` and
-`inventory.parts.issues.reserved`. Changed in both: `inventory.parts.request.explain` (the trailing
-"Reference:" removed).
+Every other place in `apps/web/src/features/inventory` that draws an identifier as text was looked
+for, and is left as it is, each for its own reason:
 
-Tests, in the existing DOM files (en and ar). `inventory-parts.dom`: a listed reservation said by
-what it held and when, on the branch clock; an unlisted one, and every one when the list is
-refused, said in words; no identifier anywhere in the table; no reservation read when no issue was
-drawn from one; and the case that asserted the material request's identifier was visible now
-asserts that it is not. `inventory-categories.dom`: every row of the picker is a name, two of one
-name under different parents apart by place; the code only where two of one name share a parent.
-`inventory-setup.dom`: neither tree of the setup screen draws a code, and the categories table
-still lists each one under "Code". Measured by mutation, the product file put back to `4928486a`
-and restored byte for byte: with the parts screen put back, 5 cases of `inventory-parts.dom` fail
-and 69 pass; with the picker put back, 27 cases of the four files that draw it fail and 247 pass —
-the six new ones, and 21 existing cases that choose a row by its text, whose selectors now follow
-the name alone (`inventory-setup.dom`, `inventory-categories.dom`,
-`inventory-material-requirements.dom`, `inventory-vehicle-specifications.dom`).
+- `MovementsScreen.tsx`, the "Reference" of a movement: the kind of the source document in words
+  and, under it, that document's identifier. It is the only pointer from a movement to the document
+  that caused it, and whether such a reference is shown, grouped or named is the question the audit
+  record raised; not changed without that decision.
+- `PartsScreen.tsx`, the work-order link when the work order cannot be read: its text is the
+  identifier, and the sentence beside it says so ("only the identifier is shown").
+- An identifier drawn only when the screen's own list does not hold the record it has just used —
+  a location in `MovementsScreen.tsx`, `StockCountsScreen.tsx`, `GoodsReceiptsScreen.tsx` and
+  `SetupScreen.tsx` (a parent location), a stock code and a location in the opening stock line
+  echo, an item in `UnitConversionsScreen.tsx`.
+- The support reference after a failed read or a refusal (`shared.tsx`, `MovementsScreen.tsx`):
+  the Owner's decision on the Reference identifier.
+- Boxes in which an operator types an identifier because a list may not be read (a branch pair, a
+  work order, an item): what is typed there is the operator's own.
+
+New catalogue keys, English and Arabic: `inventory.parts.issues.fromReservation`,
+`inventory.parts.issues.reserved` and `inventory.reservations.openWorkOrder`. Changed in both:
+`inventory.parts.request.explain`, `inventory.reserve.booked` and `inventory.reserve.replayed` (the
+trailing "Reference:" and "Reservation:" removed). Removed from both: `inventory.items.column.id`
+and `inventory.opening.batch.id`.
+
+Tests, in the existing DOM files (en and ar where a sentence is drawn). `inventory-parts.dom`, 17
+cases: the two lines of a listed reservation and the whole of them in the cell's title; the moment
+an issue was made, likewise; the width the two moment columns ask for; a refused read, a read that
+fails in transit (no rejection left unhandled, no notice, no console error), an answer that arrives
+after the screen is gone, and another work order opened while the first is still unanswered; the
+branch taken from the rows without the work-order read; rows that do not share a branch; no read
+when no issue names a reservation; no second read when the screen is drawn again; exactly two
+reads with the issue form open; and the material request's identifier no longer drawn.
+`operational-grid-actions-width.dom`: the estimate, and the width the grid is handed for a column
+that asks. `inventory-categories.dom` and `inventory-setup.dom`: every row of the picker is a name;
+the code only where two of one name share a parent, names an operator cannot tell apart counted as
+the same, in Latin and in Arabic; neither tree of the setup screen draws a code and the categories
+table still does. `inventory.dom` and `inventory-opening-stock.dom`: the three places of the stock
+screen and the batch, each case the one that used to assert the identifier was there.
+
+Measured by mutation, every file restored byte for byte. With the parts screen put back to
+`4928486a`, 5 cases of `inventory-parts.dom` failed and 69 passed, and with the picker put back,
+27 of the four files that draw it failed and 247 passed (six new cases and 21 whose selectors now
+follow the name alone). After the review: with the parts screen as it was at `82c1c411` — one
+line, the header's branch, no settling, no width — 10 of the 85 cases fail; with the reservations
+read on every draw, 5 fail, the two that count the reads among them; with the grid, the picker,
+the stock screen and the opening screen as they were at `82c1c411`, 8 of the 180 cases of their
+four files fail. Four cases hold what was already so and fail under none of these: a refused read
+left in words (en and ar), no read when no issue names a reservation, and an answer after the
+screen is gone, which a browser drops without a sign.
 
 Gaps in what the service publishes, recorded and not changed:
 
 - `inv.work-order-part-issue-list` publishes `reservationId` and nothing a person can read about
   the reservation — not its quantity, the moment it was made or its state. The web makes a second
   read for it.
-- A stock reservation and a material request have no number of their own, so neither can be
-  quoted or looked up by an operator.
+- Neither a reservation row nor an issue row carries the unit of its quantity, so "Reserved 2.000"
+  and the quantities of the table have no unit.
+- `inv.stock-reservation-list` publishes a reservation's work order by identifier only, not by its
+  number, so the link to it cannot name it.
+- Two reservations of the same item and quantity made in the same minute read alike on this
+  screen, and no reservation list shows the moment a reservation was made to match against. No
+  operator action depends on telling them apart today.
 
-Found and left as it is, for a decision: the one-page category list (`categoryChoices` in
-`inventory/components/shared.tsx`) draws `code — name` on each option. It is the category filter
-of the stock-on-hand screen and the three category lists of the service catalogue, a different
-screen and a different catalogue, and was not named by the retest.
+Owner decisions:
+
+- Whether material requests and stock reservations need a number of their own. The removed
+  "Reference:" and identifier was the only handle on the screen for a material request — there is
+  no list of material requests — and a reservation is said by what it held and when.
+- The one-page category list (`categoryChoices` in `inventory/components/shared.tsx`) still draws
+  `code — name` on each option: the category filter of the stock-on-hand screen and three category
+  lists of the service catalogue. A flat list has no place in a tree to tell two names apart by,
+  so it needs the path or the code; left for a follow-up.
+- The reference of a stock movement, and the work-order identifier where the work order cannot be
+  read, as listed above.
 
 Also corrected, document only: the manual's audit-log chapter said a detail with no value reads
 "—"; that is so for the value after a change only, and the sentence now says what is drawn before
