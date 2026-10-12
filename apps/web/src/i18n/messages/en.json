@@ -3167,6 +3167,7 @@
   "inventory.setup.items.explain": "An item is a catalogue row — a SKU, a name, a category and a unit. It carries no cost and no stock; stock first appears through an approved opening batch.",
   "inventory.setup.items.findInSearch": "Created items are found through the item search on the inventory page.",
   "inventory.setup.items.heading": "Items",
+  "inventory.setup.items.unitNotNamed": "Name not available",
   "inventory.setup.location.chooseParent": "Choose a warehouse",
   "inventory.setup.location.code": "Code",
   "inventory.setup.location.codeFormat": "Letters, digits, hyphens and underscores only, starting with a letter or digit.",

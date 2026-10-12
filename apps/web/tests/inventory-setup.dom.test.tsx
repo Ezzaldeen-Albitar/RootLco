@@ -1891,3 +1891,102 @@ describe('P1-32-PRE-OD-INVF: unit names and duplicate refusals', () => {
     ).toBeVisible();
   });
 });
+
+/**
+ * P1-32-PRE-OD-INVG — the runtime retest of CP-20261012-1 found a unit's code
+ * drawn where its name belongs (O1). On this screen the table of items created
+ * on the page drew the code alone under "Unit": the echo of a created item
+ * carries the unit's code only, so the name comes from the unit list the screen
+ * already holds.
+ */
+describe('P1-32-PRE-OD-INVG: a created item names its unit, never the unit code', () => {
+  const LITRE_ID = '99999999-9999-4999-8999-999999999999';
+  const litre = {
+    id: LITRE_ID,
+    scope: 'platform',
+    code: 'litre',
+    name: 'Litre',
+    dimension: 'volume',
+  };
+  const echo = (unitOfMeasure: { id: string; code: string }) =>
+    success(
+      {
+        id: CREATED_ID,
+        itemCategoryId: CATEGORY_ID,
+        sku: 'OIL-001',
+        name: 'Engine oil',
+        description: null,
+        unitOfMeasure,
+        itemType: 'part',
+        isStockTracked: true,
+        isSerialized: false,
+        lifecycleStatus: 'active',
+        recordVersion: 1,
+      },
+      'inventory.setup.item.success'
+    );
+
+  async function createAnItem(locale: 'en' | 'ar') {
+    const T = locale === 'en' ? EN : AR;
+    const named = (key: string) => new RegExp(`^${escape(T[key] as string)}`);
+    const user = userEvent.setup();
+    if (locale === 'en') {
+      renderScreen({ canManage: true });
+    } else {
+      renderRtl(
+        <SetupScreen
+          locale="ar"
+          messages={ar}
+          canManage={true}
+          canReadStock={false}
+          canReadBranches={false}
+        />
+      );
+    }
+    await screen.findByText('brakes');
+    const panel = screen.getByRole('form', { name: T['inventory.setup.item.new'] as string });
+    const tree = within(panel).getByRole('tree', {
+      name: T['inventory.setup.item.category'] as string,
+    });
+    await user.click(await within(tree).findByText('Brakes (brakes)'));
+    await user.type(within(panel).getByLabelText(named('inventory.setup.item.sku')), 'OIL-001');
+    await user.type(within(panel).getByLabelText(named('inventory.setup.item.name')), 'Engine oil');
+    await user.selectOptions(
+      within(panel).getByLabelText(named('inventory.setup.item.unit')),
+      LITRE_ID
+    );
+    await user.click(
+      within(panel).getByRole('button', { name: T['inventory.setup.item.submit'] as string })
+    );
+    return screen.findByRole('table', {
+      name: T['inventory.setup.items.createdCaption'] as string,
+    });
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: the unit of a created item is its name in the page language`, async () => {
+      listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre] }));
+      createItem.mockResolvedValue(echo({ id: LITRE_ID, code: 'litre' }));
+      const table = await createAnItem(locale);
+      const cell = within(table).getByTestId('setup-created-item-unit');
+      expect(cell.textContent).toBe(locale === 'en' ? 'Litre' : AR['units.name.litre']);
+      // The code is drawn nowhere in the row: not beside the name, not instead of it.
+      expect(cell.closest('tr')?.textContent).not.toMatch(/litre/);
+      expect(cell.closest('td')?.querySelector('code')).toBeNull();
+    });
+
+    it(`${locale}: a unit the list does not hold is said in words, never by its code`, async () => {
+      listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre] }));
+      // The echo names a unit the list this screen read does not hold.
+      createItem.mockResolvedValue(
+        echo({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', code: 'drum_200' })
+      );
+      const T = locale === 'en' ? EN : AR;
+      const table = await createAnItem(locale);
+      const cell = within(table).getByTestId('setup-created-item-unit');
+      expect(cell.textContent).toBe(T['inventory.setup.items.unitNotNamed']);
+      expect(table.textContent).not.toContain('drum_200');
+      expect(table.textContent).not.toContain('aaaaaaaa');
+    });
+  }
+});

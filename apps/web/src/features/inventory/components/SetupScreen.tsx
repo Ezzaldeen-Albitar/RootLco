@@ -79,7 +79,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import { unitName, unitOptions } from '@/lib/unit-name';
+import { unitName, unitNameById, unitOptions } from '@/lib/unit-name';
 import {
   createItem,
   createItemCategory,
@@ -718,10 +718,21 @@ function ItemsSection({
                   <TableCell>
                     <bdi>{item.name}</bdi>
                   </TableCell>
+                  {/*
+                   * The unit by its name in the page language, from the unit
+                   * list this screen holds (P1-32-PRE-OD-INVG): the echo of a
+                   * created item carries the unit's code only, and a code is
+                   * not a name. A unit the list does not hold is said in
+                   * words, never by its code.
+                   */}
                   <TableCell>
-                    <code className="font-mono text-caption" dir="ltr">
-                      {item.unitOfMeasure.code}
-                    </code>
+                    <bdi data-testid="setup-created-item-unit">
+                      {unitNameById(
+                        messages,
+                        item.unitOfMeasure.id,
+                        units.read.phase === 'listed' ? units.read.items : null
+                      ) ?? translate(messages, 'inventory.setup.items.unitNotNamed')}
+                    </bdi>
                   </TableCell>
                   <TableCell>
                     {translateDynamic(messages, `inventory.itemType.${item.itemType}`)}

@@ -3167,6 +3167,7 @@
   "inventory.setup.items.explain": "الصنف سجل في الكتالوج — رمز SKU واسم وفئة ووحدة. لا يحمل تكلفة ولا مخزونًا؛ المخزون يظهر أولًا عبر دفعة افتتاحية معتمدة.",
   "inventory.setup.items.findInSearch": "تُعثر على الأصناف المُنشأة عبر البحث عن الأصناف في صفحة المخزون.",
   "inventory.setup.items.heading": "الأصناف",
+  "inventory.setup.items.unitNotNamed": "الاسم غير متاح",
   "inventory.setup.location.chooseParent": "اختر مستودعًا",
   "inventory.setup.location.code": "الرمز",
   "inventory.setup.location.codeFormat": "أحرف لاتينية وأرقام وشرطات وشرطات سفلية فقط، ويبدأ بحرف أو رقم.",

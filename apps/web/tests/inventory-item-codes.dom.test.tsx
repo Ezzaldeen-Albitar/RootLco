@@ -854,6 +854,12 @@ describe('P1-32-PRE-OD-INVF: the unit in the page language', () => {
       }
       const unit = await screen.findByTestId('item-header-unit');
       expect(unit.textContent).toBe(locale === 'en' ? 'Litre' : AR['units.name.litre']);
+      // P1-32-PRE-OD-INVG (runtime retest O1): the name and nothing beside it.
+      // The header read "لتر litre" — the unit's code drawn after its name.
+      const fact = unit.closest('dd');
+      expect(fact?.textContent).toBe(locale === 'en' ? 'Litre' : AR['units.name.litre']);
+      expect(fact?.querySelector('code')).toBeNull();
+      expect(screen.getByTestId('item-header').textContent).not.toMatch(/litre/);
     });
 
     it(`${locale}: the header keeps a customised unit name exactly as stored`, async () => {
@@ -867,6 +873,9 @@ describe('P1-32-PRE-OD-INVF: the unit in the page language', () => {
       }
       const unit = await screen.findByTestId('item-header-unit');
       expect(unit.textContent).toBe('Carton');
+      // The stored name alone: the code `each` is not drawn beside it.
+      expect(unit.closest('dd')?.textContent).toBe('Carton');
+      expect(screen.getByTestId('item-header').textContent).not.toMatch(/each/);
     });
   }
 
