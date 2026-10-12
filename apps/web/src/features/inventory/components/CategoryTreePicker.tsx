@@ -7,6 +7,7 @@ import { TreePicker } from '@/components/pickers/TreePicker';
 import { MuiLoadingState } from '@/components/states/MuiStates';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateWithValues } from '@/i18n/get-messages';
+import { foldSearchText } from '@/lib/text/normalization';
 
 import { asTreeItems } from '../category-tree';
 import { pathText, type CategoryList } from './CategoryTree';
@@ -28,7 +29,12 @@ import { pathText, type CategoryList } from './CategoryTree';
  * ("odqa spare parts (odqa_parts)"). The one case it still serves is two
  * categories of the same name under the same parent, which nothing else on the
  * row tells apart: there, and only there, the code follows the name in
- * brackets, as a unit picker does for two units of one name.
+ * brackets, as a unit picker does for two units of one name. "The same name"
+ * is what an operator would read as the same: compared after the repository's
+ * own name folding (`foldSearchText`: case, runs of white space, tatweel and
+ * the Arabic vowel marks, the alef forms) on the composed form of the text, so
+ * "Pads" and "Pads " or "PADS", and "فلاتر" and "فلاتـر", count as one. Only
+ * the comparison is folded; the name is drawn exactly as it is stored.
  *
  * Single choice. `clearLabel` (on by default) draws a "no category" row first,
  * and choosing it reports `''`; a caller that must have a category passes
@@ -83,7 +89,9 @@ export function CategoryTreePicker({
     if (read.status !== 'ok') return [];
     // How many categories share a name under one parent: only those need their code.
     const place = (category: { parentCategoryId: string | null; name: string }) =>
-      `${category.parentCategoryId ?? ''}\u0000${category.name}`;
+      `${category.parentCategoryId ?? ''}\u0000${
+        foldSearchText(category.name.normalize('NFC').replace(/\s+/gu, ' ').trim()) ?? ''
+      }`;
     const sharing = new Map<string, number>();
     for (const category of read.items) {
       sharing.set(place(category), (sharing.get(place(category)) ?? 0) + 1);

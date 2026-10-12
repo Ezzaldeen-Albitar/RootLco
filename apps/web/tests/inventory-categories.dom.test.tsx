@@ -660,6 +660,54 @@ describe.each(['en', 'ar'] as const)('the category picker as a form field (%s)',
     expect(tree.textContent).not.toContain('(discs)');
   });
 
+  /*
+   * "The same name" is what an operator would read as the same. Names that
+   * differ only in case, in spaces, or in tatweel and Arabic vowel marks cannot
+   * be told apart on a row, so they get their codes too. The comparison alone is
+   * folded: each name is drawn exactly as it is stored.
+   */
+  it('counts names an operator cannot tell apart as the same, and draws each as stored', async () => {
+    serve([
+      category(1, 'root', 'Parts', null),
+      // Latin: a trailing space, upper case, a doubled inner space.
+      category(2, 'pads_a', 'Brake pads', 1),
+      category(3, 'pads_b', 'Brake pads ', 1),
+      category(4, 'pads_c', 'BRAKE PADS', 1),
+      category(5, 'pads_d', 'Brake  pads', 1),
+      // Arabic: plain, with tatweel, with vowel marks.
+      category(6, 'filters_a', 'فلاتر', 1),
+      category(7, 'filters_b', 'فلاتـر', 1),
+      category(8, 'filters_c', 'فَلاتِر', 1),
+      // Really different names keep to themselves.
+      category(9, 'discs', 'Brake discs', 1),
+      category(10, 'oils', 'زيوت', 1),
+    ]);
+    RENDER[locale](<PickerHarness locale={locale} onChange={vi.fn()} />);
+    const tree = await screen.findByRole('tree', { name: 'Category' });
+    const user = userEvent.setup();
+    await user.click(within(tree).getByText('Parts'));
+    await within(tree).findByText('Brake discs');
+    const labels = within(tree)
+      .getAllByRole('treeitem')
+      .map((row) => row.querySelector('.MuiTreeItem-label')?.textContent ?? '');
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'Brake pads (pads_a)',
+        'Brake pads  (pads_b)',
+        'BRAKE PADS (pads_c)',
+        'Brake  pads (pads_d)',
+        'فلاتر (filters_a)',
+        'فلاتـر (filters_b)',
+        'فَلاتِر (filters_c)',
+        'Brake discs',
+        'زيوت',
+      ])
+    );
+    expect(tree.textContent).not.toContain('(discs)');
+    expect(tree.textContent).not.toContain('(oils)');
+    expect(tree.textContent).not.toContain('(root)');
+  });
+
   it('chooses with the keyboard: Down and Enter open a parent and choose a leaf, Space chooses', async () => {
     const onChange = vi.fn();
     RENDER[locale](<FieldHarness locale={locale} onChange={onChange} />);
