@@ -9,8 +9,8 @@ import type { ActionState } from '@/lib/forms/action-result';
  * The submit button of an authentication or account Server Action form, on
  * Material UI — `SubmitButton`'s contract, kept: disabled while the action is
  * in flight (`useFormStatus`, owned by React, so a redirect or a throw cannot
- * leave it stuck), announced as working with `aria-busy`, and labelled with
- * what it is doing.
+ * leave it stuck) and saying so with `aria-disabled` as well as `disabled`,
+ * announced as working with `aria-busy`, and labelled with what it is doing.
  *
  * `SubmitButton` stays: the screens that have not moved still render it.
  */
@@ -31,6 +31,7 @@ export function MuiSubmitButton({
       variant="contained"
       fullWidth={full}
       disabled={pending}
+      aria-disabled={pending || undefined}
       aria-busy={pending || undefined}
       data-testid="form-submit"
     >
