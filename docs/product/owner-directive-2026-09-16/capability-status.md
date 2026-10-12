@@ -533,6 +533,72 @@ the detail in `route-checklist.md`, section `P1-32-PRE-OD-INVG`: the pack quanti
 on the 50 × 25 mm label, naming the records an audit event concerns, the support reference, the
 removed "Count reference" fragment, and the location's name on a count difference row.
 
+**Note, 2026-10-12 (P1-32-PRE-OD-CP-20261012-2; resolution record for the batch from `c4600bb7` to
+`4b5fa178`; no ledger State, register State or runtime result changed).** This note records what
+was found and where each point stands. It decides nothing, and every Owner decision it names stays
+open.
+
+1. **What CP-20261012-2 proves.** Hosted verification only: the protected verification dispatch
+   https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/38276104252 at
+   `4b5fa178c06e235ceae391b5c754e69d26fdb1b4` decided Go, and 15 of 15 jobs concluded success. The
+   four pull requests merged since `c4600bb7` (#573, #571, #575 and #574) carry no migration:
+   `supabase/migrations` holds the same 187 files at both revisions. No local runtime QA exists for
+   this checkpoint. The running site is still at `c4600bb7`, so none of the four is in it and none
+   has been retested in a browser; nothing was applied to the acceptance database.
+2. **A policy point about the dispatch.** Step 1 of the checkpoint procedure in `pr-gate.md` asks
+   for a sync when `develop` does not contain `main`'s tip. That step was not met to the letter:
+   `main` at `1262de74` is not an ancestor of `develop`. The one commit `develop` lacks is that
+   promotion merge itself (#345); its tree is the tree of `d7ad73f2`, which `develop` contains, so
+   no content is missing. Every earlier checkpoint was dispatched in the same state. Recorded as
+   found; no sync was made and nothing here changes the procedure.
+3. **Search after a branch switch (#571, merged as `22229fca`).** When a search key had already
+   settled, a branch switch sent one more read for it, and its rows could stay on screen for up to
+   300 ms: the branch just left, where the scope travels with the criteria, or the old term under
+   the new branch, where the scope is bound to the loader. The pull request traces the reach: the
+   pickers (work orders, customers, invoices and the Material entity picker), the reception board,
+   the work-order board, the appointment calendar, the warranty list and the service catalogue.
+   Counter sales, customer search and vehicle search are not reached, because they start again on a
+   switch or a new search. No caller acted on the late answer by itself. Implemented, not
+   runtime-retested.
+4. **The date field loses typed digits (#575, merged as `3ae942be`).** Found by the runtime run of
+   the new screens at `c4600bb7` (case D-04): on the warranty plan form, a held day replaced one
+   part at a time ended as an incomplete field and a refused save. Nothing wrong was stored. The
+   pull request shows the cause is older than #568 and independent of it: the same probe loses the
+   same rows against the field as it stood before #568. Implemented, not runtime-retested. The
+   acceptance row D-04 stays FAIL until it is run again at the first pace on a build that contains
+   #575.
+5. **Identifier and label fixes (#574, merged as `4b5fa178`).** Five points from the retest are
+   implemented and not runtime-retested: the category code on the material requirement cards, the
+   unit code beside the unit name, the untranslated dimension column, the count identifier fragment
+   on the attention screen, and the layout of the 50 × 25 mm label. The raw identifiers in the audit
+   record drawer are **not closed**. They are now grouped and labelled, and nothing is hidden.
+   Closing the point needs the API to name the records (`route-checklist.md`, section
+   `P1-32-PRE-OD-INVG`): `iam.role.permission_changed` records no role, the read names only the
+   actor and the user account an event is about, and no wording for a permission reaches the audit
+   read. The runtime row LANG-identifiers stays FAIL.
+6. **The CP-20261012-1 runtime result** (checkpoint table above, row `c4600bb7`; evidence outside
+   the repository). Both runs were first reported better than observed and were corrected after an
+   independent check. Retest of the ten rows that failed at `2376b1ad`: 9 PASS, 1 FAIL
+   (LANG-identifiers); the six NOT RUN rows are unchanged, and the other 77 rows were not re-run.
+   New screens, 131 rows: 103 PASS, 1 FAIL (D-04), 1 PARTIAL, 2 CANNOT SHOW, 22 NOT RUN, 2 observed.
+   Most date rows were typed at a slowed pace only. Every refund write case is NOT RUN. No physical
+   scanner or label printer was used.
+7. **Owner decisions still open, with the facts found.**
+   - FIN03 and FIN04: not observed at runtime. No approved, unpaid refund existed and no second QA
+     account holds the refund approval, so who is offered the payout was not seen.
+   - AUTH01: a password reset leaves another device served until its token expires, as the note
+     above records. No password change was made in the runtime run, so nothing new was observed.
+   - The pack quantity on the 50 × 25 mm label: it is not drawn there, on screen or on paper.
+   - The identifier after "Reference:" on a refusal, and the audit grid's support reference
+     column, which prints the correlation identifier.
+   - The session-ended address: opening it while signed in (a same-origin GET) clears the browser's
+     cookie while the server session stays live. Observed in both languages.
+   - QA prerequisites that are missing: a second approver for the refund cases, an account with
+     the audit read and without the user list, and a platform-console account.
+   - The read-only check of stored dates after #568 has not been done.
+8. **The CP-20261012-1 register row.** Its blank cells are filled from git and the run of #572,
+   which merged as `c4600bb7`. Its State stays as written, like every State in the register.
+
 ### Features delivered or planned under this directive
 
 The delivery matrix above owns verification state; ADR-023 owns the implementation state of each D-item; the architecture assessment owns what each FC change is. This table owns the design fields that directive section 12 asks for. The `state:` pointers in the first column cite ADR-023's mapping table at develop `d5ce97b7` (`:751-773`, re-anchored 2026-10-08); the other ADR-023 line numbers in this table are not re-anchored here.
