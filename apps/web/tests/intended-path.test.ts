@@ -82,6 +82,48 @@ describe('safeIntendedPath accepts only a locale-prefixed application path', () 
     expect(safeIntendedPath(path)).toBeNull();
   });
 
+  /*
+   * Review round P1-32-PRE-OD-AUTHB-06: shapes the list above did not name,
+   * each written out. None was accepted before this round; the cases pin that.
+   */
+  it.each([
+    ['a scheme with no slashes', 'https:evil'],
+    ['a scheme with no slashes after a slash', '/https:evil'],
+    ['a bare trailing line feed', '/en/work-orders\n'],
+    ['a bare trailing carriage return', '/en/work-orders\r'],
+    ['a trailing carriage return and line feed', '/en/work-orders\r\n'],
+    ['a leading space', ' /en/work-orders'],
+    ['a trailing space', '/en/work-orders '],
+    ['an embedded tab', '/en/work\t-orders'],
+    ['an encoded NUL', '/en/work-orders%00'],
+    ['an encoded NUL inside a segment', '/en/work%00-orders'],
+    ['a host after an at sign at the end', '/en/work-orders@evil'],
+    ['a host after an at sign with a suffix', '/en/work-orders@evil.example'],
+    ['a path parameter', '/en/work-orders;x=1'],
+    ['a path parameter on the language', '/en;x=1/work-orders'],
+    ['an upper-case language', '/EN/work-orders'],
+    ['a mixed-case language', '/En/work-orders'],
+    ['a mixed-case area', '/en/Work-Orders'],
+    ['an upper-case area', '/en/WORK-ORDERS'],
+    ['an API path', '/api/v1/auth/session'],
+    ['an API path under a language', '/en/api/v1/auth/session'],
+    ['a read endpoint', '/reads/work-orders'],
+    ['a read endpoint under a language', '/en/reads/work-orders'],
+  ])('refuses %s', (_label, path) => {
+    expect(safeIntendedPath(path)).toBeNull();
+  });
+
+  it('accepts a path of exactly the longest length it carries, and refuses one character more', () => {
+    expect(INTENDED_PATH_MAX_LENGTH).toBe(512);
+    const stem = '/en/work-orders/';
+    const longest = `${stem}${'a'.repeat(512 - stem.length)}`;
+    expect(longest).toHaveLength(512);
+    expect(safeIntendedPath(longest)).toBe(longest);
+    const oneMore = `${longest}a`;
+    expect(oneMore).toHaveLength(513);
+    expect(safeIntendedPath(oneMore)).toBeNull();
+  });
+
   it.each([
     ['null', null],
     ['undefined', undefined],
@@ -152,6 +194,22 @@ describe('permitsIntendedPath — only a page the new session may open', () => {
 
   it('allows the signed-in account its own profile whatever it holds', () => {
     expect(permitsIntendedPath('/en/profile', ['quo.quotation.read'])).toBe(true);
+  });
+
+  it('allows the profile page itself and nothing beneath it, which is no page (P1-32-PRE-OD-AUTHB-06)', () => {
+    // The shape is one the application may carry: `profile` is an area.
+    expect(safeIntendedPath('/en/profile/x')).toBe('/en/profile/x');
+    // But the profile is one page. Nothing is beneath it, so sign-in does not
+    // follow it — it used to, and the operator landed on "not found".
+    expect(permitsIntendedPath('/en/profile/x', ['quo.quotation.read'])).toBe(false);
+    expect(permitsIntendedPath('/ar/profile/x/y', ['quo.quotation.read'])).toBe(false);
+    expect(permitsIntendedPath('/en/profile', ['quo.quotation.read'])).toBe(true);
+    expect(permitsIntendedPath('/ar/profile', ['quo.quotation.read'])).toBe(true);
+    // And never on the console, which has its own account page.
+    expect(permitsIntendedPath('/en/profile', ['platform.statistics.read'], 'console')).toBe(false);
+    expect(permitsIntendedPath('/en/profile/x', ['platform.statistics.read'], 'console')).toBe(
+      false
+    );
   });
 
   it('refuses a session holding nothing', () => {

@@ -123,7 +123,9 @@ export function localisedIntendedPath(path: string, locale: Locale): string {
  * one the session's navigation offers. `/inventory/transfers` is therefore
  * judged by the transfers entry, never by the inventory overview above it. A
  * path no entry contains is refused, except the signed-in account's own
- * profile, which every session opens.
+ * profile, which every session opens — the profile page itself and nothing
+ * beneath it: it is one page, so `/en/profile/anything` names no page, and
+ * following it would land a sign-in on "not found" (P1-32-PRE-OD-AUTHB-06).
  *
  * `surface` names the navigation that judges: the workspace's for a tenant
  * session, the console's for a platform session. A console path is never a
@@ -137,7 +139,7 @@ export function permitsIntendedPath(
   const locale = path.split('/')[1] ?? '';
   if (!isLocale(locale)) return false;
   if (isPlatformPath(path) !== (surface === 'console')) return false;
-  if (surface === 'workspace' && path.split('/')[2] === 'profile') return true;
+  if (surface === 'workspace' && path === `/${locale}/profile`) return true;
   const groups: readonly NavigationGroup[] =
     surface === 'console' ? PLATFORM_NAVIGATION : NAVIGATION;
 

@@ -7574,3 +7574,61 @@ Open, older than this slice and not changed by it:
   address and so in the browser's history and in anything that records addresses.
 - AUTH01 is an open Owner decision. Today a password change or a password reset does not sign the
   account's other devices out; each stays signed in until its own sign-in runs out.
+
+**Review round (`P1-32-PRE-OD-AUTHB-06`).** An independent review of the slice asked for one
+correction and for cases it found missing.
+
+- The requested-path header. `src/proxy.ts` and `requested-path-header.ts` said the proxy replaces
+  any copy of the header a client sent. That holds only where the proxy runs, and its matcher leaves
+  a router prefetch out (`next-router-prefetch`, or `purpose: prefetch`): on those requests a
+  client's own copy reaches the render as it was sent. Both comments, and the reader's, now say so:
+  the header is untrusted input, and it has one reader, `requestedPath()`
+  (`features/authentication/api/requested-path.ts`), which passes it through `safeIntendedPath`. The
+  two guards (`requireSession`, `requirePlatformSession`) read it only through that function, and
+  the addresses they build re-check it. What a spoofed header can do is therefore name a page of
+  this application, which a hand-typed `?intended=` can do as well. The matcher and the routing are
+  unchanged.
+- One product rule changed. Sign-in followed any path beneath `/profile` for a workspace session
+  (`permitsIntendedPath` compared the area only). The profile is one page with nothing beneath it,
+  so `/en/profile/x` passed the allow-list, was followed, and landed the operator on "not found"
+  straight after signing in. Only the profile page itself is followed now; anything beneath it lands
+  where sign-in always did.
+- No other input was accepted that should not be. Twenty-two more shapes are written out as refused
+  in `intended-path.test.ts` (a scheme with no slashes, bare trailing line breaks, leading and
+  trailing spaces, a tab, an encoded NUL, an at sign, a path parameter, upper- and mixed-case
+  language and area, API paths, read endpoints), with the length bound at exactly 512 accepted and
+  513 refused.
+
+Tests: `apps/web/tests/proxy.test.ts` is new (the path and never the query string; a client's copy
+replaced where the proxy runs; the matcher's exclusion, read through Next's own matcher) and moves
+the web test-file count in `deliverable-manifest.md` from 208 to 209, with the evidence manifest
+regenerated. `session.test.ts` gains the reader's cases: nine spoofed values read as no page and
+carried to no sign-in address on any way out of a protected render. `intended-path.test.ts` and
+`platform-login-routing.test.ts` gain the cases above. Measured by mutation, each product file
+restored byte for byte: with the old profile rule three cases fail; with the query string recorded
+four fail; with a client's copy kept five fail; with the reader trusting the header its nine direct
+cases fail, and the cases at the guards still pass because the address builders check again.
+
+Open, recorded by this round and not changed by it:
+
+- The session-ended handler clears the cookie when the request is same-origin, typed into the
+  address bar or sent without `Sec-Fetch-Site`, without asking whether the token was in fact
+  rejected. A same-origin link, or a client that sends no such header, signs a valid session out of
+  that browser, and nothing is revoked on the server. It is as on develop; a cross-site request only
+  gets the redirect.
+- `scripts/ci/check-p1-26-frontend.mjs` forbids a redirect parameter by its NAME (`returnTo`,
+  `redirectTo`, `next_url`, `redirect_uri`). `intended` is none of those, so that gate does not see
+  it: the allow-listed intended path rests on the planner's ruling recorded above (completion plan
+  WP05) and on the tests named here, not on a gate.
+- No browser run signs in with `?intended=` and lands on that page; the routing is held by
+  `platform-login-routing.test.ts`, which stops at the redirect address.
+- The console account form and the console sign-in have no browser evidence.
+- A path that passes the allow-list and that the session's navigation offers, but that names no
+  page (a record that does not exist, a deeper path under a real screen), is followed and that
+  screen answers as it does for any such address.
+- `tests/unit/od-session-lifecycle.test.ts` pins the request path by reading source text (the
+  handler calls the authenticator before it resolves the context; the resolver's refusal line), not
+  by running it. The behaviour is run by `tests/backend/iam-auth-provider.test.ts`, which needs a
+  database.
+- `LoginForm.tsx` imports the parameter name from `intended-path.ts`, which brings both navigation
+  models into the sign-in bundle. Noted, not measured.

@@ -546,6 +546,41 @@ describe('sign-in returns to the intended page', () => {
     expect(jar.set.length).toBe(1);
   });
 
+  /*
+   * P1-32-PRE-OD-AUTHB-06. A path the allow-list carries that is not a page the
+   * session may be sent to falls back to the landing, signed in, with no error:
+   * the profile is one page with nothing beneath it, and an area the session
+   * holds no code for is not offered.
+   */
+  it.each([
+    ['a path beneath the profile, which is no page', '/en/profile/x'],
+    ['a deeper path beneath the profile', '/en/profile/x/y'],
+    ['a page of an area the session holds no code for', '/en/invoices/abc'],
+  ])('lands as before, signed in, for %s', async (_label, intended) => {
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended(intended))
+    );
+    expect(target).toBe('/en');
+    expect(jar.set.length).toBe(1);
+  });
+
+  it('still returns the operator to the profile page itself', async () => {
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/en/profile'))
+    );
+    expect(target).toBe('/en/profile');
+  });
+
+  it('sends the platform operator to the console for a path beneath the profile', async () => {
+    backend({ tenant: 403, platform: 200 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/en/profile/x'))
+    );
+    expect(target).toBe('/en/platform');
+  });
+
   it('never sends a tenant operator to a console page', async () => {
     backend({ tenant: 200, platform: 403 });
     const target = await redirectTarget(() =>
