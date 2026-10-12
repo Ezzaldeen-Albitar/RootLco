@@ -286,7 +286,7 @@ at the end of `capability-status.md`. The matrix's five columns map onto that fi
 _completed and verified_ is implemented with a dated marker; _implemented, awaiting integration or
 verification_ is implemented or partial without one; _remaining in current scope_ is missing or
 partial; _blocked on accounting answers_ is externally blocked, naming the questionnaire; and
-_future expansion_ is outside current scope. The 97 capability rows keep their count.
+_future expansion_ is outside current scope. The capability rows keep the count that file states.
 
 **D-OD-11 — Module entitlements.** Entitlements, the module lifecycle, licence options and packaging
 live in ADR-024, which is proposed for the mechanism and open for packages and terms.
