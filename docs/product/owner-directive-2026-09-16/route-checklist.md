@@ -5386,6 +5386,88 @@ Open, recorded by the retest and not changed here:
   observations; that row is no longer on the 50 × 25 mm label, so a retest reads the unit's name on
   a larger size.
 
+### Reservation and category references on the inventory screens (`P1-32-PRE-OD-INVH`)
+
+The runtime retest of CP-20261012-2 (run on the local acceptance site; its evidence is kept outside
+the repository) observed the five inventory fixes of `P1-32-PRE-OD-INVG` in the browser and found
+two more raw identifiers on the inventory screens, so its row LANG-identifiers still reads FAIL.
+Both are addressed on branch `feature/owner-directive-residual-fixes-inv-h`, cut from `develop` at
+`4928486a`. **Implemented, not yet runtime-retested; the runtime row LANG-identifiers stays FAIL
+until retested and until the Owner decides the Reference identifier on refusals.** Web source,
+tests and documents only: no route, operation, permission code, API contract, branch scope or
+migration changed.
+
+- **The reservation an issue was drawn from (`/inventory/parts`, `PartsScreen.tsx`; retest finding
+  F2).** The "Reservation" column of "Parts issued" drew the reservation's identifier. The column
+  says whether an issue was drawn from a reservation and which. An issue's row
+  (`inv.work-order-part-issue-list`) carries the reservation's identifier and nothing else about
+  it, and a reservation has no number of its own. What an operator can use is how much the
+  reservation held and when it was made, which the reservation list publishes
+  (`inv.stock-reservation-list`). The panel now reads that list for the work order in its branch,
+  in every state — a reservation an issue consumed is no longer active — only when a listed issue
+  names a reservation, and again when the issues are read again; the cell reads "Reserved 2.000 ·"
+  and the moment on the branch clock. Where the list cannot say — refused, not answered yet, or
+  the reservation is beyond its first hundred — the cell reads "Drawn from a reservation" /
+  "صُرف من حجز". An issue drawn from none reads "No reservation", as before. The identifier is
+  drawn in no case.
+- **The material a draw opened (the same screen).** After a governed reservation or issue, the
+  section "The material this draw opened" ended its sentence "Reference:" and the material
+  request's identifier. A request has no number of its own; the heading and the sentence say which
+  request it is — the one this draw just opened — and the identifier and the word "Reference" are
+  gone from the screen and from both catalogues.
+- Read again on that screen and found without an identifier: the reservation choice of the issue
+  form (stock code, location code and quantity), the notices after a reservation, an issue and a
+  return (quantities), the return form and the returns picker (stock code, name, job number,
+  moment, quantities).
+- **A category in a tree (`CategoryTreePicker.tsx`).** The parent-category tree and the item form's
+  category tree on `/inventory/setup` drew each category's code in brackets after its name
+  ("odqa spare parts (odqa_parts)"). The code is not generated: it is typed on that screen, in the
+  "Code" box of the new-category form (lower-case letters, digits and underscores, refused when it
+  repeats), and the categories table lists it in a column of its own. That table is where the code
+  is the thing being managed, and it keeps the column; so does the category screen
+  (`/inventory/categories`), whose tree draws the code beside the name and searches by it. A tree
+  in which a category is chosen now names it and nothing else, an inactive one still saying so.
+  The one case the code still serves there is two categories of the same name under the same
+  parent, which nothing else on the row tells apart: there, and only there, the code follows the
+  name in brackets, as a unit picker does for two units of one name. The same component draws the
+  item-family tree of a new material requirement (`/inventory/parts`) and the category tree of a
+  recorded capacity (`/inventory/vehicle-specifications`), which change with it.
+
+New catalogue keys, English and Arabic: `inventory.parts.issues.fromReservation` and
+`inventory.parts.issues.reserved`. Changed in both: `inventory.parts.request.explain` (the trailing
+"Reference:" removed).
+
+Tests, in the existing DOM files (en and ar). `inventory-parts.dom`: a listed reservation said by
+what it held and when, on the branch clock; an unlisted one, and every one when the list is
+refused, said in words; no identifier anywhere in the table; no reservation read when no issue was
+drawn from one; and the case that asserted the material request's identifier was visible now
+asserts that it is not. `inventory-categories.dom`: every row of the picker is a name, two of one
+name under different parents apart by place; the code only where two of one name share a parent.
+`inventory-setup.dom`: neither tree of the setup screen draws a code, and the categories table
+still lists each one under "Code". Measured by mutation, the product file put back to `4928486a`
+and restored byte for byte: with the parts screen put back, 5 cases of `inventory-parts.dom` fail
+and 69 pass; with the picker put back, 27 cases of the four files that draw it fail and 247 pass —
+the six new ones, and 21 existing cases that choose a row by its text, whose selectors now follow
+the name alone (`inventory-setup.dom`, `inventory-categories.dom`,
+`inventory-material-requirements.dom`, `inventory-vehicle-specifications.dom`).
+
+Gaps in what the service publishes, recorded and not changed:
+
+- `inv.work-order-part-issue-list` publishes `reservationId` and nothing a person can read about
+  the reservation — not its quantity, the moment it was made or its state. The web makes a second
+  read for it.
+- A stock reservation and a material request have no number of their own, so neither can be
+  quoted or looked up by an operator.
+
+Found and left as it is, for a decision: the one-page category list (`categoryChoices` in
+`inventory/components/shared.tsx`) draws `code — name` on each option. It is the category filter
+of the stock-on-hand screen and the three category lists of the service catalogue, a different
+screen and a different catalogue, and was not named by the retest.
+
+Also corrected, document only: the manual's audit-log chapter said a detail with no value reads
+"—"; that is so for the value after a change only, and the sentence now says what is drawn before
+it.
+
 ### Departments and employees on Material UI (`P1-32-PRE-OD-ADM2`)
 
 `/administration/departments` and `/administration/employees` moved onto the shared wrappers, and

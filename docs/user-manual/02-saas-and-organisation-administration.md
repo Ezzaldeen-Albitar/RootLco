@@ -868,7 +868,9 @@ withheld values are revealed; the first administrator holds that too. **Where** 
   you need help."_ <!-- audit.detail.referencesHint --> Each row there shows the kind of record, the
   field's code and the reference exactly as it was recorded; you can select it to copy it. The
   screen cannot yet say those records by name. Nothing is hidden: every detail of the record is
-  drawn, as it was written — a detail with no value reads "—", and an empty one is left blank.
+  drawn, as it was written. Where a detail has no value after the change it reads "—"; where it
+  had none before the change, nothing is drawn in front of the new value; and an empty value is
+  left blank.
 - Values you are not cleared to see read **"Withheld"** <!-- audit.detail.masked --> — _"Some values
   are withheld unless your account may view sensitive data."_ <!-- audit.detail.maskedHint --> **If
   it goes wrong**
