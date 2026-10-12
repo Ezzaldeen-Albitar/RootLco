@@ -56,9 +56,12 @@ export function proxy(request: NextRequest) {
   requestHeaders.set('Content-Security-Policy', csp);
   // The path being served, for the protected layouts that must name the page
   // they refuse when they send an operator to sign in (P1-32-PRE-OD-AUTHB).
-  // `set` replaces any copy the client sent. The path only — never the query
-  // string — and only the request's own: the browser never sees this header,
-  // and `safeIntendedPath` re-checks it wherever it is read.
+  // `set` replaces any copy the client sent, on every request this function
+  // runs on. It does NOT run on the requests the matcher below leaves out (a
+  // router prefetch), and there a client's own copy reaches the render as it was
+  // sent — so the header is untrusted input to its one reader, `requestedPath()`,
+  // which passes it through `safeIntendedPath`. The path only, never the query
+  // string, and only the request's own: the browser never sees this header.
   requestHeaders.set(REQUESTED_PATH_HEADER, request.nextUrl.pathname);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });

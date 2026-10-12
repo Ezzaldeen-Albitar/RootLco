@@ -79,6 +79,7 @@ const { logoutAction } = await import('@/features/authentication/actions/logout'
 const { INTENDED_PATH_PARAM } = await import('@/features/authentication/api/intended-path');
 const { REQUESTED_PATH_HEADER } =
   await import('@/features/authentication/api/requested-path-header');
+const { requestedPath } = await import('@/features/authentication/api/requested-path');
 
 const SESSION = {
   userId: '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e',
@@ -637,6 +638,65 @@ describe('the intended page travels with the redirect to sign-in', () => {
     jar.token = null;
     jar.requestedPath = recorded;
     expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=signed-out');
+  });
+
+  /*
+   * P1-32-PRE-OD-AUTHB-06. The header is untrusted input: the proxy does not
+   * run on a router prefetch (`proxy.test.ts`), so what the mock above answers
+   * may be what a CLIENT sent, not what the proxy recorded. The reader is the
+   * check, at every way out of a protected render.
+   */
+  const SPOOFED = [
+    ['a protocol-relative address', '//evil.example'],
+    ['a protocol-relative address with a path', '//evil.example/en/work-orders'],
+    ['a backslash address', '/\\evil.example'],
+    ['an absolute address', 'https://evil.example/en/work-orders'],
+    ['a scheme', 'javascript:alert(1)'],
+    ['an API path', '/api/v1/auth/session'],
+    ['an API path under a language', '/en/api/v1/auth/session'],
+    ['a read endpoint', '/reads/work-orders'],
+    ['a path with a query of its own', '/en/work-orders?intended=//evil.example'],
+  ] as const;
+
+  it.each(SPOOFED)('reads no page at all from a spoofed header: %s', async (_label, sent) => {
+    jar.requestedPath = sent;
+    expect(await requestedPath()).toBeNull();
+  });
+
+  it.each(SPOOFED)('carries nothing to sign-in for a spoofed header: %s', async (_label, sent) => {
+    jar.token = null;
+    jar.requestedPath = sent;
+    const target = await redirectTarget(() => requireSession('en'));
+    expect(target).toBe('/en/login?reason=signed-out');
+    expect(target).not.toContain('evil');
+  });
+
+  it.each(SPOOFED)(
+    'carries nothing through the session-ended handler for a spoofed header: %s',
+    async (_label, sent) => {
+      answerSessionWith(401);
+      jar.requestedPath = sent;
+      expect(await redirectTarget(() => requireSession('en'))).toBe(`/en/${SESSION_ENDED_SEGMENT}`);
+    }
+  );
+
+  it.each(SPOOFED)(
+    'carries nothing when the backend could not confirm the session, for a spoofed header: %s',
+    async (_label, sent) => {
+      answerSessionWith(503);
+      jar.requestedPath = sent;
+      expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=unavailable');
+    }
+  );
+
+  it('reads a page of this application whoever wrote the header, and nothing more than that', async () => {
+    // The whole of what a spoofed header can do: name a page of this
+    // application, exactly as a hand-typed `?intended=` can. Sign-in follows it
+    // only when the new session may open it (`platform-login-routing.test.ts`).
+    jar.requestedPath = '/en/administration/users';
+    expect(await requestedPath()).toBe('/en/administration/users');
+    jar.requestedPath = null;
+    expect(await requestedPath()).toBeNull();
   });
 });
 
