@@ -552,12 +552,17 @@ open.
    no content is missing. Every earlier checkpoint was dispatched in the same state. Recorded as
    found; no sync was made and nothing here changes the procedure.
 3. **Search after a branch switch (#571, merged as `22229fca`).** When a search key had already
-   settled, a branch switch sent one more read for it, and its rows could stay on screen for up to
-   300 ms: the branch just left, where the scope travels with the criteria, or the old term under
-   the new branch, where the scope is bound to the loader. The pull request traces the reach: the
-   pickers (work orders, customers, invoices and the Material entity picker), the reception board,
-   the work-order board, the appointment calendar, the warranty list and the service catalogue.
-   Counter sales, customer search and vehicle search are not reached, because they start again on a
+   settled, a branch switch sent one more read for it. The pull request's corrected description
+   traces the reach. Rows were drawn in two pickers: the work-order picker in its default drawing
+   listed the jobs of the branch just left for up to 300 ms, and the search picker (the default
+   drawing of the customer and invoice pickers) listed the old term's options for up to 300 ms.
+   The Material entity picker sent the wasted read and drew nothing, because the switch closes its
+   list. On the reception board, the work-order board, the appointment calendar and the warranty
+   list, criteria kept through a switch and changed again before the new key settled were read
+   again for the branch just left and shown under the new one. The service catalogue was reached
+   by typing, switching within the pause and typing again within the pause: a term that had
+   settled earlier was read for the new branch and shown until the new term settled. Counter
+   sales, customer search and vehicle search are not reachable, because they start again on a
    switch or a new search. No caller acted on the late answer by itself. Implemented, not
    runtime-retested.
 4. **The date field loses typed digits (#575, merged as `3ae942be`).** Found by the runtime run of
@@ -598,6 +603,24 @@ open.
    - The read-only check of stored dates after #568 has not been done.
 8. **The CP-20261012-1 register row.** Its blank cells are filled from git and the run of #572,
    which merged as `c4600bb7`. Its State stays as written, like every State in the register.
+9. **Reading the local QA cell of the CP-20261012-1 register row.** A filled register cell is
+   never rewritten, and `tests/ci/verification-ledger.test.ts` compares every committed version
+   of this file, so the cell stays as it was first committed on this branch. Three of its clauses
+   are shorter than the evidence and are to be read as follows.
+   - What clears each failed row. D-04 keeps its failure until a signed-in retest at the first
+     pace on a build containing #575. LANG-identifiers keeps its failure until a signed-in retest
+     shows the category code gone from the material requirement cards and the Owner has decided
+     the identifier shown after "Reference:" on refusals, which #574 does not change. A retest
+     alone cannot clear it.
+   - Why the refund cases were not run. No open refund obligation and no approved, unpaid request
+     existed; only the first administrator among the six QA accounts holds the refund approval
+     permission; temporary role grants were not allowed in this run; and the route through a
+     counter sale and a customer return was not attempted. So FIN03 and FIN04 are unobserved.
+   - What the 103 include. Rows whose expectation or check was changed after a first result had
+     been seen (the matrix's correction 9c: A-05, B-02, B-03, B-04, B-06a, B-06b, C-01 to C-03,
+     F-02 and E-02; the C-02 check was loosened from pairing each row with its own request to
+     comparing the two sorted lists of moments), and the sign-in cases E-02, E-05 and E-08, en
+     and ar, taken from a second pass paced under the product's sign-in rate limit.
 
 ### Features delivered or planned under this directive
 
