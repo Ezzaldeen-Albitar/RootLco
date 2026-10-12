@@ -17,9 +17,18 @@ import { pathText, type CategoryList } from './CategoryTree';
  * Built on `TreePicker` (contract H1–H5) over the same data the category
  * screen draws: `useAllItemCategories`, every page of
  * `inv.item-category-list`, so no category beyond the first hundred is
- * missing. Each row reads `name (code)`, an inactive one says so, and the
- * chosen category's whole path is said under the tree — two categories of the
- * same name in different branches read apart.
+ * missing. Each row reads the category's NAME, an inactive one says so, and
+ * the chosen category's whole path is said under the tree — two categories of
+ * the same name in different branches read apart by where they sit.
+ *
+ * The code is not drawn (P1-32-PRE-OD-INVH). It is typed by whoever creates
+ * the category — lower-case letters, digits and underscores — and it is the
+ * thing being managed in the categories table and on the category screen, where
+ * it keeps its own column. In a picker it was noise after every name
+ * ("odqa spare parts (odqa_parts)"). The one case it still serves is two
+ * categories of the same name under the same parent, which nothing else on the
+ * row tells apart: there, and only there, the code follows the name in
+ * brackets, as a unit picker does for two units of one name.
  *
  * Single choice. `clearLabel` (on by default) draws a "no category" row first,
  * and choosing it reports `''`; a caller that must have a category passes
@@ -70,17 +79,23 @@ export function CategoryTreePicker({
   const { read, retry } = categories;
   const labelId = `${useId()}-label`;
   const inactive = translate(messages, 'inventory.setup.status.inactive');
-  const items = useMemo(
-    () =>
-      read.status === 'ok'
-        ? asTreeItems(read.items, (category) =>
-            category.status === 'active'
-              ? `${category.name} (${category.code})`
-              : `${category.name} (${category.code}) — ${inactive}`
-          )
-        : [],
-    [read, inactive]
-  );
+  const items = useMemo(() => {
+    if (read.status !== 'ok') return [];
+    // How many categories share a name under one parent: only those need their code.
+    const place = (category: { parentCategoryId: string | null; name: string }) =>
+      `${category.parentCategoryId ?? ''}\u0000${category.name}`;
+    const sharing = new Map<string, number>();
+    for (const category of read.items) {
+      sharing.set(place(category), (sharing.get(place(category)) ?? 0) + 1);
+    }
+    return asTreeItems(read.items, (category) => {
+      const name =
+        (sharing.get(place(category)) ?? 0) > 1
+          ? `${category.name} (${category.code})`
+          : category.name;
+      return category.status === 'active' ? name : `${name} — ${inactive}`;
+    });
+  }, [read, inactive]);
 
   if (read.status !== 'ok') {
     return (

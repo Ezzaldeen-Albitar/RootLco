@@ -1082,8 +1082,8 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
       const tree = await within(form).findByRole('tree', {
         name: starts(T['inventory.material.create.itemCategory'] as string),
       });
-      await user.click(within(tree).getByText('Engine fluids (engine_fluids)'));
-      await user.click(await within(tree).findByText('Oils (oils)'));
+      await user.click(within(tree).getByText('Engine fluids'));
+      await user.click(await within(tree).findByText('Oils'));
       await waitFor(() =>
         expect(
           document.getElementById((tree.getAttribute('aria-describedby') ?? '').split(' ')[0] ?? '')
