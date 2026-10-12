@@ -286,17 +286,65 @@ function isIdentifierList(value: string, bareToo: boolean): boolean {
   );
 }
 
-/** A detail row as the read publishes it; these three facts decide its group. */
+/**
+ * A detail row as the read is declared to publish it. What arrives is not
+ * trusted to be that: see `auditValueText`.
+ */
 interface AuditDetailFacts {
   readonly fieldName: string;
   readonly oldValueMasked: string | null;
   readonly newValueMasked: string | null;
 }
 
+/**
+ * A detail row as the drawer draws it: the field and the two values as text.
+ *
+ * `null` is "no value" — the read's own `null`, or nothing at all — and is the
+ * only thing drawn as a dash. An empty string is a value: it is drawn, blank.
+ * The two are different facts about a record and stay different on screen.
+ */
+export interface AuditDetailShown {
+  readonly fieldName: string;
+  readonly oldValue: string | null;
+  readonly newValue: string | null;
+}
+
+/**
+ * Whatever arrived, as the text that is drawn — never a throw.
+ *
+ * A string is itself, character for character. `null` and a missing value are
+ * `null`. Anything else is not what the read is declared to send, and is still
+ * evidence: it is written out once (a number or a flag as it prints, a
+ * structure as JSON) and drawn, where an exception would have emptied the
+ * whole drawer.
+ */
+export function auditValueText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    try {
+      const written: unknown = JSON.stringify(value);
+      if (typeof written === 'string') return written;
+    } catch {
+      // Not writable as JSON (a cycle, a big integer inside): as it prints.
+    }
+  }
+  return String(value);
+}
+
+function shownOf(entry: unknown): AuditDetailShown {
+  const row = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
+  return {
+    fieldName: auditValueText(row['fieldName']) ?? '',
+    oldValue: auditValueText(row['oldValueMasked']),
+    newValue: auditValueText(row['newValueMasked']),
+  };
+}
+
 /** Whether the row is drawn among the record references. It is drawn either way. */
-export function isAuditRecordReference(entry: AuditDetailFacts): boolean {
+export function isAuditRecordReference(entry: AuditDetailShown): boolean {
   if (FACT_FIELDS.has(lastStep(entry.fieldName))) return false;
-  const values = [entry.oldValueMasked, entry.newValueMasked].filter(
+  const values = [entry.oldValue, entry.newValue].filter(
     (value): value is string => value !== null
   );
   if (values.length === 0) return false;
@@ -307,15 +355,19 @@ export function isAuditRecordReference(entry: AuditDetailFacts): boolean {
 /**
  * The rows in their two groups, each group in the order the read gave.
  *
- * Every row of `details` is in exactly one of the two, untouched: the same
- * object the read returned.
+ * Every row of `details` is in exactly one of the two, whatever it holds: the
+ * grouping is total, and a row it cannot make sense of is a fact.
  */
-export function groupAuditDetails<T extends AuditDetailFacts>(
-  details: readonly T[]
-): { readonly facts: readonly T[]; readonly references: readonly T[] } {
-  const facts: T[] = [];
-  const references: T[] = [];
-  for (const entry of details) (isAuditRecordReference(entry) ? references : facts).push(entry);
+export function groupAuditDetails(details: readonly AuditDetailFacts[]): {
+  readonly facts: readonly AuditDetailShown[];
+  readonly references: readonly AuditDetailShown[];
+} {
+  const facts: AuditDetailShown[] = [];
+  const references: AuditDetailShown[] = [];
+  for (const entry of details) {
+    const shown = shownOf(entry);
+    (isAuditRecordReference(shown) ? references : facts).push(shown);
+  }
   return { facts, references };
 }
 
@@ -325,8 +377,14 @@ export function groupAuditDetails<T extends AuditDetailFacts>(
  * The service writes 123 fields named for an identifier and five named for a
  * person (`requestedBy`). The ones below are the frequent ones and the ones an
  * administrator meets on access, stock and money records; the rest are drawn
- * as "Reference" with the field's code under the support label, as a fact
- * without a name is.
+ * as "Reference".
+ *
+ * A label says what kind of record a reference points to; it does not say
+ * which field it was. Two fields of one record can share a kind (a customer
+ * under two names), so the drawer draws the written field code on EVERY
+ * reference row, beside the label, and no two rows can read alike whatever
+ * this map says. The two payers a third-party allocation records
+ * (`sal.payment.third_party_allocated`) have a label each all the same.
  */
 const REFERENCE_KEYS: Readonly<Record<string, MessageKey>> = {
   itemId: 'audit.reference.item',
@@ -336,8 +394,8 @@ const REFERENCE_KEYS: Readonly<Record<string, MessageKey>> = {
   partner_id: 'audit.reference.customer',
   customerPartnerId: 'audit.reference.customer',
   payerPartnerId: 'audit.reference.payer',
-  invoicePayerPartnerId: 'audit.reference.payer',
-  receiptPayerPartnerId: 'audit.reference.payer',
+  invoicePayerPartnerId: 'audit.reference.invoicePayer',
+  receiptPayerPartnerId: 'audit.reference.receiptPayer',
   workOrderId: 'audit.reference.workOrder',
   work_order_id: 'audit.reference.workOrder',
   vehicle_id: 'audit.reference.vehicle',
@@ -382,14 +440,19 @@ const REFERENCE_KEYS: Readonly<Record<string, MessageKey>> = {
   createdBy: 'audit.reference.createdBy',
 };
 
-/** A reference's kind, in words, or "Reference". */
+/**
+ * A reference's kind, in words, or "Reference".
+ *
+ * Looked up by the field as written and then by the last step of its path, so
+ * `lines[0].itemId` is an item like `itemId` is.
+ */
 export function auditReferenceLabel(messages: Messages, fieldName: string): string {
-  return translate(messages, known(REFERENCE_KEYS, fieldName) ?? 'audit.reference.other');
-}
-
-/** Whether a reference has a label of its own; one without keeps its field's code beside it. */
-export function isNamedAuditReference(fieldName: string): boolean {
-  return known(REFERENCE_KEYS, fieldName) !== null;
+  return translate(
+    messages,
+    known(REFERENCE_KEYS, fieldName) ??
+      known(REFERENCE_KEYS, lastStep(fieldName)) ??
+      'audit.reference.other'
+  );
 }
 
 /** The reference fields with a label of their own, for the suite that counts them. */

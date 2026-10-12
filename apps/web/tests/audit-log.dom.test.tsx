@@ -954,7 +954,8 @@ describe('people by name, never by identifier (P1-32-PRE-OD-ADM6)', () => {
  * detail row the read returns is drawn, each value with the characters it came
  * with. What changed is the layout. The facts come first; the rows that point
  * at another record by its identifier come after them, in a group titled
- * "Record references", each under a label saying what kind of record it is.
+ * "Record references", each under a label saying what kind of record it is
+ * and with the field's code as it was written, so no two of them read alike.
  * The identifiers are therefore still drawn — the defect the run recorded is
  * NOT closed by this; closing it needs the read to name the records an event
  * concerns, which is a change to the API.
@@ -982,6 +983,15 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
     readonly newValueMasked: string | null;
     readonly valueClassification: string;
   }
+  /**
+   * The text the drawer owes for whatever arrived: a string as it is, `null`
+   * and nothing as no value, and anything else written out once.
+   */
+  const owed = (value: unknown): string | null => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') return value;
+    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  };
   const detail = (
     fieldName: string,
     newValueMasked: string | null,
@@ -1087,6 +1097,23 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
       new: value,
     };
   };
+  /** A record reference: its kind in words, and always the field's code as written. */
+  const ref = (
+    locale: 'en' | 'ar',
+    kind: string,
+    field: string,
+    value: string | null,
+    old: string | null = null
+  ) => {
+    const T = locale === 'en' ? EN : AR;
+    return {
+      field,
+      label: T[kind] as string,
+      code: `${T['audit.detail.fieldCode'] as string} ${field}`,
+      old,
+      new: value,
+    };
+  };
   /** Every row the read returned is drawn once, with its values intact. */
   function expectNothingLost(block: HTMLElement, details: readonly Detail[]): void {
     const key = (field: string | null, old: string | null, value: string | null) =>
@@ -1095,7 +1122,9 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
     expect(drawn).toHaveLength(details.length);
     expect(drawn.map((entry) => key(entry.field, entry.old, entry.new)).sort()).toEqual(
       details
-        .map((entry) => key(entry.fieldName, entry.oldValueMasked, entry.newValueMasked))
+        .map((entry) =>
+          key(owed(entry.fieldName) ?? '', owed(entry.oldValueMasked), owed(entry.newValueMasked))
+        )
         .sort()
     );
     // A row is in one group or the other, never in both and never outside them.
@@ -1122,9 +1151,7 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
         named('permission_code', T['audit.field.permissionCode'] as string, 'inv.stock.read'),
         named('effect', T['audit.field.effect'] as string, 'allow'),
       ]);
-      expect(references(block)).toEqual([
-        named('role_id', T['audit.reference.role'] as string, ROLE),
-      ]);
+      expect(references(block)).toEqual([ref(locale, 'audit.reference.role', 'role_id', ROLE)]);
       // The group is titled and explained, in the page language, and comes after the facts.
       const group = within(block).getByTestId('audit-detail-references');
       expect(
@@ -1179,9 +1206,7 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
         named('permission_code', T['audit.field.permissionCode'] as string, 'iam.user.invite'),
         named('effect', T['audit.field.effect'] as string, null, 'allow'),
       ]);
-      expect(references(block)).toEqual([
-        named('role_id', T['audit.reference.role'] as string, ROLE),
-      ]);
+      expect(references(block)).toEqual([ref(locale, 'audit.reference.role', 'role_id', ROLE)]);
       expectNothingLost(block, details);
     });
 
@@ -1205,7 +1230,7 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
         unnamed(locale, 'audit.field.other', 'scope_count', '2'),
       ]);
       expect(references(block)).toEqual([
-        named('user_id', T['audit.reference.userAccount'] as string, PERSON),
+        ref(locale, 'audit.reference.userAccount', 'user_id', PERSON),
       ]);
       expectNothingLost(block, issued);
     });
@@ -1240,10 +1265,10 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
         named('status', T['audit.field.status'] as string, 'approved', 'pending_approval'),
       ]);
       expect(references(block)).toEqual([
-        named('itemId', T['audit.reference.item'] as string, ITEM),
-        named('locationId', T['audit.reference.location'] as string, LOCATION),
-        named('requestedBy', T['audit.reference.requestedBy'] as string, PERSON),
-        named('approvedBy', T['audit.reference.approvedBy'] as string, APPROVER),
+        ref(locale, 'audit.reference.item', 'itemId', ITEM),
+        ref(locale, 'audit.reference.location', 'locationId', LOCATION),
+        ref(locale, 'audit.reference.requestedBy', 'requestedBy', PERSON),
+        ref(locale, 'audit.reference.approvedBy', 'approvedBy', APPROVER),
       ]);
       expectNothingLost(block, details);
     });
@@ -1273,7 +1298,7 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
         named('currency', T['audit.field.currency'] as string, 'JOD'),
       ]);
       expect(references(block)).toEqual([
-        named('obligationId', T['audit.reference.refundObligation'] as string, OBLIGATION),
+        ref(locale, 'audit.reference.refundObligation', 'obligationId', OBLIGATION),
       ]);
       expectNothingLost(block, details);
     });
@@ -1298,16 +1323,163 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
       expect(facts(block)).toEqual([]);
       expect(within(block).queryByTestId('audit-detail-facts')).toBeNull();
       expect(references(block)).toEqual([
-        named('invoiceId', T['audit.reference.invoice'] as string, INVOICE),
-        named('uomId', T['audit.reference.unit'] as string, BARE),
+        ref(locale, 'audit.reference.invoice', 'invoiceId', INVOICE),
+        ref(locale, 'audit.reference.unit', 'uomId', BARE),
         unnamed(locale, 'audit.reference.other', 'releasedReservationIds', `${ITEM},${LOCATION}`),
         unnamed(locale, 'audit.reference.other', 'blocker_event_id', QUOTED),
-        unnamed(locale, 'audit.reference.other', 'lines[0].itemId', ITEM),
-        named('payerPartnerId', T['audit.reference.payer'] as string, PERSON, APPROVER),
+        ref(locale, 'audit.reference.item', 'lines[0].itemId', ITEM),
+        ref(locale, 'audit.reference.payer', 'payerPartnerId', PERSON, APPROVER),
       ]);
       expectNothingLost(block, details);
     });
   }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const T = locale === 'en' ? EN : AR;
+    /*
+     * `sal.payment.third_party_allocated` — payment-service.ts, appendAudit at
+     * :1173. One record carries the payer of the receipt AND the payer of the
+     * invoice. Under one label and no code they were two rows reading "Payer":
+     * each has a label of its own, and its written code beside it.
+     */
+    it(`${locale}: a third-party allocation tells the receipt's payer from the invoice's`, async () => {
+      const RECEIPT = '3de90de7-e1db-4e11-a29e-199ee2dfe0f1';
+      const details = [
+        detail('amount', '***', null, 'restricted'),
+        detail('currency', 'JOD', null, 'public'),
+        detail('receiptId', RECEIPT),
+        detail('invoiceId', INVOICE),
+        detail('receiptPayerPartnerId', PERSON),
+        detail('invoicePayerPartnerId', APPROVER),
+        detail('relationship', 'insurer'),
+        detail('authorisationReference', 'AUTH-2026-0193'),
+        detail('reason', 'Claim settled by the insurer'),
+      ];
+      const drawer = await openDrawer(
+        locale,
+        { action: 'sal.payment.third_party_allocated', entityType: 'sal.payment_allocation' },
+        details
+      );
+      const block = detailsBlock(drawer, locale);
+      expect(references(block)).toEqual([
+        ref(locale, 'audit.reference.receipt', 'receiptId', RECEIPT),
+        ref(locale, 'audit.reference.invoice', 'invoiceId', INVOICE),
+        ref(locale, 'audit.reference.receiptPayer', 'receiptPayerPartnerId', PERSON),
+        ref(locale, 'audit.reference.invoicePayer', 'invoicePayerPartnerId', APPROVER),
+      ]);
+      // Two rows, two labels, two codes: nothing about them reads alike.
+      const [, , receiptPayer, invoicePayer] = references(block) as [Drawn, Drawn, Drawn, Drawn];
+      expect(receiptPayer.label).not.toBe(invoicePayer.label);
+      expect(receiptPayer.code).not.toBe(invoicePayer.code);
+      expectNothingLost(block, details);
+    });
+
+    it(`${locale}: two fields of one kind in one record are still told apart, by their codes`, async () => {
+      // Both are a customer to the label map; no writer records the two together today.
+      const details = [detail('partner_id', PERSON), detail('customerPartnerId', APPROVER)];
+      const drawer = await openDrawer(
+        locale,
+        { action: 'crm.customer.merged', entityType: 'crm.partner' },
+        details
+      );
+      const block = detailsBlock(drawer, locale);
+      const drawn = references(block);
+      expect(drawn).toEqual([
+        ref(locale, 'audit.reference.customer', 'partner_id', PERSON),
+        ref(locale, 'audit.reference.customer', 'customerPartnerId', APPROVER),
+      ]);
+      expect(drawn[0]?.label).toBe(drawn[1]?.label);
+      expect(drawn[0]?.code).not.toBe(drawn[1]?.code);
+      // Every reference row carries its code, whether or not its kind has a label.
+      for (const item of within(
+        within(block).getByTestId('audit-detail-references')
+      ).getAllByTestId('audit-detail-row')) {
+        expect(item.children).toHaveLength(3);
+        expect(item.children[1]).toHaveTextContent(
+          `${T['audit.detail.fieldCode'] as string} ${item.getAttribute('data-field') as string}`
+        );
+      }
+    });
+
+    /*
+     * An identifier quoted inside Arabic text. Its first group is all digits,
+     * which a right-to-left paragraph would otherwise move to the other end of
+     * the sentence. Each value is isolated in its own direction; the text is
+     * the text that came.
+     */
+    it(`${locale}: a value is isolated in its own direction, and its text is untouched`, async () => {
+      const DIGITS_FIRST = '12345678-9abc-4def-8123-456789abcdef';
+      const sentence = `نُقل إلى ${DIGITS_FIRST} بعد الجرد (inv.stock.read)`;
+      const details = [detail('reason', sentence), detail('note', `see ${DIGITS_FIRST}`, sentence)];
+      const drawer = await openDrawer(
+        locale,
+        { action: 'inv.stock_adjustment.requested', entityType: 'inv.stock_adjustment' },
+        details
+      );
+      const block = detailsBlock(drawer, locale);
+      const values = [...block.querySelectorAll('[data-audit-verbatim]')];
+      expect(values.map((value) => value.textContent)).toEqual([
+        sentence,
+        sentence,
+        `see ${DIGITS_FIRST}`,
+      ]);
+      for (const value of values) {
+        // `<bdi>` isolates and takes its direction from its own first strong character.
+        expect(value.tagName).toBe('BDI');
+        expect(value.children).toHaveLength(0);
+      }
+      // A code and a reference are isolated too: drawn left to right, by attribute.
+      expectNothingLost(block, details);
+    });
+  }
+
+  /*
+   * What arrives is not trusted to be what the read declares. A value that is
+   * not text, or is missing, used to throw in the grouping and leave the drawer
+   * with nothing; it is drawn — written out once — like any other.
+   */
+  it('a value that is not text, or is missing, is drawn and never throws', async () => {
+    const details = [
+      {
+        fieldName: 'row_count',
+        oldValueMasked: 41,
+        newValueMasked: 42,
+        valueClassification: 'public',
+      },
+      { fieldName: 'mfa_required', newValueMasked: true, valueClassification: 'public' },
+      {
+        fieldName: 'setting_value',
+        oldValueMasked: null,
+        newValueMasked: { rounding: 'half_up', warehouseId: LOCATION },
+        valueClassification: 'internal',
+      },
+      { fieldName: 'role_id', oldValueMasked: undefined, newValueMasked: ROLE },
+      { fieldName: 'itemId', oldValueMasked: null, newValueMasked: [ITEM] },
+      { oldValueMasked: 'a row with no field at all', newValueMasked: null },
+      { fieldName: 7, oldValueMasked: null, newValueMasked: 'a field that is a number' },
+    ] as unknown as Detail[];
+    const drawer = await openDrawer(
+      'en',
+      { action: 'zzz.thing.happened', entityType: 'zzz.thing' },
+      details
+    );
+    const block = detailsBlock(drawer, 'en');
+    expect(facts(block)).toEqual([
+      unnamed('en', 'audit.field.other', 'row_count', '42', '41'),
+      named('mfa_required', EN['audit.field.mfaRequired'] as string, 'true'),
+      named(
+        'setting_value',
+        EN['audit.field.settingValue'] as string,
+        `{"rounding":"half_up","warehouseId":"${LOCATION}"}`
+      ),
+      // Written out, a list of one is not an identifier: it is a fact, drawn whole.
+      unnamed('en', 'audit.field.other', 'itemId', `["${ITEM}"]`),
+      unnamed('en', 'audit.field.other', '', null, 'a row with no field at all'),
+      unnamed('en', 'audit.field.other', '7', 'a field that is a number'),
+    ]);
+    expect(references(block)).toEqual([ref('en', 'audit.reference.role', 'role_id', ROLE)]);
+    expectNothingLost(block, details);
+  });
 
   /*
    * `org.company.settings_updated` — organization-settings-service.ts :310: the
@@ -1341,7 +1513,7 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
       ),
     ]);
     expect(references(block)).toEqual([
-      named('company_id', EN['audit.reference.company'] as string, COMPANY),
+      ref('en', 'audit.reference.company', 'company_id', COMPANY),
     ]);
     expectNothingLost(block, details);
   });
@@ -1459,11 +1631,39 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
    * The property the drawer is held to: whatever rows the read returns, each
    * (field, old value, new value) is drawn exactly once with its characters
    * intact. The rows are made by a small fixed-seed generator from the field
-   * names and value shapes above, and a few a writer would never produce —
-   * padding, line breaks, markup-looking text, an empty string, the same field
-   * twice — so that neither group, nor any rule, is the only thing exercised.
+   * names and value shapes above; and so that no seed can miss them, every run
+   * also holds the rows a rule or a renderer is most likely to get wrong,
+   * shuffled in among the others.
+   *
+   * What the product draws for no value and for an empty one, which this holds
+   * apart because they are different facts about a record:
+   *  - `null` after the change: a dash, "—", and no value element;
+   *  - `null` before the change: nothing at all;
+   *  - an empty string, before or after: a value element, with nothing in it.
    */
   describe('whatever the read returns, every row is drawn once with its values intact', () => {
+    const QUOTED_IN_ARABIC = `نُقل إلى 12345678-9abc-4def-8123-456789abcdef بعد الجرد`;
+    /** The rows every run holds, whatever its seed. */
+    const ALWAYS: readonly Detail[] = [
+      // An empty value before the change, and an empty one after it.
+      detail('reason', 'given afterwards', ''),
+      detail('note', '', 'cleared'),
+      // No value on either side.
+      detail('status', null, null),
+      // A row whose field is the empty string.
+      detail('', 'a value under no field'),
+      // A long value.
+      detail('description', 'long '.repeat(60)),
+      // Arabic text that quotes an identifier.
+      detail('decisionReason', QUOTED_IN_ARABIC),
+      // The same field twice, with different values.
+      detail('itemId', 'f9a5c9a3-ad97-4add-8e5a-d55aae9bacbf'),
+      detail('itemId', '0ab6dab4-bea8-4bee-9f6b-e66bbfacbdc0'),
+      // Values that are not text.
+      { ...detail('row_count', null), newValueMasked: 42 } as unknown as Detail,
+      { ...detail('setting_value', null), oldValueMasked: { a: [1, 2] } } as unknown as Detail,
+    ];
+
     function arbitraryDetails(seed: number, count: number): Detail[] {
       let state = seed >>> 0;
       const next = (): number => {
@@ -1526,7 +1726,7 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
       ];
       // One value in three is an identifier in some spelling, so both groups fill.
       const IDENTIFIERS = VALUES.slice(0, 3).concat(VALUES.slice(4, 5));
-      return Array.from({ length: count }, () => {
+      const made = Array.from({ length: count - ALWAYS.length }, () => {
         const shape = next() % 8;
         const value = pick(next() % 3 === 0 ? IDENTIFIERS : VALUES)();
         return detail(
@@ -1536,7 +1736,34 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
           pick(['public', 'internal', 'restricted'])
         );
       });
+      // The rows every run holds go in at places the seed chooses.
+      for (const row of ALWAYS) made.splice(next() % (made.length + 1), 0, row);
+      return made;
     }
+
+    it('every run holds the rows most likely to be lost or altered', () => {
+      for (const seed of [20261012, 574, 153]) {
+        const details = arbitraryDetails(seed, 40);
+        expect(details).toHaveLength(40);
+        const has = (test: (entry: Detail) => boolean) => details.some(test);
+        expect(has((entry) => entry.oldValueMasked === '')).toBe(true);
+        expect(has((entry) => entry.newValueMasked === '')).toBe(true);
+        expect(has((entry) => entry.oldValueMasked === null && entry.newValueMasked === null)).toBe(
+          true
+        );
+        expect(has((entry) => entry.fieldName === '')).toBe(true);
+        expect(has((entry) => (owed(entry.newValueMasked) ?? '').length > 200)).toBe(true);
+        expect(has((entry) => entry.newValueMasked === QUOTED_IN_ARABIC)).toBe(true);
+        expect(new Set(details.map((entry) => entry.fieldName)).size).toBeLessThan(details.length);
+        expect(
+          has(
+            (entry) =>
+              (entry.newValueMasked !== null && typeof entry.newValueMasked !== 'string') ||
+              (entry.oldValueMasked !== null && typeof entry.oldValueMasked !== 'string')
+          )
+        ).toBe(true);
+      }
+    });
 
     it.each([
       ['en', 20261012, 40],
@@ -1544,9 +1771,6 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
       ['ar', 153, 40],
     ] as const)('%s, seed %i: %i rows', async (locale, seed, count) => {
       const details = arbitraryDetails(seed, count);
-      // The generator really does produce both groups, nulls and repeated fields.
-      expect(new Set(details.map((entry) => entry.fieldName)).size).toBeLessThan(count);
-      expect(details.some((entry) => entry.newValueMasked === null)).toBe(true);
       const drawer = await openDrawer(
         locale,
         { action: 'zzz.thing.happened', entityType: 'zzz.thing' },
@@ -1560,8 +1784,28 @@ describe('P1-32-PRE-OD-INVG: the drawer draws every detail, references after the
       const order = (rows: readonly Drawn[]) =>
         rows.map((entry) => JSON.stringify([entry.field, entry.old, entry.new]));
       const given = details.map((entry) =>
-        JSON.stringify([entry.fieldName, entry.oldValueMasked, entry.newValueMasked])
+        JSON.stringify([
+          owed(entry.fieldName) ?? '',
+          owed(entry.oldValueMasked),
+          owed(entry.newValueMasked),
+        ])
       );
+      // No value is a dash and no element; an empty value is an element with nothing in it.
+      const items = within(block).getAllByTestId('audit-detail-row');
+      const dashes = items.filter(
+        (item) => item.querySelector('[data-audit-value="new"]') === null
+      );
+      expect(dashes).toHaveLength(details.filter((entry) => entry.newValueMasked === null).length);
+      for (const item of dashes) expect(item.lastElementChild?.textContent).toMatch(/—$/);
+      expect(
+        items.filter((item) => item.querySelector('[data-audit-value="old"]') !== null)
+      ).toHaveLength(details.filter((entry) => entry.oldValueMasked !== null).length);
+      expect(
+        items.filter(
+          (item) =>
+            item.querySelector('[data-audit-value="new"] [data-audit-verbatim]')?.textContent === ''
+        )
+      ).toHaveLength(details.filter((entry) => entry.newValueMasked === '').length);
       for (const group of [order(facts(block)), order(references(block))]) {
         let from = 0;
         for (const one of group) {

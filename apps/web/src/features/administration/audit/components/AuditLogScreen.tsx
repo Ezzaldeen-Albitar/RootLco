@@ -37,13 +37,12 @@ import {
   groupAuditDetails,
   isAuditCodeField,
   isNamedAuditField,
-  isNamedAuditReference,
+  type AuditDetailShown,
 } from '../labels';
 import { openingWindow, rangeProblem, type DayRange } from '../range';
 import {
   NO_AUDIT_FILTERS,
   type AuditDetail,
-  type AuditDetailEntry,
   type AuditFilters,
   type AuditRow,
   type AuditScopeOptions,
@@ -747,7 +746,9 @@ function AuditDetailDrawer({
                               messages={messages}
                               entry={entry}
                               label={auditReferenceLabel(messages, entry.fieldName)}
-                              named={isNamedAuditReference(entry.fieldName)}
+                              // The written field code on every reference row: two
+                              // rows of one kind must never read alike.
+                              named={false}
                               asCode
                             />
                           ))}
@@ -769,12 +770,21 @@ function AuditDetailDrawer({
 /**
  * One detail row, in either group.
  *
- * The value is drawn in an element of its own (`data-audit-verbatim`) holding
- * exactly the characters the read returned — white space kept, nothing trimmed
- * — and selectable as a whole where it is a code or a reference, for copying.
- * Words said about a value (a record type's name) stand outside that element.
- * A row whose field has no label of its own keeps the field's code beside it,
- * under the label that names it a reference for support.
+ * Each value is drawn in an element of its own (`data-audit-verbatim`) holding
+ * exactly the characters the read returned — white space kept, nothing trimmed.
+ * A code or a reference is drawn left to right and can be selected whole, for
+ * copying; any other value is isolated in its own direction (`<bdi>`), so an
+ * identifier or a code quoted inside Arabic text is not reordered on screen
+ * while the text itself is untouched. Words said about a value (a record type's
+ * name) stand outside that element.
+ *
+ * No value and an empty value are different facts and are drawn differently:
+ * `null` after the change is a dash and `null` before it is nothing, while an
+ * empty string is drawn as the blank it is, in its own element.
+ *
+ * A row whose label does not say which field it was keeps the field's code
+ * beside it, under the label that names it a reference for support: a fact the
+ * catalogue does not name, and every record reference.
  */
 function DetailEntry({
   messages,
@@ -784,7 +794,7 @@ function DetailEntry({
   asCode,
 }: {
   readonly messages: Messages;
-  readonly entry: AuditDetailEntry;
+  readonly entry: AuditDetailShown;
   readonly label: string;
   readonly named: boolean;
   readonly asCode: boolean;
@@ -795,9 +805,9 @@ function DetailEntry({
         {value}
       </code>
     ) : (
-      <span data-audit-verbatim className="whitespace-pre-wrap">
+      <bdi data-audit-verbatim className="whitespace-pre-wrap">
         {value}
-      </span>
+      </bdi>
     );
     const words = auditRecordTypeWords(messages, entry.fieldName, value);
     return words === null ? (
@@ -824,17 +834,17 @@ function DetailEntry({
         </p>
       )}
       <p className="break-all text-supporting text-text-primary">
-        {entry.oldValueMasked !== null ? (
+        {entry.oldValue !== null ? (
           <>
             <span data-audit-value="old" className="text-text-muted line-through">
-              {verbatim(entry.oldValueMasked)}
+              {verbatim(entry.oldValue)}
             </span>{' '}
           </>
         ) : null}
-        {entry.newValueMasked === null ? (
+        {entry.newValue === null ? (
           '—'
         ) : (
-          <span data-audit-value="new">{verbatim(entry.newValueMasked)}</span>
+          <span data-audit-value="new">{verbatim(entry.newValue)}</span>
         )}
       </p>
     </li>
