@@ -1316,31 +1316,33 @@ describe('the conversions between a picker value and what a screen holds', () =>
   });
 
   it('reads what the operator typed, even when the picker object carries a stale offset', () => {
-    // A New York value whose parts say midnight on 8 March 2026 and whose
-    // offset is the SUMMER one, which only begins at 02:00 that morning — the
-    // state a picker value is left in when its parts are set one at a time.
-    // Built from parts: midnight on the 9th, which is on the summer offset,
-    // with the day of the month set back to the 8th. Setting a part keeps the
-    // offset the value already carried.
+    // A New York value whose parts say midnight on 1 March 2026 and whose
+    // offset is the SUMMER one, a week before it begins — the state a picker
+    // value is left in when its parts are set one at a time. Built from parts:
+    // midnight on the 9th, which is on the summer offset, with the day of the
+    // month set back to the 1st. Setting a part keeps the offset the value
+    // already carried.
     //
     // It used to be built through the adapter from a year-202 midnight, and
     // that fixture was itself a different moment on each machine: 16:15 on the
     // 7th on an America/Los_Angeles clock, 02:15 on the 8th on Asia/Beirut
     // (measured), so the case failed before it reached the field's own code.
-    // This one needs only that the machine's own calendar has midnight on 8
-    // and 9 March 2026.
+    // This one needs only that the machine's own calendar has midnight on 1
+    // and 9 March 2026, and no zone's skips either (the 418 of tz 2026b). The
+    // 8th, the morning New York's clocks go forward, would not do: America/
+    // Havana's calendar skips that midnight.
     const zone = 'America/New_York';
-    const typed = dayjs('2026-03-09T04:00:00Z').tz(zone).set('date', 8);
+    const typed = dayjs('2026-03-09T04:00:00Z').tz(zone).set('date', 1);
     expect(new AdapterDayjs().getTimezone(typed)).toBe(zone);
-    expect(typed.format('YYYY-MM-DD HH:mm')).toBe('2026-03-08 00:00');
+    expect(typed.format('YYYY-MM-DD HH:mm')).toBe('2026-03-01 00:00');
     // The stale offset: -04:00, where New York is on -05:00 at that midnight.
     expect(typed.utcOffset()).toBe(-240);
-    // So the instant it names is 23:00 on the 7th, and converting it would
-    // land there.
-    expect(typed.toISOString()).toBe('2026-03-08T04:00:00.000Z');
-    expect(typed.tz(zone).format('YYYY-MM-DD HH:mm')).toBe('2026-03-07 23:00');
+    // So the instant it names is 23:00 on 28 February, and converting it
+    // would land there.
+    expect(typed.toISOString()).toBe('2026-03-01T04:00:00.000Z');
+    expect(typed.tz(zone).format('YYYY-MM-DD HH:mm')).toBe('2026-02-28 23:00');
     // The field reads the parts the operator typed.
-    expect(pickerToDay(typed, zone)).toBe('2026-03-08');
+    expect(pickerToDay(typed, zone)).toBe('2026-03-01');
   });
 
   it('types a moment on the day the clocks change and emits the offset of that moment', async () => {
@@ -1355,6 +1357,13 @@ describe('the conversions between a picker value and what a screen holds', () =>
   });
 
   it('finds the repeated hour, and only the repeated hour', () => {
+    // The two occurrences are found from the zone's own offsets, so which is
+    // the earlier does not depend on the machine. It used to: `earlier` and
+    // `later` came back swapped for the later New York instant on
+    // America/Los_Angeles and Pacific/Honolulu clocks, for London's and
+    // Beirut's later instants on those and on a UTC clock, and for Lord Howe's
+    // on every clock tried, Asia/Riyadh included (measured). `shown` was right
+    // throughout, and is what the field draws.
     const zone = 'America/New_York';
     expect(repeatedWallClock('2026-11-01T01:30:00-04:00', zone)).toEqual({
       earlier: '-04:00',
@@ -1366,6 +1375,24 @@ describe('the conversions between a picker value and what a screen holds', () =>
       later: '-05:00',
       shown: '-05:00',
     });
+    // London, Beirut — whose hour repeats before midnight — and Lord Howe,
+    // whose clocks go back by thirty minutes: each instant of each pair.
+    for (const [instant, where, earlier, later, shown] of [
+      ['2026-10-25T00:30:00Z', 'Europe/London', '+01:00', '+00:00', '+01:00'],
+      ['2026-10-25T01:30:00Z', 'Europe/London', '+01:00', '+00:00', '+00:00'],
+      ['2026-10-24T20:30:00Z', 'Asia/Beirut', '+03:00', '+02:00', '+03:00'],
+      ['2026-10-24T21:30:00Z', 'Asia/Beirut', '+03:00', '+02:00', '+02:00'],
+      ['2026-04-04T14:45:00Z', 'Australia/Lord_Howe', '+11:00', '+10:30', '+11:00'],
+      ['2026-04-04T15:15:00Z', 'Australia/Lord_Howe', '+11:00', '+10:30', '+10:30'],
+    ] as const) {
+      expect(repeatedWallClock(instant, where), `${instant} on ${where}`).toEqual({
+        earlier,
+        later,
+        shown,
+      });
+    }
+    expect(repeatedWallClock('2026-10-25T02:30:00Z', 'Europe/London')).toBeNull();
+    expect(repeatedWallClock('2026-04-04T15:45:00Z', 'Australia/Lord_Howe')).toBeNull();
     // Just outside the repeated hour, the skipped spring hour, and a zone with
     // no transitions: none is repeated.
     expect(repeatedWallClock('2026-11-01T00:59:00-04:00', zone)).toBeNull();
@@ -1404,10 +1431,15 @@ describe('the conversions between a picker value and what a screen holds', () =>
  * wall clock the machine's own calendar skips cannot be held at all. On an
  * Asia/Beirut machine, whose clocks go from midnight to 01:00 on 29/03/2026,
  * that day's midnight on a New York branch is held as 01:00 (the day is the
- * same day), and 00:30 typed on that branch is refused as not a date
- * (measured, and not fixed). So no case asserts an hour inside a day value,
- * and the moments typed here are ones every machine clock named in this file
- * can hold.
+ * same day), and 00:30 typed on that branch is refused as not a date; on a
+ * Europe/Berlin machine, whose clocks go from 02:00 to 03:00 that night, 02:30
+ * typed on a Riyadh branch is refused the same way, and a moment already held
+ * in that hour is drawn as 03:30 (measured, and not fixed). So no case asserts
+ * an hour inside a day value through the picker where some calendar skips it,
+ * and every moment typed or handed to a field in the groups below is one no
+ * zone's own calendar skips — checked against the 418 zones of tz 2026b, not
+ * only the clocks this file was run under. Where a case says "every machine"
+ * it is either arithmetic no machine clock takes part in, or one of those.
  *
  * Every expected value is a literal: no case derives the day it expects from
  * the machine's clock, so a wrong day cannot agree with itself.
@@ -1635,24 +1667,28 @@ describe('DateField: a day it holds is drawn as that day on any machine clock', 
     });
   }
 
-  it('holds a day on its zone, at that zone’s offset, and no day for what is not one', () => {
+  it('holds a day on its zone, at that zone’s offset and midnight, and no day for what is not one', () => {
     // The day the value reads and the offset it carries are the zone's, on
-    // every machine. Its own instant is not asserted: it is that midnight only
-    // where the machine's calendar has the hour (an hour late on Asia/Beirut
-    // for 29/03/2026, measured). The instant itself is the next case.
-    for (const [day, zone, offset] of [
-      ['2026-09-27', 'Asia/Riyadh', 180],
-      ['2026-03-29', 'America/New_York', -240],
-      ['2026-03-01', 'America/New_York', -300],
+    // every machine. Its instant is that midnight wherever the machine's own
+    // calendar has the hour, and it is asserted for the days whose midnight no
+    // zone's calendar skips (none of the 418 of tz 2026b). 29/03/2026 is not
+    // one of them — Asia/Beirut and Atlantic/Azores skip its midnight, and the
+    // value is an hour late there (measured) — so that row carries no instant
+    // here; the instant of that midnight itself is in the next case.
+    for (const [day, zone, offset, instant] of [
+      ['2026-09-27', 'Asia/Riyadh', 180, '2026-09-26T21:00:00.000Z'],
+      ['2026-03-29', 'America/New_York', -240, null],
+      ['2026-03-01', 'America/New_York', -300, '2026-03-01T05:00:00.000Z'],
       // Auckland's clocks go forward at 02:00 on the 27th: its midnight is still on
       // the winter offset, the next one on the summer offset.
-      ['2026-09-27', 'Pacific/Auckland', 720],
-      ['2026-09-28', 'Pacific/Auckland', 780],
-      ['2026-09-27', 'UTC', 0],
+      ['2026-09-27', 'Pacific/Auckland', 720, '2026-09-26T12:00:00.000Z'],
+      ['2026-09-28', 'Pacific/Auckland', 780, '2026-09-27T11:00:00.000Z'],
+      ['2026-09-27', 'UTC', 0, '2026-09-27T00:00:00.000Z'],
     ] as const) {
       const picker = dayToPicker(day, zone);
       expect(picker?.format('YYYY-MM-DD'), `${day} on ${zone}`).toBe(day);
       expect(picker?.utcOffset(), `${day} on ${zone}`).toBe(offset);
+      if (instant !== null) expect(picker?.toISOString(), `${day} on ${zone}`).toBe(instant);
     }
     expect(dayToPicker('2026-9-27', 'Asia/Riyadh')).toBeNull();
     expect(dayToPicker('', undefined)).toBeNull();
@@ -1681,6 +1717,10 @@ describe('DateField: a day it holds is drawn as that day on any machine clock', 
       ['2026-09-27', 'UTC', '2026-09-27T00:00:00.000Z', 0],
       ['2026-01-15T12:00:00', 'Europe/London', '2026-01-15T12:00:00.000Z', 0],
       ['2026-07-15T12:00:00', 'Asia/Kolkata', '2026-07-15T06:30:00.000Z', 330],
+      // An hour that happens twice is the earlier of the two…
+      ['2026-11-01T01:30:00', 'America/New_York', '2026-11-01T05:30:00.000Z', -240],
+      // …and the hour after it happens once, on the winter offset.
+      ['2026-11-01T02:30:00', 'America/New_York', '2026-11-01T07:30:00.000Z', -300],
     ] as const) {
       const found = wallClockOnZone(wall, zone);
       const at = found === null ? null : new Date(found.at).toISOString();
@@ -1699,16 +1739,22 @@ describe('DateField: a day it holds is drawn as that day on any machine clock', 
    * 2026-09-26T23:30:00+03:00; Europe/Berlin: 28/03/2026 21:30 typed on
    * America/New_York as 2026-03-28T20:30:00-04:00. And the instant read back
    * from dayjs was an hour LATE on a machine that is on UTC for part of the
-   * year — Europe/London: 29/03/2026 02:30 typed on Asia/Riyadh was emitted as
-   * 2026-03-29T03:30:00+03:00, and 25/10/2026 00:30 on America/New_York as
-   * 2026-10-25T01:30:00-04:00; Atlantic/Azores: 25/10/2026 02:30 on Asia/Riyadh
-   * as 2026-10-25T01:30:00+03:00. After the fix: none of these.
+   * year — Europe/London: 25/10/2026 00:30 typed on America/New_York was
+   * emitted as 2026-10-25T01:30:00-04:00 (and 29/03/2026 02:30 on Asia/Riyadh
+   * as 2026-03-29T03:30:00+03:00); Atlantic/Azores: 25/10/2026 02:30 on
+   * Asia/Riyadh as 2026-10-25T01:30:00+03:00. After the fix: none of these.
+   *
+   * The London defect is pinned here by its AUTUMN moment only. Its spring one
+   * cannot be typed on every machine: the Riyadh hours it touches on
+   * 29/03/2026 run from 01:00 to 04:00, and each of them is an hour some
+   * European calendar skips that night (01:xx London's, 02:xx Berlin's, 03:xx
+   * Athens'), where the field refuses it. The spring instant is asserted where
+   * no picker is involved, in the case above.
    */
   const MOMENTS: readonly (readonly [string, string, string, string])[] = [
     ['Asia/Riyadh', '270920260030', '27/09/2026 00:30', '2026-09-27T00:30:00+03:00'],
     ['Pacific/Honolulu', '270920260030', '27/09/2026 00:30', '2026-09-27T00:30:00-10:00'],
     ['America/New_York', '280320262130', '28/03/2026 21:30', '2026-03-28T21:30:00-04:00'],
-    ['Asia/Riyadh', '290320260230', '29/03/2026 02:30', '2026-03-29T02:30:00+03:00'],
     ['America/New_York', '251020260030', '25/10/2026 00:30', '2026-10-25T00:30:00-04:00'],
     ['Asia/Riyadh', '251020260230', '25/10/2026 02:30', '2026-10-25T02:30:00+03:00'],
   ];
@@ -1727,17 +1773,18 @@ describe('DateField: a day it holds is drawn as that day on any machine clock', 
 
   it('writes an instant it holds back as the same instant, across the days the machine clocks change', () => {
     // The conversion on its own, either side of the Auckland, Berlin and London
-    // changes. Every wall clock here is one each machine clock named in this
-    // file can hold; one its own calendar skips is read an hour late (New
-    // York's 00:30 on 29/03/2026 as 01:30 on an Asia/Beirut machine, measured,
-    // not fixed), and is not asserted.
+    // changes. Every wall clock here is one no zone's own calendar skips (the
+    // 418 of tz 2026b), so any machine can hold it; one a calendar does skip
+    // is read an hour late there (New York's 00:30 on 29/03/2026 as 01:30 on an
+    // Asia/Beirut machine, Riyadh's 02:30 that day as 03:30 on a Europe/Berlin
+    // one — measured, not fixed), and is not asserted.
     for (const [instant, zone, moment] of [
       ['2026-09-26T21:30:00Z', 'Asia/Riyadh', '2026-09-27T00:30:00+03:00'],
       ['2026-09-26T13:30:00Z', 'Asia/Riyadh', '2026-09-26T16:30:00+03:00'],
       ['2026-09-26T14:30:00Z', 'Asia/Riyadh', '2026-09-26T17:30:00+03:00'],
       ['2026-03-29T01:30:00Z', 'America/New_York', '2026-03-28T21:30:00-04:00'],
-      ['2026-03-28T23:30:00Z', 'Asia/Riyadh', '2026-03-29T02:30:00+03:00'],
       ['2026-10-25T04:30:00Z', 'America/New_York', '2026-10-25T00:30:00-04:00'],
+      ['2026-10-24T23:30:00Z', 'Asia/Riyadh', '2026-10-25T02:30:00+03:00'],
       ['2026-09-26T12:00:00Z', 'UTC', '2026-09-26T12:00:00+00:00'],
     ] as const) {
       expect(pickerToInstant(instantToPicker(instant, zone), zone), `${instant} on ${zone}`).toBe(
@@ -1747,11 +1794,145 @@ describe('DateField: a day it holds is drawn as that day on any machine clock', 
   });
 });
 
+describe('DateField: an hour that happens twice is the earlier one, whenever it is asked', () => {
+  /*
+   * When a zone's clocks go back one wall-clock hour happens twice, and the
+   * field reads a time typed in it as the EARLIER of the two. Which of the two
+   * it took used to depend on the day the question was asked: dayjs starts its
+   * search from the offset the zone is on NOW. Measured with the date faked a
+   * minute either side of each change, `dayjs.tz` gave New York's 01:30 on
+   * 01/11/2026 as -04:00 before the change and -05:00 after it, London's 01:30
+   * on 25/10/2026 as +01:00 then +00:00, Beirut's 23:30 on 24/10/2026 as +03:00
+   * then +02:00, and Lord Howe's 01:45 on 05/04/2026 as +11:00 then +10:30 — so
+   * the same typed moment was sent an hour (or thirty minutes) apart on two
+   * days, and a case asserting the earlier one would have gone red on its own
+   * from 1 November.
+   *
+   * OBSERVABLE ON THE HOSTED (UTC) RUNNER, by the calendar: every case here
+   * fakes the date, on both sides of the change and in midsummer and
+   * midwinter, and asserts the same literal on each.
+   */
+  const TWICE: readonly (readonly [string, string, string, number, string, string, string])[] = [
+    // zone, wall clock, the earlier instant, its offset, as emitted, a minute before the change, a minute after
+    [
+      'America/New_York',
+      '2026-11-01T01:30:00',
+      '2026-11-01T05:30:00.000Z',
+      -240,
+      '2026-11-01T01:30:00-04:00',
+      '2026-11-01T05:59:00Z',
+      '2026-11-01T06:01:00Z',
+    ],
+    [
+      'Europe/London',
+      '2026-10-25T01:30:00',
+      '2026-10-25T00:30:00.000Z',
+      60,
+      '2026-10-25T01:30:00+01:00',
+      '2026-10-25T00:59:00Z',
+      '2026-10-25T01:01:00Z',
+    ],
+    [
+      // Beirut's clocks go back at midnight: the hour that repeats is 23:00.
+      'Asia/Beirut',
+      '2026-10-24T23:30:00',
+      '2026-10-24T20:30:00.000Z',
+      180,
+      '2026-10-24T23:30:00+03:00',
+      '2026-10-24T20:59:00Z',
+      '2026-10-24T21:01:00Z',
+    ],
+    [
+      // Lord Howe's go back by thirty minutes: 01:30 to 02:00 happens twice.
+      'Australia/Lord_Howe',
+      '2026-04-05T01:45:00',
+      '2026-04-04T14:45:00.000Z',
+      660,
+      '2026-04-05T01:45:00+11:00',
+      '2026-04-04T14:59:00Z',
+      '2026-04-04T15:01:00Z',
+    ],
+  ];
+
+  /** Runs `body` with the system date faked to `now`, the way this file fakes it elsewhere. */
+  function asked<T>(now: string, body: () => T): T {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(now));
+    try {
+      return body();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  for (const [zone, wall, instant, offset, emitted, before, after] of TWICE) {
+    for (const [when, now] of [
+      ['a minute before the change', before],
+      ['a minute after the change', after],
+      ['in midsummer', '2026-07-15T12:00:00Z'],
+      ['in midwinter', '2026-12-15T12:00:00Z'],
+    ] as const) {
+      it(`${wall} on ${zone} is ${instant}, asked ${when}`, () => {
+        asked(now, () => {
+          const found = wallClockOnZone(wall, zone);
+          expect(found === null ? null : new Date(found.at).toISOString()).toBe(instant);
+          expect(found?.offset).toBe(offset);
+          // The same through the conversions a moment field uses: the earlier
+          // instant is drawn as that wall clock and written back as itself.
+          expect(pickerToInstant(instantToPicker(instant, zone), zone)).toBe(emitted);
+        });
+      });
+    }
+  }
+
+  it('a skipped hour is carried on, on the offset after the change, whenever it is asked', () => {
+    // The other half of the rule, unchanged: 02:30 on the morning New York's
+    // clocks go forward is 03:30 on the summer offset, and 02:15 on the
+    // morning Lord Howe's go forward by thirty minutes is 02:45.
+    for (const now of ['2026-07-15T12:00:00Z', '2026-12-15T12:00:00Z']) {
+      asked(now, () => {
+        const newYork = wallClockOnZone('2026-03-08T02:30:00', 'America/New_York');
+        expect(newYork?.offset, now).toBe(-240);
+        expect(new Date(newYork?.at ?? 0).toISOString(), now).toBe('2026-03-08T07:30:00.000Z');
+        const lordHowe = wallClockOnZone('2026-10-04T02:15:00', 'Australia/Lord_Howe');
+        expect(lordHowe?.offset, now).toBe(660);
+        expect(new Date(lordHowe?.at ?? 0).toISOString(), now).toBe('2026-10-03T15:45:00.000Z');
+      });
+    }
+  });
+
+  for (const [when, now] of [
+    ['a minute before the change', '2026-11-01T05:59:00Z'],
+    ['a minute after the change', '2026-11-01T06:01:00Z'],
+  ] as const) {
+    it(`01:30 typed on New York for 01/11/2026 is the earlier one and says so, asked ${when}`, async () => {
+      // The whole field, not the conversion alone. Only the date is faked, so
+      // the keyboard still runs on real timers.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(now));
+      try {
+        const user = userEvent.setup();
+        const onMoment = vi.fn();
+        mount(<MomentHost zone="America/New_York" onMoment={onMoment} />);
+        const group = screen.getByRole('group', { name: /^Visit time/ });
+        await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+        await user.keyboard('011120260130');
+        expect(pickerInput(group)).toHaveValue('01/11/2026 01:30');
+        expect(onMoment).toHaveBeenLastCalledWith('2026-11-01T01:30:00-04:00');
+        const note = formatMessageText(en['dateField.repeatedTime'], { offset: 'UTC-04:00' });
+        await waitFor(() => expect(group).toHaveAccessibleDescription(note));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  }
+});
+
 describe('DateField: a change of clock under a mounted field', () => {
   /*
    * A field EMPTY when its clock changes, then typed into. OBSERVABLE ON THE
    * HOSTED (UTC) RUNNER: the picker went on laying the typed parts over the
-   * clock it was mounted with, on every machine. Before the fix, on a UTC
+   * clock it was mounted with, on every machine clock tried. Before the fix, on a UTC
    * machine — Pacific/Auckland to none: drawn 21/09/2026; none to
    * Pacific/Honolulu: 21/09/2026, handed back 2026-09-21; Asia/Riyadh to
    * Pacific/Honolulu: the same; Asia/Riyadh to UTC: the same. Pacific/Honolulu
@@ -1761,7 +1942,7 @@ describe('DateField: a change of clock under a mounted field', () => {
    *
    * The second case of each pair is the sentence the fix must keep true: a
    * whole day typed BEFORE the change is not moved by it. Between two named
-   * zones that held before the fix as well, on every machine; with no zone on
+   * zones that held before the fix as well, on every machine clock tried; with no zone on
    * either side it did not on Asia/Riyadh and America/Los_Angeles machines.
    */
   const CHANGES: readonly (readonly [string | undefined, string | undefined, string])[] = [
@@ -1853,7 +2034,7 @@ describe('DateField: a change of clock under a mounted field', () => {
   /*
    * The same change under a MOMENT field, empty at the time: the typed wall
    * clock was laid over the old clock and emitted on the new one, hours out.
-   * OBSERVABLE ON THE HOSTED (UTC) RUNNER. Before the fix, on every machine —
+   * OBSERVABLE ON THE HOSTED (UTC) RUNNER. Before the fix, on every machine clock tried —
    * Asia/Riyadh to UTC: 09:30 typed, 06:30 drawn and emitted; UTC to
    * Asia/Riyadh: 12:30; Asia/Riyadh to Pacific/Honolulu: 21/09/2026 20:30.
    */

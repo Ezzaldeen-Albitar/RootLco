@@ -270,18 +270,81 @@ function pickerZone(zone: string | undefined): string {
 }
 
 const MS_PER_MINUTE = 60_000;
+const MS_PER_DAY = 86_400_000;
+
+/** An instant on a zone: when, and the zone's offset then in minutes east of UTC. */
+interface ZonedInstant {
+  readonly at: number;
+  readonly offset: number;
+}
+
+/**
+ * `zone`'s offset at an instant, in minutes east of UTC — measured the way
+ * dayjs measures it for every value the picker holds, from the zone's rules
+ * and no clock: not the machine's, and not today's.
+ */
+function offsetOnZone(at: number, zone: string): number {
+  return dayjs(at).tz(zone).utcOffset();
+}
+
+/**
+ * Where `zone`'s wall clock reads the given digits (the wall clock written as
+ * if it were UTC's own): every instant at which it does, EARLIEST FIRST, and
+ * the two offsets the zone is on either side of it.
+ *
+ * One instant for an ordinary wall clock; two where the clocks went back over
+ * it and the hour happens twice; none where they went forward over it and the
+ * hour is skipped.
+ *
+ * The zone is on one of two offsets at that wall clock: the one it was on a
+ * day earlier or the one it is on a day later (no zone changes its clock twice
+ * in that span). Each is tried — the digits less the offset is an instant, and
+ * it is one of the answers when the zone really is on that offset then. The
+ * greater offset gives the earlier instant, so it is tried first.
+ */
+function occurrencesOnZone(
+  digits: number,
+  zone: string
+): { readonly found: readonly ZonedInstant[]; readonly lesser: number; readonly greater: number } {
+  const dayBefore = offsetOnZone(digits - MS_PER_DAY, zone);
+  const dayAfter = offsetOnZone(digits + MS_PER_DAY, zone);
+  const greater = Math.max(dayBefore, dayAfter);
+  const lesser = Math.min(dayBefore, dayAfter);
+  const found: ZonedInstant[] = [];
+  for (const offset of greater === lesser ? [greater] : [greater, lesser]) {
+    const at = digits - offset * MS_PER_MINUTE;
+    if (offsetOnZone(at, zone) === offset) found.push({ at, offset });
+  }
+  return { found, lesser, greater };
+}
 
 /**
  * The instant a wall clock names on `zone`, and the zone's offset there in
  * minutes east of UTC — `null` when the wall clock is not one. The wall clock
  * is `YYYY-MM-DD` (that day's midnight) or `YYYY-MM-DDTHH:mm:ss`.
  *
- * ## Why only the offset is taken from `dayjs.tz(wall, zone)`
+ * The answer depends on the wall clock and the zone and on nothing else: not
+ * on the machine's clock, and not on the day it is asked.
  *
- * `dayjs.tz('2026-09-27', zone)` resolves the wall clock by the zone's own
- * rules, and the OFFSET it settles on is a plain number, the same on every
- * machine. Nothing else it holds is:
+ *  - A wall clock that happens ONCE is that instant.
+ *  - One that happens TWICE — the clocks went back over it — is the EARLIER of
+ *    the two, on the offset before the change. See "The hour that happens
+ *    twice".
+ *  - One the zone SKIPS — the clocks went forward over it — is carried on by
+ *    the size of the change, on the offset after it: 02:30 on the morning New
+ *    York's clocks go forward is 03:30 on the summer offset.
  *
+ * ## Why this is not `dayjs.tz(wall, zone)`
+ *
+ * It answers the same question, and three things about its answer are not the
+ * zone's:
+ *
+ *  - WHICH of two instants it picks. It starts its search from the offset the
+ *    zone is on NOW, and an hour that happens twice is settled by where the
+ *    search started. Asked in summer it gave the earlier 01:30 on the night
+ *    New York's clocks go back; asked after that night, the later one. The
+ *    same typed moment would have been sent an hour apart on two different
+ *    days;
  *  - its PARTS. It stores the instant as a machine-local date moved by the
  *    difference between the two clocks, and every part — the year, the day,
  *    the hour — is read from that moved date on the MACHINE's clock. When the
@@ -299,30 +362,19 @@ const MS_PER_MINUTE = 60_000;
  *    Atlantic/Azores machine 2026-03-29 on a New York branch was drawn as the
  *    28th (measured).
  *
- * So the instant is built here from the wall clock's own digits and that
- * offset, by UTC arithmetic, in which no machine clock takes part.
- *
- * A wall clock the zone skips — its clocks went forward over it — is answered
- * as dayjs answers it: the offset AFTER the change, and the instant that many
- * minutes on (02:30 on the morning New York's clocks go forward is 03:30 on
- * the summer offset). The digits less that offset fall before the change,
- * where the zone is still on the earlier offset, and the earlier offset is
- * the one the instant is counted from. Where the zone keeps the wall clock the
- * two offsets are the same one.
+ * So the instant is built here from the wall clock's own digits and the
+ * zone's offsets, by UTC arithmetic.
  */
-export function wallClockOnZone(
-  wall: string,
-  zone: string
-): { readonly at: number; readonly offset: number } | null {
-  const resolved = dayjs.tz(wall, zone);
-  if (!resolved.isValid()) return null;
-  const offset = resolved.utcOffset();
+export function wallClockOnZone(wall: string, zone: string): ZonedInstant | null {
   // The digits read as UTC's own: parts only, no clock.
-  const digits = dayjs.utc(wall).valueOf();
-  const before = dayjs(digits - offset * MS_PER_MINUTE)
-    .tz(zone)
-    .utcOffset();
-  return { at: digits - before * MS_PER_MINUTE, offset };
+  const parsed = dayjs.utc(wall);
+  if (!parsed.isValid()) return null;
+  const digits = parsed.valueOf();
+  const { found, lesser, greater } = occurrencesOnZone(digits, zone);
+  const earliest = found[0];
+  if (earliest !== undefined) return earliest;
+  // Skipped: counted from the offset before the change, named on the one after.
+  return { at: digits - lesser * MS_PER_MINUTE, offset: greater };
 }
 
 /** An offset in minutes east of UTC as `±HH:MM`. */
@@ -391,7 +443,17 @@ export function pickerToDay(value: Dayjs | null, zone: string | undefined): Cale
   return wallClockIn(value, zone).slice(0, 10);
 }
 
-/** An instant as the picker's value, shown on `zone`'s clock. */
+/**
+ * An instant as the picker's value, shown on `zone`'s clock.
+ *
+ * The same limit as a day's (`dayToPicker`, "What the value cannot hold"), and
+ * here it reaches what is drawn: a moment whose wall clock the MACHINE's own
+ * calendar skips is drawn an hour late, and typing that hour is refused as not
+ * a date. On a Europe/Berlin machine, whose clocks go from 02:00 to 03:00 on
+ * 29/03/2026, a Riyadh branch's 02:30 that day is drawn as 03:30 (measured).
+ * One hour a year, on a machine whose zone changes its clock; not fixed here —
+ * the picker would have to hold its value some other way.
+ */
 export function instantToPicker(instant: string, zone: string | undefined): Dayjs | null {
   if (instant.trim() === '') return null;
   const parsed = dayjs(instant);
@@ -408,43 +470,40 @@ export function pickerToInstant(value: Dayjs | null, zone: string | undefined): 
   if (zone === undefined) return value.format('YYYY-MM-DDTHH:mm:ssZ');
   // The wall clock, resolved afresh on the zone: the offset is the one in force
   // at THAT wall clock, whatever the picker's object was carrying.
-  const wall = wallClockIn(value, zone);
-  const resolved = wallClockOnZone(wall, zone);
-  if (resolved === null) return dayjs.tz(wall, zone).format('YYYY-MM-DDTHH:mm:ssZ');
-  // The digits are written from the instant by UTC arithmetic: read off the
-  // value dayjs resolves, they are an hour out near the machine's own offset
-  // change (see `wallClockOnZone`).
+  const resolved = wallClockOnZone(wallClockIn(value, zone), zone);
+  if (resolved === null) return '';
+  // The digits are written from the instant by UTC arithmetic, in which no
+  // machine clock takes part (see `wallClockOnZone`).
   const shown = dayjs.utc(resolved.at + resolved.offset * MS_PER_MINUTE);
   return `${shown.format(WALL_CLOCK)}${offsetText(resolved.offset)}`;
 }
 
 /**
  * Whether an instant's wall clock on `zone` happens twice that day (the clocks
- * went back), and if so the offsets of both occurrences, earlier first.
+ * went back), and if so the offsets of both occurrences, earlier first, and
+ * the offset of the instant itself.
  *
- * The other occurrence, if there is one, is one offset change away: the offset
- * is measured three hours either side (every transition in use is an hour or
- * less), and the instant moved by the difference is checked for the same wall
- * clock.
+ * The two occurrences are the two instants `occurrencesOnZone` finds for the
+ * wall clock the zone shows at that instant — the same two `wallClockOnZone`
+ * chooses between — so which is the earlier is settled by the instants
+ * themselves, on every machine and on every day.
  */
 export function repeatedWallClock(
   instant: string,
   zone: string
 ): { readonly earlier: string; readonly later: string; readonly shown: string } | null {
   if (instant.trim() === '') return null;
-  const at = dayjs(instant);
-  if (!at.isValid()) return null;
-  const local = at.tz(zone);
-  const wall = local.format(WALL_CLOCK);
-  for (const hours of [-3, 3]) {
-    const probe = at.add(hours, 'hour').tz(zone).utcOffset();
-    if (probe === local.utcOffset()) continue;
-    const other = at.add(local.utcOffset() - probe, 'minute').tz(zone);
-    if (other.format(WALL_CLOCK) !== wall) continue;
-    const [first, second] = other.isBefore(at) ? [other, local] : [local, other];
-    return { earlier: first.format('Z'), later: second.format('Z'), shown: local.format('Z') };
-  }
-  return null;
+  const parsed = dayjs(instant);
+  if (!parsed.isValid()) return null;
+  const at = parsed.valueOf();
+  const shown = offsetOnZone(at, zone);
+  const [first, second] = occurrencesOnZone(at + shown * MS_PER_MINUTE, zone).found;
+  if (first === undefined || second === undefined) return null;
+  return {
+    earlier: offsetText(first.offset),
+    later: offsetText(second.offset),
+    shown: offsetText(shown),
+  };
 }
 
 /**
