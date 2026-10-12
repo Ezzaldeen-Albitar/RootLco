@@ -150,6 +150,25 @@ import {
  * there is still no moment, so a caller cannot mistake an unfinished expiry
  * for none and send the form without it.
  *
+ * ## Nothing wrong is never said over a day half typed
+ *
+ * `onProblem(null)` means the entry is whole or empty, and a caller may act on
+ * it: the service catalogue drops its day filter when the field says nothing
+ * is wrong and holds no day. One render used to say so falsely. Clearing a
+ * part publishes "no value"; the first digit typed into it that still makes no
+ * day (the `0` of `01`, the `2` of `2026`) publishes a value that is NOT a
+ * date — an object, not "no value" — and the picker names that
+ * (`'invalidDate'`) only in an effect, after the render that first holds it.
+ * For that render the field held parts, no day and no named problem, and
+ * reported `null`: 'incomplete', then `null`, then `'invalidDate'`. The
+ * catalogue dropped its filter on that `null` in the middle of every part
+ * retyped, and read the whole catalogue while the field showed a day
+ * (`P1-32-PRE-OD-LFD`).
+ *
+ * So parts that make no day are `'incomplete'` until the picker names the
+ * problem itself. `null` is reported only when the picker holds a real day or
+ * every part is blank.
+ *
  * ## After a refusal the cursor lands on the part to finish
  *
  * A refused form moves the cursor to its first invalid field
@@ -720,6 +739,14 @@ function useEnterFirstUnfinishedPart(
   }, [fieldRef]);
 }
 
+/**
+ * Whether the picker holds parts that make no day and has not yet named why.
+ * See "Nothing wrong is never said over a day half typed".
+ */
+function unnamedNoDay(picker: Dayjs | null, partsBlank: boolean): boolean {
+  return !partsBlank && picker !== null && !picker.isValid();
+}
+
 export function DateField(props: DateFieldProps) {
   const { label, value, onChange, min, max, timezone, onProblem, onEdit, disabled, readOnly } =
     props;
@@ -743,7 +770,10 @@ export function DateField(props: DateFieldProps) {
   }
   // Parts typed and still no day at all: the picker is silent about this case.
   // A day typed whole but impossible is not null, and the picker names it.
-  const problem: DayProblem = !partsBlank && picker === null ? 'incomplete' : pickerProblem;
+  const problem: DayProblem =
+    !partsBlank && picker === null
+      ? 'incomplete'
+      : (pickerProblem ?? (unnamedNoDay(picker, partsBlank) ? 'incomplete' : null));
   const reported = useRef<DayProblem>(null);
   const fieldRef = useRef<FieldRef<Dayjs | null> | null>(null);
   const enterField = useEnterFirstUnfinishedPart(fieldRef);
@@ -879,7 +909,10 @@ export function ZonedDateTimeField(props: ZonedDateTimeFieldProps) {
   }
   // Parts typed and still no moment at all: the picker is silent about this
   // case, exactly as for a day (see "A day half typed is reported").
-  const problem: MomentProblem = !partsBlank && picker === null ? 'incomplete' : pickerProblem;
+  const problem: MomentProblem =
+    !partsBlank && picker === null
+      ? 'incomplete'
+      : (pickerProblem ?? (unnamedNoDay(picker, partsBlank) ? 'incomplete' : null));
   const reported = useRef<MomentProblem>(null);
   const fieldRef = useRef<FieldRef<Dayjs | null> | null>(null);
   const enterField = useEnterFirstUnfinishedPart(fieldRef);

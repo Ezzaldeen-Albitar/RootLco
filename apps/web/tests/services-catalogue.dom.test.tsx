@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,7 @@ import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationPro
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
 import { SERVICE_LIFECYCLE_STATES } from '@/features/services/services-contract';
+import { SEARCH_DEBOUNCE_MS } from '@/lib/use-debounced-value';
 
 /**
  * The service catalogue, rendered (P1-30, `W1`, FE-001) — on the shared
@@ -357,6 +358,228 @@ describe('the published-on day is a calendar day, and a half-typed one is refuse
     await user.keyboard('2027');
     await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
     await waitFor(() => expect(lastCriteria()).toEqual({ effectiveOn: '2027-10-01' }));
+  });
+});
+
+describe('the published-on day retyped without a pause is the day the list is read on', () => {
+  /*
+   * The runtime retest's case D-03b. With 01/03/2028 held, three days were
+   * typed part by part one after another — 15/11/2026, 01/01/2027, 01/03/2028.
+   * The box ended on 01/03/2028; the last list read the page sent carried no
+   * day, others in between carried none or the day typed over, and nothing
+   * followed. Two faults met:
+   *
+   *  - The field said "nothing wrong" for one render in the middle of a part
+   *    (after its first digit, before the picker named the problem), and this
+   *    screen drops its day on that report with no day in hand. So the day was
+   *    dropped and put back at every part retyped.
+   *  - With the whole list submitted earlier (a working-context change, or
+   *    Search with no filter), a list with no day is read AT ONCE, and leaving
+   *    it falls back to the settled day. After nine days passed through, the
+   *    read hook had dropped that day's criteria and sent nothing for it — and
+   *    ending on that same day asked for nothing new.
+   *
+   * Time is faked, so "without a pause" is exact: every key of an entry lands in
+   * the same millisecond, and the gaps between entries are the ones named.
+   */
+  afterEach(forgetRememberedBranch);
+
+  interface Stage {
+    readonly user: ReturnType<typeof userEvent.setup>;
+    /** The day each list read was sent with since `mark`, or "no day". */
+    readonly readsSince: (mark: number) => readonly string[];
+    readonly mark: () => number;
+    /** What the field shows, part by part. */
+    readonly shown: () => string;
+    readonly part: (index: number) => HTMLElement;
+    readonly group: HTMLElement;
+    readonly wait: (ms: number) => Promise<void>;
+    /** One day typed over the one held: each part clicked, cleared, typed. */
+    readonly retype: (day: string) => Promise<void>;
+  }
+
+  /**
+   * The catalogue after a working-context change, holding 01/03/2028 with that
+   * day read and shown — on a faked clock.
+   */
+  async function onADay(run: (stage: Stage) => Promise<void>): Promise<void> {
+    vi.useFakeTimers();
+    // Testing Library drains its queue after every user event with a
+    // zero-delay timer and moves a faked clock only when it finds Jest's. Under
+    // Vitest's it would wait for ever; this hands it the one call it makes.
+    vi.stubGlobal('jest', { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+    try {
+      const reads: string[] = [];
+      listServices.mockImplementation(async (criteria: { readonly effectiveOn?: string }) => {
+        reads.push(criteria.effectiveOn ?? 'no day');
+        return page([row()]);
+      });
+      const user = userEvent.setup({ delay: null });
+      const view = renderLtr(
+        withMui(
+          inBranch(
+            <>
+              <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+              <ServiceCatalogueScreen
+                locale="en"
+                messages={en}
+                canManage={false}
+                canReadBranches={false}
+              />
+            </>,
+            { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+          )
+        )
+      );
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      // In steps of ten milliseconds at most, each its own `act`, so what a
+      // timer causes is rendered within the step it fired in and never held
+      // back to the end of a long wait. Nothing here is read to the millisecond.
+      const wait = async (ms: number) => {
+        if (ms === 0) await tick(0);
+        for (let left = ms; left > 0; left -= 10) await tick(Math.min(10, left));
+      };
+      await wait(400);
+      // The submission of the whole list that every later step stands on.
+      await user.click(screen.getByRole('button', { name: 'second' }));
+      await wait(400);
+      const group = screen.getByRole('group', {
+        name: labelled('services.catalogue.effectiveOn'),
+      });
+      const part = (index: number) =>
+        within(group).getAllByRole('spinbutton')[index] as HTMLElement;
+      await user.click(part(0));
+      await user.keyboard('01032028');
+      await wait(400);
+      expect(reads.at(-1)).toBe('2028-03-01');
+      expect(await grid()).toBeVisible();
+
+      await run({
+        user,
+        mark: () => reads.length,
+        readsSince: (mark) => reads.slice(mark),
+        shown: () =>
+          within(group)
+            .getAllByRole('spinbutton')
+            .map((spin) => spin.textContent)
+            .join('/'),
+        part,
+        group,
+        wait,
+        retype: async (day) => {
+          for (const [index, digits] of day.split('/').entries()) {
+            await user.click(part(index));
+            await user.keyboard('{Backspace}');
+            await user.keyboard(digits);
+          }
+        },
+      });
+      view.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  }
+
+  /** The list on screen is an answer, and the last read sent was for `day`. */
+  function expectApplied(stage: Stage, day: string, written: string): void {
+    expect(stage.shown()).toBe(written);
+    expect(lastCriteria()).toEqual({ effectiveOn: day });
+    expect(
+      screen.getByRole('grid', { name: EN['services.catalogue.caption'] as string })
+    ).toBeVisible();
+    expect(stage.group).not.toHaveAttribute('aria-invalid');
+  }
+
+  it.each([0, 50, 150, 299])(
+    'three days typed %i ms apart, ending on the day already read: nothing is sent, and that day stays applied',
+    async (gap) => {
+      await onADay(async (stage) => {
+        const mark = stage.mark();
+        await stage.retype('15/11/2026');
+        await stage.wait(gap);
+        await stage.retype('01/01/2027');
+        await stage.wait(gap);
+        await stage.retype('01/03/2028');
+        await stage.wait(3000);
+        // No day ever settled but the one already read, so no read is owed —
+        // and none went out without a day, or for a day typed over.
+        expect(stage.readsSince(mark)).toEqual([]);
+        expectApplied(stage, '2028-03-01', '01/03/2028');
+      });
+    }
+  );
+
+  it('the same three days 301 ms apart: each is read once it settles, and never the whole list', async () => {
+    await onADay(async (stage) => {
+      const mark = stage.mark();
+      await stage.retype('15/11/2026');
+      await stage.wait(SEARCH_DEBOUNCE_MS + 1);
+      await stage.retype('01/01/2027');
+      await stage.wait(SEARCH_DEBOUNCE_MS + 1);
+      await stage.retype('01/03/2028');
+      await stage.wait(3000);
+      expect(stage.readsSince(mark)).toEqual(['2026-11-15', '2027-01-01', '2028-03-01']);
+      expectApplied(stage, '2028-03-01', '01/03/2028');
+    });
+  });
+
+  it('three days typed at once, ending on another day: that day alone is read', async () => {
+    await onADay(async (stage) => {
+      const mark = stage.mark();
+      await stage.retype('15/11/2026');
+      await stage.retype('01/03/2028');
+      await stage.retype('01/01/2027');
+      await stage.wait(3000);
+      expect(stage.readsSince(mark)).toEqual(['2027-01-01']);
+      expectApplied(stage, '2027-01-01', '01/01/2027');
+    });
+  });
+
+  it('a day left half typed and finished as it was: the day in force stays, and nothing is sent', async () => {
+    await onADay(async (stage) => {
+      const mark = stage.mark();
+      await stage.user.click(stage.part(2));
+      await stage.user.keyboard('{Backspace}');
+      await stage.wait(1000);
+      expect(stage.group).toHaveAttribute('aria-invalid', 'true');
+      expect(stage.shown()).toBe('01/03/YYYY');
+      expect(stage.readsSince(mark)).toEqual([]);
+
+      // Digit by digit, a pause after each: 2, 20 and 202 make no day the
+      // picker will take, and the list must not be read without one meanwhile.
+      for (const digit of '2028') {
+        await stage.user.keyboard(digit);
+        await stage.wait(100);
+      }
+      await stage.wait(3000);
+      expect(stage.readsSince(mark)).toEqual([]);
+      expectApplied(stage, '2028-03-01', '01/03/2028');
+    });
+  });
+
+  it('a day cleared whole and typed again: the whole list is read when it is cleared, and the day when it is back', async () => {
+    await onADay(async (stage) => {
+      const mark = stage.mark();
+      for (const index of [0, 1, 2]) {
+        await stage.user.click(stage.part(index));
+        await stage.user.keyboard('{Backspace}');
+      }
+      await stage.wait(SEARCH_DEBOUNCE_MS + 1);
+      // Emptied, and nothing wrong with that: the filter goes with it.
+      expect(stage.shown()).toBe('DD/MM/YYYY');
+      expect(stage.group).not.toHaveAttribute('aria-invalid');
+      expect(stage.readsSince(mark)).toEqual(['no day']);
+
+      await stage.user.click(stage.part(0));
+      await stage.user.keyboard('01032028');
+      await stage.wait(3000);
+      expect(stage.readsSince(mark)).toEqual(['no day', '2028-03-01']);
+      expectApplied(stage, '2028-03-01', '01/03/2028');
+    });
   });
 });
 

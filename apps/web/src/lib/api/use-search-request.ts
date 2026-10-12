@@ -526,7 +526,8 @@ export function useSearchRequest<Row, Criteria>(options: {
    * what is fetched and what it is filed under cannot come apart.
    *
    * Bounded, because a search box generates a key per keystroke and this must
-   * not grow with the session.
+   * not grow with the session. What it has dropped is not lost: the read below
+   * takes the criteria back from the key itself.
    */
   const box = useRef<{
     load: typeof load;
@@ -595,8 +596,24 @@ export function useSearchRequest<Row, Criteria>(options: {
 
   useEffect(() => {
     if (wantedKey === null || activeKey === null) return undefined;
-    const asked = box.current.seen.get(activeKey);
-    if (asked === undefined) return undefined;
+    /*
+     * A key the hook wants is ALWAYS read, whether or not the map still holds it.
+     *
+     * The map above is bounded at eight keys and drops the oldest, and the key
+     * being asked is not always a recent one: while the operator types, it is
+     * the SETTLED key, which can be many keystrokes old. This effect used to
+     * return when the map no longer held it — no read, no state, and the request
+     * name already consumed. A day filter retyped part by part makes a key per
+     * whole day it passes through; nine of them without a pause dropped the
+     * settled day, and when the entry ended on that same day the name was the
+     * one already consumed, so nothing was ever sent: the list said "Loading"
+     * for good under a filter showing a day, and Enter — answered by "the read
+     * already in flight" — sent nothing either (`P1-32-PRE-OD-LFD`).
+     *
+     * The key is the criteria, serialised (see `key`), so when the map has let
+     * it go the criteria are read back from the key itself.
+     */
+    const asked = box.current.seen.get(activeKey) ?? (JSON.parse(activeKey) as Criteria);
     const stack = box.current.cursors;
     if (stack === null) return undefined;
     const cursor = stack.cursorFor(wantedPage);
