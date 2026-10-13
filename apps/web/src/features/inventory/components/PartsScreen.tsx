@@ -13,6 +13,7 @@ import TableRow from '@mui/material/TableRow';
 
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -481,8 +482,13 @@ export function PartsScreen({
         />
       ) : null}
 
+      {/*
+       * Keyed on the work order as well as on the last write: the table and the
+       * reservations it names belong to ONE work order, and a screen handed
+       * another must never draw the first one's rows or words under it.
+       */}
       <PartIssuesPanel
-        key={`issues-${epoch}`}
+        key={`issues-${workOrderId}-${epoch}`}
         locale={locale}
         messages={messages}
         workOrderId={workOrderId}
@@ -1883,7 +1889,8 @@ function PartIssuesPanel({
    * It is read once for the reservations the listed issues name: not when none
    * names one, not again on a re-render or when the issues are read again and
    * name the same ones, and again when they name another or the last read did
-   * not answer. Every outcome settles (`settleRead`): a refusal, a failed or
+   * not answer — once, the next time the issues are read, never in a loop. Every
+   * outcome settles (`settleRead`): a refusal, a failed or
    * unanswered read and an abandoned one all leave the rows saying, in words,
    * that the issue was drawn from a reservation — never the identifier, and
    * with no notice of its own, since nothing the operator does depends on it.
@@ -1929,6 +1936,10 @@ function PartIssuesPanel({
         answered.current = wanted.key;
         setReservations(new Map(page.rows.map((row) => [row.id, row])));
       } else {
+        // Nothing is remembered as answered, so the reservations are asked for
+        // again the next time the issues are read — also when that next read
+        // names the ones that HAD been answered before this one failed.
+        answered.current = '';
         setReservations(null);
       }
     });
@@ -2028,21 +2039,19 @@ function PartIssuesPanel({
               </span>
             );
           }
-          // Two lines: how much the reservation held, then when it was made.
-          const held = translateWithValues(messages, 'inventory.parts.issues.reserved', {
-            quantity: reserved.quantity,
-          });
+          // Two lines, each with a line height of its own so that both fit in
+          // the row (`TwoLineCell`): how much the reservation held, then when it
+          // was made. No `title`: both lines are drawn, in a column that asks
+          // for the width the longer one needs, so a title would only say the
+          // same thing a second time.
           return (
-            <span
-              data-testid="issue-reservation"
-              className="flex flex-col"
-              title={`${held} · ${momentText(reserved.createdAt, locale, zone)}`}
-            >
-              <span data-testid="issue-reservation-held">{held}</span>
-              <span data-testid="issue-reservation-made" className="text-caption text-text-muted">
-                <StockMoment value={reserved.createdAt} locale={locale} zone={zone} />
-              </span>
-            </span>
+            <TwoLineCell
+              testId="issue-reservation"
+              primary={translateWithValues(messages, 'inventory.parts.issues.reserved', {
+                quantity: reserved.quantity,
+              })}
+              secondary={<StockMoment value={reserved.createdAt} locale={locale} zone={zone} />}
+            />
           );
         },
       },
@@ -2051,7 +2060,7 @@ function PartIssuesPanel({
         headerKey: 'inventory.parts.issues.column.issuedAt',
         ...(momentChars > 0 ? { minChars: momentChars } : {}),
         cell: (row) => (
-          <span data-testid="issue-issued-at" title={momentText(row.issuedAt, locale, zone)}>
+          <span data-testid="issue-issued-at">
             <StockMoment value={row.issuedAt} locale={locale} zone={zone} />
           </span>
         ),

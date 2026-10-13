@@ -2650,10 +2650,13 @@ describe('P1-32-PRE-OD-INVF: the chosen allowance and its unit in words', () => 
  * issue was drawn from a reservation, in words. The identifier is drawn in
  * neither case.
  *
- * What these cases cannot show is the width a browser lays a column out at:
- * jsdom lays nothing out. They hold the width the column ASKS for, by the
- * grid's own estimate, and that the whole text is in the cell and in its
- * title; whether it is read whole on a screen stays with the runtime retest.
+ * What these cases cannot show is what a browser lays out: jsdom lays nothing
+ * out. They hold the width the column ASKS for, by the grid's own estimate,
+ * that the whole text is in the cell, and that each of its two lines carries
+ * the utility that gives it a line height of its own — without which the
+ * second line is cut off by the row. Whether both are then read whole on a
+ * screen, and whether the grid scrolls sideways as it should, stays with the
+ * runtime retest.
  */
 describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by its identifier', () => {
   const CATALOGUE = { en: EN, ar: AR } as const;
@@ -2730,13 +2733,18 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
       await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent(held));
       const first = said(grid, 'BRK-001');
       // Two lines, each whole: the quantity, then the moment on the branch clock, named.
-      expect(within(first).getByTestId('issue-reservation-held').textContent).toBe(held);
-      const made = within(first).getByTestId('issue-reservation-made');
-      expectOnClock(made, RESERVED_AT, locale);
       expect(first.children).toHaveLength(2);
-      // And the whole of it in the cell's title, whatever width the column is drawn at.
-      expect(first.getAttribute('title')).toContain(held);
-      expect(first.getAttribute('title')).toContain(onClock(RESERVED_AT, locale, FAR_ZONE));
+      const [line, made] = [...first.children] as [HTMLElement, HTMLElement];
+      expect(line.textContent).toBe(held);
+      expectOnClock(made, RESERVED_AT, locale);
+      // Each line has a line height of its own. A first line left to inherit the
+      // cell's is as tall as the row, and the moment under it is cut off: a
+      // count of two children cannot see that, these classes can.
+      expect(first).toHaveAttribute('data-grid-cell', 'two-line');
+      expect(line).toHaveClass('text-table-cell');
+      expect(made).toHaveClass('text-caption');
+      // No title: both lines are drawn, so a title would only repeat them.
+      expect(first).not.toHaveAttribute('title');
       // A reservation the list did not return: said in words.
       expect(said(grid, 'BRK-002').textContent).toBe(T['inventory.parts.issues.fromReservation']);
       // An issue drawn from none says so, as before.
@@ -2759,7 +2767,7 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
       );
     });
 
-    it(`${locale}: the moment an issue was made is whole in its cell and in the cell's title`, async () => {
+    it(`${locale}: the moment an issue was made is whole in its cell, on one line`, async () => {
       listPartIssues.mockImplementation(async () =>
         page([partIssue({ sku: 'BRK-003', issuedAt: ISSUED_AT })])
       );
@@ -2767,7 +2775,9 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
       const grid = await issuesGrid(locale);
       const issued = within(rowOf(grid, 'BRK-003')).getByTestId('issue-issued-at');
       expectOnClock(issued, ISSUED_AT, locale);
-      expect(issued.getAttribute('title')).toContain(onClock(ISSUED_AT, locale, FAR_ZONE));
+      expect(issued.textContent).toContain(onClock(ISSUED_AT, locale, FAR_ZONE));
+      // One line, in a column that asks for its width: no title beside it.
+      expect(issued).not.toHaveAttribute('title');
     });
 
     it(`${locale}: a refused read of the reservations leaves every such issue said in words`, async () => {
@@ -2835,10 +2845,8 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
         onClock(ISSUED_AT, locale, FAR_ZONE)
       );
       const first = said(grid, 'BRK-001');
-      expect(within(first).getByTestId('issue-reservation-held').textContent).toBe(held);
-      expect(within(first).getByTestId('issue-reservation-made')).toHaveTextContent(
-        onClock(RESERVED_AT, locale, FAR_ZONE)
-      );
+      expect(first.children[0]?.textContent).toBe(held);
+      expect(first.children[1]).toHaveTextContent(onClock(RESERVED_AT, locale, FAR_ZONE));
       // The other columns ask for nothing and keep the floor every column has.
       for (const id of ['sku', 'location', 'quantity', 'returned']) {
         expect(columns.find((column) => column.id === id)?.minChars).toBeUndefined();
@@ -2906,7 +2914,14 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
     }
   });
 
-  it('when another work order is opened, the late answer for the one left is not drawn on it', async () => {
+  /*
+   * The screen handed another work order while it stays mounted. The issues and
+   * the reservations they name belong to ONE work order, so the panel is keyed
+   * on it: the second work order starts with a table and a read of its own, and
+   * nothing of the first is drawn under it — not its rows, not its reservation
+   * words, and not its answer when that arrives late.
+   */
+  it('handed another work order while mounted, it draws that one alone: its rows, its read, no trace of the first', async () => {
     const answers: ((value: unknown) => void)[] = [];
     listPartIssues.mockImplementation(async (workOrderId: string) =>
       page(
@@ -2931,17 +2946,11 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
     const { rerender } = renderIn('en');
     await issuesGrid('en', 'BRK-001');
     await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
-    // Another work order is another page: the screen for the first is taken
-    // down and one for the second is put up in its place, as the route does.
-    rerender(
-      withMui(
-        <div key={OTHER_WORK_ORDER}>
-          {screenFor('en', { workOrderId: OTHER_WORK_ORDER, workOrder: null })}
-        </div>,
-        'en'
-      )
-    );
+    // The same mounted tree, with the other work order's identifier and nothing else changed.
+    rerender(withMui(screenFor('en', { workOrderId: OTHER_WORK_ORDER }), 'en'));
     const grid = await issuesGrid('en', 'BRK-009');
+    expect(listPartIssues.mock.calls.at(-1)?.[0]).toBe(OTHER_WORK_ORDER);
+    expect(within(grid).queryByText('BRK-001')).toBeNull();
     await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(2));
     expect(asked()).toEqual([
       [SCOPE, ALL_STATES],
@@ -2960,6 +2969,69 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
       await Promise.resolve();
     });
     await waitFor(() => expect(said(grid, 'BRK-009')).toHaveTextContent('1.250'));
+    expect(listReservations).toHaveBeenCalledTimes(2);
+    expect(within(grid).queryByText('BRK-001')).toBeNull();
+  });
+
+  /*
+   * "Again when the last read did not answer." The first page's reservations
+   * are answered; the second page's read fails; back on the first page the same
+   * reservations are named again — and must be asked for again, because the
+   * failure threw the answer away. Once: a failed read is not retried on its
+   * own, only the next time the issues are read.
+   */
+  it('after a read that failed, the reservations answered before are asked for again, once', async () => {
+    const user = userEvent.setup();
+    const first = partIssue({ id: 'issue-1', sku: 'BRK-001', reservationId: RESERVATION_ID });
+    const second = partIssue({
+      id: 'issue-2',
+      sku: 'BRK-002',
+      reservationId: UNLISTED_RESERVATION,
+    });
+    listPartIssues.mockImplementation(
+      async (_workOrderId: string, _request: unknown, cursor: string | null) =>
+        cursor === null ? { ...page([first]), nextCursor: 'page-2', hasMore: true } : page([second])
+    );
+    let reads = 0;
+    listReservations.mockImplementation(async () => {
+      reads += 1;
+      // The second read, for the second page, is refused; the others answer.
+      return reads === 2
+        ? {
+            status: 'denied' as const,
+            rows: [],
+            nextCursor: null,
+            hasMore: false,
+            correlationId: 'c',
+          }
+        : page([consumed]);
+    });
+    renderIn('en');
+    const region = await screen.findByRole('region', {
+      name: EN['inventory.parts.issues.heading'] as string,
+    });
+    const grid = await within(region).findByRole('grid');
+    await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent('2.000'));
+    expect(listReservations).toHaveBeenCalledTimes(1);
+
+    await user.click(within(region).getByRole('button', { name: EN['table.nextPage'] as string }));
+    await within(grid).findByText('BRK-002');
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(2));
+    expect(said(grid, 'BRK-002').textContent).toBe(EN['inventory.parts.issues.fromReservation']);
+
+    await user.click(
+      within(region).getByRole('button', { name: EN['table.previousPage'] as string })
+    );
+    await within(grid).findByText('BRK-001');
+    // Asked again, and answered: the two lines are back, not the fallback words.
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent('2.000'));
+    expect(said(grid, 'BRK-001').children).toHaveLength(2);
+    // And not asked a fourth time: nothing loops.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(listReservations).toHaveBeenCalledTimes(3);
   });
 
   /*
@@ -2972,11 +3044,7 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
     renderIn('en', { workOrder: null, canReadWorkOrder: false });
     const grid = await issuesGrid('en');
     const held = (EN['inventory.parts.issues.reserved'] as string).replace('{quantity}', '2.000');
-    await waitFor(() =>
-      expect(within(said(grid, 'BRK-001')).getByTestId('issue-reservation-held').textContent).toBe(
-        held
-      )
-    );
+    await waitFor(() => expect(said(grid, 'BRK-001').children[0]?.textContent).toBe(held));
     expect(listReservations).toHaveBeenCalledTimes(1);
     expect(asked()).toEqual([[SCOPE, ALL_STATES]]);
     expect(grid.textContent ?? '').not.toMatch(UUID_ANYWHERE);
