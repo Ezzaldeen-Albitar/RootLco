@@ -635,6 +635,129 @@ runtime-retested; the runtime row LANG-identifiers stays FAIL until retested and
 decides the Reference identifier on refusals. The detail is in `route-checklist.md`, section
 `P1-32-PRE-OD-INVH`.
 
+**Note, 2026-10-13 (P1-32-PRE-OD-CP-20261013-1; resolution record for the batch from `4928486a` to
+`4ba845a1`; no ledger State, register State or runtime result changed).** This note records what
+was found and where each point stands. It decides nothing, and every Owner decision it names stays
+open.
+
+1. **What CP-20261013-1 proves.** Hosted verification only: the protected verification dispatch
+   https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/38331343332 at
+   `4ba845a16a03a25104e8dc482d0b317e777b76aa` decided Go (the decision line was logged at
+   2026-10-13T02:15:09Z; the gate job completed at 02:15:28Z), and 15 of 15 jobs concluded success.
+   The two pull requests merged since `4928486a` (#578 and #577) carry no migration:
+   `supabase/migrations` holds the same 187 files at both revisions. No local runtime QA exists for
+   this checkpoint. The running site is still at `4928486a`, so neither pull request is in it and
+   neither has been retested in a browser; nothing was applied to the acceptance database.
+2. **The policy point about the dispatch is unchanged.** As item 2 of the note of 2026-10-12
+   (P1-32-PRE-OD-CP-20261012-2) records, step 1 of the checkpoint procedure in `pr-gate.md` was not
+   met to the letter: `main` at `1262de74` is not an ancestor of `develop`. The one commit `develop`
+   lacks is that promotion merge itself (#345), whose tree is the tree of `d7ad73f2`, which
+   `develop` contains. Checked again with git at `4ba845a1`; no sync was made.
+3. **The service catalogue filter that shows a day it is not applying (#578, merged as
+   `85deecd8`).** The runtime retest at `4928486a` found case D-03b: after the "Published on"
+   filter was retyped three times with no pause and the entry ended on the day it held at the
+   start, the box showed that day, the last list read carried no day and none followed in the 3 s
+   watched. The run's end-state screenshots show the service row drawn, and Search, pressed once
+   in a set-aside attempt, sent the day. A wrong list was not shown: the QA catalogue holds one
+   service.
+
+   The pull request reproduced the sequence in jsdom with faked time, not in a browser, and found
+   two faults that meet.
+
+   - The shared search hook could stall: asked again for a key it had dropped from its memory of
+     eight, it read nothing. In that reproduction the list ended on "Loading" with nothing in
+     flight and Search without effect. That end state is the reproduction's, not the runtime
+     run's. The pull request states the stall is a general defect of the hook, not of dates: a
+     text search reaches it too, and any screen using the hook could.
+   - The date field reported "nothing wrong" for one render while it held no day, which made the
+     catalogue drop its day and read the whole list.
+   - Left unfixed, for a decision: when a filter is cleared and changed again inside the pause
+     while a submission for the cleared criteria is in hand, the earlier filter's rows stay until
+     the entry settles, 300 ms after the last change, and one request is wasted. The end state is
+     right.
+
+   Implemented, not runtime-retested. Because the reproduction's end state differs from what the
+   run saw, whether #578 covers the runtime observation is settled only by a retest. D-03b stays
+   FAIL until it is run again on a build containing #578.
+
+4. **Reservation and category references (#577, merged as `4ba845a1`).** Implemented, not
+   runtime-retested:
+
+   - "Parts issued" on `/inventory/parts` no longer draws the reservation's identifier: it draws
+     the quantity reserved and the moment the reservation was made, or words where the reservation
+     list cannot say.
+   - A tree in which a category is chosen names the category without its code; the code follows
+     only where two categories under one parent would read as the same name.
+   - The same kind of identifier is removed from the stock screen and the opening stock screen.
+   - Grid cells of two lines whose second line was hidden: the refunds, credit-note,
+     delivery-readiness and movements lists now give each line a height of its own. That both
+     lines fit the row is established from the styles; nobody has seen it in a browser.
+   - Not fixed: fifteen more cells of the same shape, found by search and not opened in a browser;
+     and a pending credit note of one's own, whose three lines overflow the row by about 5 px and
+     are cut at the top of the first line and the bottom of the last.
+   - Four API gaps recorded, not changed: an issue row publishes the reservation's identifier and
+     nothing a person can read about it; neither a reservation row nor an issue row carries the
+     unit of its quantity; a reservation names its work order by identifier only; and two
+     reservations of the same item and quantity made in the same minute read alike, with no
+     reservation list showing the moment a reservation was made.
+
+   The runtime row LANG-identifiers stays FAIL until it is retested and until the Owner decides the
+   identifier after "Reference:" on refusals. The detail is in `route-checklist.md`, section
+   `P1-32-PRE-OD-INVH`.
+
+5. **Test-cost watch: the wide-catalogue case.** `inventory-categories.dom`, "reads every cursor
+   page of a wide catalogue and draws all of it", runs once in English and once in Arabic under a
+   30 s limit. Each pair below is the two times read from one job log.
+
+   - This checkpoint, `4ba845a1`, run 38331343332: web-quality (with coverage) 19.3 s and 21.1 s;
+     the clean room's plain run (no coverage) 7.7 s and 7.0 s; the clean room's coverage run
+     17.0 s and 15.2 s.
+   - The previous checkpoint, `4b5fa178`, run 38276104252: web-quality 12.4 s and 11.8 s; the
+     clean room's plain run 9.2 s and 8.4 s; its coverage run 13.0 s and 12.8 s.
+   - Web-quality of pull-request runs, final heads: #571 `c976ec4c` 20.2 s and 20.2 s; #575
+     `99795e6a` 19.0 s and 19.1 s; #574 `3bcfe7ff` 19.5 s and 18.8 s; #576 `ecf73a8c` 17.2 s and
+     17.4 s; #578 `411c4c7b` 19.2 s and 18.4 s; #577 `b264a87c` 16.8 s and 18.9 s.
+   - Web-quality of earlier heads: #576 `bd404264` 19.4 s and 20.4 s; #577 `82c1c411` 12.6 s and
+     13.4 s; #577 `3f72e849` 16.9 s and 19.0 s.
+
+   So with coverage the case has taken between 11.8 s and 21.1 s on the hosted runner. `4b5fa178`
+   and `ecf73a8c` differ only in records files and read 12.4 s and 17.2 s. The margin to the limit
+   is thin, it was thin before this batch, and these figures do not show that this batch caused
+   it. Recorded for watching; nothing was changed.
+
+6. **Four local test failures on #577's branch, unexplained.** In one local run of fourteen files,
+   3 of 988 cases failed on the local clock and 4 of 988 with the clock forced to UTC: the
+   wide-catalogue case above (en and ar; timed out at 30 s after 35 to 41 s) and two `delivery.dom`
+   cases of receiver identity evidence, whose failure messages were not recorded. The same files
+   passed locally in two runs of seven, and the hosted run on that head was green. The cause is
+   not established and is not shown to be machine load. As #577's final review records, the two
+   delivery cases render a path its own commits do not touch but that runs the search-hook change
+   from #578.
+7. **The CP-20261012-2 runtime result** (checkpoint table above, row `4928486a`; evidence outside
+   the repository). One signed-in run at the natural pace, independently checked: 153 counted case
+   rows, 134 PASS, 5 FAIL, 2 NOT RUN and 12 observed; the row LANG-identifiers FAIL and the case R6
+   PARTIAL by hand. D-04 is cleared at `4928486a`. D-03b is a new FAIL. Every refund write case is
+   still NOT RUN.
+8. **Owner decisions still open, with the facts found.**
+   - Carried forward unchanged: FIN03 and FIN04 (still unobserved at runtime); AUTH01; the pack
+     quantity and bar width on the 50 × 25 mm label, whose scannability is untested; the
+     identifier after "Reference:" on refusals and the audit grid's support reference column; the
+     session-ended address clearing the browser's cookie while the server session stays live; the
+     missing QA prerequisites (a second approver for the refund cases, an account with the audit
+     read and without the user list, a platform-console account); the read-only check of stored
+     dates after #568, not done.
+   - From #574, as its note above lists: naming the records an audit event concerns, the removed
+     "Count reference" fragment, and the location's name on a count difference row.
+   - New from #577: whether material requests and stock reservations need a number of their own;
+     what the flat category lists should show, which still draw the code with the name; the
+     reference of a stock movement, and the work-order identifier shown where the work order
+     cannot be read; a third line in a grid cell.
+   - New from #578: whether criteria that merely equal an earlier submission should wait out the
+     pause like any other (item 3 above).
+9. **The CP-20261012-2 register row.** Its blank cells are filled from git and the run of #576,
+   which merged as `4928486a`. Its State stays as written, like every State in the register. Its
+   local QA cell is worded once and will not be rewritten.
+
 ### Features delivered or planned under this directive
 
 The delivery matrix above owns verification state; ADR-023 owns the implementation state of each D-item; the architecture assessment owns what each FC change is. This table owns the design fields that directive section 12 asks for. The `state:` pointers in the first column cite ADR-023's mapping table at develop `d5ce97b7` (`:751-773`, re-anchored 2026-10-08); the other ADR-023 line numbers in this table are not re-anchored here.
