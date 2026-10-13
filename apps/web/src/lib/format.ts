@@ -66,3 +66,62 @@ export function resolvedTimeZone(): string {
 function asDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
+
+/*
+ * Reference values by NAME, in the reader's language (P1-32-PRE-OD-QAF, D-1).
+ *
+ * A currency, a language and a time zone are stored and sent as their codes, and
+ * a select must keep the code as its value; what the operator reads is the name.
+ * `Intl.DisplayNames` and the zone's generic name answer in the reader's language
+ * from the browser's own data, so no list of names is shipped. The code stays
+ * beside a currency and a zone as a secondary hint, because two names can read
+ * alike and the code is what the paperwork carries. A code the runtime does not
+ * know falls back to the name the reference register holds, and then to the code
+ * itself, never to nothing.
+ */
+function displayName(
+  type: 'currency' | 'language',
+  code: string,
+  locale: Locale
+): string | undefined {
+  try {
+    const name = new Intl.DisplayNames([intlLocale(locale)], { type, fallback: 'none' }).of(code);
+    return name && name.trim().length > 0 ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function presentName(name: string | undefined): string | undefined {
+  const trimmed = name?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** "Jordanian Dinar (JOD)" in English, the Arabic name with the same code in Arabic. */
+export function currencyLabel(code: string, locale: Locale, registerName?: string): string {
+  const name = displayName('currency', code, locale) ?? presentName(registerName);
+  return name && name !== code ? `${name} (${code})` : code;
+}
+
+/** A language's name in the reader's language; the register's name, then the code, when unknown. */
+export function languageLabel(code: string, locale: Locale, registerName?: string): string {
+  return displayName('language', code, locale) ?? presentName(registerName) ?? code;
+}
+
+/** A fixed instant, so a zone's label does not change with the day it is read. */
+const ZONE_LABEL_INSTANT = new Date(Date.UTC(2026, 0, 15, 12));
+
+/** A zone's generic name in the reader's language with its identifier: "Jordan Time (Asia/Amman)". */
+export function timeZoneLabel(zone: string, locale: Locale): string {
+  try {
+    const name = new Intl.DateTimeFormat(intlLocale(locale), {
+      timeZone: zone,
+      timeZoneName: 'longGeneric',
+    })
+      .formatToParts(ZONE_LABEL_INSTANT)
+      .find((part) => part.type === 'timeZoneName')?.value;
+    return name && name !== zone ? `${name} (${zone})` : zone;
+  } catch {
+    return zone;
+  }
+}

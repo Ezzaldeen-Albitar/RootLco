@@ -50,28 +50,38 @@
  * added here.
  */
 import { AppFailure } from '@/server/errors/app-failure';
+import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { assertMinorUnitScale } from '@/server/http/validation';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE, sqlState } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { billingModule } from '@/modules/billing';
 import { Decimal, DecimalError, MONEY, assertCurrencyCode, moneyView } from '@/modules/pricing';
 import type { MoneyView } from '@/modules/pricing';
 import {
   PAYMENT_SQLSTATE,
+  type PaymentAllocationRow,
   type PaymentsRepository,
   type ReceiptRow,
+  type ReceiptScope,
+  type ThirdPartyStatement,
 } from '../data/payments-repository';
+import { reversalRefusalToken } from './receipt-reversal-service';
 import {
   PaymentRuleError,
+  RECEIPT_REVERSAL_RULES,
+  THIRD_PARTY_PERMISSION,
+  THIRD_PARTY_RULES,
   assertAllocatable,
   assertAllocationCurrencyCoherent,
   assertAllocationWithinBounds,
   assertPaymentMethodIsTenantScoped,
   assertPaymentMethodUsable,
   parsePaymentAmount,
+  thirdPartyViolations,
+  type ThirdPartyDeclaration,
 } from '../domain/payments';
 
 /**
@@ -91,6 +101,12 @@ export interface AllocationInvoiceHeader {
   /** One of the four `ck_invoices_status` values. */
   readonly status: string;
   readonly currencyCode: string;
+  /**
+   * The party the invoice bills — its customer (`sal.invoices.payer_partner_id`).
+   * Compared with the receipt's payer (ADR-023 D14): a different party is refused
+   * unless the allocation is an explicit third-party one.
+   */
+  readonly payerPartnerId: string;
   /** `sal.invoice_open_receivable` as an exact decimal STRING, never a number. */
   readonly openReceivable: string;
 }
@@ -125,6 +141,7 @@ interface BillingInvoicePort {
       readonly branchId: string;
       readonly status: string;
       readonly currency: string;
+      readonly payerPartnerId: string;
     };
   }>;
   readOutstanding(
@@ -179,6 +196,11 @@ export interface ReceiptView {
   readonly status: string;
   readonly receivedAt: string;
   readonly recordVersion: number;
+  /**
+   * The reversed receipt this one replaces (ADR-023 D4), or `null` for an
+   * ordinary receipt. Set only by `sal.receipt-replacement-record`.
+   */
+  readonly replacesReceiptId: string | null;
   /** True when an idempotent replay returned the receipt that already existed. */
   readonly replayed: boolean;
 }
@@ -197,6 +219,20 @@ export interface AllocationView {
   readonly receiptStatus: string;
   /** What remains on the receipt after this allocation, derived by the database. */
   readonly receiptUnallocated: MoneyView;
+  /**
+   * The third-party detail (ADR-023 D14) when the receipt's payer settled another
+   * customer's invoice, else `null`. The payer and the customer are unchanged
+   * either way; what is left on the receipt stays the payer's.
+   */
+  readonly thirdParty: AllocationThirdPartyView | null;
+}
+
+/** What a third-party allocation recorded (ADR-023 D14). */
+export interface AllocationThirdPartyView {
+  /** `insurer`, `employer` or `other` — a fixed vocabulary. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
 }
 
 export interface RecordPaymentInput {
@@ -224,6 +260,18 @@ export interface RecordPaymentInput {
   readonly idempotencyKey?: string;
 }
 
+/**
+ * What a replacement receipt is recorded from (ADR-023 D4): everything an ordinary
+ * receipt is, except the company and branch, which are the reversed receipt's own.
+ */
+export type RecordReplacementInput = Omit<RecordPaymentInput, 'companyId' | 'branchId'>;
+
+/** The reversed receipt a replacement names, as the write path holds it. */
+interface Replacing {
+  readonly receiptId: string;
+  readonly receiptNumber: string;
+}
+
 export interface AllocatePaymentInput {
   readonly receiptId: string;
   readonly invoiceId: string;
@@ -238,6 +286,179 @@ export interface AllocatePaymentInput {
    * against a JOD receipt succeeds in a currency it did not intend.
    */
   readonly currencyCode: string;
+  /**
+   * The request's `Idempotency-Key`, stored on the allocation as its business key
+   * (P1-32-PRE-OD-FIN, M-09). A repeat of the key answers with the allocation it
+   * already made; a key reused for another receipt, invoice or amount is refused.
+   */
+  readonly idempotencyKey?: string | undefined;
+  /**
+   * Present only to make a THIRD-PARTY allocation (ADR-023 D14): the receipt's
+   * payer settles an invoice whose customer is somebody else — an insurer, an
+   * employer. Without it such an allocation is refused; with it, it needs
+   * `sal.payment.third_party` in the receipt's company and branch.
+   */
+  readonly thirdParty?: ThirdPartyDeclaration | undefined;
+}
+
+/**
+ * The third-party statement as it is stored and compared: the relationship as
+ * sent, the reference and the reason without surrounding spaces. One form, so a
+ * repeated key compares the very values the first request booked.
+ */
+function normaliseThirdParty(declaration: ThirdPartyDeclaration): ThirdPartyStatement {
+  return {
+    relationship: declaration.relationship,
+    authorisationReference: declaration.authorisationReference.trim(),
+    reason: declaration.reason.trim(),
+  };
+}
+
+/** The view of an allocation's stored third-party detail, or `null` for an ordinary one. */
+function thirdPartyViewOf(row: PaymentAllocationRow): AllocationThirdPartyView | null {
+  if (
+    typeof row.thirdPartyRelationship !== 'string' ||
+    typeof row.thirdPartyAuthorisationReference !== 'string' ||
+    typeof row.thirdPartyReason !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    relationship: row.thirdPartyRelationship,
+    authorisationReference: row.thirdPartyAuthorisationReference,
+    reason: row.thirdPartyReason,
+  };
+}
+
+/**
+ * The refusal of an allocation to another customer's invoice that is not a
+ * third-party allocation (ADR-023 D14), named on the invoice the request chose and
+ * recorded once (D12). The invoice stays its customer's; nothing was booked.
+ */
+function payerMismatch(receiptId: string, cause?: unknown): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-TRN-001', {
+      message:
+        'That invoice belongs to a different customer from the one who paid this receipt. ' +
+        'It can be paid from this receipt only as a third-party payment.',
+      safeDetails: {
+        violations: [{ path: 'body.invoiceId', rule: THIRD_PARTY_RULES.payerMismatch }],
+      },
+      ...(cause === undefined ? {} : { cause }),
+    }),
+    { entityType: 'sal.receipt', entityId: receiptId, rule: THIRD_PARTY_RULES.payerMismatch }
+  );
+}
+
+/**
+ * The refusal of a third-party allocation by a caller who does not hold
+ * `sal.payment.third_party` in the receipt's company and branch (ADR-023 D14),
+ * recorded once (D12). The same uniform authorization answer as any other.
+ */
+function thirdPartyPermissionMissing(receiptId: string, cause?: unknown): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-IAM-001', {
+      message: 'Denied sal.payment-allocate: a third-party allocation needs its own authority',
+      safeDetails: { requiredPermissions: [THIRD_PARTY_PERMISSION] },
+      ...(cause === undefined ? {} : { cause }),
+    }),
+    { entityType: 'sal.receipt', entityId: receiptId, rule: THIRD_PARTY_RULES.permissionMissing }
+  );
+}
+
+/** The field a payer-rule token from the database names, for the ones a caller can fix. */
+const THIRD_PARTY_FIELD_OF_TOKEN: Readonly<Record<string, string>> = Object.freeze({
+  [THIRD_PARTY_RULES.samePayer]: 'body.thirdParty',
+  [THIRD_PARTY_RULES.relationshipInvalid]: 'body.thirdParty.relationship',
+  [THIRD_PARTY_RULES.referenceRequired]: 'body.thirdParty.authorisationReference',
+  [THIRD_PARTY_RULES.otherUnexplained]: 'body.thirdParty.reason',
+  [THIRD_PARTY_RULES.reasonRequired]: 'body.thirdParty.reason',
+  [THIRD_PARTY_RULES.currencyMismatch]: 'body.currencyCode',
+});
+
+/** The token before the first colon of a payer-rule refusal, or `null` for anything else. */
+function payerRuleToken(error: unknown): string | null {
+  if (
+    !isSqlState(error, SQLSTATE.checkViolation) &&
+    !isSqlState(error, SQLSTATE.insufficientPrivilege)
+  ) {
+    return null;
+  }
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  const token = /^([a-z_]+):/.exec(typeof message === 'string' ? message : '')?.[1] ?? null;
+  return token !== null && (Object.values(THIRD_PARTY_RULES) as string[]).includes(token)
+    ? token
+    : null;
+}
+
+/**
+ * The rule an over-allocation is recorded under (ADR-023, D12): more than the
+ * receipt has left, or more than the invoice still has open. One security event
+ * per refused attempt, written by the route pipeline after the command rolls
+ * back, naming the receipt; the amounts themselves are not recorded, because the
+ * rule is all the record needs.
+ */
+export const OVER_ALLOCATION_RULE = 'payment_over_allocation';
+
+/**
+ * Which bound an over-allocation broke, as the token the screen reads from
+ * `safeDetails.violations[].rule` on the amount field (P1-32-PRE-OD-FQA, DF-7):
+ * more than the receipt has left, or more than the invoice still has open. The
+ * token names the bound and nothing else — the figures stay off the answer and
+ * off the record; the screen words the refusal with the figures it already shows.
+ */
+export const OVER_ALLOCATION_BOUNDS = Object.freeze({
+  receipt: 'allocation_exceeds_receipt_remaining',
+  invoice: 'allocation_exceeds_invoice_open',
+} as const);
+
+export type OverAllocationBound = keyof typeof OVER_ALLOCATION_BOUNDS;
+
+/** An `ERR-TRN-001` for an allocation outside its bounds, marked for the record. */
+function overAllocation(
+  receiptId: string,
+  message: string,
+  bound: OverAllocationBound
+): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-TRN-001', {
+      message,
+      safeDetails: { violations: [{ path: 'body.amount', rule: OVER_ALLOCATION_BOUNDS[bound] }] },
+    }),
+    {
+      entityType: 'sal.receipt',
+      entityId: receiptId,
+      rule: OVER_ALLOCATION_RULE,
+    }
+  );
+}
+
+/**
+ * The refusal of an allocation while a reversal of the receipt waits for a
+ * decision (ADR-023 D4), named on the receipt in the path and recorded (D12).
+ */
+function pendingReversalBlocks(receiptId: string, cause?: unknown): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-TRN-001', {
+      message:
+        'This receipt has a reversal waiting for a decision, so no new allocation can be made ' +
+        'until the reversal is decided or withdrawn.',
+      safeDetails: {
+        violations: [
+          { path: 'path.paymentId', rule: RECEIPT_REVERSAL_RULES.pendingBlocksAllocation },
+        ],
+      },
+      ...(cause === undefined ? {} : { cause }),
+    }),
+    {
+      entityType: 'sal.receipt',
+      entityId: receiptId,
+      rule: RECEIPT_REVERSAL_RULES.pendingBlocksAllocation,
+    }
+  );
 }
 
 /**
@@ -372,6 +593,92 @@ export class PaymentService {
     input: RecordPaymentInput,
     authorizeScope: ScopeAuthorizer
   ): Promise<ReceiptView> {
+    return this.record(db, input, authorizeScope, null);
+  }
+
+  // -------------------------------------------------------------------------
+  // `sal.receipt-replacement-record`
+  // -------------------------------------------------------------------------
+
+  /**
+   * Records the receipt that replaces a REVERSED one (ADR-023 D4).
+   *
+   * Every rule of an ordinary receipt applies — the method, the currency, the
+   * amount's minor unit, the number sequence — and two more: the receipt it names
+   * was reversed by an approved reversal (`receipt_replacement_not_reversed`), and
+   * has no replacement yet (`receipt_replacement_exists`). The new receipt is in
+   * the reversed receipt's own company and branch, which is why the body names
+   * neither. The reversed receipt is locked first, so two replacements of it
+   * serialise and the second is refused; `sal.guard_receipt_replacement` and
+   * `uq_receipts_replaces` hold both rules in the database too.
+   *
+   * A repeated key answers the replacement it already recorded, checked BEFORE
+   * the "already replaced" rule, which would otherwise refuse the retry of the
+   * very replacement it made.
+   */
+  public async recordReplacement(
+    db: DbHandle,
+    replacedReceiptId: string,
+    input: RecordReplacementInput,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<ReceiptView> {
+    const replaced = await this.repository.findReceiptForUpdate(db, replacedReceiptId);
+    if (!replaced || replaced.deletedAt !== null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Receipt ${replacedReceiptId} was not found`,
+      });
+    }
+    const scope = { companyId: replaced.companyId, branchId: replaced.branchId };
+    await authorizeScope(scope);
+    const replacing: Replacing = { receiptId: replaced.id, receiptNumber: replaced.receiptNumber };
+    const full: RecordPaymentInput = { ...input, ...scope };
+
+    if (input.idempotencyKey !== undefined) {
+      const existing = await this.repository.findReceiptByIdempotencyKey(db, input.idempotencyKey);
+      if (existing) return this.record(db, full, authorizeScope, replacing);
+    }
+
+    const entity = { entityType: 'sal.receipt', entityId: replaced.id } as const;
+    const reversal = await this.repository.findCurrentReversal(db, replaced.id, scope);
+    if (replaced.status !== 'reversed' || reversal?.approvalState !== 'approved') {
+      throw withBusinessRefusal(
+        new AppFailure('ERR-TRN-001', {
+          message: `Receipt ${replaced.id} has no approved reversal, so nothing can replace it.`,
+          safeDetails: {
+            violations: [
+              { path: 'path.paymentId', rule: RECEIPT_REVERSAL_RULES.replacementNotReversed },
+            ],
+          },
+        }),
+        { ...entity, rule: RECEIPT_REVERSAL_RULES.replacementNotReversed }
+      );
+    }
+    if (await this.repository.findReplacementOf(db, replaced.id, scope)) {
+      throw withBusinessRefusal(
+        new AppFailure('ERR-TRN-001', {
+          message: `Receipt ${replaced.id} already has a replacement.`,
+          safeDetails: {
+            violations: [
+              { path: 'path.paymentId', rule: RECEIPT_REVERSAL_RULES.replacementExists },
+            ],
+          },
+        }),
+        { ...entity, rule: RECEIPT_REVERSAL_RULES.replacementExists }
+      );
+    }
+    return this.record(db, full, authorizeScope, replacing);
+  }
+
+  /**
+   * The one recording path, for an ordinary receipt (`replacing` null) and for the
+   * replacement of a reversed one. See `recordPayment`.
+   */
+  private async record(
+    db: DbHandle,
+    input: RecordPaymentInput,
+    authorizeScope: ScopeAuthorizer,
+    replacing: Replacing | null
+  ): Promise<ReceiptView> {
     const amount = parseAmount(input.amount, 'amount');
     const currencyCode = parseCurrency(input.currencyCode, 'currencyCode');
     await this.assertAmountFitsCurrency(db, input.amount, currencyCode, 'body.amount');
@@ -399,9 +706,20 @@ export class PaymentService {
       const existing = await this.repository.findReceiptByIdempotencyKey(db, input.idempotencyKey);
       if (existing) {
         this.assertReplayMatches(existing, input, amount, currencyCode);
-        return this.toReceiptView(existing, true);
+        if (existing.replacesReceiptId !== (replacing?.receiptId ?? null)) {
+          throw new AppFailure('ERR-INT-001', {
+            message:
+              'That idempotency key already recorded a receipt that replaces a different ' +
+              'receipt, or none. Reuse a key only for an identical request.',
+          });
+        }
+        return this.toReceiptView(existing, true, await this.unitsOf(db, existing.currencyCode));
       }
     }
+
+    // After the replay check for the same reason as the method below: a currency
+    // withdrawn since a receipt was recorded must not refuse that receipt's retry.
+    await this.assertCurrencyRecordable(db, currencyCode);
 
     const method = await this.repository.findPaymentMethod(db, input.paymentMethodId);
     // A withdrawn method is treated as absent rather than as a state conflict: the
@@ -436,9 +754,27 @@ export class PaymentService {
         evidenceDocumentVersionId: null,
         idempotencyKey: input.idempotencyKey ?? null,
         correlationId: db.context.correlationId,
+        replacesReceiptId: replacing?.receiptId ?? null,
       });
       receiptId = created.id;
     } catch (error) {
+      const token = reversalRefusalToken(error);
+      if (
+        replacing !== null &&
+        (token === RECEIPT_REVERSAL_RULES.replacementNotReversed ||
+          token === RECEIPT_REVERSAL_RULES.replacementExists)
+      ) {
+        // The reversed receipt is locked, so only a row that moved between the
+        // checks above and the insert reaches here; refused and recorded the same way.
+        throw withBusinessRefusal(
+          new AppFailure('ERR-TRN-001', {
+            message: `Receipt ${replacing.receiptId} cannot take this replacement.`,
+            safeDetails: { violations: [{ path: 'path.paymentId', rule: token }] },
+            cause: error,
+          }),
+          { entityType: 'sal.receipt', entityId: replacing.receiptId, rule: token }
+        );
+      }
       if (sqlState(error) === PAYMENT_SQLSTATE.noDataFound) {
         // SB3 / `P1-22-L-03`. `sal.record_receipt` hard-codes the sequence code
         // `'receipt'` — unlike the invoice path, which resolves a configurable
@@ -470,13 +806,27 @@ export class PaymentService {
     }
 
     await appendAudit(db, {
-      action: 'sal.receipt.recorded',
+      action: replacing === null ? 'sal.receipt.recorded' : 'sal.receipt.replacement_recorded',
       entityType: 'sal.receipt',
       entityId: receipt.id,
       companyId: receipt.companyId,
       branchId: receipt.branchId,
-      requestRef: 'sal.payment-record',
+      requestRef: replacing === null ? 'sal.payment-record' : 'sal.receipt-replacement-record',
       details: [
+        ...(replacing === null
+          ? []
+          : [
+              {
+                field: 'replacesReceiptId',
+                classification: 'internal' as const,
+                value: replacing.receiptId,
+              },
+              {
+                field: 'replacesReceiptNumber',
+                classification: 'internal' as const,
+                value: replacing.receiptNumber,
+              },
+            ]),
         // The amount is `restricted` in
         // docs/database/sal-wty-rpt-personal-data-classification.json, so
         // `iam.audit_mask` collapses it to a fixed marker before storage. The audit
@@ -531,7 +881,7 @@ export class PaymentService {
       },
     });
 
-    return this.toReceiptView(receipt, false);
+    return this.toReceiptView(receipt, false, await this.unitsOf(db, receipt.currencyCode));
   }
 
   // -------------------------------------------------------------------------
@@ -591,6 +941,47 @@ export class PaymentService {
     const scope = { companyId: receipt.companyId, branchId: receipt.branchId };
     await authorizeScope(scope);
 
+    // 2a. A repeated business key is answered BEFORE any state or bound is
+    //     re-evaluated, under the receipt lock just taken: the allocation already
+    //     happened, and re-checking the bounds would refuse a retry of an
+    //     allocation that consumed the whole receipt as an over-allocation. The key
+    //     is tenant-wide, so a found allocation for another receipt, invoice or
+    //     amount is a reused key and is refused, never replayed (M-09).
+    if (input.idempotencyKey !== undefined) {
+      const prior = await this.repository.findAllocationByIdempotencyKey(db, input.idempotencyKey);
+      if (prior) {
+        const stated =
+          input.thirdParty === undefined ? null : normaliseThirdParty(input.thirdParty);
+        if (
+          prior.receiptId !== receipt.id ||
+          prior.invoiceId !== input.invoiceId ||
+          !Decimal.fromDatabase(prior.amount, MONEY).equals(amount) ||
+          prior.currencyCode !== declaredCurrency ||
+          (prior.thirdPartyRelationship ?? null) !== (stated?.relationship ?? null) ||
+          (prior.thirdPartyAuthorisationReference ?? null) !==
+            (stated?.authorisationReference ?? null) ||
+          (prior.thirdPartyReason ?? null) !== (stated?.reason ?? null)
+        ) {
+          throw new AppFailure('ERR-INT-001', {
+            message:
+              'That idempotency key already booked a different allocation. Reuse a key only ' +
+              'for an identical request.',
+          });
+        }
+        return this.allocationView(db, prior.id, receipt.id, scope);
+      }
+    }
+
+    // 2b. A receipt with a reversal waiting for a decision takes no new allocation
+    //     (ADR-023 D4): an approval must never reverse an allocation it did not see.
+    //     Under the receipt lock just taken, which a reversal request also takes, so
+    //     the answer cannot race a request. `sal.guard_allocation_receipt_open`
+    //     refuses the insert in the database as well.
+    const reversal = await this.repository.findCurrentReversal(db, receipt.id, scope);
+    if (reversal?.approvalState === 'pending') {
+      throw pendingReversalBlocks(receipt.id);
+    }
+
     // Checked against the RECEIPT's currency, which is the stored record rather than the
     // request's claim about it. A half-cent allocation is refused here rather than
     // leaving a residue on the invoice that no tenderable payment can ever settle.
@@ -641,6 +1032,14 @@ export class PaymentService {
       throw error;
     }
 
+    // 6a. The payer (ADR-023 D14). The receipt's payer and the invoice's customer
+    //     are the same party, or the allocation is an explicit third-party one: by
+    //     a holder of `sal.payment.third_party` in the receipt's company and branch,
+    //     naming the relationship, the authorisation and the reason. Refused by
+    //     default, and recorded. `sal.guard_allocation_payer` holds the same rules
+    //     in the database for whoever writes the row; this names each refusal.
+    const thirdParty = await this.resolveThirdParty(db, receipt, invoice, input.thirdParty);
+
     // 7. Bounds, by exact decimal comparison. Never `Number`, never a subtraction in
     //    TypeScript: both remainders were computed by PostgreSQL in `numeric` and are
     //    only ever compared here.
@@ -650,15 +1049,21 @@ export class PaymentService {
         message: 'Receipt remainder read returned no row for a locked receipt',
       });
     }
+    const receiptRemaining = Decimal.fromDatabase(remaining.unallocated, MONEY);
     try {
       assertAllocationWithinBounds(
         amount,
-        Decimal.fromDatabase(remaining.unallocated, MONEY),
+        receiptRemaining,
         Decimal.fromDatabase(invoice.openReceivable, MONEY)
       );
     } catch (error) {
       if (error instanceof PaymentRuleError) {
-        throw new AppFailure('ERR-TRN-001', { message: error.message });
+        // The receipt's bound is checked first, as `assertAllocationWithinBounds` does.
+        throw overAllocation(
+          receipt.id,
+          error.message,
+          amount.greaterThan(receiptRemaining) ? 'receipt' : 'invoice'
+        );
       }
       throw error;
     }
@@ -671,10 +1076,30 @@ export class PaymentService {
         receipt.id,
         invoice.id,
         amount.toString(),
-        db.context.correlationId
+        db.context.correlationId,
+        input.idempotencyKey ?? null,
+        thirdParty
       );
       allocationId = created.id;
     } catch (error) {
+      const payerToken = payerRuleToken(error);
+      if (payerToken === THIRD_PARTY_RULES.payerMismatch) throw payerMismatch(receipt.id, error);
+      if (payerToken === THIRD_PARTY_RULES.permissionMissing) {
+        throw thirdPartyPermissionMissing(receipt.id, error);
+      }
+      if (payerToken !== null) {
+        // The rows were read under the receipt lock, so only a change between the
+        // checks above and the insert reaches here: named on its field, as above.
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The third-party detail of this allocation does not hold',
+          safeDetails: {
+            violations: [
+              { path: THIRD_PARTY_FIELD_OF_TOKEN[payerToken] ?? 'body', rule: payerToken },
+            ],
+          },
+          cause: error,
+        });
+      }
       if (sqlState(error) === PAYMENT_SQLSTATE.noDataFound) {
         // The primitive's own scope refusals for the receipt and the invoice. The
         // pre-checks above should have caught both, so reaching here means the row
@@ -684,6 +1109,23 @@ export class PaymentService {
           message: 'The receipt or the invoice is no longer in scope for this allocation',
           cause: error,
         });
+      }
+      if (reversalRefusalToken(error) === RECEIPT_REVERSAL_RULES.pendingBlocksAllocation) {
+        throw pendingReversalBlocks(receipt.id, error);
+      }
+      // The primitive's own bounds, re-checked under its locks: another allocation
+      // against the same invoice can land between the pre-check above and this
+      // call. The same refusal, recorded the same way.
+      const exceeded =
+        isSqlState(error, SQLSTATE.checkViolation) && error instanceof Error
+          ? /exceeds (receipt unallocated|invoice open receivable)/.exec(error.message)
+          : null;
+      if (exceeded) {
+        throw overAllocation(
+          receipt.id,
+          'Allocating a payment was refused: the amount exceeds what the receipt or the invoice has left',
+          exceeded[1] === 'receipt unallocated' ? 'receipt' : 'invoice'
+        );
       }
       toDomainFailure(error, 'Allocating a payment');
     }
@@ -722,6 +1164,45 @@ export class PaymentService {
       ],
     });
 
+    // A third-party allocation is audited as such, in the same transaction (ADR-023
+    // D14): who paid, whose invoice it is, what the payer is to the customer, the
+    // authorisation and the reason. The authorising user is the actor of this record
+    // and was stamped on the row from the session by `sal.guard_allocation_payer`.
+    const recorded = thirdPartyViewOf(allocation);
+    if (recorded !== null) {
+      await appendAudit(db, {
+        action: 'sal.payment.third_party_allocated',
+        entityType: 'sal.payment_allocation',
+        entityId: allocation.id,
+        companyId: allocation.companyId,
+        branchId: allocation.branchId,
+        requestRef: 'sal.payment-allocate',
+        details: [
+          { field: 'amount', classification: 'restricted', value: allocation.amount },
+          { field: 'currency', classification: 'public', value: allocation.currencyCode },
+          { field: 'receiptId', classification: 'internal', value: allocation.receiptId },
+          { field: 'invoiceId', classification: 'internal', value: allocation.invoiceId },
+          {
+            field: 'receiptPayerPartnerId',
+            classification: 'internal',
+            value: receipt.payerPartnerId,
+          },
+          {
+            field: 'invoicePayerPartnerId',
+            classification: 'internal',
+            value: invoice.payerPartnerId,
+          },
+          { field: 'relationship', classification: 'internal', value: recorded.relationship },
+          {
+            field: 'authorisationReference',
+            classification: 'internal',
+            value: recorded.authorisationReference,
+          },
+          { field: 'reason', classification: 'internal', value: recorded.reason },
+        ],
+      });
+    }
+
     await publishEvent(db, {
       eventType: 'payment.allocated',
       aggregateId: allocation.id,
@@ -756,6 +1237,10 @@ export class PaymentService {
       },
     });
 
+    const units = await this.repository.minorUnitsFor(db, [
+      allocation.currencyCode,
+      remainder.currencyCode,
+    ]);
     return {
       id: allocation.id,
       sequence: allocation.seq,
@@ -763,16 +1248,132 @@ export class PaymentService {
       invoiceId: allocation.invoiceId,
       companyId: allocation.companyId,
       branchId: allocation.branchId,
-      money: moneyView(allocation.amount, allocation.currencyCode),
+      money: moneyView(allocation.amount, allocation.currencyCode, units),
       allocatedAt: allocation.allocatedAt.toISOString(),
       receiptStatus: after.status,
-      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode),
+      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
+      thirdParty: thirdPartyViewOf(allocation),
+    };
+  }
+
+  /**
+   * The payer rule of an allocation (ADR-023 D14), and the third-party statement it
+   * books, or `null` for an ordinary allocation.
+   *
+   * Same party: nothing to state, and a statement is refused on its field — an
+   * allocation to the customer's own invoice is not a third-party payment. A
+   * different party without a statement: refused and recorded
+   * (`allocation_payer_mismatch`). With a statement: the caller must hold
+   * `sal.payment.third_party` in the RECEIPT's company and branch — the scope the
+   * receipt was taken in, which the invoice shares (step 4) — refused and recorded
+   * otherwise; then every field that does not hold is named at once, so the screen
+   * can mark each.
+   */
+  private async resolveThirdParty(
+    db: DbHandle,
+    receipt: ReceiptRow,
+    invoice: AllocationInvoiceHeader,
+    declaration: ThirdPartyDeclaration | undefined
+  ): Promise<ThirdPartyStatement | null> {
+    if (receipt.payerPartnerId === invoice.payerPartnerId) {
+      if (declaration !== undefined) {
+        throw new AppFailure('ERR-VAL-001', {
+          message:
+            'This invoice belongs to the customer who paid the receipt, so it is not a ' +
+            'third-party payment.',
+          safeDetails: {
+            violations: [{ path: 'body.thirdParty', rule: THIRD_PARTY_RULES.samePayer }],
+          },
+        });
+      }
+      return null;
+    }
+    if (declaration === undefined) throw payerMismatch(receipt.id);
+    const allowed = await callerHoldsPermission(db, THIRD_PARTY_PERMISSION, {
+      companyId: receipt.companyId,
+      branchId: receipt.branchId,
+    });
+    if (!allowed) throw thirdPartyPermissionMissing(receipt.id);
+    const violations = thirdPartyViolations(declaration);
+    if (violations.length > 0) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'The third-party detail of this allocation is incomplete',
+        safeDetails: {
+          violations: violations.map((violation) => ({
+            path: `body.thirdParty.${violation.field}`,
+            rule: violation.rule,
+          })),
+        },
+      });
+    }
+    return normaliseThirdParty(declaration);
+  }
+
+  /**
+   * The allocation a repeated key already made, as the first answer described it.
+   *
+   * No audit record and no event: the command happened once, and both were written
+   * then. The receipt's status and remainder are read as they stand now, because
+   * those are the database's current answer rather than a figure this service keeps.
+   */
+  private async allocationView(
+    db: DbHandle,
+    allocationId: string,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<AllocationView> {
+    const allocation = await this.repository.findAllocation(db, allocationId, scope);
+    const after = await this.repository.findReceipt(db, receiptId);
+    const remainder = await this.repository.receiptUnallocated(db, receiptId, scope);
+    /* c8 ignore next 5 -- the receipt is held FOR UPDATE and allocations are append-only. */
+    if (!allocation || !after || !remainder) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'An allocation or its receipt vanished while answering a repeated key',
+      });
+    }
+    const units = await this.repository.minorUnitsFor(db, [
+      allocation.currencyCode,
+      remainder.currencyCode,
+    ]);
+    return {
+      id: allocation.id,
+      sequence: allocation.seq,
+      receiptId: allocation.receiptId,
+      invoiceId: allocation.invoiceId,
+      companyId: allocation.companyId,
+      branchId: allocation.branchId,
+      money: moneyView(allocation.amount, allocation.currencyCode, units),
+      allocatedAt: allocation.allocatedAt.toISOString(),
+      receiptStatus: after.status,
+      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
+      thirdParty: thirdPartyViewOf(allocation),
     };
   }
 
   // -------------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------------
+
+  /**
+   * Refuses a receipt in a currency the platform does not offer (M-09).
+   *
+   * A receipt's currency is frozen once recorded (`sal.guard_receipt_freeze`) and an
+   * allocation must match the invoice's, so a mistyped code makes money that can
+   * never be applied and never be corrected. An unknown code and a WITHDRAWN one
+   * (`shared.currencies.status = 'inactive'`) are both refused here, on the currency
+   * field, before anything is written; `sal.guard_receipt_currency_active` refuses
+   * the same insert in the database. Only the NEW receipt is checked: allocating a
+   * receipt recorded before its currency was withdrawn stays possible.
+   */
+  private async assertCurrencyRecordable(db: DbHandle, currency: string): Promise<void> {
+    const found = await this.repository.findCurrency(db, currency);
+    if (!found || found.status !== 'active') {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Currency ${currency} is not a supported currency.`,
+        safeDetails: { violations: [{ path: 'body.currency', rule: 'unknown_currency' }] },
+      });
+    }
+  }
 
   /**
    * Refuses an amount more precise than its currency.
@@ -855,6 +1456,7 @@ export class PaymentService {
       branchId: detail.invoice.branchId,
       status: detail.invoice.status,
       currencyCode: detail.invoice.currency,
+      payerPartnerId: detail.invoice.payerPartnerId,
       openReceivable: outstanding.outstanding.amount,
     };
   }
@@ -918,7 +1520,19 @@ export class PaymentService {
     }
   }
 
-  private toReceiptView(receipt: ReceiptRow, replayed: boolean): ReceiptView {
+  /**
+   * The minor unit of a currency, so an echo states how many decimals its amounts
+   * are written with, as the reads do (Owner decision D1).
+   */
+  private unitsOf(db: DbHandle, currencyCode: string): Promise<ReadonlyMap<string, number>> {
+    return this.repository.minorUnitsFor(db, [currencyCode]);
+  }
+
+  private toReceiptView(
+    receipt: ReceiptRow,
+    replayed: boolean,
+    units: ReadonlyMap<string, number>
+  ): ReceiptView {
     return {
       id: receipt.id,
       reference: receipt.receiptNumber,
@@ -926,10 +1540,11 @@ export class PaymentService {
       branchId: receipt.branchId,
       paymentMethodId: receipt.paymentMethodId,
       payerPartnerId: receipt.payerPartnerId,
-      money: moneyView(receipt.amount, receipt.currencyCode),
+      money: moneyView(receipt.amount, receipt.currencyCode, units),
       status: receipt.status,
       receivedAt: receipt.receivedAt.toISOString(),
       recordVersion: receipt.recordVersion,
+      replacesReceiptId: receipt.replacesReceiptId,
       replayed,
     };
   }

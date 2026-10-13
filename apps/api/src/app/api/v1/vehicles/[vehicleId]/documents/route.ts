@@ -40,13 +40,16 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     VEHICLE_DOCUMENT_LIST_OPERATION,
     request,
-    async ({ db }) => ({
-      body: await vehicleModule().vehicleHistory.listDocuments(db, params.vehicleId),
-    }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: await vehicleModule().vehicleHistory.listDocuments(db, params.vehicleId),
+      };
+    },
+    { params: raw }
   );
 }

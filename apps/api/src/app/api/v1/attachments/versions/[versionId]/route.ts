@@ -25,8 +25,11 @@ export async function GET(
   request: Request,
   context: { params: Promise<Record<string, string>> }
 ): Promise<Response> {
-  const { versionId } = parseOrFail(Params, await context.params, 'params');
-  return handleOperation(DOCUMENT_VERSION_READ_OPERATION, request, async ({ db }) => ({
-    body: await sharedServicesModule().attachments.readVersion(db, versionId),
-  }));
+  const raw = await context.params;
+  return handleOperation(DOCUMENT_VERSION_READ_OPERATION, request, async ({ db }) => {
+    const { versionId } = parseOrFail(Params, raw, 'params');
+    return {
+      body: await sharedServicesModule().attachments.readVersion(db, versionId),
+    };
+  });
 }

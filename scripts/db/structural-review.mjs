@@ -11,17 +11,20 @@
 //   (c) every live module table is documented in docs/database/data-dictionary.md.
 //
 // Exit non-zero if any gate fails. Usage: node scripts/db/structural-review.mjs [--json out.json]
+// Env: PGPORT or DB_PORT is required (resolved by scripts/lib/db-target.mjs).
 // ============================================================================
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { MODULE_SCHEMAS } from './schema-inventory.mjs';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const target = resolveDatabaseTargetOrExit({ consumer: 'structural-review' });
 const cfg = {
-  host: process.env.PGHOST ?? '127.0.0.1',
-  port: Number(process.env.PGPORT ?? 54322),
+  host: target.host,
+  port: target.port,
   user: process.env.PGUSER ?? 'postgres',
   password: process.env.PGPASSWORD ?? 'postgres',
   database: process.env.PGDATABASE ?? 'postgres',

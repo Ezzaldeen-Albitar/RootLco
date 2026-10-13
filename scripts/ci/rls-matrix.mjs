@@ -23,12 +23,14 @@
  *
  * Usage:
  *   node scripts/ci/rls-matrix.mjs --level critical --json out.json --markdown out.md
- * Env: DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD (same convention as tests/db/helpers.ts)
- * Exit codes: 0 pass · 1 matrix failure · 2 connection/IO error.
+ * Env: DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD (same convention as tests/db/helpers.ts;
+ * the port is required and resolved by scripts/lib/db-target.mjs)
+ * Exit codes: 0 pass · 1 matrix failure · 2 connection/IO error or a refused target.
  */
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 /** Application schemas, split by how much scrutiny each gets on a pull request. */
 export const CRITICAL_SCHEMAS = ['iam', 'org', 'inv', 'wo', 'crm', 'sal', 'quo'];
@@ -390,9 +392,10 @@ async function main(argv) {
   const schemas =
     level === 'full' ? [...CRITICAL_SCHEMAS, ...ADDITIONAL_SCHEMAS] : CRITICAL_SCHEMAS;
 
+  const target = resolveDatabaseTargetOrExit({ consumer: 'rls-matrix' });
   const client = new pg.Client({
-    host: process.env.DB_HOST ?? '127.0.0.1',
-    port: Number(process.env.DB_PORT ?? 54322),
+    host: target.host,
+    port: target.port,
     database: process.env.DB_NAME ?? 'postgres',
     user: process.env.DB_USER ?? 'postgres',
     password: process.env.DB_PASSWORD ?? 'postgres',

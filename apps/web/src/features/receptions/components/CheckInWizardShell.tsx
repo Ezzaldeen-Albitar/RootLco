@@ -1,11 +1,14 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import Button from '@mui/material/Button';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
-import { ErrorState } from '@/components/states/States';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { MuiErrorState } from '@/components/states/MuiStates';
+import { useUnsavedWork } from '@/features/working-context/WorkingContextProvider';
 import { readReception } from '../api';
 import type { ReceptionDetail } from '../receptions-contract';
 import {
@@ -57,6 +60,24 @@ import {
  * name arrives WITH the visit — no second read, no failure branch, and a rename
  * or a disabled account cannot rewrite who accepted custody.
  *
+ * ## Changing step asks before it throws typed work away
+ *
+ * Only the open step is mounted, so moving to another one unmounts it and
+ * everything typed into it goes. Every capture form of the wizard already
+ * declares what it holds through `useUnsavedGuard` (`useStepForm`, the
+ * readings and the signature forms), and that declaration protected the page
+ * and the branch switch — but not the step buttons, which dropped the work
+ * without a word (Owner decision of 2026-10-03).
+ *
+ * So every step change the operator makes — a numbered button, or a step
+ * sending them on through `goToStep` — goes through `requestStep`. With
+ * nothing unsaved it moves at once. With unsaved work it asks first, with the
+ * same `ConfirmDialog` and the same registry (`useUnsavedWork`) the branch
+ * switch uses, so there is one mechanism and not a second one: "Stay on this
+ * step" keeps every entry where it is and returns the cursor to the control
+ * that asked; "Discard and change step" runs each form's own `onDiscard` and
+ * then moves. Choosing the step already open changes nothing and asks nothing.
+ *
  * ## A terminal visit still renders
  *
  * `converted`, `closed_without_work` and `refused` are facts worth reading.
@@ -92,12 +113,23 @@ export function CheckInWizardShell({
 }: Props) {
   const [detail, setDetail] = useState<ReceptionDetail>(initialDetail);
   const [chosenStepId, setChosenStepId] = useState<string | null>(null);
+  // The step the operator asked for while the open one held unsaved work.
+  const [pendingStepId, setPendingStepId] = useState<string | null>(null);
+  const unsaved = useUnsavedWork();
   const [refreshFailure, setRefreshFailure] = useState<{
     readonly correlationId: string | null;
   } | null>(null);
 
   const refresh = useCallback(async () => {
-    const result = await readReception(detail.id);
+    let result: Awaited<ReturnType<typeof readReception>>;
+    try {
+      result = await readReception(detail.id);
+    } catch {
+      // The re-read never came back. Said as a failed re-read, like any other,
+      // and never thrown into the step that asked for it.
+      setRefreshFailure({ correlationId: null });
+      return;
+    }
     if (result.status === 'ok' && result.data !== null) {
       setDetail(result.data);
       setRefreshFailure(null);
@@ -110,6 +142,16 @@ export function CheckInWizardShell({
 
   const step = activeStep(steps, chosenStepId);
   const locked = writesLockedFor(detail.receptionStatus);
+
+  /** The one way the open step changes — see "Changing step asks first". */
+  const requestStep = (stepId: string) => {
+    if (step !== null && stepId === step.id) return;
+    if (unsaved.any()) {
+      setPendingStepId(stepId);
+      return;
+    }
+    setChosenStepId(stepId);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -215,9 +257,10 @@ export function CheckInWizardShell({
       ) : null}
 
       {refreshFailure !== null ? (
-        <ErrorState
+        <MuiErrorState
           messages={messages}
-          {...(refreshFailure.correlationId ? { correlationId: refreshFailure.correlationId } : {})}
+          correlationId={refreshFailure.correlationId}
+          onRetry={() => void refresh()}
         />
       ) : null}
 
@@ -227,18 +270,15 @@ export function CheckInWizardShell({
             const current = step !== null && candidate.id === step.id;
             return (
               <li key={candidate.id}>
-                <button
+                <Button
                   type="button"
+                  size="small"
+                  variant={current ? 'contained' : 'outlined'}
                   aria-current={current ? 'step' : undefined}
-                  onClick={() => setChosenStepId(candidate.id)}
-                  className={
-                    current
-                      ? 'rounded-md bg-primary px-3 py-1.5 text-body font-medium text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                      : 'rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                  }
+                  onClick={() => requestStep(candidate.id)}
                 >
                   {index + 1}. {translateDynamic(messages, candidate.titleKey)}
-                </button>
+                </Button>
               </li>
             );
           })}
@@ -271,9 +311,34 @@ export function CheckInWizardShell({
             session={session}
             writesLocked={locked}
             refresh={refresh}
+            // The same call the numbered buttons above make. A step that
+            // refuses for a reason another step cures can send the operator
+            // there instead of describing the journey (DEF-T-10).
+            goToStep={requestStep}
           />
         </section>
       ) : null}
+
+      <ConfirmDialog
+        open={pendingStepId !== null}
+        onCancel={() => setPendingStepId(null)}
+        onConfirm={() => {
+          const target = pendingStepId;
+          setPendingStepId(null);
+          if (target === null) return;
+          // The forms put themselves back first, in the same update as the
+          // move, so no frame shows the next step over work declared lost.
+          unsaved.discard();
+          setChosenStepId(target);
+        }}
+        title={translate(messages, 'receptions.wizard.discard.title')}
+        description={translate(messages, 'receptions.wizard.discard.description')}
+        confirmLabel={translate(messages, 'receptions.wizard.discard.confirm')}
+        cancelLabel={translate(messages, 'receptions.wizard.discard.stay')}
+        messages={messages}
+        destructive
+        testId="check-in-step-discard"
+      />
     </div>
   );
 }

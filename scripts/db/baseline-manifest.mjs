@@ -9,6 +9,7 @@
 // DB reproduces the same fingerprint; any drift changes it. Read-only.
 //
 // Usage: node scripts/db/baseline-manifest.mjs [--json out.json]
+// Env: PGPORT or DB_PORT is required (resolved by scripts/lib/db-target.mjs).
 // ============================================================================
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import pg from 'pg';
 import { collectInventory, computeSchemaHash } from './schema-inventory.mjs';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
@@ -56,9 +58,10 @@ async function main() {
   const docHash = (rel) => (existsSync(join(ROOT, rel)) ? fileSha(join(ROOT, rel)) : null);
 
   // Live schema inventory + hash.
+  const target = resolveDatabaseTargetOrExit({ consumer: 'baseline-manifest' });
   const client = new pg.Client({
-    host: process.env.PGHOST ?? '127.0.0.1',
-    port: Number(process.env.PGPORT ?? 54322),
+    host: target.host,
+    port: target.port,
     user: process.env.PGUSER ?? 'postgres',
     password: process.env.PGPASSWORD ?? 'postgres',
     database: process.env.PGDATABASE ?? 'postgres',

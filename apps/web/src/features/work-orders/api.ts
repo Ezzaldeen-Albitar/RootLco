@@ -1,14 +1,10 @@
 'use server';
 
-import type { TableRequest } from '@/components/data-table/table-state';
-import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
-  STATUS_BY_KIND,
   branchTargetQuery,
   readOperation,
   type BranchTarget,
-  type CursorPage,
   type ItemsOnly,
   type ReadState,
 } from '@/lib/api/read-operation';
@@ -21,78 +17,24 @@ import type {
 import type {
   DepartmentOption,
   JobAssignment,
+  WorkOrderCatalogue,
   WorkOrderDetail,
-  WorkOrderListCriteria,
-  WorkOrderListEntry,
+  WorkOrderServiceLine,
 } from './work-orders-contract';
 
 /**
- * The one read the work-order board issues (P1-29, `W1`) — `wo.work-order-list`.
+ * The tenant's work-order state graph (`wo.work-order-catalogue`).
  *
- * Nothing here fetches directly: `authorizedClient()` is the only network owner
- * in this application and it lives in `src/lib/api` because
- * `check-api-boundary.mjs` says so. This file turns operations into view states
- * and nothing else.
+ * A board needs it to answer one question honestly: which states mean the car is
+ * still here. `wo.work_order_states` is tenant-extensible, so the answer is DATA
+ * and not a union in this repository — the route exists precisely so a screen
+ * never has to hard-code a code.
  *
- * ## The branch pair is a TARGET, not a filter, and it is not optional
- *
- * `wo.work-order-list` declares `scope: 'branch'`, and a branch scope is inert
- * without a target: the pre-handler check reads the pair out of the query and,
- * with no pair, degrades to a scope-BLIND permission test. An operator holding
- * `wo.work_order.read` in one branch and any grant at all in another would then
- * see the second branch's board. So the pair travels through
- * `branchTargetQuery`, which refuses a half-built target rather than serialising
- * `undefined` into a URL.
- *
- * That is also why the screen mounts its results only once an operator has named
- * a branch: there is no request to make before then, and no default that would
- * be a guess about which board they meant.
- *
- * ## A denial is not an empty page
- *
- * `STATUS_BY_KIND` maps a 403 to `denied` and the table renders that as a
- * refusal. Collapsing it to zero rows would tell an operator "there is nothing
- * here" when the truth is "you may not see it" — the failure mode
- * `read-operation.ts` exists to prevent, and one this board must not reintroduce.
+ * `scope: 'tenant'`, no parameters, and `.strict()` — so nothing is sent. Not
+ * paginated: the catalogue is bounded by the tenant's own configuration.
  */
-const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
-
-export async function listWorkOrders(
-  target: BranchTarget,
-  criteria: WorkOrderListCriteria,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<WorkOrderListEntry>> {
-  const client = await authorizedClient();
-  if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
-
-  const path =
-    '/api/v1/work-orders' +
-    branchTargetQuery(target, {
-      state: criteria.state,
-      kind: criteria.kind,
-      openedFrom: criteria.openedFrom,
-      openedTo: criteria.openedTo,
-      customerId: criteria.customerId,
-      cursor,
-      limit: request.pageSize,
-    });
-
-  // `retries: 0` for the same reason the reception queue takes none: this is an
-  // `expensive-read` policy on the backend, and a board an operator can re-run
-  // by pressing the button again should not be re-run for them under a rate
-  // limit they cannot see.
-  const result = await client.get<CursorPage<WorkOrderListEntry>>(path, { retries: 0 });
-  if (!result.ok) {
-    return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
-  }
-  return {
-    status: 'ok',
-    rows: result.data.items,
-    nextCursor: result.data.nextCursor,
-    hasMore: result.data.hasMore,
-    correlationId: result.correlationId,
-  };
+export async function readWorkOrderCatalogue(): Promise<ReadState<WorkOrderCatalogue>> {
+  return readOperation<WorkOrderCatalogue>('/api/v1/work-order-catalogue');
 }
 
 /* ------------------------------------------------------------------ *
@@ -118,6 +60,25 @@ export async function readWorkOrderDetail(
   workOrderId: string
 ): Promise<ReadState<WorkOrderDetail>> {
   return readOperation<WorkOrderDetail>(workOrderPath(workOrderId));
+}
+
+/**
+ * The service lines of one work order (`wo.service-line-list`).
+ *
+ * `wo.work_order.read` — the same code the detail takes, and the same code the
+ * parts screen already holds when it renders the work-order header. It is the
+ * read that lets a material requirement be bound to a line by CHOOSING it
+ * rather than by typing an identifier the product publishes nowhere else
+ * (DEF-M-05).
+ *
+ * Not paginated: the operation publishes a bare `{ items }`.
+ */
+export async function listServiceLines(
+  workOrderId: string
+): Promise<ReadState<ItemsOnly<WorkOrderServiceLine>>> {
+  return readOperation<ItemsOnly<WorkOrderServiceLine>>(
+    workOrderPath(workOrderId, '/service-lines')
+  );
 }
 
 /**
@@ -184,7 +145,7 @@ export async function transitionWorkOrder(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>(
     'POST',
@@ -222,7 +183,7 @@ export async function updateJob(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>('PATCH', jobPath(jobId), body, { ifMatch });
   if (!result.ok) return fromFailure(result, attempt);
@@ -247,7 +208,7 @@ export async function assignTechnician(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>('POST', jobPath(jobId, '/assignments'), body);
   if (!result.ok) return fromFailure(result, attempt);

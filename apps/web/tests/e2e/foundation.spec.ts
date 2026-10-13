@@ -59,7 +59,11 @@ test.describe('authentication', () => {
   test('a protected route redirects to sign-in and never renders the shell', async ({ page }) => {
     const console = watchConsole(page);
     await page.goto('/en/administration/users');
-    await expect(page).toHaveURL(/\/en\/login\?reason=signed-out$/);
+    // The page being opened travels with the redirect (P1-32-PRE-OD-AUTHB), so
+    // sign-in can return the operator to it.
+    await expect(page).toHaveURL(
+      /\/en\/login\?reason=signed-out&intended=%2Fen%2Fadministration%2Fusers$/
+    );
 
     // The shell's navigation landmark belongs to the authenticated group. If it
     // is present here, protected markup reached the browser before the redirect.
@@ -67,6 +71,51 @@ test.describe('authentication', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
     expect(console.errors, 'the console must be clean').toEqual([]);
   });
+
+  test('an Arabic protected route redirects to Arabic sign-in, carrying the page', async ({
+    page,
+  }) => {
+    const console = watchConsole(page);
+    await page.goto('/ar/work-orders');
+    await expect(page).toHaveURL(/\/ar\/login\?reason=signed-out&intended=%2Far%2Fwork-orders$/);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('navigation', { name: 'الوحدات' })).toHaveCount(0);
+    await expect(page.getByText('أنت غير مسجّل الدخول. سجّل الدخول للمتابعة.')).toBeVisible();
+    await expect(page.getByTestId('sign-in-intended')).toHaveText(
+      'بعد تسجيل الدخول ستعود إلى الصفحة التي كنت تفتحها، إن كان هذا الحساب مخوّلًا بفتحها.'
+    );
+    await expect(page.locator('input[type="hidden"][name="intended"]')).toHaveValue(
+      '/ar/work-orders'
+    );
+    expect(console.errors, 'the console must be clean').toEqual([]);
+  });
+
+  test('the session-ended route lands on sign-in with the reason and the page', async ({
+    page,
+  }) => {
+    await page.goto('/en/session-ended?intended=%2Fen%2Finvoices');
+    await expect(page).toHaveURL(/\/en\/login\?reason=expired&intended=%2Fen%2Finvoices$/);
+    await expect(page.getByText(/^Your session ended\./)).toBeVisible();
+    await expect(page.getByTestId('sign-in-intended')).toBeVisible();
+  });
+
+  for (const [label, hostile] of [
+    ['an absolute address', 'https%3A%2F%2Fevil.example%2Fen'],
+    ['a protocol-relative address', '%2F%2Fevil.example'],
+    ['a backslash address', '%2F%5Cevil.example'],
+  ] as const) {
+    test(`sign-in ignores ${label} as the intended page, in both languages`, async ({ page }) => {
+      for (const locale of ['en', 'ar'] as const) {
+        await page.goto(`/${locale}/login?reason=expired&intended=${hostile}`);
+        // The reason notice alone: nothing is added for the refused value.
+        await expect(page.locator('p[role="status"]')).toHaveCount(1);
+        await expect(page.getByTestId('sign-in-intended')).toHaveCount(0);
+        await expect(page.locator('input[type="hidden"][name="intended"]')).toHaveCount(0);
+      }
+      await page.goto(`/en/session-ended?intended=${hostile}`);
+      await expect(page).toHaveURL(/\/en\/login\?reason=expired$/);
+    });
+  }
 
   test('the sign-in form labels every control and needs no mouse', async ({ page }) => {
     await page.goto('/en/login');
@@ -144,6 +193,70 @@ test.describe('authentication', () => {
     await expect(page.getByLabel('New password')).toHaveCount(0);
   });
 
+  /*
+   * Arabic, on the Material UI sign-in screens (P1-32-PRE-OD-AUTHA). The cases
+   * above were English only; these hold the same frame right to left, with the
+   * words read from the Arabic catalogue as the operator sees them.
+   */
+  test('the Arabic sign-in form labels every control, right to left, and needs no mouse', async ({
+    page,
+  }) => {
+    const console = watchConsole(page);
+    await page.goto('/ar/login');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByLabel('البريد الإلكتروني')).toBeVisible();
+    const password = page.getByRole('textbox', { name: 'كلمة المرور', exact: true });
+    await expect(password).toBeVisible();
+    await expect(password).toHaveAttribute('type', 'password');
+    await expect(page.getByRole('button', { name: 'تسجيل الدخول' })).toBeEnabled();
+    await expect(page.getByRole('link', { name: 'هل نسيت كلمة المرور؟' })).toHaveAttribute(
+      'href',
+      '/ar/forgot-password'
+    );
+
+    // The reveal control sits inside the field, at the inline END — the left
+    // edge of the box in Arabic — and names the state it moves to.
+    const toggle = page.getByTestId('password-reveal-toggle');
+    await expect(toggle).toHaveAttribute(
+      'aria-controls',
+      (await password.getAttribute('id')) ?? ''
+    );
+    const box = await password.boundingBox();
+    const control = await toggle.boundingBox();
+    expect(box && control && control.x < box.x + box.width / 2).toBe(true);
+    await page.getByRole('button', { name: 'إظهار كلمة المرور' }).click();
+    await expect(password).toHaveAttribute('type', 'text');
+    await expect(page.getByRole('button', { name: 'إخفاء كلمة المرور' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(console.errors, 'the console must be clean').toEqual([]);
+  });
+
+  test('the Arabic reset and activation pages refuse a link with no token', async ({ page }) => {
+    for (const path of ['/ar/reset-password', '/ar/activate-account']) {
+      await page.goto(path);
+      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+      await expect(page.getByText('هذا الرابط غير مكتمل')).toBeVisible();
+      await expect(page.getByLabel('كلمة المرور الجديدة')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'طلب رابط جديد' })).toHaveAttribute(
+        'href',
+        '/ar/forgot-password'
+      );
+    }
+  });
+
+  test('the Arabic forgotten-password page asks for an address only', async ({ page }) => {
+    await page.goto('/ar/forgot-password');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByLabel('البريد الإلكتروني')).toBeVisible();
+    await expect(page.getByRole('textbox')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: 'العودة إلى تسجيل الدخول' })).toHaveAttribute(
+      'href',
+      '/ar/login'
+    );
+  });
+
   test('does not scroll horizontally at any reviewed width', async ({ page }) => {
     await page.goto('/en/login');
     const overflow = await page.evaluate(
@@ -174,7 +287,16 @@ test.describe('the shell', () => {
   test('renders no planned module as a link', async ({ page }) => {
     await page.goto('/en/gallery');
     const nav = page.getByRole('navigation', { name: 'Modules' });
-    await expect(nav.getByRole('link', { name: 'Overview' })).toBeVisible();
+    // The one ungated entry is the gallery itself, drawn as a link that is the
+    // current page — proof the sidebar rendered at all, so every absence below
+    // is a filter decision and not an empty navigation.
+    const gallery = nav.getByRole('link', { name: 'Component gallery' });
+    await expect(gallery).toBeVisible();
+    await expect(gallery).toHaveAttribute('aria-current', 'page');
+    // The dashboard is gated on `wo.work_order.read` — the code its summary read
+    // is entitled by (Owner directive, P1-32-PRE-OD-UX) — and this page renders
+    // with no capabilities, so it is not offered either.
+    await expect(nav.getByRole('link', { name: 'Dashboard' })).toHaveCount(0);
     // Billing is still a P1-27-and-later module, so it must not be clickable.
     await expect(nav.getByRole('link', { name: 'Billing' })).toHaveCount(0);
     // Administration IS built now, but it is permission-gated and this page
@@ -213,7 +335,15 @@ test.describe('the gallery', () => {
 
   test('the table sorts, pages and reports its range', async ({ page }) => {
     await page.goto('/en/gallery');
-    const table = page.getByRole('table', { name: 'Data table' });
+    // Every locator below is scoped to the gallery section headed "Data table".
+    // The Material UI section further down the page renders a second grid with
+    // its own pagination controls and range label, so a page-wide role or text
+    // query can resolve to both.
+    const section = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { level: 2, name: 'Data table' }) });
+    await expect(section).toHaveCount(1);
+    const table = section.getByRole('table', { name: 'Data table' });
     await expect(table).toBeVisible();
 
     // Scoped to the data table: the print sample further down the page renders a
@@ -226,8 +356,8 @@ test.describe('the gallery', () => {
       'ascending'
     );
 
-    await expect(page.getByText(/Showing/)).toContainText('5');
-    await expect(page.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    await expect(section.getByText(/Showing/)).toContainText('5');
+    await expect(section.getByRole('button', { name: 'Previous page' })).toBeDisabled();
   });
 
   test('a dialog traps focus and restores it on Escape', async ({ page }) => {
@@ -327,6 +457,62 @@ test.describe('print emulation', () => {
       await expect(document).toBeVisible();
       const clipped = await document.evaluate((node) => node.scrollWidth > node.clientWidth + 1);
       expect(clipped, 'the printed document must not clip horizontally').toBe(false);
+
+      await page.emulateMedia({ media: 'screen' });
+    });
+
+    /*
+     * Checkpoint browser QA, DEF-01: every printed document came out as ONE
+     * page — the screenful at the current scroll position — because the print
+     * sheet's releases lost to the shell's viewport utilities (`h-dvh`,
+     * `overflow-hidden`, `overflow-y-auto`, `body.app-viewport`). The gallery is
+     * far taller than one viewport and renders the shared printable document
+     * inside the application shell, so it is the frame every document prints
+     * through.
+     */
+    test(`prints the whole page across as many pages as it needs, not one screenful, in ${locale}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto(`/${locale}/gallery`);
+      await page.emulateMedia({ media: 'print' });
+
+      const layout = await page.evaluate(() => {
+        const root = globalThis.document.querySelector('[data-app-shell="root"]');
+        const main = globalThis.document.querySelector('main');
+        const sheet = globalThis.document.querySelector('[data-print="document"]');
+        // Every box between the printable document and the page: none may clip.
+        const clipping: string[] = [];
+        for (let node = sheet?.parentElement ?? null; node !== null; node = node.parentElement) {
+          const style = globalThis.getComputedStyle(node);
+          const clips = style.overflowY !== 'visible' && node.scrollHeight > node.clientHeight + 1;
+          if (clips) clipping.push(`${node.tagName.toLowerCase()}.${node.className}`);
+        }
+        return {
+          viewport: globalThis.innerHeight,
+          documentHeight: globalThis.document.documentElement.scrollHeight,
+          rootHeight: root?.getBoundingClientRect().height ?? 0,
+          mainHeight: main?.getBoundingClientRect().height ?? 0,
+          mainOverflow: main === null ? '' : globalThis.getComputedStyle(main).overflowY,
+          bodyOverflow: globalThis.getComputedStyle(globalThis.document.body).overflowY,
+          sheetBottom: (sheet?.getBoundingClientRect().bottom ?? 0) + (globalThis.scrollY ?? 0),
+          clipping,
+        };
+      });
+      expect(layout.clipping, 'no box around the document may clip it on paper').toEqual([]);
+      expect(layout.bodyOverflow).toBe('visible');
+      expect(layout.mainOverflow).toBe('visible');
+      expect(layout.rootHeight, 'the shell grows past the viewport').toBeGreaterThan(
+        layout.viewport
+      );
+      expect(layout.mainHeight).toBeGreaterThan(layout.viewport);
+      expect(layout.documentHeight).toBeGreaterThanOrEqual(layout.sheetBottom - 1);
+
+      // What the printer is actually handed: more than one page. The defect's
+      // own signature was a PDF of exactly one page (`/Count 1`).
+      const pdf = await page.pdf({ preferCSSPageSize: true });
+      const pages = pdf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? [];
+      expect(pages.length, 'the printout runs over more than one page').toBeGreaterThan(1);
 
       await page.emulateMedia({ media: 'screen' });
     });

@@ -56,11 +56,24 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import {
+  CUSTOMER_SEARCH_PERMISSION,
+  toEntitySearchTerms,
+  withoutCustomerArms,
+} from '@/shared/text/search-terms';
+import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { crmModule } from '@/modules/crm';
+import { iamDirectory } from '@/modules/iam';
 import { deliveryModule } from '@/modules/delivery';
+import { SERVICE_REQUESTER } from '@/modules/reception';
+import { vehicleModule } from '@/modules/vehicle';
 import { workOrderModule, type LineRow } from '@/modules/work-order';
+import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
 import {
   MAX_COVERED_ITEMS,
+  WARRANTY_ORDER,
+  WARRANTY_STATUS_HISTORY_ORDER,
   type WarrantyCoverageRow,
   type WarrantyPolicyRow,
   type WarrantyRecordItemRow,
@@ -158,6 +171,67 @@ export interface WarrantyPolicyView {
 }
 
 /**
+ * The car a warranty covers, NAMED rather than referenced (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * Before this block a warranty row carried `vehicleId` and nothing else, so an
+ * operator matched cars by uuid — the unrecoverable-identifier defect this phase
+ * keeps finding, on the one record whose entire subject is a particular car.
+ *
+ * Resolved through `@/modules/vehicle`'s own published read, never by joining
+ * `veh.*` in the warranty repository: that read owns the rule about who may be
+ * told a registration, and a join here would be a second definition of it.
+ *
+ * `plate` and `vin` are null for a caller that does not hold `veh.vehicle.read`,
+ * and null again when the vehicle carries neither — the two are deliberately
+ * indistinguishable, because a field that reports a VIN exists while refusing to
+ * show it tells the caller the thing it is withholding. `makeModel` and
+ * `displayNumber` are not withheld; see `VehicleReadService.resolveDisplayIdentities`
+ * for why, and note that `vehicleId` was already published to every warranty
+ * reader, so nothing here widens the set of cars a caller can enumerate.
+ *
+ * Every field except `id` may be null: a vehicle may be registered without a
+ * plate, entered without a VIN, and cite no catalogue row at all.
+ */
+export interface WarrantyVehicleView {
+  readonly id: string;
+  readonly plate: string | null;
+  readonly vin: string | null;
+  readonly makeModel: string | null;
+  readonly displayNumber: string | null;
+}
+
+/**
+ * The party the warranty was issued to (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A warranty record names no party of its own, so this is the `service_requester`
+ * on the reception visit its work order came from — the party who brought the car
+ * and asked for the work, which is the party a claim would come back from.
+ *
+ * `id` and `displayName` are published TOGETHER or not at all. Both are null for
+ * a caller that does not hold `crm.customer.read`: the partner id is a CRM
+ * identifier exactly as the name is, and a `wty.warranty.read` holder who may not
+ * read customers has no use for one — it would only let them correlate one
+ * customer's warranties, and every other screen they could follow it to refuses
+ * them. So the block says that there IS a customer and nothing about who. Both are
+ * null again when the CRM module cannot resolve the partner for this caller
+ * (merged away, soft-deleted, or outside what row-level security lets them see);
+ * the two cases are deliberately indistinguishable, as `plate` and `vin` are on
+ * the vehicle block. Resolved through
+ * `crmModule().customerRead.resolveDisplayIdentities`, which checks that
+ * capability for itself — this module never joins `crm.business_partners`.
+ *
+ * The WHOLE block is null when the originating visit names no service requester,
+ * which is a real state rather than an error: `rec.reception_party_roles` requires
+ * the role only before a visit is activated.
+ */
+export interface WarrantyCustomerView {
+  /** The partner id, or null when the name is withheld or unresolvable. */
+  readonly id: string | null;
+  readonly displayName: string | null;
+}
+
+/**
  * A warranty record as a caller sees it.
  *
  * No monetary field, because `wty` has none. `status` is reported verbatim from the
@@ -182,6 +256,131 @@ export interface WarrantyView {
   readonly recordVersion: number;
   /** True when an idempotent replay returned the warranty that already existed. */
   readonly replayed: boolean;
+}
+
+/**
+ * `wty.warranty-detail`'s published shape: the record, plus the two display blocks
+ * the Owner directive added (P1-32-PRE-OD-UX).
+ *
+ * An EXTENSION of `WarrantyView` rather than two more fields on it, because
+ * `WarrantyView` is also what `wty.warranty-generate` answers with. Adding the
+ * blocks there would put two extra reads — one against `veh`, one against `crm` —
+ * on a WRITE path whose job is to issue a warranty, and would make a generation
+ * fail for a reason that has nothing to do with the warranty. The write keeps the
+ * shape it had; the read publishes more.
+ *
+ * Spelled exactly as `WarrantyRecordListView` spells the same two blocks, so a
+ * screen that lists warranties and then opens one sees ONE shape for the car and
+ * the customer rather than two.
+ */
+export interface WarrantyDetailView extends WarrantyView {
+  readonly vehicle: WarrantyVehicleView;
+  /** Null when the originating visit names no service requester. */
+  readonly customer: WarrantyCustomerView | null;
+}
+
+/**
+ * One warranty record on a list page (P1-31 prerequisite P-6).
+ *
+ * Every field is spelled exactly as `WarrantyDetailView` spells it, and carries
+ * the same meaning — `odometerLimit` is the record's ABSOLUTE ceiling here too,
+ * never the coverage's relative allowance — so a screen that lists warranties and
+ * then opens one sees ONE shape rather than two.
+ *
+ * What it does not carry, and why:
+ *
+ *  - **`vehicle` and `customer` ARE carried** (Owner directive, P1-32-PRE-OD-UX),
+ *    for the reason `policy` is: a row that named the car by uuid could not be
+ *    read by the person looking at it. Both are resolved for the WHOLE page in one
+ *    statement each, never one pair per row.
+ *
+ *  - **No coverage terms and no covered items.** Both are `WarrantyView`'s, and
+ *    both are already published by `wty.warranty-detail`. Repeating them per row
+ *    would mean a statement per row for the items and a second wire contract for
+ *    the terms.
+ *  - **`policy` IS carried.** It is not decoration: no operation lists warranty
+ *    policies (**PPD-04** / P-10), so a bare `policyId` would be an identifier no
+ *    caller could resolve — the unrecoverable-identifier defect this phase keeps
+ *    finding. The block is `WarrantyPolicyView`, the detail read's own shape.
+ *  - **No money, in any field.** `wty` has 80 columns and not one is an amount, a
+ *    currency or a cap in any unit of account, so a "covered value" would be a
+ *    fabricated business fact. `odometerAtIssue` and `odometerLimit` are distance
+ *    readings and are exact decimal STRINGS, never floats.
+ *  - **No `replayed`.** That flag reports an idempotent write returning an
+ *    existing record; a read replays nothing.
+ */
+export interface WarrantyRecordListView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly vehicleId: string;
+  readonly workOrderId: string;
+  readonly deliveryRecordId: string;
+  readonly status: string;
+  readonly startDate: string;
+  readonly expiryDate: string;
+  readonly odometerAtIssue: string;
+  /** ABSOLUTE ceiling, or null when the coverage sets no distance limit. */
+  readonly odometerLimit: string | null;
+  readonly policy: WarrantyPolicyView;
+  /**
+   * The car, named (Owner directive, P1-32-PRE-OD-UX). `vehicleId` stays above,
+   * so nothing that navigated by it breaks.
+   */
+  readonly vehicle: WarrantyVehicleView;
+  /** The party who brought it in, or null when the visit names none. */
+  readonly customer: WarrantyCustomerView | null;
+  readonly recordVersion: number;
+}
+
+/**
+ * One transition of the append-only warranty ledger (P1-31 prerequisite P-18).
+ *
+ * Spelled exactly as `DeliveryStatusHistoryEntryView` spells it — same field names, same
+ * order, same nullability — because it is the same kind of row read for the same reason,
+ * and a screen that renders a delivery's history and then a warranty's should handle one
+ * shape rather than two that can drift.
+ *
+ * `fromStatus` is null on the genesis row and only there: `wty.issue_warranty` writes
+ * `NULL -> 'issued'` in the same statement as the record. `actorId` is never null — the
+ * column is NOT NULL and `shared.stamp_status_history` sets it from the session — so an
+ * unattributed transition cannot be published. `occurredAt` is the server's stamp
+ * rendered as an ISO-8601 instant, never a value any caller supplied.
+ *
+ * No monetary field, because `wty` has none, and no correlation id, because that is
+ * platform diagnostics rather than a fact about the warranty.
+ */
+export interface WarrantyStatusHistoryEntryView {
+  readonly id: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  /**
+   * The actor's name, beside the id (Owner directive, QA row 4.1b), spelled as the
+   * delivery ledger spells it. Resolved through the identity directory, which
+   * answers nothing to a caller without `iam.user.read`, so it is `null` then and
+   * for an id the directory cannot resolve. Additive: the id is published as before.
+   */
+  readonly actorDisplayName: string | null;
+  readonly occurredAt: string;
+}
+
+/**
+ * The envelope `wty.warranty-status-history` answers with.
+ *
+ * Named and exported rather than written inline at the return type, because
+ * `scripts/ci/check-named-wire-shapes.mjs` refuses an anonymous type on the wire: an
+ * unnamed shape cannot be referenced by a contract document, a frontend adapter or a
+ * review, so it is a wire contract nobody can cite.
+ *
+ * It carries `warrantyId` beside the page so the response is self-identifying when it is
+ * logged or composed into a warranty document, and so a single-row page is never a bare
+ * answer with no subject. That is the `DeliveryStatusHistoryEnvelope` shape.
+ */
+export interface WarrantyStatusHistoryEnvelope {
+  readonly warrantyId: string;
+  readonly transitions: Page<WarrantyStatusHistoryEntryView>;
 }
 
 /**
@@ -470,7 +669,7 @@ export class WarrantyService {
     db: DbHandle,
     warrantyRecordId: string,
     authorizeScope: ScopeAuthorizer
-  ): Promise<WarrantyView> {
+  ): Promise<WarrantyDetailView> {
     const found = await this.repository.findWarrantyRecord(db, warrantyRecordId);
     if (found === null) {
       throw new AppFailure('ERR-RES-001', {
@@ -491,7 +690,207 @@ export class WarrantyService {
         message: 'A warranty record cites a policy or coverage row that is not readable',
       });
     }
-    return this.toView(record, policy, coverage, found.items, false);
+    // Resolved AFTER the scope decision, deliberately: a caller refused this
+    // record must not have caused a `veh` or `crm` read on its behalf.
+    const display = await resolveDisplayBlocks(db, this.repository, [record]);
+    return {
+      ...this.toView(record, policy, coverage, found.items, false),
+      vehicle: vehicleBlockFor(record.vehicleId, display.vehicles),
+      customer: display.customers.get(record.workOrderId) ?? null,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // `wty.warranty-status-history`
+  // -------------------------------------------------------------------------
+
+  /**
+   * The warranty's append-only transition ledger, newest first (P1-31 P-18, **CC-10**).
+   *
+   * `wty.warranty_status_history` is written by `wty.issue_warranty` and, until this
+   * method, was read by nothing anywhere in `apps/api/src`. The ledger limb of
+   * **VHM-06 / WF-26 / PPD-13** was open for exactly that reason.
+   *
+   * ## What a caller will actually see today
+   *
+   * Exactly one row on any warranty this application issued: the genesis
+   * `NULL -> 'issued'`. Nothing in this phase advances `wty.warranty_records.status`,
+   * so there is no second transition to read yet. That is a fact about the writers,
+   * not a limitation of this read, and it is stated here rather than left for a caller
+   * to infer from an unexpectedly short page.
+   *
+   * ## Order of operations
+   *
+   * The record is read FIRST, exactly as in `readWarranty`, and `authorizeScope` runs
+   * against the record's OWN company and branch. So `ERR-RES-001` is decided before any
+   * scope decision, a record outside the caller's grants is invisible to RLS and reported
+   * as not found, and the branch this ledger is read in is the row's own rather than one
+   * a caller supplied. The opposite order — the one `listWarranties` uses — is only
+   * correct where there is no row to take a scope from.
+   *
+   * `wty.warranty.read` is the gate, uniform with the other two warranty reads: a
+   * transition ledger says no more about the warranty than the record it belongs to,
+   * and gating it differently would mean a caller could read the record but not how it
+   * got there, or the reverse.
+   */
+  public async readStatusHistory(
+    db: DbHandle,
+    warrantyRecordId: string,
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<WarrantyStatusHistoryEnvelope> {
+    const found = await this.repository.findWarrantyRecord(db, warrantyRecordId);
+    if (found === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Warranty record ${warrantyRecordId} is not visible`,
+      });
+    }
+    const record = found.record;
+    await authorizeScope({ companyId: record.companyId, branchId: record.branchId });
+
+    const request: PageRequest = pageRequest(WARRANTY_STATUS_HISTORY_ORDER, page);
+    const rows = await this.repository.listStatusHistory(
+      db,
+      { companyId: record.companyId, branchId: record.branchId },
+      record.id,
+      request
+    );
+    // One lookup for the whole page, never one per row; an empty page asks nothing.
+    const users = await iamDirectory().directory.resolveDisplayIdentities(db, [
+      ...new Set(rows.items.map((row) => row.actorId)),
+    ]);
+    return {
+      warrantyId: record.id,
+      transitions: {
+        ...rows,
+        items: rows.items.map((row) => ({
+          id: row.id,
+          fromStatus: row.fromStatus,
+          toStatus: row.toStatus,
+          reason: row.reason,
+          actorId: row.actorId,
+          actorDisplayName: users.get(row.actorId)?.displayName ?? null,
+          occurredAt: row.occurredAt.toISOString(),
+        })),
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // `wty.warranty-list`
+  // -------------------------------------------------------------------------
+
+  /**
+   * A branch's warranty records, newest first (P1-31 prerequisite P-6).
+   *
+   * ## Scope is authorized BEFORE any row is read
+   *
+   * `companyId` and `branchId` are required and `authorizeScope` runs first, for
+   * two reasons. `sel_warranty_records_scope` narrows on the permission-blind
+   * `iam.allowed_branch_ids()` union, so an optional pair would let a caller
+   * holding the code in one branch read every branch it holds any grant in
+   * (P1-18-A-01). And authorizing first stops the empty/non-empty difference from
+   * reporting whether a branch issues warranties at all — a caller with no grant
+   * in the target scope is refused, never handed an empty page.
+   *
+   * That is the opposite order from `readWarranty`, deliberately: there the row
+   * is read first because the record's OWN company and branch are the only honest
+   * authorization target, and a caller-supplied one would be the input a scoped
+   * authorization exists to stop trusting. A list has no row to take a scope
+   * from, so the caller must name one and the server must refuse it.
+   *
+   * ## Policies, once per page
+   *
+   * The distinct policies the page cites are read in ONE statement and the rows
+   * are labelled from the result — the pattern `listReceipts` uses for payment
+   * methods. A record whose policy does not come back is an inconsistency and not
+   * a 404, exactly as in `readWarranty`: `fk_warranty_records_policy` is a
+   * composite key into the record's own company, which the caller has just been
+   * authorized for, so the row cannot legitimately be invisible.
+   */
+  public async listWarranties(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      /**
+       * The branch the CALLER named, when it named one (Owner directive,
+       * P1-32-PRE-OD-UX).
+       *
+       * Kept beside `branchIds` because the two mean different things to the
+       * guard below: a named branch is a claim this service must decide, and a
+       * resolved set has already been decided one branch at a time by
+       * `resolveAuthorizedBranches`. Collapsing them would let a resolved set
+       * pass as an unchecked claim, or re-decide a set already decided.
+       */
+      readonly branchId?: string | undefined;
+      /** The branches the page may cover. `undefined` means every branch of the company. */
+      readonly branchIds?: readonly string[] | undefined;
+      readonly vehicleId?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<WarrantyRecordListView>> {
+    // A NAMED branch is decided here and refused exactly as before. An omitted
+    // one was decided per branch before this call, so there is no pair left to
+    // check and nothing a repeat would add.
+    if (filter.branchId !== undefined) {
+      await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    }
+
+    const request: PageRequest = pageRequest(WARRANTY_ORDER, page);
+    const result = await this.repository.listWarranties(
+      db,
+      { ...filter, search: await searchTermsFor(db, filter.q) },
+      request
+    );
+    const policies = new Map<string, WarrantyPolicyRow>(
+      (
+        await this.repository.findPolicies(db, filter.companyId, [
+          ...new Set(result.items.map((row) => row.policyId)),
+        ])
+      ).map((row) => [row.id, row])
+    );
+    // The car and the customer for the WHOLE page (Owner directive,
+    // P1-32-PRE-OD-UX) — one statement each, on the `findPolicies` precedent
+    // immediately above. A per-row lookup would make this page an N+1 against a
+    // read that already carries the `expensive-read` bucket.
+    const display = await resolveDisplayBlocks(db, this.repository, result.items);
+
+    return {
+      ...result,
+      items: result.items.map((record) => {
+        const policy = policies.get(record.policyId);
+        if (policy === undefined) {
+          throw new AppFailure('ERR-SYS-001', {
+            message: 'A warranty record cites a policy row that is not readable',
+          });
+        }
+        return {
+          id: record.id,
+          companyId: record.companyId,
+          branchId: record.branchId,
+          vehicleId: record.vehicleId,
+          workOrderId: record.workOrderId,
+          deliveryRecordId: record.deliveryRecordId,
+          status: record.status,
+          startDate: record.startDate,
+          expiryDate: record.expiryDate,
+          odometerAtIssue: record.odometerAtIssue,
+          odometerLimit: record.odometerLimit,
+          policy: {
+            id: policy.id,
+            policyCode: policy.policyCode,
+            name: policy.name,
+            status: policy.status,
+          },
+          vehicle: vehicleBlockFor(record.vehicleId, display.vehicles),
+          customer: display.customers.get(record.workOrderId) ?? null,
+          recordVersion: record.recordVersion,
+        };
+      }),
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -797,4 +1196,141 @@ export class WarrantyService {
       replayed,
     };
   }
+}
+
+/**
+ * Reduces the caller's box, with the customer arms switched off unless the
+ * caller may read customers (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * One statement, once per request, and only when a box was actually sent — a
+ * list without `q` costs nothing. See `withoutCustomerArms` for the bound this
+ * leaves and why the other three arms need no gate.
+ */
+async function searchTermsFor(db: DbHandle, q: string | undefined) {
+  const terms = toEntitySearchTerms(q);
+  if (!terms.present) return terms;
+  return (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION))
+    ? terms
+    : withoutCustomerArms(terms);
+}
+
+/**
+ * Names the car and the customer of a whole set of warranty records (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * Up to FIVE statements for any number of records, and the same five for one:
+ * the vehicle capability and the vehicle identities (both inside the vehicle
+ * module's read), the partner ids, then the customer capability and the
+ * partners' names (both inside the CRM module's). The cost is constant per page
+ * rather than per row, which is the property that matters; it is written as five
+ * rather than three because two of them are capability questions the composed
+ * reads ask for themselves, and a docblock that counted only the visible calls
+ * would understate what a page costs. The bound is MEASURED rather than only
+ * stated: `tests/backend/p1-31-warranty-read-seam.test.ts` counts the statements
+ * a one-row page and a many-row page send, and fails if either exceeds five or if
+ * the two differ.
+ *
+ * Fewer when there is less to ask: the CRM read makes no second statement for a
+ * caller without the code, and none at all when no row names a partner. The
+ * vehicle read and the partner-id lookup do not depend on one another, so they
+ * are started together with `Promise.all`; but they share this request's one
+ * transaction connection, and the `pg` client sends each statement only after
+ * the previous one has returned its result, so nothing is pipelined and nothing
+ * runs in parallel. Inside the vehicle module the capability check and the
+ * identity lookup also run one after the other. The last pair cannot start until
+ * the partner-id lookup has said which partners there are.
+ *
+ * Every hop goes through a PUBLIC module surface or through this module's own
+ * repository, and the division is the point:
+ *
+ *  - `@/modules/vehicle` decides whether this caller may be told a plate or a VIN.
+ *    This module does not re-implement that rule and does not touch `veh.*`.
+ *  - `@/modules/crm` decides whether this caller may be told a name, and answers
+ *    an unentitled caller with an empty map. This module does not touch `crm.*`,
+ *    and it publishes the partner id only beside a name that read returned.
+ *  - the LINK — which partner is the service requester on the visit this record's
+ *    work order came from — is a `rec`/`wo` fact that this repository already
+ *    walks for the list's search box, so it stays here.
+ *
+ * An id that resolves to nothing is left null or absent rather than failing the
+ * page: a partner may be merged away and a vehicle may be soft-deleted, and that
+ * is a sentence for the screen to say, not a reason to hide the other rows.
+ */
+async function resolveDisplayBlocks(
+  db: DbHandle,
+  repository: WarrantyRepository,
+  records: readonly { readonly vehicleId: string; readonly workOrderId: string }[]
+): Promise<{
+  readonly vehicles: ReadonlyMap<string, WarrantyVehicleView>;
+  readonly customers: ReadonlyMap<string, WarrantyCustomerView>;
+}> {
+  if (records.length === 0) return { vehicles: new Map(), customers: new Map() };
+  const [vehicles, partnerByWorkOrder] = await Promise.all([
+    vehicleModule().vehicleRead.resolveDisplayIdentities(
+      db,
+      records.map((record) => record.vehicleId)
+    ),
+    repository.findCustomerPartnerIds(
+      db,
+      records.map((record) => record.workOrderId),
+      SERVICE_REQUESTER
+    ),
+  ]);
+  const identities = await crmModule().customerRead.resolveDisplayIdentities(db, [
+    ...new Set(partnerByWorkOrder.values()),
+  ]);
+  return {
+    vehicles,
+    customers: new Map(
+      [...partnerByWorkOrder].map(([workOrderId, partnerId]) => [
+        workOrderId,
+        // The block is kept even when the CRM read returned nothing for this
+        // partner — dropping it would report that the warranty has no customer —
+        // but the id travels WITH the name: a caller without `crm.customer.read`
+        // is told there is a customer and not which partner it is.
+        customerBlockFor(partnerId, identities),
+      ])
+    ),
+  };
+}
+
+/**
+ * The customer block for one work order's service requester.
+ *
+ * Least privilege: the partner id is published only when the CRM module's own
+ * capability-checked read resolved that partner for this caller, which it never
+ * does for a caller without `crm.customer.read`. Otherwise both fields are null,
+ * so a withheld customer and an unresolvable one read the same.
+ */
+function customerBlockFor(
+  partnerId: string,
+  identities: ReadonlyMap<string, { readonly displayName: string }>
+): WarrantyCustomerView {
+  const identity = identities.get(partnerId);
+  return identity === undefined
+    ? { id: null, displayName: null }
+    : { id: partnerId, displayName: identity.displayName };
+}
+
+/**
+ * The vehicle block for one record, with the id-only fallback.
+ *
+ * `wty.warranty_records.vehicle_id` is NOT NULL, so the id is always known and the
+ * block is never absent — only unlabelled, when the vehicle is soft-deleted or the
+ * catalogue and the plate history have nothing to say. Same shape of answer the
+ * work-order board gives for the same situation.
+ */
+function vehicleBlockFor(
+  vehicleId: string,
+  vehicles: ReadonlyMap<string, WarrantyVehicleView>
+): WarrantyVehicleView {
+  return (
+    vehicles.get(vehicleId) ?? {
+      id: vehicleId,
+      plate: null,
+      vin: null,
+      makeModel: null,
+      displayNumber: null,
+    }
+  );
 }

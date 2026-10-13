@@ -56,7 +56,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ receptionId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -64,17 +64,20 @@ export async function POST(
   return handleOperation(
     RECEPTION_REFUSAL_OPERATION,
     request,
-    async ({ db, request: raw, authorizeScope }) => ({
-      status: 201,
-      body: await receptionModule().receptionEvidence.recordRefusal(
-        db,
-        params.receptionId,
-        await parseJsonBody(raw, Body),
-        // Re-authorized against the LOCKED visit's branch, not this request:
-        // `scope: 'branch'` is inert without a target (P1-18-A-01).
-        authorizeScope
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw, authorizeScope }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await receptionModule().receptionEvidence.recordRefusal(
+          db,
+          params.receptionId,
+          await parseJsonBody(raw, Body),
+          // Re-authorized against the LOCKED visit's branch, not this request:
+          // `scope: 'branch'` is inert without a target (P1-18-A-01).
+          authorizeScope
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }

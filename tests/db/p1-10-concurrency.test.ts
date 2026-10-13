@@ -25,6 +25,7 @@ import {
   draftRevision,
   addServiceItem,
   seedVehicle,
+  seedMaterialRequest,
 } from './p1-10-helpers';
 
 const admin = adminPool();
@@ -125,10 +126,17 @@ describe('p1-10 concurrency (single-winner)', () => {
       const i = await seedItem(c, 'conr');
       const l = await seedLocations(c, 'conr');
       await seedStock(c, i.item, l.warehouse, 10, 'conr');
-      const res = (await c.query(`SELECT inv.reserve_stock($1,$2,5) AS id`, [i.item, l.warehouse]))
-        .rows[0].id;
+      // A work-order draw is governed: reserve and issue on an approved material request.
+      const { request } = await seedMaterialRequest(c, wo, i.item, 5);
+      const res = (
+        await c.query(`SELECT inv.reserve_material_request($1,$2,5) AS id`, [request, l.warehouse])
+      ).rows[0].id;
       return (
-        await c.query(`SELECT inv.issue_part($1,$2,$3,5,$4) AS id`, [wo, i.item, l.warehouse, res])
+        await c.query(`SELECT inv.issue_material_request($1,$2,5,$3) AS id`, [
+          request,
+          l.warehouse,
+          res,
+        ])
       ).rows[0].id;
     });
     // two concurrent returns of 3 each (total 6) against a 5-unit issue: one must fail

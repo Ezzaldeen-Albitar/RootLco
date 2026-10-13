@@ -36,7 +36,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<Record<string, string>> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await context.params, 'params');
+  const rawParams = await context.params;
   const body = await request
     .clone()
     .json()
@@ -45,6 +45,7 @@ export async function POST(
     ATTACHMENT_DOWNLOAD_AUTHORIZE_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'params');
       const input = await parseJsonBody(raw, Body);
       const grant = await sharedServicesModule().attachments.requestDownload(db, {
         documentId: params.documentId,
@@ -52,6 +53,6 @@ export async function POST(
       });
       return { body: { url: grant.url, expiresAt: grant.expiresAt.toISOString() } };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }

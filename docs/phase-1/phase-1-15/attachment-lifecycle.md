@@ -343,6 +343,17 @@ tenant's prefix. A row that passed RLS but whose key names another tenant is tre
 integrity fault (`ERR-SYS-001`), not as a row to serve, because signing it _would be_ the
 cross-tenant read.
 
+_(2026-09-15, P1-31 change control § 72.4.1, CC-63 (c): "the download path enforces it" was not true
+when written — `requestDownload()` read no link, so a tenant member holding the file-access permission
+and a document identifier was issued a URL for an accepted version linked to nothing. It is enforced
+since commit `P1-31-SEC-002-010` on `remediation/p1-31-backend-closure-hardening`: after resolving the
+version and before the state check, `requireReachableByLiveLink` in
+`apps/api/src/modules/shared-services/application/attachment-service.ts` requires at least one live
+link whose entity row the caller can select under that entity's own RLS, and otherwise answers the
+same `ERR-RES-001` an invented identifier receives, with nothing signed and nothing audited. The
+permission gate is unchanged and still tenant-wide; reachability now depends on the linked entity's
+visibility. The proof is `tests/backend/p1-31-signature-download-refusal.test.ts`.)_
+
 ## 8. What is written to the audit trail, and what is deliberately withheld
 
 Every stage appends an audit record through `appendAudit`, which reads tenant, actor, and

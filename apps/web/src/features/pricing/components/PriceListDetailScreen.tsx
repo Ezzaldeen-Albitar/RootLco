@@ -2,15 +2,40 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
-import { MoneyField } from '@/components/forms/MoneyField';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import {
+  MuiEmptyState,
+  MuiErrorState,
+  MuiExpiredState,
+  MuiLoadingState,
+  MuiRefusedState,
+  MuiUnavailableState,
+} from '@/components/states/MuiStates';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import type { WorkingContextCompany } from '@/features/working-context/working-context-contract';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { formatMoney } from '@/lib/money';
 
 import {
@@ -34,11 +59,10 @@ import {
 import {
   ActivationBadge,
   BranchPairPicker,
+  CompanyPicker,
   EMPTY_PAIR,
   Figure,
   OutcomeNote,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
   ServicePicker,
   UUID,
   VersionStatusBadge,
@@ -50,29 +74,46 @@ import {
 
 /**
  * One price list (P1-30, `W2`, FE-002): its versions, the rules of a chosen
- * version, and the writes A1 and P1-20 opened on it.
+ * version, and the writes A1 and P1-20 opened on it. On the shared Material UI
+ * wrappers since `P1-32-PRE-OD-MUISP` (ADR-022): `forms/mui` fields,
+ * `FormMoneyField` for the amount, `DateField` for every day, `EntityPicker`
+ * for the service, Material's table for the two bounded lists, and the shared
+ * states.
  *
  * ## The version that guards a write is the LIST's
  *
  * `svc.price-list-version-create` and `svc.price-list-version-publish` lock
  * the price list and compare `If-Match` with ITS `recordVersion`. The number
- * sent is therefore `priceList.recordVersion` from the detail this page read,
- * never the `recordVersion` a version's own answer carries, and after either
- * write the page is refreshed so the next write reads a fresh one.
+ * sent is therefore the LIST's, never the `recordVersion` a version's own
+ * answer carries — and it is the list version the form's work is based on
+ * (`useEditBaseline`): a clean form follows a refresh, typed work keeps the
+ * version it was typed against, so a write on it after the list moved is the
+ * server's conflict, which offers to load the latest. After either write the
+ * page is refreshed, and the clean form takes the new version from it.
  *
  * ## Rules are the server's figures
  *
- * `amount` renders through `formatMoney` with the list's currency;
- * `specificity` and `priority` render as the numbers the server sent. Nothing
- * on this screen orders, weighs or totals a rule — the rules list already
- * arrives in the resolver's order.
+ * `amount` renders through `formatMoney` with the list's currency and is typed
+ * as a decimal STRING (`FormMoneyField`) from the keystroke to the request
+ * body; `specificity` and `priority` render as the numbers the server sent.
+ * Nothing on this screen orders, weighs or totals a rule — the rules list
+ * already arrives in the resolver's order.
  *
  * ## What cannot be shown, said
  *
  * Assignments have no read: the panel records one and says the list of
  * existing assignments does not exist here. Tax classes have no list either,
- * so a rule's tax class is an identifier field. A published version's rules are
- * frozen, and the rule form is withheld for any version that is not a draft.
+ * so a rule's tax class is still an identifier field (route checklist,
+ * prerequisite 6). A published version's rules are frozen, and the rule form is
+ * withheld for any version that is not a draft. A company or branch a rule
+ * names that this reader's working context cannot name is said in words, never
+ * printed as its identifier.
+ *
+ * ## Unsaved work
+ *
+ * The rule, the new draft, the publication and the assignment each declare
+ * what is typed and not yet stored (`useUnsavedGuard`), so leaving the page or
+ * switching the branch asks first, and "discard" empties that form.
  */
 
 export function PriceListDetailScreen({
@@ -177,6 +218,7 @@ export function PriceListDetailScreen({
           messages={messages}
           priceList={priceList}
           onCreated={() => router.refresh()}
+          onReload={() => router.refresh()}
         />
       ) : null}
 
@@ -186,6 +228,7 @@ export function PriceListDetailScreen({
           messages={messages}
           priceList={priceList}
           onPublished={() => router.refresh()}
+          onReload={() => router.refresh()}
         />
       ) : null}
 
@@ -199,6 +242,23 @@ export function PriceListDetailScreen({
       ) : null}
     </div>
   );
+}
+
+/** Tracks which date fields hold parts of a day and not yet a whole one. */
+function useUnfinishedDays(): {
+  readonly unfinished: Readonly<Record<string, boolean>>;
+  readonly noteDay: (field: string) => (problem: DayProblem) => void;
+  readonly reset: () => void;
+} {
+  const [unfinished, setUnfinished] = useState<Readonly<Record<string, boolean>>>({});
+  return {
+    unfinished,
+    noteDay: (field) => (problem) =>
+      setUnfinished((current) =>
+        current[field] === (problem !== null) ? current : { ...current, [field]: problem !== null }
+      ),
+    reset: () => setUnfinished({}),
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -231,85 +291,88 @@ function VersionsPanel({
         {translate(messages, 'pricing.versions.explain')}
       </p>
       {priceList.versions.length === 0 ? (
-        <p className="text-body text-text-secondary">
-          {translate(messages, 'pricing.versions.none')}
-        </p>
+        <MuiEmptyState
+          messages={messages}
+          descriptionKey="pricing.versions.none"
+          testId="price-list-versions-empty"
+        />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-body">
+        <TableContainer>
+          <Table size="small">
             <caption className="sr-only">{translate(messages, 'pricing.versions.caption')}</caption>
-            <thead>
-              <tr className="text-start text-caption text-text-muted">
-                <th scope="col" className="py-1 pe-3 text-start">
+            <TableHead>
+              <TableRow>
+                <TableCell scope="col">
                   {translate(messages, 'pricing.versions.column.number')}
-                </th>
-                <th scope="col" className="py-1 pe-3 text-start">
+                </TableCell>
+                <TableCell scope="col">
                   {translate(messages, 'pricing.versions.column.status')}
-                </th>
-                <th scope="col" className="py-1 pe-3 text-start">
+                </TableCell>
+                <TableCell scope="col">
                   {translate(messages, 'pricing.versions.column.from')}
-                </th>
-                <th scope="col" className="py-1 pe-3 text-start">
+                </TableCell>
+                <TableCell scope="col">
                   {translate(messages, 'pricing.versions.column.to')}
-                </th>
-                <th scope="col" className="py-1 pe-3 text-start">
+                </TableCell>
+                <TableCell scope="col">
                   {translate(messages, 'pricing.versions.column.notes')}
-                </th>
-                <th scope="col" className="py-1 text-start">
+                </TableCell>
+                <TableCell scope="col">
                   <span className="sr-only">{translate(messages, 'pricing.versions.actions')}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {priceList.versions.map((version) => (
-                <tr
+                <TableRow
                   key={version.id}
-                  className="border-t border-border"
+                  selected={version.id === chosenVersionId}
                   aria-current={version.id === chosenVersionId ? 'true' : undefined}
                 >
-                  <td className="py-2 pe-3">
+                  <TableCell>
                     <code className="font-mono" dir="ltr">
                       {version.versionNo}
                     </code>
-                  </td>
-                  <td className="py-2 pe-3">
+                  </TableCell>
+                  <TableCell>
                     <VersionStatusBadge messages={messages} status={version.status} />
-                  </td>
-                  <td className="py-2 pe-3">
-                    <code className="font-mono text-caption" dir="ltr">
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-mono text-caption" dir="ltr">
                       {version.effectiveFrom}
-                    </code>
-                  </td>
-                  <td className="py-2 pe-3">
+                    </span>
+                  </TableCell>
+                  <TableCell>
                     {version.effectiveTo ? (
-                      <code className="font-mono text-caption" dir="ltr">
+                      <span className="font-mono text-caption" dir="ltr">
                         {version.effectiveTo}
-                      </code>
+                      </span>
                     ) : (
                       <span className="text-text-muted">
                         {translate(messages, 'pricing.versions.noEnd')}
                       </span>
                     )}
-                  </td>
-                  <td className="py-2 pe-3">{version.notes ? <bdi>{version.notes}</bdi> : null}</td>
-                  <td className="py-2">
-                    <button
+                  </TableCell>
+                  <TableCell>{version.notes ? <bdi>{version.notes}</bdi> : null}</TableCell>
+                  <TableCell>
+                    <Button
                       type="button"
-                      className={SECONDARY_BUTTON}
+                      size="small"
+                      variant={version.id === chosenVersionId ? 'contained' : 'outlined'}
                       aria-pressed={version.id === chosenVersionId}
                       onClick={() => onChoose(version.id)}
                     >
                       {translate(messages, 'pricing.versions.showRules')}{' '}
-                      <code className="font-mono" dir="ltr">
+                      <span className="ms-1 font-mono" dir="ltr">
                         {version.versionNo}
-                      </code>
-                    </button>
-                  </td>
-                </tr>
+                      </span>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
       {priceList.versionsTruncated ? (
         <p className="text-caption text-text-muted">
@@ -342,24 +405,27 @@ function RulesPanel({
   readonly canReadServices: boolean;
 }) {
   const [answer, setAnswer] = useState<{
-    readonly versionId: string;
+    readonly key: string;
     readonly state: ReadState<PriceListRules>;
   } | null>(null);
   const [reloads, setReloads] = useState(0);
   const versionId = version?.id ?? null;
+  const wanted = `${versionId ?? ''}#${reloads}`;
 
   useEffect(() => {
     if (!versionId) return;
     let live = true;
     void listPriceRules(priceList.id, versionId).then((result) => {
-      if (live) setAnswer({ versionId, state: result });
+      if (live) setAnswer({ key: wanted, state: result });
     });
     return () => {
       live = false;
     };
-  }, [priceList.id, versionId, reloads]);
-  // An answer for another version is not this version's; it reads as loading.
-  const state = answer && answer.versionId === versionId ? answer.state : null;
+  }, [priceList.id, versionId, wanted]);
+  // An answer for another version — or an earlier read of this one — is not
+  // this read's; it reads as loading.
+  const state = answer && answer.key === wanted ? answer.state : null;
+  const retry = () => setReloads((n) => n + 1);
 
   return (
     <section
@@ -372,9 +438,9 @@ function RulesPanel({
         {version ? (
           <>
             {' '}
-            <code className="font-mono" dir="ltr">
+            <span className="font-mono" dir="ltr">
               {version.versionNo}
-            </code>
+            </span>
           </>
         ) : null}
       </h2>
@@ -383,27 +449,29 @@ function RulesPanel({
           {translate(messages, 'pricing.rules.choose')}
         </p>
       ) : state === null ? (
-        <p className="text-body text-text-secondary" aria-busy="true">
-          {translate(messages, 'state.loading')}
-        </p>
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : state.status === 'denied' ? (
+        <MuiRefusedState
+          messages={messages}
+          descriptionKey="pricing.rules.refused"
+          correlationId={state.correlationId}
+        />
+      ) : state.status === 'expired' ? (
+        <MuiExpiredState messages={messages} locale={locale} />
+      ) : state.status === 'unavailable' ? (
+        <MuiUnavailableState
+          messages={messages}
+          descriptionKey="pricing.rules.unavailable"
+          onRetry={retry}
+          correlationId={state.correlationId}
+        />
       ) : state.status !== 'ok' ? (
-        <p role="alert" className="text-body text-error">
-          {translate(
-            messages,
-            state.status === 'denied' ? 'pricing.rules.refused' : 'pricing.rules.unavailable'
-          )}
-          {state.correlationId ? (
-            <>
-              {' '}
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'state.correlationId')}{' '}
-                <code className="font-mono" dir="ltr">
-                  {state.correlationId}
-                </code>
-              </span>
-            </>
-          ) : null}
-        </p>
+        <MuiErrorState
+          messages={messages}
+          descriptionKey="pricing.rules.unavailable"
+          onRetry={retry}
+          correlationId={state.correlationId}
+        />
       ) : (
         <RulesTable locale={locale} messages={messages} rules={state.data} branches={branches} />
       )}
@@ -414,32 +482,48 @@ function RulesPanel({
       ) : null}
       {version && version.status === 'draft' && canManage ? (
         <RecordRuleForm
+          locale={locale}
           messages={messages}
           priceList={priceList}
           version={version}
           branches={branches}
           canReadServices={canReadServices}
-          onRecorded={() => setReloads((n) => n + 1)}
+          onRecorded={retry}
         />
       ) : null}
     </section>
   );
 }
 
-function narrowingText(
+/**
+ * What a rule is narrowed to, in words.
+ *
+ * The company and the branch are NAMED — the company from the working context
+ * (the companies this reader's branches belong to), the branch from the branch
+ * list in hand — and never printed as an identifier (Browser QA part 7, row
+ * 5.10b). One this reader's lists cannot name is said in words rather than by
+ * its reference.
+ */
+export function narrowingText(
   messages: Messages,
   branches: Branches,
+  companies: readonly WorkingContextCompany[],
   rule: PriceRuleRow
 ): readonly string[] {
   const parts: string[] = [];
   const { companyId, branchId, customerClass } = rule.appliesTo;
   if (branchId) {
     parts.push(
-      `${translate(messages, 'pricing.rules.branch')}: ${branchLabel(branches, branchId) ?? branchId}`
+      `${translate(messages, 'pricing.rules.branch')}: ${
+        branchLabel(branches, branchId) ?? translate(messages, 'pricing.rules.branchOutsideContext')
+      }`
     );
   }
   if (companyId && !branchId) {
-    parts.push(`${translate(messages, 'pricing.rules.company')}: ${companyId}`);
+    const company =
+      companies.find((entry) => entry.id === companyId)?.name ??
+      translate(messages, 'pricing.rules.companyOutsideContext');
+    parts.push(`${translate(messages, 'pricing.rules.company')}: ${company}`);
   }
   if (customerClass) {
     parts.push(`${translate(messages, 'pricing.rules.customerClass')}: ${customerClass}`);
@@ -458,55 +542,60 @@ function RulesTable({
   readonly rules: PriceListRules;
   readonly branches: Branches;
 }) {
+  const { companies } = useWorkingContext();
   if (rules.rules.length === 0) {
     return (
-      <p className="text-body text-text-secondary">{translate(messages, 'pricing.rules.none')}</p>
+      <MuiEmptyState
+        messages={messages}
+        descriptionKey="pricing.rules.none"
+        testId="price-rules-empty"
+      />
     );
   }
   return (
     <>
-      <div className="overflow-x-auto">
-        <table className="w-full text-body">
+      <TableContainer>
+        <Table size="small">
           <caption className="sr-only">{translate(messages, 'pricing.rules.caption')}</caption>
-          <thead>
-            <tr className="text-caption text-text-muted">
-              <th scope="col" className="py-1 pe-3 text-start">
+          <TableHead>
+            <TableRow>
+              <TableCell scope="col">
                 {translate(messages, 'pricing.rules.column.service')}
-              </th>
-              <th scope="col" className="py-1 pe-3 text-start">
+              </TableCell>
+              <TableCell scope="col">
                 {translate(messages, 'pricing.rules.column.appliesTo')}
-              </th>
-              <th scope="col" className="py-1 pe-3 text-end">
+              </TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'pricing.rules.column.amount')}
-              </th>
-              <th scope="col" className="py-1 pe-3 text-end">
+              </TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'pricing.rules.column.specificity')}
-              </th>
-              <th scope="col" className="py-1 pe-3 text-end">
+              </TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'pricing.rules.column.priority')}
-              </th>
-              <th scope="col" className="py-1 pe-3 text-start">
+              </TableCell>
+              <TableCell scope="col">
                 {translate(messages, 'pricing.rules.column.taxClass')}
-              </th>
-              <th scope="col" className="py-1 text-start">
+              </TableCell>
+              <TableCell scope="col">
                 {translate(messages, 'pricing.rules.column.status')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {rules.rules.map((rule) => {
-              const parts = narrowingText(messages, branches, rule);
+              const parts = narrowingText(messages, branches, companies, rule);
               return (
-                <tr key={rule.id} className="border-t border-border">
-                  <td className="py-2 pe-3">
+                <TableRow key={rule.id}>
+                  <TableCell>
                     <span className="flex flex-col">
-                      <code className="font-mono text-caption" dir="ltr">
+                      <span className="font-mono text-caption" dir="ltr">
                         {rule.service.serviceCode}
-                      </code>
+                      </span>
                       <bdi>{rule.service.name}</bdi>
                     </span>
-                  </td>
-                  <td className="py-2 pe-3">
+                  </TableCell>
+                  <TableCell>
                     {parts.length === 0 ? (
                       <span className="text-text-muted">
                         {translate(messages, 'pricing.rules.any')}
@@ -520,23 +609,27 @@ function RulesTable({
                         ))}
                       </span>
                     )}
-                  </td>
-                  <td className="py-2 pe-3 text-end">
-                    <span className="font-mono" dir="ltr">
+                  </TableCell>
+                  <TableCell align="right">
+                    <span className="font-mono tabular-nums" dir="ltr">
                       {formatMoney({ amount: rule.amount, currency: rule.currency }, locale)}
                     </span>
-                  </td>
-                  <td className="py-2 pe-3 text-end">
-                    <code className="font-mono" dir="ltr">
+                  </TableCell>
+                  <TableCell align="right">
+                    <span className="font-mono tabular-nums" dir="ltr">
                       {rule.specificity}
-                    </code>
-                  </td>
-                  <td className="py-2 pe-3 text-end">
-                    <code className="font-mono" dir="ltr">
+                    </span>
+                  </TableCell>
+                  <TableCell align="right">
+                    <span className="font-mono tabular-nums" dir="ltr">
                       {rule.priority}
-                    </code>
-                  </td>
-                  <td className="py-2 pe-3">
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {/*
+                      Tax classes have no read yet (route checklist, prerequisite
+                      6), so the recorded reference is shown as it was stored.
+                    */}
                     {rule.taxClassId ? (
                       <code className="font-mono text-caption" dir="ltr">
                         {rule.taxClassId}
@@ -546,16 +639,16 @@ function RulesTable({
                         {translate(messages, 'pricing.rules.noTaxClass')}
                       </span>
                     )}
-                  </td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell>
                     <ActivationBadge messages={messages} status={rule.status} />
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
       <p className="text-caption text-text-muted">
         {translate(messages, 'pricing.rules.specificityHelp')}
       </p>
@@ -573,6 +666,7 @@ function RulesTable({
  * ------------------------------------------------------------------ */
 
 function RecordRuleForm({
+  locale,
   messages,
   priceList,
   version,
@@ -580,6 +674,7 @@ function RecordRuleForm({
   canReadServices,
   onRecorded,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly priceList: PriceListDetail;
   readonly version: PriceListVersion;
@@ -594,19 +689,69 @@ function RecordRuleForm({
   const [customerClass, setCustomerClass] = useState('');
   const [taxClassId, setTaxClassId] = useState('');
   const [priority, setPriority] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // Confirmed discards: part of the picker's key, so it remounts empty.
+  const [discards, setDiscards] = useState(0);
+  // Question f: the cursor goes to the first thing to fix, and a complaint is
+  // withdrawn once its field no longer holds the refused value (route sweep B3).
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    serviceId,
+    amount,
+    companyId: pair.companyId,
+    branchId: pair.branchId,
+    customerClass,
+    taxClassId,
+    priority,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * The rule is unsaved work the moment ANY of its fields holds something, and
+   * the form says so itself — with the catalogue read or without it (QA round
+   * three).
+   *
+   * A price list is not addressed to the working branch, so nothing here
+   * follows a switch on its own: a confirmed discard empties the whole rule,
+   * which is what the question said would be lost.
+   */
+  const ruleTyped = [
+    serviceId,
+    amount,
+    pair.companyId,
+    pair.branchId,
+    customerClass,
+    taxClassId,
+    priority,
+  ].some((field) => field.trim().length > 0);
+  useUnsavedGuard(ruleTyped, () => {
+    setServiceId('');
+    setAmount('');
+    setAmountValid(true);
+    setPair(EMPTY_PAIR);
+    setCustomerClass('');
+    setTaxClassId('');
+    setPriority('');
+    setOutcome(null);
+    setDiscards((count) => count + 1);
+  });
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
   const submit = async () => {
     const found: Record<string, string> = {};
     const service = serviceId.trim();
-    if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    if (canReadServices) {
+      if (service.length === 0) found['serviceId'] = 'pricing.picker.serviceRequired';
+      else if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    } else if (!UUID.test(service)) {
+      found['serviceId'] = 'pricing.picker.serviceReferenceFormat';
+    }
     const money = amount.trim();
     if (money.length === 0) found['amount'] = 'field.required';
     else if (!amountValid || !AMOUNT.test(money)) found['amount'] = 'pricing.rule.amountFormat';
@@ -632,7 +777,7 @@ function RecordRuleForm({
     } else if (priorityText.length > 0 && Number(priorityText) > MAX_PRIORITY) {
       found['priority'] = 'pricing.rule.priorityFormat';
     }
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -657,13 +802,14 @@ function RecordRuleForm({
 
   return (
     <form
+      ref={localFormRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
       noValidate
       aria-labelledby="price-rule-heading"
-      className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2"
+      className="grid gap-4 border-t border-border pt-3 sm:grid-cols-2"
     >
       <h3 id="price-rule-heading" className="text-body font-medium text-text-primary sm:col-span-2">
         {translate(messages, 'pricing.rule.heading')}
@@ -673,15 +819,20 @@ function RecordRuleForm({
       </p>
       <div className="sm:col-span-2">
         <ServicePicker
+          // Not `countsAsUnsaved`: the form's own guard above covers the
+          // reference with every other field, whichever way the service is named.
+          key={`service-${discards}`}
           messages={messages}
+          locale={locale}
           canRead={canReadServices}
           label={translate(messages, 'pricing.rule.service')}
           value={serviceId}
           onChange={setServiceId}
           error={errorFor('serviceId')}
+          testId="price-rule-service"
         />
       </div>
-      <MoneyField
+      <FormMoneyField
         messages={messages}
         label={translate(messages, 'pricing.rule.amount')}
         currency={priceList.currency}
@@ -693,14 +844,21 @@ function RecordRuleForm({
         }}
         error={errorFor('amount')}
       />
-      <TextField
+      <FormNumberField
         label={translate(messages, 'pricing.rule.priority')}
         description={translate(messages, 'pricing.rule.priorityHelp')}
-        inputMode="numeric"
-        dir="ltr"
+        integer
         value={priority}
-        onChange={(event) => setPriority(event.target.value)}
+        onChange={setPriority}
         error={errorFor('priority')}
+      />
+      <CompanyPicker
+        messages={messages}
+        label={translate(messages, 'pricing.rule.company')}
+        placeholder={translate(messages, 'pricing.rule.anyCompany')}
+        value={pair}
+        onChange={setPair}
+        error={errorFor('companyId')}
       />
       <BranchPairPicker
         messages={messages}
@@ -708,34 +866,38 @@ function RecordRuleForm({
         label={translate(messages, 'pricing.rule.branch')}
         placeholder={translate(messages, 'pricing.rule.anyBranch')}
         value={pair}
-        onChange={setPair}
-        errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
+        onChange={(next) =>
+          // Clearing the branch keeps the company the operator chose: a rule for
+          // every branch of one company is a choice, not an absence.
+          setPair(next.branchId === '' ? { companyId: pair.companyId, branchId: '' } : next)
+        }
+        errors={{ branchId: errorFor('branchId') }}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'pricing.rule.customerClass')}
         description={translate(messages, 'pricing.common.classHelp')}
-        spellCheck={false}
         dir="ltr"
+        autoComplete="off"
         value={customerClass}
-        onChange={(event) => setCustomerClass(event.target.value)}
+        onChange={setCustomerClass}
         error={errorFor('customerClass')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'pricing.rule.taxClass')}
         description={translate(messages, 'pricing.rule.taxClassHelp')}
-        spellCheck={false}
         dir="ltr"
+        autoComplete="off"
         value={taxClassId}
-        onChange={(event) => setTaxClassId(event.target.value)}
+        onChange={setTaxClassId}
         error={errorFor('taxClassId')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'pricing.rule.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -745,47 +907,87 @@ function RecordRuleForm({
  * A new draft — guarded by the LIST's version
  * ------------------------------------------------------------------ */
 
+/** A type, not an interface: the form is also the `Record` the baseline compares. */
+type DraftForm = { readonly effectiveFrom: string; readonly notes: string };
+
+const EMPTY_DRAFT: DraftForm = { effectiveFrom: '', notes: '' };
+
+function draftDiffers(form: DraftForm, baseline: DraftForm): boolean {
+  return (
+    form.effectiveFrom !== baseline.effectiveFrom || form.notes.trim() !== baseline.notes.trim()
+  );
+}
+
 function CreateVersionPanel({
   locale,
   messages,
   priceList,
   onCreated,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly priceList: PriceListDetail;
   readonly onCreated: () => void;
+  /** Reads the page again, after a conflict. */
+  readonly onReload: () => void;
 }) {
-  const [form, setForm] = useState({ effectiveFrom: '', notes: '' });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const days = useUnfinishedDays();
+  // Typed against the LIST's version; see `useEditBaseline`.
+  const edit = useEditBaseline({
+    stored: EMPTY_DRAFT,
+    storedVersion: priceList.recordVersion,
+    differs: draftDiffers,
+    pending: days.unfinished['effectiveFrom'] === true,
+  });
+  const { values: form, setValues: setForm } = edit;
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    effectiveFrom: `${form.effectiveFrom}|${days.unfinished['effectiveFrom'] === true}`,
+    notes: form.notes,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
+  const discard = () => {
+    days.reset();
+    edit.discard();
+    setOutcome(null);
+  };
+  useUnsavedGuard(edit.dirty, discard);
+
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
   const submit = async () => {
     const found: Record<string, string> = {};
     const effectiveFrom = form.effectiveFrom.trim();
-    if (!ISO_DATE.test(effectiveFrom)) found['effectiveFrom'] = 'pricing.common.dateFormat';
+    if (days.unfinished['effectiveFrom'] || !ISO_DATE.test(effectiveFrom)) {
+      found['effectiveFrom'] = 'pricing.common.dateFormat';
+    }
     const notes = form.notes.trim();
     if (notes.length > MAX_NOTES) found['notes'] = 'pricing.version.notesTooLong';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
     const result = await createPriceListVersion(
       priceList.id,
       { effectiveFrom, ...(notes ? { notes } : {}) },
-      priceList.recordVersion
+      edit.version
     );
     setBusy(false);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success') {
+      // Created is saved: clean, and the refresh brings the list's new version.
       setOutcome(null);
-      setForm({ effectiveFrom: '', notes: '' });
+      days.reset();
+      edit.rebase(EMPTY_DRAFT);
       onCreated();
       return;
     }
@@ -802,39 +1004,49 @@ function CreateVersionPanel({
         {translate(messages, 'pricing.version.createHeading')}
       </h2>
       <form
+        ref={localFormRef}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
         noValidate
         aria-labelledby="price-version-create-heading"
-        className="grid gap-3 sm:grid-cols-2"
+        className="grid gap-4 sm:grid-cols-2"
       >
-        <TextField
+        <DateField
           label={translate(messages, 'pricing.version.effectiveFrom')}
           description={translate(messages, 'pricing.version.effectiveFromHelp')}
           required
-          type="date"
-          dir="ltr"
           value={form.effectiveFrom}
-          onChange={(event) => setForm((f) => ({ ...f, effectiveFrom: event.target.value }))}
+          onChange={(effectiveFrom) => setForm((f) => ({ ...f, effectiveFrom }))}
+          onProblem={days.noteDay('effectiveFrom')}
           error={errorFor('effectiveFrom')}
+          testId="price-version-from"
         />
         <div className="sm:col-span-2">
-          <TextAreaField
+          <FormTextField
             label={translate(messages, 'pricing.version.notes')}
+            multiline
+            rows={3}
             value={form.notes}
-            onChange={(event) => setForm((f) => ({ ...f, notes: event.target.value }))}
+            onChange={(notes) => setForm((f) => ({ ...f, notes }))}
             error={errorFor('notes')}
           />
         </div>
         <div className="sm:col-span-2">
-          <OutcomeNote messages={messages} outcome={outcome} />
+          <OutcomeNote
+            messages={messages}
+            outcome={outcome}
+            onReload={() => {
+              discard();
+              onReload();
+            }}
+          />
         </div>
         <div className="sm:col-span-2">
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          <Button type="submit" variant="contained" disabled={busy}>
             {translate(messages, 'pricing.version.createDraft')}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
@@ -850,29 +1062,79 @@ function conflictAware(state: ActionState): ActionState {
  * Publication — a separate code, workshop-wide
  * ------------------------------------------------------------------ */
 
+/** A type, not an interface: the form is also the `Record` the baseline compares. */
+type PublishForm = { readonly chosen: string | null; readonly effectiveFrom: string };
+
+const EMPTY_PUBLISH: PublishForm = { chosen: null, effectiveFrom: '' };
+
 function PublishPanel({
   locale,
   messages,
   priceList,
   onPublished,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly priceList: PriceListDetail;
   readonly onPublished: () => void;
+  /** Reads the page again, after a conflict. */
+  readonly onReload: () => void;
 }) {
   const drafts = useMemo(
     () => priceList.versions.filter((version) => version.status === 'draft'),
     [priceList.versions]
   );
-  const [versionId, setVersionId] = useState(drafts[0]?.id ?? '');
-  const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  /*
+   * Only a draft the operator CHOSE is held in state. The default is read from
+   * the current drafts at every render, so a refresh that adds a draft, or drops
+   * the one just published, never turns into unsaved work; and a choice whose
+   * draft has left the list falls back to the default instead of naming a
+   * version that is no longer offered.
+   */
+  const days = useUnfinishedDays();
+  const offered = (id: string | null): boolean =>
+    id !== null && drafts.some((draft) => draft.id === id);
+  /*
+   * The choice and the day, typed against the LIST's version
+   * (`useEditBaseline`). A choice whose draft has left the list is no choice:
+   * it neither counts as unsaved work nor holds the baseline back.
+   */
+  const edit = useEditBaseline({
+    stored: EMPTY_PUBLISH,
+    storedVersion: priceList.recordVersion,
+    differs: (form, baseline) =>
+      form.effectiveFrom !== baseline.effectiveFrom ||
+      (offered(form.chosen) ? form.chosen : null) !==
+        (offered(baseline.chosen) ? baseline.chosen : null),
+    pending: days.unfinished['effectiveFrom'] === true,
+  });
+  const { chosen, effectiveFrom } = edit.values;
+  const setChosen = (next: string) => edit.setValues((f) => ({ ...f, chosen: next }));
+  const setEffectiveFrom = (next: string) => edit.setValues((f) => ({ ...f, effectiveFrom: next }));
+  const chosenStillOffered = offered(chosen);
+  const versionId = chosenStillOffered && chosen !== null ? chosen : (drafts[0]?.id ?? '');
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    versionId,
+    effectiveFrom: `${effectiveFrom}|${days.unfinished['effectiveFrom'] === true}`,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
+  // A day typed for publication, or a draft the operator chose, is unsaved work.
+  const discard = () => {
+    days.reset();
+    edit.discard();
+    setOutcome(null);
+  };
+  useUnsavedGuard(edit.dirty, discard);
+
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -880,8 +1142,10 @@ function PublishPanel({
     const found: Record<string, string> = {};
     if (!versionId) found['versionId'] = 'field.required';
     const from = effectiveFrom.trim();
-    if (!ISO_DATE.test(from)) found['effectiveFrom'] = 'pricing.common.dateFormat';
-    setErrors(found);
+    if (days.unfinished['effectiveFrom'] || !ISO_DATE.test(from)) {
+      found['effectiveFrom'] = 'pricing.common.dateFormat';
+    }
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -889,12 +1153,15 @@ function PublishPanel({
       priceList.id,
       versionId,
       { effectiveFrom: from },
-      priceList.recordVersion
+      edit.version
     );
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      // Published is saved: clean, and the refresh brings the list's new version.
       setOutcome(null);
+      days.reset();
+      edit.rebase(EMPTY_PUBLISH);
       onPublished();
       return;
     }
@@ -919,19 +1186,20 @@ function PublishPanel({
         </p>
       ) : (
         <form
+          ref={localFormRef}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
           }}
           noValidate
           aria-labelledby="price-publish-heading"
-          className="grid gap-3 sm:grid-cols-2"
+          className="grid gap-4 sm:grid-cols-2"
         >
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'pricing.publish.version')}
             required
             value={versionId}
-            onChange={(event) => setVersionId(event.target.value)}
+            onChange={setChosen}
             options={drafts.map((draft) => ({
               value: draft.id,
               label: `${draft.versionNo} — ${draft.effectiveFrom}`,
@@ -939,22 +1207,29 @@ function PublishPanel({
             placeholder={translate(messages, 'pricing.publish.chooseVersion')}
             error={errorFor('versionId')}
           />
-          <TextField
+          <DateField
             label={translate(messages, 'pricing.publish.effectiveFrom')}
             required
-            type="date"
-            dir="ltr"
             value={effectiveFrom}
-            onChange={(event) => setEffectiveFrom(event.target.value)}
+            onChange={setEffectiveFrom}
+            onProblem={days.noteDay('effectiveFrom')}
             error={errorFor('effectiveFrom')}
+            testId="price-publish-from"
           />
           <div className="sm:col-span-2">
-            <OutcomeNote messages={messages} outcome={outcome} />
+            <OutcomeNote
+              messages={messages}
+              outcome={outcome}
+              onReload={() => {
+                discard();
+                onReload();
+              }}
+            />
           </div>
           <div className="sm:col-span-2">
-            <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+            <Button type="submit" variant="contained" disabled={busy}>
               {translate(messages, 'pricing.publish.submit')}
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -982,13 +1257,40 @@ function AssignmentPanel({
   const [priority, setPriority] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveTo, setEffectiveTo] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const days = useUnfinishedDays();
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    companyId: pair.companyId,
+    branchId: pair.branchId,
+    customerClass,
+    priority,
+    effectiveFrom: `${effectiveFrom}|${days.unfinished['effectiveFrom'] === true}`,
+    effectiveTo: `${effectiveTo}|${days.unfinished['effectiveTo'] === true}`,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
-  const [recorded, setRecorded] = useState<string | null>(null);
+  const [recorded, setRecorded] = useState(false);
+
+  const reset = () => {
+    setPair(EMPTY_PAIR);
+    setCustomerClass('');
+    setPriority('');
+    setEffectiveFrom('');
+    setEffectiveTo('');
+    days.reset();
+    setOutcome(null);
+  };
+  const dirty =
+    [pair.companyId, pair.branchId, customerClass, priority, effectiveFrom, effectiveTo].some(
+      (field) => field.trim().length > 0
+    ) || Object.values(days.unfinished).some(Boolean);
+  useUnsavedGuard(dirty, reset);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -1013,14 +1315,20 @@ function AssignmentPanel({
       found['priority'] = 'pricing.rule.priorityFormat';
     }
     const from = effectiveFrom.trim();
-    if (!ISO_DATE.test(from)) found['effectiveFrom'] = 'pricing.common.dateFormat';
+    if (days.unfinished['effectiveFrom'] || !ISO_DATE.test(from)) {
+      found['effectiveFrom'] = 'pricing.common.dateFormat';
+    }
     const to = effectiveTo.trim();
-    if (to.length > 0 && !ISO_DATE.test(to)) found['effectiveTo'] = 'pricing.common.dateFormat';
-    else if (to.length > 0 && to <= from) found['effectiveTo'] = 'pricing.assignment.rangeOrder';
-    setErrors(found);
+    if (days.unfinished['effectiveTo'] || (to.length > 0 && !ISO_DATE.test(to))) {
+      found['effectiveTo'] = 'pricing.common.dateFormat';
+    } else if (to.length > 0 && to <= from) {
+      found['effectiveTo'] = 'pricing.assignment.rangeOrder';
+    }
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
+    setRecorded(false);
     const result = await createPriceListAssignment({
       priceListId: priceList.id,
       ...(companyId ? { companyId } : {}),
@@ -1034,8 +1342,9 @@ function AssignmentPanel({
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
-      setOutcome(null);
-      setRecorded(result.created.id);
+      // Stored: the typed assignment is no longer unsaved work.
+      reset();
+      setRecorded(true);
     }
   };
 
@@ -1055,13 +1364,14 @@ function AssignmentPanel({
         {translate(messages, 'pricing.assignment.noRead')}
       </p>
       <form
+        ref={localFormRef}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
         noValidate
         aria-labelledby="price-assignment-heading"
-        className="grid gap-3 sm:grid-cols-2"
+        className="grid gap-4 sm:grid-cols-2"
       >
         <BranchPairPicker
           messages={messages}
@@ -1072,57 +1382,59 @@ function AssignmentPanel({
           onChange={setPair}
           errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
         />
-        <TextField
+        <FormTextField
           label={translate(messages, 'pricing.rule.customerClass')}
           description={translate(messages, 'pricing.common.classHelp')}
-          spellCheck={false}
           dir="ltr"
+          autoComplete="off"
           value={customerClass}
-          onChange={(event) => setCustomerClass(event.target.value)}
+          onChange={setCustomerClass}
           error={errorFor('customerClass')}
         />
-        <TextField
+        <FormNumberField
           label={translate(messages, 'pricing.rule.priority')}
           description={translate(messages, 'pricing.rule.priorityHelp')}
-          inputMode="numeric"
-          dir="ltr"
+          integer
           value={priority}
-          onChange={(event) => setPriority(event.target.value)}
+          onChange={setPriority}
           error={errorFor('priority')}
         />
-        <TextField
+        <DateField
           label={translate(messages, 'pricing.assignment.effectiveFrom')}
           required
-          type="date"
-          dir="ltr"
           value={effectiveFrom}
-          onChange={(event) => setEffectiveFrom(event.target.value)}
+          onChange={setEffectiveFrom}
+          onProblem={days.noteDay('effectiveFrom')}
           error={errorFor('effectiveFrom')}
+          testId="price-assignment-from"
         />
-        <TextField
+        <DateField
           label={translate(messages, 'pricing.assignment.effectiveTo')}
           description={translate(messages, 'pricing.assignment.effectiveToHelp')}
-          type="date"
-          dir="ltr"
           value={effectiveTo}
-          onChange={(event) => setEffectiveTo(event.target.value)}
+          onChange={setEffectiveTo}
+          onProblem={days.noteDay('effectiveTo')}
           error={errorFor('effectiveTo')}
+          testId="price-assignment-to"
         />
         <div className="sm:col-span-2">
           <OutcomeNote messages={messages} outcome={outcome} />
         </div>
         {recorded ? (
-          <p className="text-caption text-text-muted sm:col-span-2">
-            {translate(messages, 'pricing.assignment.recordedAs')}{' '}
-            <code className="font-mono" dir="ltr">
-              {recorded}
-            </code>
+          // Said in words: the assignment has no name, and its reference would
+          // be a string to look up rather than an answer.
+          <p
+            role="status"
+            className="text-supporting text-text-secondary sm:col-span-2"
+            data-testid="price-assignment-recorded"
+          >
+            {translate(messages, 'pricing.assignment.success')}
           </p>
         ) : null}
         <div className="sm:col-span-2">
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          <Button type="submit" variant="contained" disabled={busy}>
             {translate(messages, 'pricing.assignment.submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </section>

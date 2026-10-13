@@ -63,16 +63,16 @@
       "bytes": 2816
     },
     "docs/phase-1/phase-1-28/contract-archaeology.md": {
-      "sha256": "87b4cf1e85b6c5a0f7b1437d95bbf3356faa1c1c28922acd512776d7c3592abb",
-      "bytes": 77210
+      "sha256": "9375c29af3a97278ad67cb0368e8b510b82b44b50545f17e69f6b391a48c692e",
+      "bytes": 77404
     },
     "docs/phase-1/phase-1-28/developer-guide.md": {
       "sha256": "702466a4898aea653d855b146d5e9496fc854547e6da8a9297a0ea9292a01a20",
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "0179fe8b1d4d4b7b4dd465d3dfc40bcb81d8fe69c3400995fd57fdf6b6be3e49",
-      "bytes": 43201
+      "sha256": "cf4a2585f71015eec74d290fbdb56f8fdbb930b13ba881277bf78312ab3fdf1c",
+      "bytes": 44211
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
       "sha256": "2e9b5fc57c43c855cbd2f46ffcf6613d06b169cb5b7899c9f31954013945574d",
@@ -95,8 +95,8 @@
       "bytes": 118686
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
-      "sha256": "f490ef1176afbbf99b3ae7357303bcf96dc1ea5d89348829ed90f8c3a26e28a6",
-      "bytes": 32754
+      "sha256": "6255fc06d9f879e8ae8864fda4f63ca4cf0ada4dd088b942b921e4dba0b876bf",
+      "bytes": 32895
     },
     "docs/phase-1/phase-1-28/evidence/traceability.md": {
       "sha256": "2a7f58f94c85efce3a6c312a6d7885df182bd045f98d8452bf3847f4ae56d913",
@@ -107,20 +107,20 @@
       "bytes": 14173
     },
     "docs/phase-1/phase-1-28/operator-guide.md": {
-      "sha256": "6d48b8b48a174ef6874abc01663125b9b27e23f8bd69bc840b6a4562155268af",
-      "bytes": 18676
+      "sha256": "d46495fbee340518ceed11a4ba4ab6a3ffaa577e88dadf048c5a8e05754a51a4",
+      "bytes": 18756
     },
     "docs/phase-1/phase-1-28/task-matrix-verdicts.json": {
-      "sha256": "a0251953e8b1bc96d0bc0bd119ff7f9f5d2f9b4d2bcad71051c9fb43a03c20c7",
-      "bytes": 390400
+      "sha256": "7d4596ad06a2632e688f29ae3f013eda5849404a89ae0507f09c289665193883",
+      "bytes": 390824
     },
     "docs/phase-1/phase-1-28/task-matrix.json": {
-      "sha256": "0043e990de608da8feb263c21865da3db66dcb753827adcb2ab14e0a1d31bbd7",
-      "bytes": 408967
+      "sha256": "e8818fcc2b0022556e96f457e4d08a4b49a49e853c861c0ae03547f51b37ba8c",
+      "bytes": 409391
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {
-      "sha256": "7112975f3c7bd14e4eec1938b630a8038ec7c97ccf3cef228081b55278634bb7",
-      "bytes": 21174
+      "sha256": "a82f1997324d76ad406ac567abc3c0367d4182be06b152489160506d9e37bc27",
+      "bytes": 22521
     }
   }
 }

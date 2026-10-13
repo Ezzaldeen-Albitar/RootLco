@@ -44,6 +44,30 @@ export const INVOICE_STATUSES = Object.freeze([
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
 /**
+ * `ck_invoices_sale_kind`. A `counter_sale` bills stock sold over the counter and
+ * has no work order; a `work_order` invoice bills a job (P1-32). Frozen for the
+ * life of the document.
+ */
+export const SALE_KINDS = Object.freeze(['work_order', 'counter_sale'] as const);
+export type SaleKind = (typeof SALE_KINDS)[number];
+
+/**
+ * Whether issuing an invoice of this kind moves stock (ADR-023 D6: invoicing
+ * never duplicates an inventory movement).
+ *
+ * Only a COUNTER SALE posts a stock leg at issue — its lines are what leaves the
+ * shelf. A WORK-ORDER invoice posts none, whatever its lines are: its parts left
+ * stock one by one as part issues when they were fitted, so a part line copied
+ * from the accepted quotation bills that part and moves nothing. Anything else —
+ * an unknown kind — moves nothing either: a stock movement is never the default.
+ * `inv.guard_stock_movement_provenance` refuses a `sale` movement against a
+ * work-order invoice line in the database as well.
+ */
+export function issuePostsStock(saleKind: string): boolean {
+  return saleKind === 'counter_sale';
+}
+
+/**
  * `ck_invoice_status_history_to_status` — SIX values, deliberately wider than the
  * four above.
  *
@@ -66,11 +90,25 @@ export type InvoiceHistoryState = (typeof INVOICE_HISTORY_STATES)[number];
 export const INVOICE_LINE_TYPES = Object.freeze(['service', 'part', 'fee'] as const);
 export type InvoiceLineType = (typeof INVOICE_LINE_TYPES)[number];
 
-/** `ck_credit_notes_approval_state`, identical to the reversal vocabulary. */
-export const APPROVAL_STATES = Object.freeze(['pending', 'approved', 'rejected'] as const);
+/**
+ * `ck_credit_notes_approval_state`. `withdrawn` is the requester's own
+ * withdrawal of a pending request (ADR-023, D3); the receipt-reversal vocabulary
+ * has no such state. Every state but `pending` is terminal.
+ */
+export const APPROVAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+] as const);
 export type ApprovalState = (typeof APPROVAL_STATES)[number];
 
-/** `ck_financial_events_event_type`. Closed at six. */
+/**
+ * `ck_financial_events_event_type`. Closed at eight: `refund_obligation_recorded`
+ * (P1-32-PRE-OD-FD2A, ADR-023 D2) records that a customer is owed money back, and
+ * `refund_executed` (P1-32-PRE-OD-FD2B) that a refund was paid out. No event is an
+ * accounting entry.
+ */
 export const FINANCIAL_EVENT_TYPES = Object.freeze([
   'invoice_issued',
   'receipt_recorded',
@@ -78,6 +116,8 @@ export const FINANCIAL_EVENT_TYPES = Object.freeze([
   'credit_note_issued',
   'receipt_reversed',
   'warranty_split_recorded',
+  'refund_obligation_recorded',
+  'refund_executed',
 ] as const);
 export type FinancialEventType = (typeof FINANCIAL_EVENT_TYPES)[number];
 
@@ -88,6 +128,8 @@ export const FINANCIAL_EVENT_SOURCE_TYPES = Object.freeze([
   'payment_allocation',
   'credit_note',
   'receipt_reversal',
+  'refund_obligation',
+  'refund_request',
 ] as const);
 export type FinancialEventSourceType = (typeof FINANCIAL_EVENT_SOURCE_TYPES)[number];
 
@@ -119,6 +161,25 @@ export const INVOICE_TRANSITIONS: readonly {
   { from: 'draft', to: 'void_before_issue' },
   { from: 'issued', to: 'credited' },
 ]);
+
+/**
+ * The permission that decides a credit note (Owner decision D13, ADR-023).
+ *
+ * Approving and rejecting declare it; requesting and withdrawing keep
+ * `sal.credit.manage`. `sal.guard_credit_note_decision` checks the same code in the
+ * note's company and branch, so the rule does not depend on a route being the only
+ * way in.
+ */
+export const CREDIT_APPROVE_PERMISSION = 'sal.credit.approve';
+
+/**
+ * The `iam.approval_limits.limit_type` of a credit-note approval limit (D13).
+ *
+ * Separate from every discount type: a discount limit never counts for a credit
+ * note, and this one never counts for a discount. One per subject, company and
+ * currency at a time (`ex_approval_limits_*_no_overlap`).
+ */
+export const CREDIT_NOTE_LIMIT_TYPE = 'credit_note';
 
 /** Column widths, so a caller gets a 422 rather than a driver truncation error. */
 export const MAX_REASON = 2000;
@@ -167,16 +228,13 @@ export function parseInstrumentAmount(input: string, field = 'amount'): Decimal 
 /**
  * Refuses a credit note whose currency differs from its invoice's.
  *
- * **This is a P1-22 invariant, not a re-check of a database rule.** SB1 of the
- * archaeology reproduced the gap: five triggers fire on `sal.credit_notes` and not
- * one of them reads `sal.invoices.currency_code`, and `sal.approve_credit_note`
- * compares the amount but never the currency. A JOD credit note against a USD
- * invoice is accepted, approved, and then subtracted from the USD gross by
- * `sal.invoice_open_receivable`, which has no currency predicate either.
- *
- * So if this function is deleted, nothing else refuses the mismatch. That is
- * recorded as `P1-22-L-02` and an abuse-case test proves the database still
- * accepts it, so the residual stays visible instead of being assumed closed.
+ * SB1 of the P1-22 archaeology reproduced the gap this closes at the application
+ * edge: no trigger on `sal.credit_notes` read `sal.invoices.currency_code` and
+ * `sal.approve_credit_note` compared only the amount (`P1-22-L-02`). Since
+ * `20260930090000_sal_finance_controls.sql` the database refuses the mismatch too
+ * (`sal.guard_credit_note_currency` on insert and `sal.approve_credit_note` under
+ * the invoice lock, GAP-13), and `tests/db/p1-22-protected-residuals.test.ts`
+ * proves it. This function still answers first, naming the field at fault.
  */
 export function assertCurrencyMatches(
   parentCurrency: string,
@@ -186,7 +244,7 @@ export function assertCurrencyMatches(
   if (parentCurrency !== childCurrency) {
     throw new BillingRuleError(
       `${context}: currency ${childCurrency} does not match ${parentCurrency}; ` +
-        'no protected constraint enforces this equality (P1-22-L-02)'
+        'a credit note is always in its invoice currency'
     );
   }
 }
@@ -212,18 +270,24 @@ export function assertLegalInvoiceTransition(from: string, to: string): void {
 }
 
 /**
- * Refuses a credit note larger than the invoice's remaining open receivable.
+ * Refuses a credit note larger than what the invoice can still be credited
+ * (ADR-023 D2, P1-32-PRE-OD-FD2A): the issued invoice's gross less the credits
+ * already APPROVED on it. A pending note is not counted; the approval re-checks.
  *
- * `sal.approve_credit_note` performs this comparison too, and this is the one
- * place a duplicated check is worth it: the approval path raises `check_violation`
- * with a message that is not a caller-safe contract, and the caller can act on
- * "exceeds the open amount" while it can act on nothing at all given a 500.
+ * Not the open receivable any more. A paid invoice can be credited, and what the
+ * credit exceeds the open receivable by is recorded as a refund obligation by
+ * `sal.approve_credit_note` — never paid out automatically.
+ *
+ * `sal.approve_credit_note` performs this comparison too, under the note and
+ * invoice locks, and this is the one place a duplicated check is worth it: the
+ * caller can act on "exceeds what can still be credited" while it can act on
+ * nothing at all given a 500.
  */
-export function assertCreditWithinOpenAmount(amount: Decimal, openAmount: Decimal): void {
-  if (amount.greaterThan(openAmount)) {
+export function assertCreditWithinCreditable(amount: Decimal, creditable: Decimal): void {
+  if (amount.greaterThan(creditable)) {
     throw new BillingRuleError(
-      `a credit note of ${amount.toString()} exceeds the invoice's open amount of ` +
-        `${openAmount.toString()}`
+      `a credit note of ${amount.toString()} exceeds the ${creditable.toString()} the ` +
+        'invoice can still be credited'
     );
   }
 }
@@ -243,4 +307,260 @@ export function assertInvoiceIsDraft(status: string, what: string): void {
         'financial history is immutable (sal.guard_invoice_freeze)'
     );
   }
+}
+
+/**
+ * How much of an invoice has been credited (Owner decision D7, ADR-023).
+ *
+ * Derived on every read and stored nowhere. `sal.invoices.status` stays `issued`
+ * however much is credited: a terminal `credited` status would stop returns
+ * against the invoice (`inv.lock_return_source` accepts only `issued`), so the
+ * credit position is a separate, derived fact.
+ *
+ *  - `none` — no effective credit;
+ *  - `partly_credited` — effective credits above zero and below the eligible total;
+ *  - `credited` — effective credits equal to (or, never expected, above) it.
+ *
+ * "Effective" credits are APPROVED credit notes only: a pending or rejected note
+ * credits nothing, and the model holds no reversal of an approved credit note, so
+ * there is no reversed credit to exclude yet. When one exists it must be
+ * subtracted in the one query that feeds this (`creditPositions`), never here.
+ * The eligible total is the invoice's gross.
+ */
+export const CREDIT_STATUSES = Object.freeze(['none', 'partly_credited', 'credited'] as const);
+export type CreditStatus = (typeof CREDIT_STATUSES)[number];
+
+/**
+ * How much of what is still payable has been paid, kept apart from the credit
+ * position (D7): `open` — nothing received and something payable; `partly_paid` —
+ * something received and something still open; `paid` — nothing open and money
+ * received; `nothing_due` — nothing open because credits cleared it, with no money
+ * received. The fourth value exists because a fully credited invoice that was
+ * never paid is neither open nor paid.
+ */
+export const PAYMENT_STATUSES = Object.freeze([
+  'open',
+  'partly_paid',
+  'paid',
+  'nothing_due',
+] as const);
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+/**
+ * Whether money is owed back or has been handed back (D7 keeps it separate),
+ * derived on every read from the invoice's refund obligations and their refund
+ * requests (ADR-023 D2):
+ *
+ *  - `none` — no refund obligation on the invoice;
+ *  - `owed` — the customer is owed money back and no refund has been asked for or
+ *    paid yet (P1-32-PRE-OD-FD2A);
+ *  - `requested` — a refund request waits for its second person's decision
+ *    (P1-32-PRE-OD-FD2B);
+ *  - `approved` — a refund request is approved and its payout is not yet recorded;
+ *  - `partly_refunded` — part of what is owed has been paid out, the rest is still
+ *    owed and nothing waits;
+ *  - `refunded` — everything owed has been paid out.
+ *
+ * Nothing is ever paid back automatically, and none of these is an accounting fact.
+ */
+export const REFUND_STATUSES = Object.freeze([
+  'none',
+  'owed',
+  'requested',
+  'approved',
+  'partly_refunded',
+  'refunded',
+] as const);
+export type RefundStatus = (typeof REFUND_STATUSES)[number];
+
+/**
+ * `ck_refund_obligations_state`. `open` until what has been paid out on it reaches its
+ * amount, then `settled` (P1-32-PRE-OD-FD2B); `cancelled` is reserved and unreachable
+ * (an open Owner question).
+ */
+export const REFUND_OBLIGATION_STATES = Object.freeze(['open', 'settled', 'cancelled'] as const);
+export type RefundObligationState = (typeof REFUND_OBLIGATION_STATES)[number];
+
+/**
+ * The facts `refundStatus` is derived from, for one invoice: what its obligations
+ * total, what has been paid out on them, and whether a request waits for a decision
+ * or for its payout. Amounts are `Decimal`s built from the database's strings.
+ */
+export interface RefundPosition {
+  readonly obligated: Decimal;
+  readonly refunded: Decimal;
+  readonly pendingRequest: boolean;
+  readonly approvedRequest: boolean;
+}
+
+/** `RefundStatus` from a `RefundPosition`, compared by `Decimal` — never by `Number()`. */
+export function deriveRefundStatus(position: RefundPosition): RefundStatus {
+  const zero = Decimal.zero(MONEY);
+  if (!position.obligated.greaterThan(zero)) return 'none';
+  if (!position.refunded.lessThan(position.obligated)) return 'refunded';
+  if (position.approvedRequest) return 'approved';
+  if (position.pendingRequest) return 'requested';
+  return position.refunded.greaterThan(zero) ? 'partly_refunded' : 'owed';
+}
+
+/**
+ * `ck_refund_requests_approval_state` (P1-32-PRE-OD-FD2B, ADR-023 D2). `pending`
+ * until decided; `approved`, `rejected` and `withdrawn` are terminal decisions.
+ * Whether an approved request has been paid out is a separate fact (`executedAt`).
+ */
+export const REFUND_REQUEST_APPROVAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+] as const);
+export type RefundRequestApprovalState = (typeof REFUND_REQUEST_APPROVAL_STATES)[number];
+
+/**
+ * A refund request as a reader sees it: its decision, and `executed` once its
+ * payout is recorded. The list filters by this.
+ */
+export const REFUND_REQUEST_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'executed',
+  'rejected',
+  'withdrawn',
+] as const);
+export type RefundRequestState = (typeof REFUND_REQUEST_STATES)[number];
+
+/** The reader's state of a request: `executed` once paid out, else its decision. */
+export function refundRequestState(
+  approvalState: string,
+  executedAt: Date | null
+): RefundRequestState {
+  if (executedAt !== null) return 'executed';
+  return (REFUND_REQUEST_APPROVAL_STATES as readonly string[]).includes(approvalState)
+    ? (approvalState as RefundRequestState)
+    : 'pending';
+}
+
+/**
+ * Who may do what with a refund request (ADR-023 D2, P1-32-PRE-OD-FD2B).
+ *
+ * Requesting, withdrawing and recording the payout are the payment recorder's acts,
+ * under the code that records a receipt. Approving and rejecting are a different
+ * person's, under a code minted for exactly this decision that no other code
+ * satisfies. Every amount is behind `sal.finance.view` as well.
+ */
+export const REFUND_PERMISSIONS = Object.freeze({
+  request: 'sal.payment.record',
+  decide: 'sal.refund.approve',
+  execute: 'sal.payment.record',
+  view: 'sal.finance.view',
+} as const);
+
+/** A refund request's and a rejection's reason: required, at most this many characters. */
+export const MAX_REFUND_REASON = 2000;
+
+/** A payout reference: required at payout, at most this many characters. */
+export const MAX_PAYOUT_REFERENCE = 200;
+
+/**
+ * The stable rule tokens a refused refund command names (ADR-023 D2, D12). Each is
+ * the token the database guard or primitive raises before the first colon of its
+ * message for the same rule, the token the screen reads from
+ * `safeDetails.violations[].rule`, and the rule a business-refusal record carries.
+ */
+export const REFUND_RULES = Object.freeze({
+  selfApproval: 'refund_self_approval',
+  selfRejection: 'refund_self_rejection',
+  exceedsObligation: 'refund_exceeds_obligation',
+  liveExists: 'refund_request_live_exists',
+  notApproved: 'refund_not_approved',
+  alreadyExecuted: 'refund_already_executed',
+  decided: 'refund_decision_frozen',
+  notRequester: 'refund_withdraw_not_requester',
+  obligationNotOpen: 'refund_obligation_not_open',
+  methodUnavailable: 'refund_request_method_unavailable',
+  payoutMethodMismatch: 'refund_payout_method_mismatch',
+  payoutDateInvalid: 'refund_payout_date_invalid',
+  minorUnit: 'refund_request_minor_unit',
+  requestPermissionMissing: 'refund_request_permission_missing',
+  approvePermissionMissing: 'refund_approve_permission_missing',
+  rejectPermissionMissing: 'refund_reject_permission_missing',
+  executePermissionMissing: 'refund_execute_permission_missing',
+} as const);
+
+/** `credited` compared with the eligible total, by `Decimal` — never by `Number()`. */
+export function deriveCreditStatus(credited: Decimal, eligibleTotal: Decimal): CreditStatus {
+  if (!credited.greaterThan(Decimal.zero(MONEY))) return 'none';
+  return credited.lessThan(eligibleTotal) ? 'partly_credited' : 'credited';
+}
+
+/** `paid` and the open receivable, compared by `Decimal`. */
+export function derivePaymentStatus(paid: Decimal, open: Decimal): PaymentStatus {
+  const received = paid.greaterThan(Decimal.zero(MONEY));
+  if (open.greaterThan(Decimal.zero(MONEY))) return received ? 'partly_paid' : 'open';
+  return received ? 'paid' : 'nothing_due';
+}
+
+// ---- What a quotation line may still bill (ADR-023 D5/D15) -----------------
+
+/**
+ * The answers `sal.billable_quotation_lines` gives for one line of a quotation
+ * revision (P1-32-PRE-OD-FD5), transcribed from the function:
+ *
+ *  - `billable` — approved, and approved quantity remains that no live invoice
+ *    holds;
+ *  - `not_current` — the revision is not the current issued (or roll-up
+ *    rejected) revision of a live quotation, so nothing on it is billed;
+ *  - `not_approved` — the customer has not decided the line;
+ *  - `rejected` — the customer refused it;
+ *  - `lineage_ambiguous` — two approved lines sell the same thing and part of it
+ *    was invoiced under an earlier revision, so which line that belongs to cannot
+ *    be told apart; refused rather than guessed;
+ *  - `fully_invoiced` — every approved unit is on a live invoice;
+ *  - `repriced_below_invoiced` — the approved line now totals less than what was
+ *    already invoiced for it, so what remains cannot be billed without a credit.
+ */
+export const BILLING_STATUSES = Object.freeze([
+  'billable',
+  'not_current',
+  'not_approved',
+  'rejected',
+  'lineage_ambiguous',
+  'fully_invoiced',
+  'repriced_below_invoiced',
+] as const);
+export type BillingStatus = (typeof BILLING_STATUSES)[number];
+/** Why a line is not billed — every status but `billable`. */
+export type NotBillableReason = Exclude<BillingStatus, 'billable'>;
+
+/** Narrows a status read from the database; an unknown one is a contract fault. */
+export function isBillingStatus(value: string): value is BillingStatus {
+  return (BILLING_STATUSES as readonly string[]).includes(value);
+}
+
+/**
+ * The refusals the sal invoice source guards raise, each as the leading token of
+ * its message (`token: …`), so a refusal names its rule without parsing prose.
+ * `invoice_amount_exceeds_approved`, `invoice_quantity_exceeds_approved` and
+ * `invoice_line_not_billable` are what a concurrent creator meets after the work
+ * order row lock: the quantity it read was invoiced first by someone else.
+ */
+export const INVOICE_SOURCE_REFUSALS = Object.freeze([
+  'invoice_source_frozen',
+  'invoice_source_foreign',
+  'invoice_source_mixed',
+  'invoice_source_line_required',
+  'invoice_source_line_foreign',
+  'invoice_line_type_mismatch',
+  'invoice_line_not_billable',
+  'invoice_quantity_exceeds_approved',
+  'invoice_amount_exceeds_approved',
+] as const);
+export type InvoiceSourceRefusal = (typeof INVOICE_SOURCE_REFUSALS)[number];
+
+/** The guard token a database message leads with, or `null` when it names none. */
+export function invoiceSourceRefusalOf(message: string | undefined): InvoiceSourceRefusal | null {
+  const token = /^([a-z_]+):/.exec(message ?? '')?.[1];
+  return token !== undefined && (INVOICE_SOURCE_REFUSALS as readonly string[]).includes(token)
+    ? (token as InvoiceSourceRefusal)
+    : null;
 }

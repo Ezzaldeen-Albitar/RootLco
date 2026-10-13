@@ -55,11 +55,15 @@ those, <!-- derived: surface catalogue-writes = 25 --> **25** writes and
 <!-- derived: surface catalogue-reads = 17 --> **17** reads are the intake
 
 catalogue surface — the reads being seven operator-facing pickers and seven
-management projections. Every one of the 21 writes is recorded
+management projections. The reception catalogue writes are recorded
 `DELIBERATELY_ABSENT` in `write-reachability.json` against `P1-28-OD-001`, which
 is what
-<!-- derived: reachability DELIBERATELY_ABSENT = 25 --> **25** of the manifest's
-<!-- derived: reachability total = 43 --> **43** classified writes means.
+<!-- derived: reachability DELIBERATELY_ABSENT = 16 --> **16** of the manifest's
+<!-- derived: reachability total = 43 --> **43** classified writes means. The nine
+
+appointment catalogue writes are REACHABLE since the Owner decision of 2026-09-29,
+which answered `P1-28-OD-001` for the appointment catalogues with the appointment
+setup screen.
 
 **What this is:** the factual foundation under `canonical-plan.md` §5. Before
 one screen is designed, this records — with file and line — which Backend

@@ -2,58 +2,97 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
+import Button from '@mui/material/Button';
 
-import { TextField } from '@/components/forms/Field';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
+import {
+  WorkOrderPicker,
+  useWorkOrderSearchScope,
+} from '@/features/work-orders/components/WorkOrderPicker';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
-import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
+import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
+import { unreachable, type ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { isZeroMoney } from '@/lib/money';
+import { unitName } from '@/lib/unit-name';
 
 import {
   cancelInvoice,
   createInvoice,
   issueInvoice,
+  listInvoices,
   readInvoice,
   readInvoicePreview,
-  readOutstanding,
   readWorkOrderInvoice,
+  type InvoicePreviewRead,
 } from '../api';
 import {
   MAX_REASON,
+  invoiceRefusalMessageKey,
   type Invoice,
   type InvoiceDetail,
   type InvoicePreview,
+  type InvoicePreviewLine,
+  type InvoicePreviewRevisionLine,
   type Outstanding,
+  type Settlement,
+  type ThirdPartyPayment,
   type WorkOrderInvoice,
 } from '../billing-contract';
-import { InvoiceDocument } from './InvoiceDocument';
+import { CreditNoteRequestForm } from './CreditNoteRequestForm';
+import { RefundsPanel } from './RefundsPanel';
+import { settlementOf, useOutstandingRead, type SettlementRead } from '../use-outstanding-read';
+import { InvoiceDocument, payerNameKey, type PayerName } from './InvoiceDocument';
 import {
   Figure,
   InvoiceStatusBadge,
   Money,
   OutcomeNote,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
+  ThirdPartyPaymentItems,
   Unavailable,
   UUID,
+  When,
 } from './shared';
 
 /**
  * The invoice of one work order (P1-30, `W6`, FE-014 preview, FE-015 issue
- * and cancel, FE-019 outstanding balance, FE-020 print).
+ * and cancel, FE-019 outstanding balance, FE-020 print). On the shared Material
+ * UI wrappers since the sales and finance slice (ADR-022): the job and a
+ * different payer are found with the shared comboboxes, issuing asks first
+ * (`ConfirmDialog`), cancelling takes its reason in `ReasonDialog`, and every
+ * read that fails is the Material state with its retry.
  *
  * ## Reached from a work order
  *
- * There is no invoice list. `sal.work-order-invoice-read` answers the order's
- * live invoice or `null`, and the screen shows one of two things: without an
- * invoice, what the accepted quotation revision would bill (the preview) and
- * the act of creating it; with one, the invoice itself, its outstanding
- * balance, and the acts of issuing, cancelling and printing it.
+ * `sal.work-order-invoice-read` answers the order's live invoices, and the
+ * screen shows one of two things: without an invoice, what the approved
+ * quotation lines would bill (the preview) and the act of creating it; with one,
+ * the invoice itself, its outstanding balance, and the acts of issuing,
+ * cancelling and printing it. Since ADR-023 D5/D15 a work order may be invoiced
+ * more than once — each invoice bills approved work no other holds — so the
+ * other live invoices are opened by their number, and approved work not yet
+ * invoiced is previewed and invoiced beneath them, each line showing what was
+ * approved, what is already invoiced and what this invoice bills, and every line
+ * left off showing why.
  *
  * ## `sal.finance.view` splits the screen
  *
@@ -70,7 +109,18 @@ import {
  * `replayed: true` only for an issue of an already-issued invoice or a cancel
  * of an already-cancelled one, and only under the CURRENT version; the screen
  * states it as such and offers neither act off a draft. Write notices are held
- * HERE, above the panels that re-read.
+ * HERE, above the panels that re-read, and the act stays busy until the re-read
+ * has remounted them.
+ *
+ * ## Names, not references
+ *
+ * The invoice is named by its number and its payer by name — never by the
+ * payer's or the invoice's reference (browser QA rows 5.1b and OBS-4). The
+ * invoice read publishes the payer's id only, so the name is the work order's
+ * customer when that customer pays, and otherwise the name the branch's invoice
+ * list gives this very invoice (`sal.invoice-list`, found by its number, under
+ * the list's own rule: named only for a caller who may read customers). Where
+ * neither can name the payer the screen says the name is not shown here.
  */
 
 interface WriteNotice {
@@ -87,6 +137,10 @@ export function InvoiceScreen({
   initialInvoice,
   canViewFinance,
   canIssue,
+  canSearchWorkOrders = false,
+  canReadCustomers = false,
+  canRaiseCredit = false,
+  refunds = NO_REFUND_STEPS,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -102,6 +156,23 @@ export function InvoiceScreen({
   readonly canViewFinance: boolean;
   /** `sal.invoice.issue` — allocating the number. */
   readonly canIssue: boolean;
+  /** `wo.work_order.read` — decides whether the job can be FOUND when none is named. */
+  readonly canSearchWorkOrders?: boolean;
+  /** `crm.customer.read` — whether a different payer can be found by name. */
+  readonly canReadCustomers?: boolean;
+  /**
+   * `sal.credit.manage` AND `sal.finance.view` — raising a credit note against an
+   * issued invoice with money still open. Both, because `sal.credit-note-create`
+   * declares both; a cashier holding finance view alone is not offered it.
+   */
+  readonly canRaiseCredit?: boolean;
+  /**
+   * Who is signed in and which refund steps the session's codes allow (ADR-023 D2,
+   * part 2): asking, withdrawing and recording the payout (`sal.payment.record`),
+   * and deciding (`sal.refund.approve`). The panel checks each in the invoice's own
+   * branch again.
+   */
+  readonly refunds?: RefundSteps;
 }) {
   const router = useRouter();
   const [invoiceRead, setInvoiceRead] = useState<ReadState<WorkOrderInvoice> | null>(
@@ -109,22 +180,49 @@ export function InvoiceScreen({
   );
   const [epoch, setEpoch] = useState(0);
   const [notice, setNotice] = useState<WriteNotice | null>(null);
+  // What the create form holds, kept here above the panels: a refused create
+  // re-reads and remounts them, and what the operator typed must survive that
+  // (P1-32-PRE-OD-FRXR).
+  const [payerDraft, setPayerDraft] = useState<PayerDraft>(NO_PAYER_DRAFT);
 
   if (workOrderId === null) {
-    return <ChooseWorkOrder locale={locale} messages={messages} />;
+    return (
+      <ChooseWorkOrder
+        locale={locale}
+        messages={messages}
+        canSearchWorkOrders={canSearchWorkOrders}
+      />
+    );
   }
 
   // A write re-reads the order's invoice and remounts the panels; what the
-  // write had to say is kept here, above them.
+  // write had to say is kept here, above them. Resolves once the re-read landed.
   const changed = async (next: WriteNotice | null) => {
     setNotice(next);
-    setInvoiceRead(await readWorkOrderInvoice(workOrderId));
+    let answer: ReadState<WorkOrderInvoice>;
+    try {
+      answer = await readWorkOrderInvoice(workOrderId);
+    } catch {
+      answer = { status: 'unavailable', correlationId: null };
+    }
+    setInvoiceRead(answer);
+    // The draft is kept only for a form that is drawn again. When the re-read
+    // offers no create form at all, the entry is not unsaved work any more and
+    // must not resurface in a later form, so it goes (P1-32-PRE-OD-FRXR).
+    if (!offersCreateForm(answer)) setPayerDraft(NO_PAYER_DRAFT);
     setEpoch((n) => n + 1);
     router.refresh();
   };
 
+  /*
+   * `data-print-scope`: while the invoice's printable copy is open below,
+   * printing carries the copy and not the panels around it (the delivery
+   * sheet's rule, `styles/print/_index.scss`). Each panel is also marked
+   * `data-print="hide"` on its own; the scope covers what is not — the
+   * write notice, a refusal — so no stray panel reaches the paper.
+   */
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
       <section
         aria-labelledby="invoice-work-order-heading"
         className="rounded-lg border border-border bg-surface p-4"
@@ -138,16 +236,19 @@ export function InvoiceScreen({
           <Field label={translate(messages, 'invoices.workOrder.ref')}>
             <Link
               href={`/${locale}/work-orders/${workOrderId}`}
-              className="font-mono text-caption text-primary underline-offset-2 hover:underline"
-              dir="ltr"
+              className="text-primary underline-offset-2 hover:underline"
             >
-              {workOrder?.displayNumber ?? workOrderId}
+              {workOrder?.displayNumber ? (
+                <bdi className="font-mono">{workOrder.displayNumber}</bdi>
+              ) : (
+                translate(messages, 'quotations.list.openWorkOrder')
+              )}
             </Link>
           </Field>
           {workOrder ? (
             <>
               <Field label={translate(messages, 'invoices.workOrder.state')}>
-                <bdi>{workOrder.state}</bdi>
+                {translateDynamic(messages, `workOrders.state.${workOrder.state}`)}
               </Field>
               <Field label={translate(messages, 'invoices.workOrder.customer')}>
                 {workOrder.customer ? (
@@ -196,7 +297,13 @@ export function InvoiceScreen({
       ) : null}
 
       {invoiceRead === null || invoiceRead.status !== 'ok' ? (
-        <ReadRefusal messages={messages} state={invoiceRead} kind="invoice" />
+        <ReadRefusal
+          messages={messages}
+          locale={locale}
+          state={invoiceRead}
+          kind="invoice"
+          onRetry={() => void changed(null)}
+        />
       ) : invoiceRead.data.invoice === null ? (
         <PreviewPanel
           key={`preview-${epoch}`}
@@ -204,29 +311,224 @@ export function InvoiceScreen({
           messages={messages}
           workOrderId={workOrderId}
           canViewFinance={canViewFinance}
+          canReadCustomers={canReadCustomers}
+          payerDraft={payerDraft}
+          onPayerDraft={setPayerDraft}
           onCreated={(created) =>
-            void changed({
+            changed({
               messageKey: created.replayed
                 ? 'invoices.create.replayed'
                 : 'invoices.create.recorded',
-              figure: created.invoice.id,
+              figure: null,
             })
           }
-          onConflict={() => void changed({ messageKey: 'invoices.create.conflict', figure: null })}
+          onConflict={(rule) =>
+            changed({
+              messageKey: invoiceRefusalMessageKey(rule) ?? 'invoices.create.conflict',
+              figure: null,
+            })
+          }
         />
       ) : (
-        <InvoicePanel
-          key={`invoice-${epoch}`}
+        <LiveInvoices
+          key={`invoices-${epoch}`}
           locale={locale}
           messages={messages}
-          invoice={invoiceRead.data.invoice}
-          workOrderNumber={workOrder?.displayNumber ?? null}
+          workOrderId={workOrderId}
+          read={invoiceRead.data}
+          current={invoiceRead.data.invoice}
+          workOrder={workOrder}
           canViewFinance={canViewFinance}
           canIssue={canIssue}
-          onChanged={(next) => void changed(next)}
+          canRaiseCredit={canRaiseCredit}
+          canReadCustomers={canReadCustomers}
+          refunds={refunds}
+          payerDraft={payerDraft}
+          onPayerDraft={setPayerDraft}
+          onChanged={changed}
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A work order's live invoices (ADR-023 D5/D15, P1-32-PRE-OD-FD5).
+ *
+ * A work order may be invoiced more than once — each invoice bills approved
+ * quotation work no other live invoice holds — so the screen shows the invoice
+ * the read names (the open draft, else the newest), lets the operator open any
+ * other live one by its number, and, while approved work remains unbilled and no
+ * draft is open, offers what remains to invoice beneath them: the same preview and
+ * create form a work order with no invoice shows, read again from the server.
+ *
+ * When no draft is open and the read says no approved work remains, it says so in
+ * words (P1-32-PRE-OD-FRXR, FRX2). That is the fact the server's
+ * `invoice_nothing_to_bill` refusal states, and the screen used to draw nothing at
+ * all for it: the remaining-work panel is only drawn while work remains, so a work
+ * order whose approved work was all invoiced — even with a second accepted
+ * quotation of the same work — showed its invoice and no reason why nothing more
+ * was offered. It is said from the read itself; no preview is read for it.
+ */
+function LiveInvoices({
+  locale,
+  messages,
+  workOrderId,
+  read,
+  current,
+  workOrder,
+  canViewFinance,
+  canIssue,
+  canRaiseCredit,
+  canReadCustomers,
+  refunds,
+  payerDraft,
+  onPayerDraft,
+  onChanged,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly workOrderId: string;
+  readonly read: WorkOrderInvoice;
+  /** The invoice the read names: the open draft, else the newest. */
+  readonly current: Invoice;
+  readonly workOrder: WorkOrderListEntry | null;
+  readonly canViewFinance: boolean;
+  readonly canIssue: boolean;
+  readonly canRaiseCredit: boolean;
+  readonly canReadCustomers: boolean;
+  readonly refunds: RefundSteps;
+  readonly payerDraft: PayerDraft;
+  readonly onPayerDraft: Dispatch<SetStateAction<PayerDraft>>;
+  readonly onChanged: (notice: WriteNotice | null) => Promise<void>;
+}) {
+  const [shownId, setShownId] = useState(current.id);
+  const shown = read.invoices.find((invoice) => invoice.id === shownId) ?? current;
+  const draftOpen = read.invoices.some((invoice) => invoice.status === 'draft');
+  return (
+    <>
+      {read.invoices.length > 1 ? (
+        <InvoiceChooser
+          locale={locale}
+          messages={messages}
+          invoices={read.invoices}
+          truncated={read.invoicesTruncated}
+          shownId={shown.id}
+          onShow={setShownId}
+        />
+      ) : null}
+      <InvoicePanel
+        key={`invoice-${shown.id}`}
+        locale={locale}
+        messages={messages}
+        invoice={shown}
+        workOrder={workOrder}
+        canViewFinance={canViewFinance}
+        canIssue={canIssue}
+        canRaiseCredit={canRaiseCredit}
+        refunds={refunds}
+        onChanged={onChanged}
+      />
+      {!draftOpen && !read.approvedWorkToInvoice ? (
+        <p
+          role="status"
+          className="text-body text-text-secondary"
+          lang={locale}
+          data-print="hide"
+          data-testid="invoice-nothing-to-bill"
+        >
+          {translate(messages, 'invoices.preview.nothingToBill')}
+        </p>
+      ) : null}
+      {read.approvedWorkToInvoice && !draftOpen ? (
+        <PreviewPanel
+          remaining
+          locale={locale}
+          messages={messages}
+          workOrderId={workOrderId}
+          canViewFinance={canViewFinance}
+          canReadCustomers={canReadCustomers}
+          payerDraft={payerDraft}
+          onPayerDraft={onPayerDraft}
+          onCreated={(created) =>
+            onChanged({
+              messageKey: created.replayed
+                ? 'invoices.create.replayed'
+                : 'invoices.create.recorded',
+              figure: null,
+            })
+          }
+          onConflict={(rule) =>
+            onChanged({
+              messageKey: invoiceRefusalMessageKey(rule) ?? 'invoices.create.conflict',
+              figure: null,
+            })
+          }
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The live invoices of the work order, each opened by its number (or as the
+ * draft it still is). The one shown is pressed; nothing is read until one is
+ * chosen, and choosing one only changes which invoice the panels below read.
+ */
+function InvoiceChooser({
+  locale,
+  messages,
+  invoices,
+  truncated,
+  shownId,
+  onShow,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly invoices: readonly Invoice[];
+  readonly truncated: boolean;
+  readonly shownId: string;
+  readonly onShow: (invoiceId: string) => void;
+}) {
+  return (
+    <section
+      aria-labelledby="invoice-list-heading"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+      lang={locale}
+      data-print="hide"
+    >
+      <h2 id="invoice-list-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'invoices.list.heading')}
+      </h2>
+      <ul className="flex flex-wrap gap-2">
+        {invoices.map((invoice) => (
+          <li key={invoice.id}>
+            <Button
+              type="button"
+              variant={invoice.id === shownId ? 'contained' : 'outlined'}
+              aria-pressed={invoice.id === shownId}
+              onClick={() => onShow(invoice.id)}
+            >
+              <span className="flex items-center gap-2">
+                {invoice.invoiceNumber ? (
+                  <bdi className="font-mono">{invoice.invoiceNumber}</bdi>
+                ) : (
+                  <span>{translate(messages, 'invoices.list.unnumbered')}</span>
+                )}
+                <span className="text-caption">
+                  {translateDynamic(messages, `invoices.status.${invoice.status}`)}
+                </span>
+              </span>
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {truncated ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'invoices.list.truncated')}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -247,43 +549,66 @@ function Field({
   );
 }
 
-/** A refused, missing or failed read, said with its reference — never an empty result. */
+/**
+ * A refused, missing or failed read, as the Material state it is — never an
+ * empty result. An outage and a fault offer a retry where the panel can read
+ * again; a refusal, an ended session and a missing record never do. A preview
+ * the order cannot have (no accepted revision) says exactly that.
+ */
 function ReadRefusal({
   messages,
+  locale,
   state,
   kind,
+  onRetry,
 }: {
   readonly messages: Messages;
+  readonly locale: Locale;
   readonly state: ReadState<unknown> | null;
   readonly kind: 'invoice' | 'preview' | 'detail' | 'outstanding';
+  readonly onRetry?: (() => void) | undefined;
 }) {
-  if (state === null) {
-    return <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>;
-  }
+  if (state === null) return <MuiLoadingState messages={messages} variant="inline" />;
   if (state.status === 'ok') return null;
-  const key =
-    kind === 'preview' && state.status === 'not-found'
-      ? 'invoices.preview.noAcceptedRevision'
-      : state.status === 'denied'
-        ? `invoices.${kind}.refused`
-        : state.status === 'not-found'
-          ? `invoices.${kind}.missing`
-          : `invoices.${kind}.unavailable`;
+  if (state.status === 'not-found') {
+    // An absence says what is absent, with the reference an operator can quote.
+    const preview = kind === 'preview';
+    return (
+      <p
+        role={preview ? 'status' : 'alert'}
+        className={preview ? 'text-body text-text-secondary' : 'text-body text-error'}
+      >
+        {translateDynamic(
+          messages,
+          preview ? 'invoices.preview.noAcceptedRevision' : `invoices.${kind}.missing`
+        )}
+        {state.correlationId ? (
+          <>
+            {' '}
+            <span className="text-caption text-text-muted">
+              {translate(messages, 'state.correlationId')}{' '}
+              <code className="font-mono" dir="ltr">
+                {state.correlationId}
+              </code>
+            </span>
+          </>
+        ) : null}
+      </p>
+    );
+  }
   return (
-    <p role="alert" className="text-body text-error">
-      {translateDynamic(messages, key)}
-      {state.correlationId ? (
-        <>
-          {' '}
-          <span className="text-caption text-text-muted">
-            {translate(messages, 'state.correlationId')}{' '}
-            <code className="font-mono" dir="ltr">
-              {state.correlationId}
-            </code>
-          </span>
-        </>
-      ) : null}
-    </p>
+    <MuiReadFailureState
+      messages={messages}
+      locale={locale}
+      status={state.status}
+      correlationId={state.correlationId}
+      descriptionKey={
+        (state.status === 'denied'
+          ? `invoices.${kind}.refused`
+          : `invoices.${kind}.unavailable`) as keyof Messages
+      }
+      onRetry={onRetry}
+    />
   );
 }
 
@@ -294,23 +619,83 @@ function ReadRefusal({
 function ChooseWorkOrder({
   locale,
   messages,
+  canSearchWorkOrders,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** `wo.work_order.read` — whether the jobs of the branch can be searched. */
+  readonly canSearchWorkOrders: boolean;
 }) {
   const router = useRouter();
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | undefined>(undefined);
+  /*
+   * The job is FOUND, not typed.
+   *
+   * This form used to take a work-order reference as free text and refuse
+   * anything that was not shaped like one — a 36-character string that appears
+   * on no printed document and on no other screen, so the only way to fill it
+   * in was to copy one out of another page's address bar. `wo.work-order-list`
+   * answers the question the form was really asking (Owner directive,
+   * `P1-32-PRE-OD-UX`).
+   *
+   * No role loses a workflow the server allows. Creating an invoice
+   * (`sal.invoice-create`) needs `sal.invoice.manage` and `sal.finance.view`
+   * only — not `wo.work_order.read` — so a caller without the job read keeps
+   * the box they had before the picker: a labelled job reference, explained in
+   * both languages and checked against the server's own identifier rule before
+   * the page is opened on it (route sweep B2, the parts desk precedent).
+   *
+   * Neither control is unsaved work, and that is one rule for both: this form
+   * writes nothing — it only opens the invoice page for the job — so a job
+   * chosen in the picker is forgotten on a branch switch without a question,
+   * exactly as a typed reference is kept without one (route sweep B3).
+   */
+  const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
+  const [reference, setReference] = useState('');
+  // An attempt counter rather than a flag: the focus hook moves the cursor to
+  // the box once per refused attempt, never on a re-render.
+  const [refusal, setRefusal] = useState<ActionState>({ status: 'idle' });
+  const formRef = useFocusFirstInvalid(refusal);
+  const refused = refusal.status === 'invalid' ? refusal.fieldErrors?.['workOrderId'] : undefined;
+  const error =
+    refused === undefined || (canSearchWorkOrders && chosen !== null)
+      ? undefined
+      : translateDynamic(messages, refused);
+  /*
+   * With nothing to search — "All my branches" spanning companies, or no branch
+   * chosen yet — the picker offers no box, so a refusal would have no control to
+   * point at. The submit is disabled instead, described by the sentence the
+   * picker shows in place of the box. The typed reference needs no scope.
+   */
+  const scope = useWorkOrderSearchScope();
+  const needsBranchId = useId();
+  const blocked = canSearchWorkOrders && chosen === null && scope === null;
+  const refuse = (key: string) =>
+    setRefusal((previous) => ({
+      status: 'invalid',
+      fieldErrors: { workOrderId: key },
+      attempt: (previous.attempt ?? 0) + 1,
+    }));
+  const open = (id: string) =>
+    router.push(`/${locale}/invoices?workOrderId=${encodeURIComponent(id)}`);
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
-        const id = value.trim();
-        if (!UUID.test(id)) {
-          setError(translate(messages, 'invoices.common.idFormat'));
+        if (!canSearchWorkOrders) {
+          const typed = reference.trim();
+          if (!UUID.test(typed)) {
+            refuse('invoices.choose.referenceFormat');
+            return;
+          }
+          open(typed);
           return;
         }
-        router.push(`/${locale}/invoices?workOrderId=${encodeURIComponent(id)}`);
+        if (chosen === null) {
+          refuse('workOrders.picker.required');
+          return;
+        }
+        open(chosen.id);
       }}
       noValidate
       aria-labelledby="invoice-choose-heading"
@@ -331,19 +716,44 @@ function ChooseWorkOrder({
           {translate(messages, 'invoices.choose.boardLink')}
         </Link>
       </p>
-      <TextField
-        label={translate(messages, 'invoices.choose.workOrderId')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        error={error}
-      />
+      {canSearchWorkOrders ? (
+        <WorkOrderPicker
+          messages={messages}
+          label={translate(messages, 'invoices.choose.workOrderId')}
+          value={chosen}
+          onChange={setChosen}
+          error={error}
+          canSearch
+          needsBranchId={needsBranchId}
+          countsAsUnsaved={false}
+          offersBranchChooser
+          material
+        />
+      ) : (
+        <FormTextField
+          label={translate(messages, 'invoices.choose.referenceLabel')}
+          description={translate(messages, 'invoices.choose.referenceHelp')}
+          required
+          autoComplete="off"
+          dir="ltr"
+          value={reference}
+          onChange={(next) => {
+            setReference(next);
+            setRefusal({ status: 'idle' });
+          }}
+          error={error}
+          testId="invoice-work-order-reference"
+        />
+      )}
       <div>
-        <button type="submit" className={PRIMARY_BUTTON}>
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={blocked}
+          aria-describedby={blocked ? needsBranchId : undefined}
+        >
           {translate(messages, 'invoices.choose.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -353,23 +763,72 @@ function ChooseWorkOrder({
  * FE-014 — no invoice yet: the preview, and creating one
  * ------------------------------------------------------------------ */
 
+/** The create form's entry: a payer found by name, or a typed payer reference. */
+interface PayerDraft {
+  readonly payer: ChosenCustomer | null;
+  readonly payerReference: string;
+}
+
+const NO_PAYER_DRAFT: PayerDraft = { payer: null, payerReference: '' };
+
+/** Empties the draft; keeps the same object when it is already empty, so nothing re-renders. */
+const clearPayerDraft = (held: PayerDraft): PayerDraft =>
+  held.payer === null && held.payerReference === '' ? held : NO_PAYER_DRAFT;
+
+/**
+ * Whether the work order's invoice read leaves a create form to draw: no invoice
+ * yet, or no open draft while approved work remains — the same two conditions
+ * that draw a `PreviewPanel` above. The preview may still say nothing is left;
+ * `PreviewPanel` clears the draft itself then.
+ */
+function offersCreateForm(read: ReadState<WorkOrderInvoice>): boolean {
+  if (read.status !== 'ok') return false;
+  if (read.data.invoice === null) return true;
+  return (
+    read.data.approvedWorkToInvoice &&
+    !read.data.invoices.some((invoice) => invoice.status === 'draft')
+  );
+}
+
 function PreviewPanel({
   locale,
   messages,
   workOrderId,
   canViewFinance,
+  canReadCustomers,
+  payerDraft,
+  onPayerDraft,
   onCreated,
   onConflict,
+  remaining = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
+  /**
+   * Beneath a work order's invoices: what approved work remains to invoice
+   * (ADR-023 D5/D15). Same read, same form; its own heading.
+   */
+  readonly remaining?: boolean;
   readonly canViewFinance: boolean;
-  readonly onCreated: (created: { readonly replayed: boolean; readonly invoice: Invoice }) => void;
-  /** A refused create most likely means an invoice now exists; the screen re-reads. */
-  readonly onConflict: () => void;
+  readonly canReadCustomers: boolean;
+  /** What the create form holds, kept above the remount (P1-32-PRE-OD-FRXR). */
+  readonly payerDraft: PayerDraft;
+  readonly onPayerDraft: Dispatch<SetStateAction<PayerDraft>>;
+  /** Re-reads the order's invoice; resolves once the panels were remounted. */
+  readonly onCreated: (created: {
+    readonly replayed: boolean;
+    readonly invoice: Invoice;
+  }) => Promise<void>;
+  /**
+   * A refused create: the screen re-reads, and says the refusal's own sentence
+   * when the server named a rule it knows (P1-32-PRE-OD-FRX), the generic one
+   * otherwise.
+   */
+  readonly onConflict: (rule: string | null) => Promise<void>;
 }) {
-  const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
+  const [preview, setPreview] = useState<InvoicePreviewRead | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!canViewFinance) return;
     let live = true;
@@ -379,34 +838,76 @@ function PreviewPanel({
     return () => {
       live = false;
     };
-  }, [workOrderId, canViewFinance]);
+  }, [workOrderId, canViewFinance, attempt]);
 
+  // Nothing left to bill is said by the figures; no form offers to bill it.
+  const formOffered = canViewFinance && preview?.status === 'ok' && preview.data.lines.length > 0;
+  // A settled preview that offers no form ends the draft: it is no longer drawn,
+  // so it is no longer unsaved work, and it must not reappear in a later form.
+  const settledWithoutForm = !canViewFinance || (preview !== null && !formOffered);
+  useEffect(() => {
+    if (settledWithoutForm) onPayerDraft(clearPayerDraft);
+  }, [settledWithoutForm, onPayerDraft]);
+
+  const headingId = remaining ? 'invoice-remaining-heading' : 'invoice-preview-heading';
   return (
     <section
-      aria-labelledby="invoice-preview-heading"
+      aria-labelledby={headingId}
       className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
       lang={locale}
       data-print="hide"
     >
-      <h2 id="invoice-preview-heading" className="text-body font-medium text-text-primary">
-        {translate(messages, 'invoices.preview.heading')}
+      <h2 id={headingId} className="text-body font-medium text-text-primary">
+        {translate(messages, remaining ? 'invoices.remaining.heading' : 'invoices.preview.heading')}
       </h2>
       <p className="text-caption text-text-muted">
-        {translate(messages, 'invoices.preview.explain')}
+        {translate(messages, remaining ? 'invoices.remaining.explain' : 'invoices.preview.explain')}
       </p>
       {!canViewFinance ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'invoices.preview.needsFinance')}
         </p>
+      ) : preview !== null &&
+        preview.status !== 'ok' &&
+        invoiceRefusalMessageKey(preview.rule) !== null ? (
+        // A refusal that names its rule is not an outage: say why the work order
+        // cannot be invoiced as it stands, in its own sentence (P1-32-PRE-OD-FRX).
+        <p role="alert" className="text-body text-text-secondary" data-testid="invoice-refusal">
+          {translateDynamic(messages, invoiceRefusalMessageKey(preview.rule) as string)}
+          {preview.correlationId ? (
+            <>
+              {' '}
+              <span className="text-caption text-text-muted">
+                {translate(messages, 'state.correlationId')}{' '}
+                <code className="font-mono" dir="ltr">
+                  {preview.correlationId}
+                </code>
+              </span>
+            </>
+          ) : null}
+        </p>
       ) : preview === null || preview.status !== 'ok' ? (
-        <ReadRefusal messages={messages} state={preview} kind="preview" />
+        <ReadRefusal
+          messages={messages}
+          locale={locale}
+          state={preview}
+          kind="preview"
+          onRetry={() => {
+            setPreview(null);
+            setAttempt((n) => n + 1);
+          }}
+        />
       ) : (
         <PreviewFigures locale={locale} messages={messages} preview={preview.data} />
       )}
-      {canViewFinance && preview?.status === 'ok' ? (
+      {formOffered ? (
         <CreateForm
+          locale={locale}
           messages={messages}
           workOrderId={workOrderId}
+          canReadCustomers={canReadCustomers}
+          draft={payerDraft}
+          onDraft={onPayerDraft}
           onCreated={onCreated}
           onConflict={onConflict}
         />
@@ -425,128 +926,367 @@ function PreviewFigures({
   readonly preview: InvoicePreview;
 }) {
   const currency = preview.currency;
+  const minorUnit = preview.minorUnit;
+  const notBilled = preview.revisionLines.filter((line) => line.billingStatus !== 'billable');
+  if (preview.lines.length === 0) {
+    // Everything approved is invoiced, or what remains cannot be billed: said in
+    // words, with why for each line — never a table of zeros (ADR-023 D5/D15).
+    return (
+      <div className="flex min-h-0 flex-col gap-3">
+        <p role="status" className="text-body text-text-secondary">
+          {translate(messages, 'invoices.preview.nothingToBill')}
+        </p>
+        <NotBilledLines messages={messages} lines={notBilled} />
+      </div>
+    );
+  }
   return (
     <div className="flex min-h-0 flex-col gap-3">
-      <table className="w-full text-body">
-        <caption className="sr-only">{translate(messages, 'invoices.preview.caption')}</caption>
-        <thead>
-          <tr className="text-caption text-text-muted">
-            <th scope="col" className="px-3 py-2 text-start">
-              {translate(messages, 'invoices.preview.column.line')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-start">
-              {translate(messages, 'invoices.preview.column.description')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-start">
-              {translate(messages, 'invoices.preview.column.type')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-end">
-              {translate(messages, 'invoices.preview.column.quantity')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-end">
-              {translate(messages, 'invoices.preview.column.unitPrice')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-end">
-              {translate(messages, 'invoices.preview.column.discount')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-end">
-              {translate(messages, 'invoices.preview.column.taxRate')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-end">
-              {translate(messages, 'invoices.preview.column.net')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-end">
-              {translate(messages, 'invoices.preview.column.tax')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-end">
-              {translate(messages, 'invoices.preview.column.gross')}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {preview.lines.map((line) => (
-            <tr key={line.sourceQuotationItemId} className="border-t border-border">
-              <td className="px-3 py-2" dir="ltr">
-                {String(line.lineNumber)}
-              </td>
-              <td className="px-3 py-2">
-                {line.description ? (
-                  <bdi>{line.description}</bdi>
-                ) : (
-                  <span className="text-text-muted">
-                    {translate(messages, 'invoices.preview.noDescription')}
-                  </span>
-                )}
-              </td>
-              <td className="px-3 py-2">
-                {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
-              </td>
-              <td className="px-3 py-2 text-end font-mono" dir="ltr">
-                {line.quantity}
-              </td>
-              <td className="px-3 py-2 text-end">
-                <Figure amount={line.unitPrice} currency={currency} locale={locale} />
-              </td>
-              <td className="px-3 py-2 text-end">
-                <Figure amount={line.discount} currency={currency} locale={locale} />
-              </td>
-              <td className="px-3 py-2 text-end font-mono" dir="ltr">
-                {line.taxRate}
-              </td>
-              <td className="px-3 py-2 text-end">
-                <Figure amount={line.netAmount} currency={currency} locale={locale} />
-              </td>
-              <td className="px-3 py-2 text-end">
-                <Figure amount={line.taxAmount} currency={currency} locale={locale} />
-              </td>
-              <td className="px-3 py-2 text-end">
-                <Figure amount={line.grossAmount} currency={currency} locale={locale} />
-              </td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-body">
+          <caption className="sr-only">{translate(messages, 'invoices.preview.caption')}</caption>
+          <thead>
+            <tr className="text-caption text-text-muted">
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.line')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.description')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.type')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.approved')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.invoiced')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.quantity')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.unitPrice')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.discount')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.taxRate')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.net')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.tax')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.gross')}
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {preview.lines.map((line) => (
+              <tr key={line.sourceQuotationItemId} className="border-t border-border">
+                <td className="px-3 py-2" dir="ltr">
+                  {String(line.lineNumber)}
+                </td>
+                <td className="px-3 py-2">
+                  <LineDescription messages={messages} line={line} />
+                  {line.partlyInvoicedEarlier ? (
+                    <p className="text-caption text-text-muted">
+                      {translate(messages, 'invoices.preview.partlyInvoiced')}
+                    </p>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2">
+                  {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.approvedQuantity} />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.invoicedQuantity} />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <span className="font-mono" dir="ltr">
+                    {line.quantity}
+                  </span>
+                  {line.unit ? (
+                    <>
+                      {' '}
+                      <bdi className="text-caption text-text-muted">
+                        {unitName(messages, line.unit)}
+                      </bdi>
+                    </>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Figure
+                    amount={line.unitPrice}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Figure
+                    amount={line.discount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
+                </td>
+                <td className="px-3 py-2 text-end font-mono" dir="ltr">
+                  {line.taxRate}
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Figure
+                    amount={line.netAmount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Figure
+                    amount={line.taxAmount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Figure
+                    amount={line.grossAmount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <dl className="ms-auto grid max-w-sm grid-cols-2 gap-1 text-body">
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.subtotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.subtotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.subtotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.discountTotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.discountTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.discountTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.netTotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.netTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.netTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.taxTotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.taxTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.taxTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="font-medium">{translate(messages, 'invoices.preview.grossTotal')}</dt>
         <dd className="text-end font-medium">
-          <Figure amount={preview.grossTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.grossTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
       </dl>
       <p className="text-caption text-text-muted">
         {translate(messages, 'invoices.preview.taxRateNote')}
       </p>
+      <NotBilledLines messages={messages} lines={notBilled} />
+    </div>
+  );
+}
+
+/** A quantity: `numeric(12,3)` as the server wrote it, isolated left to right. Not money. */
+function Quantity({ value }: { readonly value: string }) {
+  return (
+    <span className="font-mono" dir="ltr">
+      {value}
+    </span>
+  );
+}
+
+/**
+ * A quotation line, named. A part line is named by the part its quotation line
+ * quoted, with its stock code isolated left to right (ADR-023 D6); a note typed on
+ * the line still shows beneath it.
+ */
+function LineDescription({
+  messages,
+  line,
+}: {
+  readonly messages: Messages;
+  readonly line: Pick<InvoicePreviewLine, 'item' | 'description'>;
+}) {
+  if (line.item) {
+    return (
+      <span className="flex flex-col">
+        <span>
+          <bdi>{line.item.name}</bdi>{' '}
+          <span className="font-mono text-caption text-text-muted" dir="ltr">
+            {line.item.code}
+          </span>
+        </span>
+        {line.description ? (
+          <bdi className="text-caption text-text-muted">{line.description}</bdi>
+        ) : null}
+      </span>
+    );
+  }
+  if (line.description) return <bdi>{line.description}</bdi>;
+  return (
+    <span className="text-text-muted">{translate(messages, 'invoices.preview.noDescription')}</span>
+  );
+}
+
+/**
+ * The lines of the quotation revision this invoice leaves off, each with why
+ * (ADR-023 D5/D15): not approved yet, refused, already invoiced in full, and the
+ * rarer reasons a line cannot be billed again. Shown so nothing approved seems to
+ * have been forgotten and nothing refused seems to have been billed.
+ */
+function NotBilledLines({
+  messages,
+  lines,
+}: {
+  readonly messages: Messages;
+  readonly lines: readonly InvoicePreviewRevisionLine[];
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="flex min-h-0 flex-col gap-2">
+      <h3 className="text-body font-medium text-text-primary">
+        {translate(messages, 'invoices.preview.notBilled.heading')}
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-body">
+          <caption className="sr-only">
+            {translate(messages, 'invoices.preview.notBilled.caption')}
+          </caption>
+          <thead>
+            <tr className="text-caption text-text-muted">
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.line')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.description')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.type')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.quoted')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.invoiced')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.notBilled.reason')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr key={line.sourceQuotationItemId} className="border-t border-border">
+                <td className="px-3 py-2" dir="ltr">
+                  {String(line.lineNumber)}
+                </td>
+                <td className="px-3 py-2">
+                  <LineDescription messages={messages} line={line} />
+                </td>
+                <td className="px-3 py-2">
+                  {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.quotedQuantity} />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.invoicedQuantity} />
+                </td>
+                <td className="px-3 py-2">
+                  {translateDynamic(messages, `invoices.billing.reason.${line.billingStatus}`)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 function CreateForm({
+  locale,
   messages,
   workOrderId,
+  canReadCustomers,
+  draft,
+  onDraft,
   onCreated,
   onConflict,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
-  readonly onCreated: (created: { readonly replayed: boolean; readonly invoice: Invoice }) => void;
-  readonly onConflict: () => void;
+  readonly canReadCustomers: boolean;
+  /**
+   * The payer chosen or typed, held by the screen rather than by this form: a
+   * refused create re-reads the work order and remounts the form, and the
+   * operator's entry is kept through that (P1-32-PRE-OD-FRXR).
+   */
+  readonly draft: PayerDraft;
+  readonly onDraft: Dispatch<SetStateAction<PayerDraft>>;
+  readonly onCreated: (created: {
+    readonly replayed: boolean;
+    readonly invoice: Invoice;
+  }) => Promise<void>;
+  readonly onConflict: (rule: string | null) => Promise<void>;
 }) {
-  const [payer, setPayer] = useState('');
+  /*
+   * A different payer is FOUND among customers and chosen by name (Owner
+   * directive, `P1-32-PRE-OD-UX`); it used to be a box asking for a partner
+   * reference. Left empty, the server bills the work order's own customer.
+   *
+   * The search needs `crm.customer.read`, and creating an invoice does NOT:
+   * `sal.invoice-create` declares `sal.invoice.manage` and `sal.finance.view`
+   * only, and when the accepted quotation names no payer the server REQUIRES
+   * one here. So a caller without the customer read keeps the box they had
+   * before — a pasted payer reference, labelled as the fallback it is, checked
+   * for shape before it is sent, and counted as unsaved work. With the customer
+   * read there is no box at all.
+   */
+  const payer = draft.payer;
+  const payerReference = draft.payerReference;
+  const setPayer = (next: ChosenCustomer | null) => onDraft((held) => ({ ...held, payer: next }));
+  const setPayerReference = (next: string) =>
+    onDraft((held) => ({ ...held, payerReference: next }));
   // ONE transport key per opened form, kept across a refusal or a lost answer:
   // pressing again replays the stored answer instead of asking for a second
   // invoice (which the server would refuse as a conflict).
@@ -554,41 +1294,76 @@ function CreateForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // A confirmed "Discard and change branch" empties the box: the form is the
+  // work order's, nothing here is keyed on the branch, and the question told
+  // the operator the reference would go.
+  useUnsavedGuard(!canReadCustomers && payerReference.trim().length > 0, () => {
+    setPayerReference('');
+    setErrors({});
+    setOutcome(null);
+  });
+  // One per refusal the server files under a field, so the cursor moves there once.
+  const [attempt, setAttempt] = useState(0);
+  const formRef = useFocusFirstInvalid({
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt,
+  });
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
   const submit = async () => {
-    const found: Record<string, string> = {};
-    const payerPartnerId = payer.trim();
-    if (payerPartnerId.length > 0 && !UUID.test(payerPartnerId))
-      found['payerPartnerId'] = 'invoices.common.idFormat';
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    const typed = payerReference.trim();
+    const payerPartnerId = canReadCustomers ? (payer?.id ?? null) : typed || null;
+    if (!canReadCustomers && typed.length > 0 && !UUID.test(typed)) {
+      setErrors({ payerPartnerId: 'invoices.create.payerReferenceFormat' });
+      setAttempt((n) => n + 1);
+      return;
+    }
+    setErrors({});
     setBusy(true);
-    const result = await createInvoice(
-      {
-        workOrderId,
-        ...(payerPartnerId ? { payerPartnerId } : {}),
-      },
-      attemptKey
-    );
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success' && result.created) {
-      setOutcome(null);
-      onCreated({ replayed: result.created.replayed, invoice: result.created.invoice });
-    } else if (result.state.status === 'conflict') {
-      // Most likely an invoice already exists for the order: re-read and show it.
-      onConflict();
-    } else {
-      setBusy(false);
+    let settled = false;
+    try {
+      let result: Awaited<ReturnType<typeof createInvoice>>;
+      try {
+        result = await createInvoice(
+          {
+            workOrderId,
+            ...(payerPartnerId ? { payerPartnerId } : {}),
+          },
+          attemptKey
+        );
+      } catch {
+        setOutcome(unreachable(1));
+        return;
+      }
+      setOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success' && result.created) {
+        setOutcome(null);
+        // Created: what was typed for it is spent.
+        onDraft(NO_PAYER_DRAFT);
+        // The panel is remounted by the re-read; busy stays raised until then.
+        settled = true;
+        await onCreated({ replayed: result.created.replayed, invoice: result.created.invoice });
+      } else if (result.state.status === 'conflict') {
+        // Re-read and show what the order now holds, saying the refusal's own
+        // rule when the server named one (P1-32-PRE-OD-FRX).
+        settled = true;
+        await onConflict(result.rule ?? null);
+      } else if (Object.keys(result.state.fieldErrors ?? {}).length > 0) {
+        setAttempt((n) => n + 1);
+      }
+    } finally {
+      if (!settled) setBusy(false);
     }
   };
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -606,49 +1381,219 @@ function CreateForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'invoices.create.explain')}
       </p>
-      <TextField
-        label={translate(messages, 'invoices.create.payer')}
-        description={translate(messages, 'invoices.create.payerHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={payer}
-        onChange={(event) => setPayer(event.target.value)}
-        error={errorFor('payerPartnerId')}
-      />
+      {canReadCustomers ? (
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <CustomerPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'invoices.create.payer')}
+            value={payer}
+            onChange={(next) => {
+              setPayer(next);
+              setErrors({});
+              setOutcome(null);
+            }}
+            canSearch
+            error={errorFor('payerPartnerId')}
+            testId="invoice-payer-picker"
+            material
+          />
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'invoices.create.payerHelp')}
+          </p>
+        </div>
+      ) : (
+        <div className="sm:col-span-2">
+          <FormTextField
+            label={translate(messages, 'invoices.create.payerReference')}
+            description={translate(messages, 'invoices.create.payerReferenceHelp')}
+            autoComplete="off"
+            dir="ltr"
+            value={payerReference}
+            onChange={(next) => {
+              setPayerReference(next);
+              setErrors({});
+              setOutcome(null);
+            }}
+            error={errorFor('payerPartnerId')}
+          />
+        </div>
+      )}
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
           {translate(messages, 'invoices.create.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
 }
 
 /* ------------------------------------------------------------------ *
+ * The payer, by name
+ * ------------------------------------------------------------------ */
+
+/**
+ * Who the invoice bills, by name (browser QA rows 5.1b and OBS-4).
+ *
+ * The invoice read publishes the payer's id and nothing else, so the name comes
+ * from what already names it: the work order's customer when that customer is
+ * the payer, and otherwise this invoice's own row of the branch's invoice list
+ * (`sal.invoice-list`), found by its number — the list names a payer only for a
+ * caller who may read customers, and this screen shows no more than that. A
+ * draft has no number to find it by; then, as when nothing names the payer, the
+ * screen says the name is not shown here, and never prints the reference.
+ */
+export function usePayerName(
+  invoice: Invoice,
+  workOrder: WorkOrderListEntry | null,
+  canLookUp: boolean
+): PayerLookup {
+  const fromJob =
+    workOrder?.customer && workOrder.customer.partnerId === invoice.payerPartnerId
+      ? workOrder.customer.displayName
+      : null;
+  const number = invoice.invoiceNumber;
+  const lookUp = fromJob === null && canLookUp && number !== null;
+  const [found, setFound] = useState<PayerName | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!lookUp || number === null) return;
+    let live = true;
+    /*
+     * A bounded wait (finance QA fixes D). A lookup that never settled kept the
+     * copy and its Print button loading for good. After the browser's ceiling
+     * for one read (`CLIENT_READ_TIMEOUT_MS`, derived from the server client's
+     * own timeouts) the name is said to be not available right now, and the
+     * print panel offers to find it again. A late answer to the abandoned
+     * lookup is dropped; the retry asks afresh. Leaving the screen, or another
+     * invoice, cancels both the wait and the answer.
+     */
+    const timer = setTimeout(() => {
+      if (!live) return;
+      live = false;
+      setFound({ kind: 'unavailable' });
+    }, CLIENT_READ_TIMEOUT_MS);
+    void listInvoices(
+      { companyId: invoice.companyId, branchId: invoice.branchId },
+      { q: number },
+      null
+    )
+      .then((page) => {
+        if (!live) return;
+        clearTimeout(timer);
+        const name =
+          page.status === 'ok'
+            ? (page.data.items.find((row) => row.id === invoice.id)?.payer.displayName ?? null)
+            : null;
+        setFound(name === null ? { kind: 'notShown' } : { kind: 'named', name });
+      })
+      .catch(() => {
+        if (!live) return;
+        clearTimeout(timer);
+        setFound({ kind: 'notShown' });
+      });
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [lookUp, number, invoice.companyId, invoice.branchId, invoice.id, attempt]);
+
+  const retry = useCallback(() => {
+    setFound(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
+  if (fromJob !== null) return { payer: { kind: 'named', name: fromJob }, retry };
+  if (!lookUp) return { payer: { kind: 'notShown' }, retry };
+  return { payer: found ?? { kind: 'loading' }, retry };
+}
+
+/** Who the invoice bills, as found, and the way to look again after a timeout. */
+export interface PayerLookup {
+  readonly payer: PayerName;
+  /** Asks again — offered when the lookup did not answer in time. */
+  readonly retry: () => void;
+}
+
+function PayerText({
+  messages,
+  payer,
+}: {
+  readonly messages: Messages;
+  readonly payer: PayerName;
+}) {
+  if (payer.kind === 'named') return <bdi>{payer.name}</bdi>;
+  return <span className="text-text-muted">{translate(messages, payerNameKey(payer.kind))}</span>;
+}
+
+/* ------------------------------------------------------------------ *
  * FE-015 / FE-019 / FE-020 — the invoice, its balance, and the acts on it
  * ------------------------------------------------------------------ */
+
+/** Who is signed in, and which refund steps the session's codes allow (ADR-023 D2). */
+export interface RefundSteps {
+  readonly currentUserId: string | null;
+  readonly canRequest: boolean;
+  readonly canDecide: boolean;
+}
+
+const NO_REFUND_STEPS: RefundSteps = Object.freeze({
+  currentUserId: null,
+  canRequest: false,
+  canDecide: false,
+});
+
+/**
+ * Whether a credit note may still be raised from the invoice's own screen (ADR-023
+ * D2, P1-32-PRE-OD-FD2B): what the server says the invoice can still be credited
+ * is above zero — even once it is paid, since the part of a credit above what is
+ * still owed becomes a refund owed to the customer. A server that does not state
+ * the figure leaves the open balance as the test. A comparison of the server's
+ * string with zero; nothing is computed.
+ */
+function mayStillBeCredited(balance: Outstanding): boolean {
+  const creditable = balance.settlement?.creditable;
+  return creditable === undefined ? !balance.isSettled : !isZeroMoney(creditable.amount);
+}
 
 function InvoicePanel({
   locale,
   messages,
   invoice,
-  workOrderNumber,
+  workOrder,
   canViewFinance,
   canIssue,
+  canRaiseCredit,
+  refunds,
   onChanged,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly invoice: Invoice;
-  readonly workOrderNumber: string | null;
+  readonly workOrder: WorkOrderListEntry | null;
   readonly canViewFinance: boolean;
   readonly canIssue: boolean;
-  readonly onChanged: (notice: WriteNotice | null) => void;
+  readonly canRaiseCredit: boolean;
+  readonly refunds: RefundSteps;
+  /** Re-reads the order's invoice and remounts the panels; resolves once it has. */
+  readonly onChanged: (notice: WriteNotice | null) => Promise<void>;
 }) {
   const [detail, setDetail] = useState<ReadState<InvoiceDetail> | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // The balance, read once here for the three panels that need it — the balance
+  // panel, the credit form (offered while it can still be credited) and the copy
+  // — through the cancellable route rather than a Server Action, so the payer
+  // lookup cannot hold it up (DX-2, finance QA fixes E).
+  const outstanding = useOutstandingRead(
+    invoice.id,
+    canViewFinance ? `${invoice.id}#${invoice.recordVersion}` : null
+  );
+  const balance =
+    outstanding.state !== null && outstanding.state.status === 'ok' ? outstanding.state.data : null;
+  const { payer, retry: retryPayer } = usePayerName(invoice, workOrder, canViewFinance);
   useEffect(() => {
     let live = true;
     void readInvoice(invoice.id).then((state) => {
@@ -657,7 +1602,7 @@ function InvoicePanel({
     return () => {
       live = false;
     };
-  }, [invoice.id]);
+  }, [invoice.id, attempt]);
 
   if (detail === null || detail.status !== 'ok') {
     return (
@@ -666,34 +1611,101 @@ function InvoicePanel({
         lang={locale}
         data-print="hide"
       >
-        <ReadRefusal messages={messages} state={detail} kind="detail" />
+        <ReadRefusal
+          messages={messages}
+          locale={locale}
+          state={detail}
+          kind="detail"
+          onRetry={() => {
+            setDetail(null);
+            setAttempt((n) => n + 1);
+          }}
+        />
       </section>
     );
   }
 
   return (
     <>
-      <DetailPanel locale={locale} messages={messages} detail={detail.data} />
+      <DetailPanel locale={locale} messages={messages} detail={detail.data} payer={payer} />
       <OutstandingPanel
         locale={locale}
         messages={messages}
-        invoiceId={invoice.id}
         canViewFinance={canViewFinance}
+        state={outstanding.state}
+        onRetry={outstanding.retry}
+        customer={payer}
       />
+      {canViewFinance &&
+      balance !== null &&
+      balance.settlement !== null &&
+      balance.settlement.refundStatus !== 'none' ? (
+        <RefundsPanel
+          locale={locale}
+          messages={messages}
+          invoice={{ id: invoice.id, companyId: invoice.companyId, branchId: invoice.branchId }}
+          currentUserId={refunds.currentUserId}
+          canRequest={refunds.canRequest}
+          canDecide={refunds.canDecide}
+          onChanged={() => {
+            // The balance is read again: what is owed back and what was paid back moved.
+            outstanding.retry();
+          }}
+        />
+      ) : null}
       <ActionsPanel
-        locale={locale}
         messages={messages}
+        locale={locale}
         detail={detail.data}
         canViewFinance={canViewFinance}
         canIssue={canIssue}
         onChanged={onChanged}
       />
+      {canRaiseCredit &&
+      canViewFinance &&
+      (detail.data.invoice.status === 'issued' || detail.data.invoice.status === 'credited') &&
+      balance !== null &&
+      mayStillBeCredited(balance) ? (
+        <section
+          aria-labelledby="credit-note-request-heading"
+          className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+          lang={locale}
+          data-print="hide"
+        >
+          <CreditNoteRequestForm
+            locale={locale}
+            messages={messages}
+            source={{
+              kind: 'known',
+              invoice: {
+                id: invoice.id,
+                open: balance.outstanding,
+                creditable: balance.settlement?.creditable ?? null,
+              },
+            }}
+            onRequested={(echo) =>
+              onChanged({
+                messageKey: echo.replayed
+                  ? 'creditNotes.request.replayed'
+                  : 'creditNotes.request.recorded',
+                figure: null,
+              })
+            }
+          />
+        </section>
+      ) : null}
       <PrintPanel
         locale={locale}
         messages={messages}
         detail={detail.data}
-        workOrderNumber={workOrderNumber}
+        workOrderNumber={workOrder?.displayNumber ?? null}
+        payer={payer}
+        onRetryPayer={retryPayer}
         canViewFinance={canViewFinance}
+        // The balance panel reads for every status, and the copy prints what that
+        // read carries, exactly as before; what changed is that it waits for it.
+        settlement={settlementOf(outstanding.state, canViewFinance)}
+        onRetrySettlement={outstanding.retry}
       />
     </>
   );
@@ -703,10 +1715,12 @@ function DetailPanel({
   locale,
   messages,
   detail,
+  payer,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: InvoiceDetail;
+  readonly payer: PayerName;
 }) {
   const invoice = detail.invoice;
   return (
@@ -736,7 +1750,7 @@ function DetailPanel({
         </Field>
         <Field label={translate(messages, 'invoices.detail.issuedAt')}>
           {invoice.issuedAt ? (
-            <span dir="ltr">{formatDateTime(invoice.issuedAt, locale)}</span>
+            <When value={invoice.issuedAt} locale={locale} />
           ) : (
             <span className="text-text-muted">
               {translate(messages, 'invoices.detail.notIssuedYet')}
@@ -746,15 +1760,8 @@ function DetailPanel({
         <Field label={translate(messages, 'invoices.detail.currency')}>
           <span dir="ltr">{invoice.currency}</span>
         </Field>
-        <Field label={translate(messages, 'invoices.detail.payer')}>
-          <code className="font-mono text-caption" dir="ltr">
-            {invoice.payerPartnerId}
-          </code>
-        </Field>
-        <Field label={translate(messages, 'invoices.detail.identifier')}>
-          <code className="font-mono text-caption" dir="ltr">
-            {invoice.id}
-          </code>
+        <Field label={translate(messages, 'invoices.detail.payer')} wide>
+          <PayerText messages={messages} payer={payer} />
         </Field>
       </dl>
 
@@ -790,83 +1797,109 @@ function DetailPanel({
           {translate(messages, 'invoices.detail.lines.none')}
         </p>
       ) : (
-        <table className="w-full text-body">
-          <caption className="sr-only">
-            {translate(messages, 'invoices.detail.lines.caption')}
-          </caption>
-          <thead>
-            <tr className="text-caption text-text-muted">
-              <th scope="col" className="px-3 py-2 text-start">
-                {translate(messages, 'invoices.detail.column.line')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-start">
-                {translate(messages, 'invoices.detail.column.type')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'invoices.detail.column.quantity')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'invoices.detail.column.unitPrice')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'invoices.detail.column.net')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'invoices.detail.column.tax')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'invoices.detail.column.gross')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'invoices.detail.column.customer')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'invoices.detail.column.warranty')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.lines.map((line) => (
-              <tr key={line.id} className="border-t border-border">
-                <td className="px-3 py-2" dir="ltr">
-                  {String(line.lineNumber)}
-                </td>
-                <td className="px-3 py-2">
-                  {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
-                </td>
-                <td className="px-3 py-2 text-end font-mono" dir="ltr">
-                  {line.quantity}
-                </td>
-                {line.money ? (
-                  <>
-                    <td className="px-3 py-2 text-end">
-                      <Money money={line.money.unitPrice} locale={locale} />
-                    </td>
-                    <td className="px-3 py-2 text-end">
-                      <Money money={line.money.net} locale={locale} />
-                    </td>
-                    <td className="px-3 py-2 text-end">
-                      <Money money={line.money.tax} locale={locale} />
-                    </td>
-                    <td className="px-3 py-2 text-end">
-                      <Money money={line.money.gross} locale={locale} />
-                    </td>
-                    <td className="px-3 py-2 text-end">
-                      <Money money={line.money.payerSplit.customer} locale={locale} />
-                    </td>
-                    <td className="px-3 py-2 text-end">
-                      <Money money={line.money.payerSplit.warranty} locale={locale} />
-                    </td>
-                  </>
-                ) : (
-                  <td className="px-3 py-2 text-end" colSpan={6}>
-                    <Unavailable messages={messages} />
-                  </td>
-                )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-body">
+            <caption className="sr-only">
+              {translate(messages, 'invoices.detail.lines.caption')}
+            </caption>
+            <thead>
+              <tr className="text-caption text-text-muted">
+                <th scope="col" className="px-3 py-2 text-start">
+                  {translate(messages, 'invoices.detail.column.line')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-start">
+                  {translate(messages, 'invoices.detail.column.type')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-end">
+                  {translate(messages, 'invoices.detail.column.quantity')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-end">
+                  {translate(messages, 'invoices.detail.column.unitPrice')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-end">
+                  {translate(messages, 'invoices.detail.column.net')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-end">
+                  {translate(messages, 'invoices.detail.column.tax')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-end">
+                  {translate(messages, 'invoices.detail.column.gross')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-end">
+                  {translate(messages, 'invoices.detail.column.customer')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-end">
+                  {translate(messages, 'invoices.detail.column.warranty')}
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {detail.lines.map((line) => (
+                <tr key={line.id} className="border-t border-border">
+                  <td className="px-3 py-2" dir="ltr">
+                    {String(line.lineNumber)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className="flex flex-col">
+                      <span>
+                        {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
+                      </span>
+                      {line.item ? (
+                        // What the line bills, by name and stock code: the item a counter
+                        // sale sold, or the part a job's quotation quoted (ADR-023 D6).
+                        <span className="text-caption text-text-muted">
+                          <bdi>{line.item.name}</bdi>{' '}
+                          <span className="font-mono" dir="ltr">
+                            {line.item.code}
+                          </span>
+                        </span>
+                      ) : null}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-end">
+                    <span className="font-mono" dir="ltr">
+                      {line.quantity}
+                    </span>
+                    {line.unit ? (
+                      <>
+                        {' '}
+                        <bdi className="text-caption text-text-muted">
+                          {unitName(messages, line.unit)}
+                        </bdi>
+                      </>
+                    ) : null}
+                  </td>
+                  {line.money ? (
+                    <>
+                      <td className="px-3 py-2 text-end">
+                        <Money money={line.money.unitPrice} locale={locale} />
+                      </td>
+                      <td className="px-3 py-2 text-end">
+                        <Money money={line.money.net} locale={locale} />
+                      </td>
+                      <td className="px-3 py-2 text-end">
+                        <Money money={line.money.tax} locale={locale} />
+                      </td>
+                      <td className="px-3 py-2 text-end">
+                        <Money money={line.money.gross} locale={locale} />
+                      </td>
+                      <td className="px-3 py-2 text-end">
+                        <Money money={line.money.payerSplit.customer} locale={locale} />
+                      </td>
+                      <td className="px-3 py-2 text-end">
+                        <Money money={line.money.payerSplit.warranty} locale={locale} />
+                      </td>
+                    </>
+                  ) : (
+                    <td className="px-3 py-2 text-end" colSpan={6}>
+                      <Unavailable messages={messages} />
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <p className="text-caption text-text-muted">
         {translate(messages, 'invoices.detail.noDescriptionNote')}
@@ -878,26 +1911,21 @@ function DetailPanel({
 function OutstandingPanel({
   locale,
   messages,
-  invoiceId,
   canViewFinance,
+  state,
+  onRetry,
+  customer = { kind: 'notShown' },
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly invoiceId: string;
   readonly canViewFinance: boolean;
+  /** The balance read the invoice panel made, `null` while it is out — never a guessed zero. */
+  readonly state: ReadState<Outstanding> | null;
+  /** Reads the balance again. */
+  readonly onRetry: () => void;
+  /** Who the invoice bills, as the screen names them — for "Paid by … for …" (D14). */
+  readonly customer?: PayerName;
 }) {
-  const [state, setState] = useState<ReadState<Outstanding> | null>(null);
-  useEffect(() => {
-    if (!canViewFinance) return;
-    let live = true;
-    void readOutstanding(invoiceId).then((next) => {
-      if (live) setState(next);
-    });
-    return () => {
-      live = false;
-    };
-  }, [invoiceId, canViewFinance]);
-
   return (
     <section
       aria-labelledby="invoice-outstanding-heading"
@@ -913,17 +1941,32 @@ function OutstandingPanel({
           {translate(messages, 'invoices.outstanding.needsFinance')}
         </p>
       ) : state === null || state.status !== 'ok' ? (
-        <ReadRefusal messages={messages} state={state} kind="outstanding" />
+        <ReadRefusal
+          messages={messages}
+          locale={locale}
+          state={state}
+          kind="outstanding"
+          onRetry={onRetry}
+        />
       ) : (
         <dl className="grid gap-3 sm:grid-cols-3">
           <Field label={translate(messages, 'invoices.outstanding.amount')}>
             <Money money={state.data.outstanding} locale={locale} />
           </Field>
-          <Field label={translate(messages, 'invoices.outstanding.settlement')}>
-            {state.data.isSettled
-              ? translate(messages, 'invoices.outstanding.settled')
-              : translate(messages, 'invoices.outstanding.open')}
-          </Field>
+          {state.data.settlement ? (
+            <SettlementFields
+              locale={locale}
+              messages={messages}
+              settlement={state.data.settlement}
+              customer={customer}
+            />
+          ) : (
+            <Field label={translate(messages, 'invoices.outstanding.settlement')}>
+              {state.data.isSettled
+                ? translate(messages, 'invoices.outstanding.settled')
+                : translate(messages, 'invoices.outstanding.open')}
+            </Field>
+          )}
           <Field label={translate(messages, 'invoices.detail.status')}>
             <InvoiceStatusBadge messages={messages} status={state.data.status} />
             {state.data.status === 'draft' ? (
@@ -941,6 +1984,127 @@ function OutstandingPanel({
   );
 }
 
+/**
+ * The three positions of an issued invoice, kept apart (Owner decision D7,
+ * ADR-023): how much has been credited, how much of what is payable has been
+ * paid, and whether anything was handed back. Each is the server's derivation,
+ * worded here; a fully credited invoice reads "Fully credited" and "Nothing to
+ * pay", never "Settled". The credited and paid amounts are shown beside them.
+ */
+function SettlementFields({
+  locale,
+  messages,
+  settlement,
+  customer,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly settlement: Settlement;
+  readonly customer: PayerName;
+}) {
+  const thirdParty = settlement.thirdPartyPayments ?? [];
+  return (
+    <>
+      <Field label={translate(messages, 'invoices.settlement.credit')}>
+        <span data-testid="invoice-credit-status">
+          {translateDynamic(messages, `invoices.creditStatus.${settlement.creditStatus}`)}
+        </span>
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.credited')}>
+        <Money money={settlement.credited} locale={locale} />
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.payment')}>
+        <span data-testid="invoice-payment-status">
+          {translateDynamic(messages, `invoices.paymentStatus.${settlement.paymentStatus}`)}
+        </span>
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.paid')}>
+        <Money money={settlement.paid} locale={locale} />
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.refund')}>
+        <span data-testid="invoice-refund-status">
+          {translateDynamic(messages, `invoices.refundStatus.${settlement.refundStatus}`)}
+        </span>
+      </Field>
+      {settlement.refundOwed !== undefined && !isZeroMoney(settlement.refundOwed.amount) ? (
+        // ADR-023 D2: what the customer is owed back, the server's sum. Nothing is
+        // paid automatically.
+        <Field label={translate(messages, 'invoices.settlement.refundOwed')} wide>
+          <span data-testid="invoice-refund-owed">
+            <Money money={settlement.refundOwed} locale={locale} />
+          </span>
+          <span className="block text-caption text-text-muted">
+            {translate(messages, 'invoices.settlement.refundOwedExplain')}
+          </span>
+        </Field>
+      ) : null}
+      {settlement.refunded !== undefined && !isZeroMoney(settlement.refunded.amount) ? (
+        // ADR-023 D2, part 2: what has been paid back — the recorded payouts, the
+        // server's sum.
+        <Field label={translate(messages, 'invoices.settlement.refunded')} wide>
+          <span data-testid="invoice-refunded">
+            <Money money={settlement.refunded} locale={locale} />
+          </span>
+        </Field>
+      ) : null}
+      {thirdParty.length > 0 ? (
+        <ThirdPartyPayments
+          locale={locale}
+          messages={messages}
+          payments={thirdParty}
+          truncated={settlement.thirdPartyPaymentsTruncated === true}
+          customer={customer}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The third-party payments of the invoice, inside the balance panel's list
+ * (`ThirdPartyPaymentItems` renders them, as the counter sale and both printed
+ * copies do).
+ */
+function ThirdPartyPayments({
+  locale,
+  messages,
+  payments,
+  truncated,
+  customer,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly payments: readonly ThirdPartyPayment[];
+  readonly truncated: boolean;
+  readonly customer: PayerName;
+}) {
+  return (
+    <div className="sm:col-span-3" data-testid="invoice-third-party-payments">
+      <dt className="text-caption text-text-muted">
+        {translate(messages, 'invoices.thirdParty.heading')}
+      </dt>
+      <dd className="text-body text-text-primary">
+        <ThirdPartyPaymentItems
+          locale={locale}
+          messages={messages}
+          payments={payments}
+          truncated={truncated}
+          customer={customer}
+        />
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Issuing and cancelling a draft. Issuing asks first (`ConfirmDialog`: the
+ * number is allocated and the invoice is fixed); cancelling takes a reason in
+ * `ReasonDialog`, refused as a field error on the box when it is missing or too
+ * long. Both carry the INVOICE's version as the detail read published it, and
+ * both stay busy — the dialog's buttons disabled, Escape inert — until the
+ * screen has re-read the invoice and remounted this panel, so a second press
+ * can never send the version just spent.
+ */
 function ActionsPanel({
   locale,
   messages,
@@ -954,13 +2118,11 @@ function ActionsPanel({
   readonly detail: InvoiceDetail;
   readonly canViewFinance: boolean;
   readonly canIssue: boolean;
-  readonly onChanged: (notice: WriteNotice | null) => void;
+  readonly onChanged: (notice: WriteNotice | null) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState<'issue' | 'cancel' | null>(null);
   const [issueOutcome, setIssueOutcome] = useState<ActionState | null>(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [reason, setReason] = useState('');
-  const [cancelErrors, setCancelErrors] = useState<Readonly<Record<string, string>>>({});
   const [cancelOutcome, setCancelOutcome] = useState<ActionState | null>(null);
 
   const isDraft = detail.invoice.status === 'draft';
@@ -969,58 +2131,91 @@ function ActionsPanel({
 
   const issue = async () => {
     setBusy(true);
-    // The INVOICE's version, as the detail read published it — never a line's.
-    const result = await issueInvoice(detail.invoice.id, detail.invoice.recordVersion);
-    setIssueOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    // On success or conflict the parent re-reads and REMOUNTS this panel; busy
-    // stays raised until then so a second press cannot send the superseded
-    // version and overwrite a truthful notice.
-    if (result.state.status === 'success' && result.created) {
-      setIssueOutcome(null);
-      onChanged({
-        messageKey: result.created.replayed ? 'invoices.issue.replayed' : 'invoices.issue.recorded',
-        figure: result.created.invoiceNumber,
-      });
-    } else if (result.state.status === 'conflict') {
-      // Changed since it was read: say so, and re-read.
-      onChanged({ messageKey: 'invoices.detail.conflict', figure: null });
-    } else {
-      setBusy(false);
+    let settled = false;
+    try {
+      let result: Awaited<ReturnType<typeof issueInvoice>>;
+      try {
+        // The INVOICE's version, as the detail read published it — never a line's.
+        result = await issueInvoice(detail.invoice.id, detail.invoice.recordVersion);
+      } catch {
+        setAsking(null);
+        setIssueOutcome(unreachable(1));
+        return;
+      }
+      setIssueOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      // On success or conflict the parent re-reads and REMOUNTS this panel; busy
+      // stays raised until then so a second press cannot send the superseded
+      // version and overwrite a truthful notice.
+      if (result.state.status === 'success' && result.created) {
+        settled = true;
+        await onChanged({
+          messageKey: result.created.replayed
+            ? 'invoices.issue.replayed'
+            : 'invoices.issue.recorded',
+          figure: result.created.invoiceNumber,
+        });
+      } else if (result.state.status === 'conflict') {
+        // Changed since it was read: say so, and re-read.
+        settled = true;
+        await onChanged({ messageKey: 'invoices.detail.conflict', figure: null });
+      } else {
+        setAsking(null);
+      }
+    } finally {
+      if (!settled) setBusy(false);
     }
   };
 
-  const cancel = async () => {
-    const found: Record<string, string> = {};
-    const trimmed = reason.trim();
-    if (trimmed.length === 0) found['reason'] = 'field.required';
-    else if (trimmed.length > MAX_REASON) found['reason'] = 'invoices.cancel.reasonTooLong';
-    setCancelErrors(found);
-    if (Object.keys(found).length > 0) return;
-    setBusy(true);
-    const result = await cancelInvoice(
-      detail.invoice.id,
-      { reason: trimmed },
-      detail.invoice.recordVersion
-    );
-    setCancelOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success' && result.created) {
-      setCancelOutcome(null);
-      onChanged({
-        messageKey: result.created.replayed
-          ? 'invoices.cancel.replayed'
-          : 'invoices.cancel.recorded',
-        figure: null,
+  const cancel = async (reason: string) => {
+    if (reason.length > MAX_REASON) {
+      setCancelOutcome({
+        status: 'invalid',
+        fieldErrors: { reason: 'invoices.cancel.reasonTooLong' },
       });
-    } else if (result.state.status === 'conflict') {
-      onChanged({ messageKey: 'invoices.detail.conflict', figure: null });
-    } else {
-      setBusy(false);
+      return;
+    }
+    setBusy(true);
+    let settled = false;
+    try {
+      let result: Awaited<ReturnType<typeof cancelInvoice>>;
+      try {
+        result = await cancelInvoice(detail.invoice.id, { reason }, detail.invoice.recordVersion);
+      } catch {
+        setCancelOutcome(unreachable(1));
+        return;
+      }
+      setCancelOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success' && result.created) {
+        settled = true;
+        await onChanged({
+          messageKey: result.created.replayed
+            ? 'invoices.cancel.replayed'
+            : 'invoices.cancel.recorded',
+          figure: null,
+        });
+      } else if (result.state.status === 'conflict') {
+        settled = true;
+        await onChanged({ messageKey: 'invoices.detail.conflict', figure: null });
+      }
+    } finally {
+      if (!settled) setBusy(false);
     }
   };
 
   if (!offerIssue && !offerCancel) return null;
+
+  const cancelReasonError = cancelOutcome?.fieldErrors?.['reason']
+    ? translateDynamic(messages, cancelOutcome.fieldErrors['reason'])
+    : undefined;
+  const cancelRefusal =
+    cancelOutcome &&
+    cancelReasonError === undefined &&
+    cancelOutcome.status !== 'success' &&
+    cancelOutcome.status !== 'idle'
+      ? translateDynamic(messages, cancelOutcome.messageKey ?? 'action.failed')
+      : undefined;
 
   return (
     <section
@@ -1038,75 +2233,138 @@ function ActionsPanel({
             {translate(messages, 'invoices.issue.explain')}
           </p>
           <div>
-            <button
+            <Button
               type="button"
-              className={PRIMARY_BUTTON}
+              variant="contained"
               disabled={busy}
               onClick={() => {
-                void issue();
+                setIssueOutcome(null);
+                setAsking('issue');
               }}
             >
               {translate(messages, 'invoices.issue.action')}
-            </button>
+            </Button>
           </div>
-          <OutcomeNote messages={messages} outcome={issueOutcome} />
+          {asking === 'issue' ? null : <OutcomeNote messages={messages} outcome={issueOutcome} />}
         </div>
       ) : null}
       {offerCancel ? (
         <div className="flex flex-col gap-2 border-t border-border pt-3">
-          <button
-            type="button"
-            className={SECONDARY_BUTTON}
-            aria-expanded={cancelling}
-            onClick={() => setCancelling((open) => !open)}
-          >
-            {translate(messages, 'invoices.cancel.open')}
-          </button>
-          {cancelling ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void cancel();
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'invoices.cancel.explain')}
+          </p>
+          <div>
+            <Button
+              type="button"
+              variant="outlined"
+              disabled={busy}
+              onClick={() => {
+                setCancelOutcome(null);
+                setAsking('cancel');
               }}
-              noValidate
-              aria-labelledby="invoice-cancel-heading"
-              className="grid gap-3 sm:grid-cols-2"
             >
-              <h3
-                id="invoice-cancel-heading"
-                className="text-body font-medium text-text-primary sm:col-span-2"
-              >
-                {translate(messages, 'invoices.cancel.heading')}
-              </h3>
-              <p className="text-caption text-text-muted sm:col-span-2">
-                {translate(messages, 'invoices.cancel.explain')}
-              </p>
-              <TextField
-                label={translate(messages, 'invoices.cancel.reason')}
-                required
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                error={
-                  cancelErrors['reason']
-                    ? translateDynamic(messages, cancelErrors['reason'])
-                    : cancelOutcome?.fieldErrors?.['reason']
-                      ? translateDynamic(messages, cancelOutcome.fieldErrors['reason'])
-                      : undefined
-                }
-              />
-              <div className="sm:col-span-2">
-                <OutcomeNote messages={messages} outcome={cancelOutcome} />
-              </div>
-              <div className="sm:col-span-2">
-                <button type="submit" className={SECONDARY_BUTTON} disabled={busy}>
-                  {translate(messages, 'invoices.cancel.submit')}
-                </button>
-              </div>
-            </form>
-          ) : null}
+              {translate(messages, 'invoices.cancel.open')}
+            </Button>
+          </div>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={asking === 'issue'}
+        messages={messages}
+        title={translate(messages, 'invoices.issue.confirmTitle')}
+        description={translate(messages, 'invoices.issue.explain')}
+        confirmLabel={translate(messages, 'invoices.issue.action')}
+        pending={busy}
+        error={
+          issueOutcome && issueOutcome.status !== 'success' && issueOutcome.status !== 'idle'
+            ? translateDynamic(messages, issueOutcome.messageKey ?? 'action.failed')
+            : undefined
+        }
+        onCancel={() => setAsking(null)}
+        onConfirm={() => void issue()}
+        testId="invoice-issue-dialog"
+      />
+      <ReasonDialog
+        open={asking === 'cancel'}
+        messages={messages}
+        title={translate(messages, 'invoices.cancel.heading')}
+        description={translate(messages, 'invoices.cancel.explain')}
+        reasonLabel={translate(messages, 'invoices.cancel.reason')}
+        confirmLabel={translate(messages, 'invoices.cancel.submit')}
+        maxLength={MAX_REASON}
+        destructive
+        pending={busy}
+        error={cancelRefusal}
+        reasonError={cancelReasonError}
+        onCancel={() => {
+          setAsking(null);
+          setCancelOutcome(null);
+        }}
+        onConfirm={(reason) => void cancel(reason)}
+        testId="invoice-cancel-dialog"
+      />
     </section>
+  );
+}
+
+/**
+ * The printable copy of a COUNTER SALE (P1-32-PRE-OD-FIN, GAP-09).
+ *
+ * A counter sale has no work order, so it never reaches the invoice screen above,
+ * which is entered through one — and the counter-sales screen offered no copy at
+ * all. This is the same paper view: the same document, the same Print button, the
+ * payer found the same way, and lines described by the item each one sold, which
+ * the detail itself now names. The caller places it as its own direct child of a
+ * `data-print-scope`, so paper carries the copy and not the working panels.
+ *
+ * `settlement` is the counter's own balance read of the issued sale: the copy
+ * prints it as its "settlement as of" section, exactly as a job's copy does
+ * (finance checkpoint, DF-B1; it used to pass none, so the paper carried no paid,
+ * credited or due figure), and waits for it while it is being read (DX-2).
+ * `initiallyOpen` opens the copy at once — the counter's way back to an issued
+ * sale is a request to print it again (DF-B3).
+ */
+export function CounterSalePrintPanel({
+  locale,
+  messages,
+  detail,
+  canViewFinance,
+  settlement = { kind: 'none' },
+  onRetrySettlement,
+  initiallyOpen = false,
+  payer: lifted,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly detail: InvoiceDetail;
+  readonly canViewFinance: boolean;
+  /** Where the sale's balance read stands; `none` for a draft or a reader who may not see money. */
+  readonly settlement?: SettlementRead;
+  /** Reads the balance again, after a read that was refused or did not answer in time. */
+  readonly onRetrySettlement?: () => void;
+  readonly initiallyOpen?: boolean;
+  /**
+   * The buyer's name as the counter screen already looks it up (`usePayerName`),
+   * so the sale panel and the copy name the same person from one lookup. Absent,
+   * the panel looks the name up itself.
+   */
+  readonly payer?: PayerLookup;
+}) {
+  const own = usePayerName(detail.invoice, null, canViewFinance && lifted === undefined);
+  const lookup = lifted ?? own;
+  return (
+    <PrintPanel
+      locale={locale}
+      messages={messages}
+      detail={detail}
+      workOrderNumber={null}
+      payer={lookup.payer}
+      onRetryPayer={lookup.retry}
+      canViewFinance={canViewFinance}
+      settlement={canViewFinance ? settlement : { kind: 'none' }}
+      {...(onRetrySettlement === undefined ? {} : { onRetrySettlement })}
+      initiallyOpen={initiallyOpen}
+    />
   );
 }
 
@@ -1115,28 +2373,56 @@ function PrintPanel({
   messages,
   detail,
   workOrderNumber,
+  payer,
+  onRetryPayer,
   canViewFinance,
+  settlement,
+  onRetrySettlement,
+  initiallyOpen = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: InvoiceDetail;
   readonly workOrderNumber: string | null;
+  readonly payer: PayerName;
+  /** Looks the payer's name up again, after a lookup that did not answer in time. */
+  readonly onRetryPayer?: () => void;
   readonly canViewFinance: boolean;
+  /**
+   * The balance as the screen read it — what is due, the credit and payment
+   * positions (D7) and when they were read (D10) — and whether that read is
+   * still out, failed, or does not apply (DX-2).
+   */
+  readonly settlement: SettlementRead;
+  /** Reads the balance again, after a read that was refused or did not answer in time. */
+  readonly onRetrySettlement?: () => void;
+  /** Open the copy at once rather than on request. */
+  readonly initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
-  useEffect(() => {
-    // Descriptions live only on the preview, which is money and needs the
-    // code; it is read once, when the paper view is asked for.
-    if (!open || !canViewFinance || preview !== null) return;
-    let live = true;
-    void readInvoicePreview(detail.invoice.workOrderId).then((state) => {
-      if (live) setPreview(state);
-    });
-    return () => {
-      live = false;
-    };
-  }, [open, canViewFinance, preview, detail.invoice.workOrderId]);
+  const [open, setOpen] = useState(initiallyOpen);
+  // The copy is described from the invoice's OWN source lines, which the detail
+  // carries for a reader who may see amounts (ADR-023 D5/D15) — never from the
+  // work order's current preview. Since a work order may hold several invoices,
+  // that preview can name another quotation or revision, or none at all once two
+  // quotations are fully invoiced, and an invoice printed from it lost its
+  // descriptions and discounts. A counter sale's lines name their items on the
+  // detail itself (GAP-09). So no quotation read is made here, and none is waited for.
+  const counterSale = detail.invoice.workOrderId === null;
+
+  // The payer's name is waited for: while its lookup is still out, the copy
+  // would print "name not shown" for a customer the screen is about to name. So the
+  // copy and the Print button wait until the lookup settles — with the name, or
+  // with the honest "not shown" when it is withheld or could not be found. The
+  // wait is bounded: a lookup that does not answer in time settles as "not
+  // available right now", and the panel offers to find the name again.
+  //
+  // The settlement is waited for in exactly the same way (DX-2, finance QA fixes
+  // E). A copy printed while what was paid is still being read leaves out the
+  // "Payments and credits as of" section — and with it who paid for the customer
+  // — so the Print button waits for that read too. Its wait is bounded as well:
+  // a read that is refused or does not answer in time settles as "could not be
+  // read", which the copy says in words, and the panel offers to read it again.
+  const ready = payer.kind !== 'loading' && settlement.kind !== 'reading';
 
   return (
     <section
@@ -1148,38 +2434,61 @@ function PrintPanel({
         <h2 id="invoice-print-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'invoices.print.heading')}
         </h2>
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
           {translate(messages, open ? 'invoices.print.close' : 'invoices.print.open')}
-        </button>
-        {open && (!canViewFinance || preview !== null) ? (
-          <button type="button" className={PRIMARY_BUTTON} onClick={() => window.print()}>
+        </Button>
+        {open && ready ? (
+          <Button type="button" variant="contained" onClick={() => window.print()}>
             {translate(messages, 'invoices.print.print')}
-          </button>
+          </Button>
         ) : null}
       </div>
+      {open && payer.kind === 'unavailable' && onRetryPayer !== undefined ? (
+        <div className="flex flex-wrap items-center gap-3" data-print="hide">
+          <p className="text-body text-text-secondary" role="status">
+            {translate(messages, 'invoices.print.payerTimedOut')}
+          </p>
+          <Button type="button" variant="outlined" onClick={onRetryPayer}>
+            {translate(messages, 'invoices.print.retryPayer')}
+          </Button>
+        </div>
+      ) : null}
+      {open && settlement.kind === 'unavailable' && onRetrySettlement !== undefined ? (
+        <div className="flex flex-wrap items-center gap-3" data-print="hide">
+          <p className="text-body text-text-secondary" role="status">
+            {translate(messages, 'invoices.print.settlementTimedOut')}
+          </p>
+          <Button type="button" variant="outlined" onClick={onRetrySettlement}>
+            {translate(messages, 'invoices.print.retrySettlement')}
+          </Button>
+        </div>
+      ) : null}
       {open ? (
-        canViewFinance && preview === null ? (
-          <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+        !ready ? (
+          <MuiLoadingState messages={messages} variant="inline" />
         ) : (
           <InvoiceDocument
             locale={locale}
             messages={messages}
             detail={detail}
+            payer={payer}
             descriptions={
-              !canViewFinance
-                ? { kind: 'notRead' }
-                : preview === null || preview.status !== 'ok'
-                  ? { kind: 'refused', reference: preview?.correlationId ?? null }
-                  : preview.data.quotationRevisionId === detail.invoice.quotationRevisionId
-                    ? { kind: 'matched', preview: preview.data }
-                    : { kind: 'mismatch' }
+              counterSale
+                ? { kind: 'items' }
+                : !canViewFinance
+                  ? { kind: 'notRead' }
+                  : detail.source === null
+                    ? { kind: 'unavailable' }
+                    : { kind: 'source' }
             }
             workOrderNumber={workOrderNumber}
+            balance={settlement.kind === 'read' ? settlement.balance : null}
+            settlementUnavailable={settlement.kind === 'unavailable'}
           />
         )
       ) : null}

@@ -22,6 +22,12 @@
  * It is deliberately verbose to write and is reported by the coverage check, so
  * it can never be the quiet default.
  *
+ * `selfRead: true` is the one other kind, and it is narrower than either: the
+ * caller MUST be authenticated, the operation declares no permission code, and it
+ * answers only facts about the caller itself. It is closed to the two operations
+ * named in `SELF_READ_OPERATION_IDS` (P1-32-PRE-OD-FRX) — see that constant for
+ * why, and for what it does not open.
+ *
  * P1-14 additionally checks `auditAction` against the controlled audit-action
  * catalog (`audit-actions.ts`). Presence was never enough: two operations
  * recording the same fact under different spellings produce an audit trail that
@@ -61,6 +67,13 @@ export interface OperationDeclaration {
   /** Unauthenticated endpoint. Must be justified in `publicReason`. */
   readonly public?: boolean;
   readonly publicReason?: string;
+  /**
+   * An AUTHENTICATED read that declares no permission code and returns only the
+   * caller's own facts (P1-32-PRE-OD-FRX). Must be justified in `selfReadReason`,
+   * and is accepted only for an id in `SELF_READ_OPERATION_IDS`.
+   */
+  readonly selfRead?: boolean;
+  readonly selfReadReason?: string;
   readonly scope?: ScopeRequirement;
   readonly auditClass?: AuditClass;
   /** Audit action code, e.g. `iam.role.granted`. Required unless class is none. */
@@ -82,6 +95,31 @@ export interface OperationDeclaration {
   /** Whether responses may be cached, and under which eligibility category. */
   readonly cacheCategory?: string;
   /**
+   * Declares that this READ accepts a company without a branch, and what happens
+   * when the branch is omitted (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `'authorized-union'` is the only value, and it means exactly one thing: the
+   * page covers the branches of the named company in which this caller actually
+   * holds this operation's declared codes, resolved one branch at a time by
+   * `resolveAuthorizedBranches`, and a caller holding none is REFUSED rather than
+   * answered with an empty page.
+   *
+   * ## Why a declaration and not a comment
+   *
+   * An optional `branchId` on a branch-scoped read is, on its face, the exact
+   * shape P1-22 §16 exists to keep out: omit the pair and `authorizeScope` is
+   * skipped, leaving `app.branch_ids` — the permission-blind union of every grant
+   * — as the only narrowing. Widening a list by making a parameter optional is
+   * therefore something that must never happen QUIETLY. This field is what makes
+   * it loud: `tests/backend/p1-22-isolation.test.ts` accepts an optional scope
+   * parameter only from an operation that declares this AND whose handler really
+   * routes the request through the `authorizedBranches` seam, which it checks by
+   * parsing the route module rather than by reading a comment. An optional
+   * parameter without the declaration still fails, and a declaration without the
+   * seam fails too.
+   */
+  readonly branchNarrowing?: 'authorized-union';
+  /**
    * The success status this operation actually returns. Defaults to 200.
    *
    * It exists because the published contract used to advertise `200` for all 334
@@ -95,6 +133,44 @@ export interface OperationDeclaration {
    * the two disagree, so this field is checked rather than trusted.
    */
   readonly successStatus?: 200 | 201 | 202 | 204;
+  /**
+   * The status an idempotent create answers with when it REPLAYS what it already
+   * created — the handler's `status: x.replayed ? 200 : 201`. Published beside
+   * `successStatus` (and named in `x-replay-status`) so a client is told both
+   * answers the operation gives.
+   *
+   * Until it existed the gate could not read that ternary as a literal, resolved it
+   * to 200, and the contract advertised ONLY the replay status for the create —
+   * `inv.stock-transfer-discrepancy-resolve`, `inv.counter-sale-create` and the other
+   * replayable inventory creates published a 200 they return only on a retry, and
+   * no 201 at all. `check-openapi-success-status.mjs` now reads the ternary and
+   * holds this field to it.
+   */
+  readonly replayStatus?: 200;
+  /**
+   * Whether the operation answers `404 ERR-RES-001` for a resource it addresses
+   * that is absent or not visible to the caller, so the published contract lists
+   * that response. Defaults to false.
+   *
+   * It exists because the contract derived every failure status from the other
+   * declarations and none of them implies a not-found, so reads that do answer
+   * one published no 404 at all (P1-31 CC-54 (b)). Declared per operation rather
+   * than inferred from a path parameter, because a parameterised operation may
+   * legitimately refuse instead — a uniform 403, or a 200 with an empty body.
+   */
+  readonly answersNotFound?: boolean;
+  /** Optional JSON Schemas supplied by the operation's runtime validators. */
+  readonly requestBodySchema?: Readonly<Record<string, unknown>>;
+  readonly successBodySchema?: Readonly<Record<string, unknown>>;
+  readonly pathParameterSchemas?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  /**
+   * The JSON Schema of the operation's query-string parser — an `object` schema,
+   * produced from the same zod schema the route parses with. Each property is
+   * published as one `in: query` parameter, required exactly when the schema's
+   * `required` list names it, so the published query cannot drift from the one
+   * the route accepts.
+   */
+  readonly queryParameterSchema?: Readonly<Record<string, unknown>>;
 }
 
 export interface RegisteredOperation extends OperationDeclaration {
@@ -102,7 +178,52 @@ export interface RegisteredOperation extends OperationDeclaration {
   readonly scope: ScopeRequirement;
   readonly auditClass: AuditClass;
   readonly public: boolean;
+  readonly selfRead: boolean;
 }
+
+/**
+ * The only operations that may register as an authenticated self-read
+ * (P1-32-PRE-OD-FRX).
+ *
+ * ## The defect this closes
+ *
+ * Both reads used to declare `iam.user.read` — the code that opens the tenant's
+ * user DIRECTORY — because the registry had no way to say "authenticated, and
+ * about nobody but you". Every dashboard page resolves the session through
+ * `GET /auth/session` before it renders, so a role that legitimately lacked the
+ * directory code (the seeded technician and cashier roles, a quotations-only
+ * role) could not open the product at all: sign in, 403 on its own session,
+ * back to sign-in with "not permitted to open the application".
+ *
+ * ## Why a kind and not a permission code everybody holds
+ *
+ * A code every role must carry is a grant a tenant can forget, and a bundle
+ * change nobody has asked for. The honest statement is the one the pipeline
+ * already enforces for every operation: an authenticated, resolved, non-revoked
+ * session in its own tenant. That is what this kind requires, and nothing more.
+ * The precedent is logout (P1-14-R-001), where the token is the authority.
+ *
+ * ## What it does NOT open
+ *
+ * A self-read answers facts about the caller and only the caller — its own
+ * identity, its own resolved scope, its own permissions, the companies and
+ * branches its own grants reach. Nothing about another person is readable
+ * through it. The names of OTHER people still come through `iam.user-detail` /
+ * `iam.user-list`, which keep `iam.user.read`, so a role without that code still
+ * sees "unavailable" in their place.
+ *
+ * ## Why the list is closed
+ *
+ * A permission-free authenticated operation is exactly the shape an unguarded
+ * endpoint would take by accident. So the registry refuses the kind for any id
+ * not named here, and `scripts/check-authorization-coverage.mjs` holds the same
+ * list against every literal declaration: adding a third is a reviewed edit of
+ * both, never a quiet one-line declaration.
+ */
+export const SELF_READ_OPERATION_IDS: readonly string[] = Object.freeze([
+  'iam.auth-session',
+  'iam.working-context-read',
+]);
 
 const registry = new Map<string, RegisteredOperation>();
 
@@ -115,13 +236,14 @@ export class OperationRegistrationError extends Error {
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 /**
- * Each segment is either a lower-case literal or a `{camelCase}` parameter.
+ * Each segment is either a lower-case literal or a `{camelCase}` parameter,
+ * optionally followed by a lower-case custom action, e.g. `{reportCode}:export`.
  *
  * P1-13's pattern was a character class, which accepted `/a{b}c}` and rejected
  * `{userId}` (no upper case) — fine while no route had a parameter, wrong as
  * soon as one did. This form states the grammar instead of the alphabet.
  */
-const PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|\{[a-z][a-zA-Z0-9]*\}))+$/;
+const PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|\{[a-z][a-zA-Z0-9]*\}(?::[a-z][a-z0-9-]*)?))+$/;
 
 /**
  * Registers an operation. Throws — loudly, at import time — when the declaration
@@ -144,9 +266,17 @@ export function defineOperation(declaration: OperationDeclaration): RegisteredOp
   }
 
   const isPublic = declaration.public === true;
+  const isSelfRead = declaration.selfRead === true;
   const permissions = declaration.permissions ?? [];
 
-  if (!isPublic && permissions.length === 0) {
+  if (isSelfRead) assertSelfReadDeclaration(declaration, isPublic, permissions);
+  if (!isSelfRead && declaration.selfReadReason !== undefined) {
+    throw new OperationRegistrationError(
+      `Operation "${declaration.id}" gives a selfReadReason but is not a self-read.`
+    );
+  }
+
+  if (!isPublic && !isSelfRead && permissions.length === 0) {
     throw new OperationRegistrationError(
       `Operation "${declaration.id}" declares no permission codes. Every operation is ` +
         'authorized server-side; mark it `public: true` with a `publicReason` only if it is ' +
@@ -199,10 +329,70 @@ export function defineOperation(declaration: OperationDeclaration): RegisteredOp
     scope: declaration.scope ?? 'tenant',
     auditClass,
     public: isPublic,
+    selfRead: isSelfRead,
   };
   registry.set(registered.id, registered);
   routeIndex.set(routeKey, registered.id);
   return registered;
+}
+
+/**
+ * The rules a self-read declaration must satisfy (P1-32-PRE-OD-FRX). Each keeps
+ * the kind exactly as narrow as `SELF_READ_OPERATION_IDS` describes: a named,
+ * authenticated, unaudited, tenant-scope GET with no permission code, no target
+ * and no write semantics.
+ */
+function assertSelfReadDeclaration(
+  declaration: OperationDeclaration,
+  isPublic: boolean,
+  permissions: readonly string[]
+): void {
+  const id = declaration.id;
+  if (!SELF_READ_OPERATION_IDS.includes(id)) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" declares selfRead but is not in SELF_READ_OPERATION_IDS. A ` +
+        'permission-free authenticated operation is a reviewed exception, not a declaration.'
+    );
+  }
+  if (isPublic) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is both public and a self-read. A self-read is authenticated.`
+    );
+  }
+  if (permissions.length > 0) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and also declares permissions. Choose one.`
+    );
+  }
+  if (!declaration.selfReadReason) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read but gives no selfReadReason.`
+    );
+  }
+  if (declaration.method !== 'GET') {
+    throw new OperationRegistrationError(`Operation "${id}" is a self-read and must be a GET.`);
+  }
+  if ((declaration.scope ?? 'tenant') !== 'tenant') {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and must be tenant-scoped: it names no target.`
+    );
+  }
+  if ((declaration.auditClass ?? 'none') !== 'none') {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and may not declare an audit class.`
+    );
+  }
+  if (
+    declaration.idempotent === true ||
+    declaration.versionGuarded === true ||
+    declaration.featureFlag !== undefined ||
+    declaration.branchNarrowing !== undefined
+  ) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and may not declare idempotency, a version guard, a ` +
+        'feature flag or branch narrowing.'
+    );
+  }
 }
 
 export function getOperation(id: string): RegisteredOperation | undefined {

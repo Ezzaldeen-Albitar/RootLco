@@ -72,6 +72,46 @@ export const TECHNICIAN_WORKSPACE_PERMISSIONS = {
   documentManage: 'shared.document.manage',
 } as const;
 
+/* ------------------------------------------------------------------ *
+ * The refusals this workspace must say out loud
+ * ------------------------------------------------------------------ */
+
+/**
+ * The rule tokens whose violation names a control this workspace cannot have
+ * (Owner directive, user-facing errors).
+ *
+ * All three are refusals of `tech.labor-session-start` and all three are
+ * published against `body.technicianProfileId` — the profile the ADAPTER
+ * resolved, not anything the technician chose. The identity seam above is the
+ * reason: no screen here holds a technician id, so there is no control for the
+ * browser to file these sentences under, and each of them was therefore
+ * written into a map nothing renders while the clock button showed the generic
+ * apology.
+ *
+ * They belong in the panel's own alert, beside the button that raised them.
+ */
+export const LABOR_UNATTACHED_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.not-own-profile',
+  'form.violation.profile-inactive',
+  'form.violation.session-already-open',
+]);
+
+/**
+ * The first sentence among a failure's field errors that no control will show.
+ *
+ * Membership, not trust: only a key this module has been told about is
+ * returned, so an unfamiliar token leaves the alert as it was rather than
+ * putting a rule name in front of a technician.
+ */
+export function unattachedRefusalKey(
+  fieldErrors: Readonly<Record<string, string>> | undefined
+): string | null {
+  for (const key of Object.values(fieldErrors ?? {})) {
+    if (LABOR_UNATTACHED_REFUSAL_KEYS.includes(key)) return key;
+  }
+  return null;
+}
+
 /**
  * One row of the caller's own queue — the published `QueueEntry`.
  *

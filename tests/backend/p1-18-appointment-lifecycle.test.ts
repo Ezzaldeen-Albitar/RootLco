@@ -798,6 +798,28 @@ describe('apt.appointment-create', () => {
     expect(naive.status).toBe(422);
     expect(((await naive.json()) as Body).code).toBe('ERR-VAL-001');
 
+    /*
+     * An entry that DOES end in something offset-shaped, but not in an offset.
+     * `+09` is what a caller writes who half-remembers the shape, and it used to
+     * answer with the same token as the naive case above — telling them to
+     * supply the offset their entry already ends in.
+     *
+     * The date's own hyphens are what makes this hard to tell apart: a detector
+     * anchored on a trailing sign alone reads the `-` in `2026-09-01` as the
+     * start of a displacement and calls the zone-less case above malformed. The
+     * two cases are asserted together so neither can be satisfied alone.
+     */
+    const mistyped = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T09:00:00+09',
+        requestedTo: '2026-09-01T10:00:00+09',
+      })
+    );
+    expect(mistyped.status).toBe(422);
+    expect(((await mistyped.json()) as Body).violations?.[0]?.rule).toBe(
+      'appointment_time_zone_unreadable'
+    );
+
     const inverted = await create(
       bookingFor(vehicle, {
         requestedFrom: '2026-09-01T10:00:00Z',
@@ -830,14 +852,74 @@ describe('apt.appointment-create', () => {
     ).toBe(0);
   });
 
+  /**
+   * The window rules name themselves on the wire.
+   *
+   * All three used to arrive as `invalid_value`, one sentence telling the
+   * receptionist to check the choices, the length and the range of what they
+   * typed. None of the three is a choice, a length or a range, and the middle
+   * one is not visible in the entry at all — a time with no zone looks exactly
+   * like a time with one — so that sentence sent somebody to re-read a correct
+   * entry. The case above proves each window is refused; this one proves the
+   * caller is told WHICH rule refused, which is what picks the sentence.
+   */
+  it('names which window rule refused: unreadable, zone-less, mistyped or backwards', async () => {
+    authAs(SUBJ_FULL_A);
+    const vehicle = await newVehicle();
+
+    // Carries `Z`, so the offset guard passes and the parse is what fails.
+    const unreadable = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-13-01T09:00:00Z',
+        requestedTo: '2026-13-01T10:00:00Z',
+      })
+    );
+    expect(unreadable.status).toBe(422);
+    const unreadableProblem = (await unreadable.json()) as Body;
+    expect(unreadableProblem.code).toBe('ERR-VAL-001');
+    expect(unreadableProblem.violations?.[0]?.path).toBe('body');
+    expect(unreadableProblem.violations?.[0]?.rule).toBe('appointment_time_unreadable');
+
+    const naive = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T09:00:00',
+        requestedTo: '2026-09-01T10:00:00',
+      })
+    );
+    expect(naive.status).toBe(422);
+    expect(((await naive.json()) as Body).violations?.[0]?.rule).toBe(
+      'appointment_time_zone_missing'
+    );
+
+    const inverted = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T10:00:00Z',
+        requestedTo: '2026-09-01T09:00:00Z',
+      })
+    );
+    expect(inverted.status).toBe(422);
+    expect(((await inverted.json()) as Body).violations?.[0]?.rule).toBe(
+      'appointment_window_backwards'
+    );
+
+    expect(
+      await countWhere(`SELECT count(*)::text AS n FROM apt.appointments WHERE vehicle_id = $1`, [
+        vehicle,
+      ])
+    ).toBe(0);
+  });
+
   // V8 parses an offset hour anywhere in 00–23, so `+16:00` satisfies `Date.parse`
   // and every application guard and is refused only by PostgreSQL, whose
   // `timestamptz` displacement limit is ±15:59:59. That refusal is SQLSTATE 22009,
-  // which nothing maps — so before the domain capped the offset, this booking was a
-  // 500 and an exception-monitor incident that any authenticated caller could
-  // manufacture at will. The +14:00 half is the control that stops the cap being
-  // over-tightened into a real outage: Kiribati is genuinely +14:00.
-  it('refuses an offset wider than PostgreSQL allows and still accepts +14:00', async () => {
+  // which nothing maps — so before the domain bounded the offset, this booking was
+  // a 500 and an exception-monitor incident that any authenticated caller could
+  // manufacture at will. The bound the domain publishes is the civil range,
+  // -12:00 to +14:00, which is the one a refusal sentence can name; everything
+  // PostgreSQL would have refused is still refused, earlier. The +14:00 half is the
+  // control that stops the bound being over-tightened into a real outage: Kiribati
+  // is genuinely +14:00.
+  it('refuses an offset outside the civil range and still accepts +14:00', async () => {
     authAs(SUBJ_FULL_A);
     const vehicle = await newVehicle();
 
@@ -848,7 +930,12 @@ describe('apt.appointment-create', () => {
       })
     );
     expect(tooWide.status).toBe(422);
-    expect(((await tooWide.json()) as Body).code).toBe('ERR-VAL-001');
+    const tooWideProblem = (await tooWide.json()) as Body;
+    expect(tooWideProblem.code).toBe('ERR-VAL-001');
+    // The TOKEN, not only the code: it is what picks the sentence, and this
+    // entry already carries an offset, so the zone-less sentence would tell the
+    // caller to add what they have already written.
+    expect(tooWideProblem.violations?.[0]?.rule).toBe('appointment_time_zone_out_of_range');
     expect(
       await countWhere(`SELECT count(*)::text AS n FROM apt.appointments WHERE vehicle_id = $1`, [
         vehicle,
@@ -1303,7 +1390,16 @@ describe('apt.appointment-reschedule', () => {
       2
     );
     expect(response.status).toBe(409);
-    expect(((await response.json()) as Body).code).toBe('ERR-TRN-001');
+    const refused = (await response.json()) as Body;
+    expect(refused.code).toBe('ERR-TRN-001');
+    // Owner directive, user-facing errors. One catalogue code covers four
+    // lifecycle refusals with four different cures, and no server prose ever
+    // reaches a screen — so this token is the only thing that can turn the
+    // refusal into a sentence a clerk can act on. Pinned on the wire, because
+    // a token that stopped being published would fail nothing else here.
+    expect(refused.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_reschedulable' },
+    ]);
     expect((await readAppointment(appointment)).confirmed_from).toBeNull();
   });
 
@@ -1387,7 +1483,11 @@ describe('apt.appointment-cancel', () => {
 
     const again = await cancel(appointment, { cancellationReasonId: REASON_A }, 2);
     expect(again.status).toBe(409);
-    expect(((await again.json()) as Body).code).toBe('ERR-TRN-001');
+    const refusedAgain = (await again.json()) as Body;
+    expect(refusedAgain.code).toBe('ERR-TRN-001');
+    expect(refusedAgain.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_cancellable' },
+    ]);
 
     const row = await readAppointment(appointment);
     expect(row.cancelled_at?.toISOString()).toBe(first.cancelled_at?.toISOString());
@@ -1506,7 +1606,14 @@ describe('apt.appointment-no-show', () => {
     // You cannot fail to show up for an appointment nobody confirmed.
     const fromRequested = await noShow(requested, 1);
     expect(fromRequested.status).toBe(409);
-    expect(((await fromRequested.json()) as Body).code).toBe('ERR-TRN-001');
+    const refusedRequested = (await fromRequested.json()) as Body;
+    expect(refusedRequested.code).toBe('ERR-TRN-001');
+    // The same token from both states, because the cure is the same one:
+    // confirm the time, or cancel instead. A token per state would multiply
+    // the catalogue without telling the clerk anything more.
+    expect(refusedRequested.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_confirmed_for_no_show' },
+    ]);
     const stillRequested = await readAppointment(requested);
     expect(stillRequested.lifecycle_status).toBe('requested');
     expect(stillRequested.no_show_recorded_at).toBeNull();
@@ -1516,7 +1623,11 @@ describe('apt.appointment-no-show', () => {
     await cancel(cancelled, { cancellationReasonId: REASON_A }, 1);
     const fromCancelled = await noShow(cancelled, 2);
     expect(fromCancelled.status).toBe(409);
-    expect(((await fromCancelled.json()) as Body).code).toBe('ERR-TRN-001');
+    const refusedCancelled = (await fromCancelled.json()) as Body;
+    expect(refusedCancelled.code).toBe('ERR-TRN-001');
+    expect(refusedCancelled.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_confirmed_for_no_show' },
+    ]);
     const stillCancelled = await readAppointment(cancelled);
     expect(stillCancelled.lifecycle_status).toBe('cancelled');
     expect(stillCancelled.no_show_recorded_at).toBeNull();

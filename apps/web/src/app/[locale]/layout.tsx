@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation';
 import { brandTheme } from '@/components/brand';
 import { brandProductName } from '@/components/brand/theme';
 import { NotificationHost } from '@/components/notifications';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { DEFAULT_LOCALE, LOCALES, directionOf, isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
 
@@ -76,7 +78,16 @@ export default async function LocaleLayout({
         <a className="skip-link" href="#main">
           {translate(messages, 'app.skipToContent')}
         </a>
-        {children}
+        {/*
+          The Material UI foundation (ADR-022): the Emotion cache, the theme and
+          the date adapter, for every route group below. It is the one client
+          component this layout mounts for it, and it receives only the locale
+          and the `mui.*` catalogue entries, so the layout stays a Server
+          Component and the rest of the catalogue is not serialised twice.
+        */}
+        <UiFoundationProvider locale={locale} text={muiTextOf(messages)}>
+          {children}
+        </UiFoundationProvider>
         {/*
           The single notification authority, mounted ONCE and above every route
           group — `(auth)`, `(dashboard)` and `(design)` all inherit it, so a

@@ -253,14 +253,12 @@ describe('inv.stock-availability-read — what a branch actually holds', () => {
       )
     );
     const keys = Object.keys(page.items[0] ?? {});
-    for (const invented of [
-      'damagedQty',
-      'customerSuppliedQty',
-      'externalPurchasePendingQty',
-      'inTransitQty',
-    ]) {
+    for (const invented of ['damagedQty', 'customerSuppliedQty', 'externalPurchasePendingQty']) {
       expect(keys).not.toContain(invented);
     }
+    // `inTransitQty` is no longer invented: since the P1-32 preparatory slice it is
+    // the balance of the branch's `transit` location, which the schema does store.
+    expect(keys).toContain('inTransitQty');
   });
 
   it('excludes quarantine by default, which is what keeps available honest', async () => {
@@ -456,7 +454,7 @@ describe('inv.stock-movement-list — the immutable ledger', () => {
       (
         await call(
           MOVEMENTS,
-          `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&movementType=transfer`
+          `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&movementType=relocation`
         )
       ).status
     ).toBe(422);

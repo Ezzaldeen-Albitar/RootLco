@@ -86,7 +86,12 @@ export async function listDiagnosticTypes(): Promise<ReadState<ItemsOnly<Diagnos
 
 /** `dia.template-list` — a real cursor page, each row carrying its own cursor. */
 export async function listTemplates(
-  filter: { readonly status?: string; readonly diagnosticTypeId?: string },
+  filter: {
+    readonly status?: string;
+    readonly diagnosticTypeId?: string;
+    /** The page size the grid asked for; 50 for a caller that names none. */
+    readonly limit?: number;
+  },
   cursor: string | null
 ): Promise<ReadState<CursorPage<InspectionTemplateListRow>>> {
   return readOperation<CursorPage<InspectionTemplateListRow>>(
@@ -95,7 +100,7 @@ export async function listTemplates(
         status: filter.status,
         diagnosticTypeId: filter.diagnosticTypeId,
         cursor,
-        limit: 50,
+        limit: filter.limit ?? 50,
       })
   );
 }

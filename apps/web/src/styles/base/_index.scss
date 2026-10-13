@@ -2,3 +2,7 @@
 @forward 'accessibility';
 @forward 'scrollbars';
 @forward 'navigation';
+
+// Last, so that inside the `rootlco-reset` layer the vendored preflight follows
+// the reset and the focus ring exactly as Tailwind's own preflight used to.
+@forward 'preflight';

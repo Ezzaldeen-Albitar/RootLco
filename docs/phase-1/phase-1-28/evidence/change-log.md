@@ -649,6 +649,21 @@ citation half of `P1-28-DOC-001` had never been checked at all.
   B12-B13 now say which one applies instead of claiming the phase consumes all
   six reception reads.
 
+## The conversion step links to its work order, and the wizard's reach widens (`P1-32-PRE-OD-QAF`)
+
+- **FE-022 changed after this phase.** Browser QA part 7 row 5.3: the
+  conversion answer now links to the work order it created (for a reader who
+  may open it) and says a platform state in words; a code outside the platform
+  vocabulary is still drawn as the code. `TC-P1-28-XD-004` quotes the renamed
+  and the new case, and the FE-022 verdict cells say the state is translated.
+- **The access gate's least-privilege reach widened with it.** Rule 4 of
+  `validate:p1-28-access` counts one link level, so the check-in wizard now
+  reaches the work-order detail route and that route's operations, which
+  require `iam.sensitive.view` in their own right. The composed record is
+  unchanged and still what licenses the wizard's own use: the access-gate case
+  that empties the record now cuts that one link first and must still report
+  the code as surplus, and a separate assertion records the widened reach.
+
 ---
 
 ## What is deliberately NOT in this release

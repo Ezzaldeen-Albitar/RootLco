@@ -26,6 +26,7 @@
  */
 import { composeModule } from '@/server/layering';
 import { WorkOrderCatalogRepository } from './data/work-order-catalog-repository';
+import { WorkOrderOverviewPort } from './application/work-order-overview-port';
 export type {
   JobRow,
   StatusHistoryRow,
@@ -44,6 +45,7 @@ export type {
   WorkOrderDetail,
   WorkOrderHistoryEntry,
   WorkOrderHistoryView,
+  WorkOrderBoardSummary,
   WorkOrderSummary,
 } from './application/work-order-service';
 import { WorkOrderRepository } from './data/work-order-repository';
@@ -53,6 +55,7 @@ import { JobAssignmentService } from './application/job-assignment-service';
 import { AdditionalWorkService } from './application/additional-work-service';
 import { JobBoardService } from './application/job-board-service';
 import { JobBoardRepository } from './data/job-board-repository';
+import { WorkOrderReportPort } from './application/work-order-report-port';
 
 export type {
   AssignInput,
@@ -62,6 +65,32 @@ export type {
   TechnicianQueueResult,
 } from './application/job-assignment-service';
 export type { AssignmentRow, LineRow, TechnicianQueueRow } from './data/work-order-repository';
+// P1-31 P-11: the reporting port's contract. The FILTER type is exported too,
+// because the reporting module constructs one — it is a value-shaped contract of
+// this module's surface, not a peek into its data layer.
+export type {
+  WorkOrderStatusSummaryFilter,
+  WorkOrderStatusSummaryRows,
+  WorkOrderStateCountRow,
+} from './data/work-order-repository';
+export type {
+  JobWorkOrderReference,
+  WorkOrderStateCount,
+  WorkOrderStatusSummary,
+} from './application/work-order-report-port';
+/**
+ * The OVERVIEW port's result types (Owner directive — the tenant dashboard).
+ *
+ * Published because the overview module composes them into the dashboard
+ * response; the repository stays internal, so no caller can run this module's
+ * SQL under its own identity.
+ */
+export type {
+  OverviewScope,
+  TechnicianAssignmentLoad,
+  WorkOrderBoardCounts,
+  WorkOrderStateBucket,
+} from './application/work-order-overview-port';
 export type {
   AdditionalWorkDecisionResult,
   AdditionalWorkDetailView,
@@ -106,9 +135,12 @@ export {
   MAX_REASON,
   MAX_REQUEST_SUMMARY,
   MAX_RESTRICTED_DESCRIPTION,
+  MAX_WORK_ORDER_SEARCH_FRAGMENT,
+  MIN_WORK_ORDER_SEARCH_FRAGMENT,
   PARTS_FORWARD_STATES,
   SETTABLE_FULFILLMENT_STATES,
   WORK_ORDER_KINDS,
+  WORK_ORDER_STATE_GROUPS,
   WorkOrderRuleError,
   assertAdditionalWorkTransition,
   assertTransitionReason,
@@ -122,6 +154,7 @@ export {
   type PartsForwardState,
   type SettableFulfillmentState,
   type WorkOrderKind,
+  type WorkOrderStateGroup,
 } from './domain/work-order';
 
 export type {
@@ -164,6 +197,19 @@ export const workOrderModule = composeModule({
       // graph `wo.work-order-detail` does, and two instances would be two caches
       // of one tenant's configuration.
       jobBoard: new JobBoardService(new JobBoardRepository(), catalog),
+      // P1-31 P-11. The port the REPORTING module consumes, and the only part of
+      // this module it can reach: two reads, sharing the repository and the state
+      // catalogue above rather than constructing second copies of either. Slice 2
+      // added `workOrdersForJobs`, because `tech.labor_sessions` carries a job id
+      // and `wo.jobs` is this module's to answer for.
+      reportPort: new WorkOrderReportPort(repository, catalog),
+      // Owner directive — the tenant dashboard. The port the OVERVIEW module
+      // consumes, sharing the same repository and state catalogue rather than
+      // constructing second copies of either: the dashboard's per-state counts
+      // and the board's own reads must resolve the platform/tenant catalogue
+      // precedence exactly once, or a state a tenant shadowed would be labelled
+      // one way on the board and another on the dashboard.
+      overviewPort: new WorkOrderOverviewPort(repository, catalog),
     };
   },
 });

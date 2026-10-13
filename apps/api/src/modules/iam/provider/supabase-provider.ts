@@ -108,6 +108,23 @@ function translate(error: unknown, fallback: ProviderFailure): ProviderFailure {
   return fallback;
 }
 
+/**
+ * The provider's own sentence about a refused password, bounded and trimmed.
+ *
+ * Read only on the credential-policy path, where it is the provider's statement
+ * about a password the already-authenticated caller just chose for their own
+ * identity. It goes to the operator log and never to a response — see
+ * `ProviderFailure.policyMessage` and `toAppFailureFromProvider`. Bounded
+ * because an unbounded upstream string in a log line is an upstream-controlled
+ * log volume.
+ */
+function policyMessageOf(error: unknown): string | null {
+  const value = (error as SupabaseErrorish | null)?.message;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed.slice(0, 300);
+}
+
 function unavailable(cause: unknown): ProviderFailure {
   const status = statusOf(cause);
   if (status !== null)
@@ -118,6 +135,7 @@ function unavailable(cause: unknown): ProviderFailure {
 export class SupabaseIdentityProvider implements IdentityProvider {
   readonly name: string;
   readonly supportsDisable = true;
+  readonly supportsDelete = true;
 
   private readonly anon: SupabaseClient;
   private readonly admin: SupabaseClient;
@@ -352,9 +370,10 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       );
     }
 
-    // Every other session of this identity is revoked, so a stolen session that
-    // predates the reset does not survive it.
-    // Every other session of this identity ends with the credential change.
+    // The identity's REFRESH tokens are revoked here. An access token already
+    // issued to another device is a self-contained signed document the provider
+    // keeps no register for, so it keeps verifying until its own expiry — see
+    // `signOutEverywhere` below, and `PasswordChangeResult` in the service.
     // The admin sign-out takes a JWT, not a subject (GoTrue 2.x has no
     // revoke-by-subject), and the recovery exchange above is the one place this
     // adapter holds one of the user's own tokens. Measured on the local stack
@@ -366,8 +385,18 @@ export class SupabaseIdentityProvider implements IdentityProvider {
   }
 
   /**
-   * Global sign-out of the identity behind `accessToken` — all of its sessions,
-   * not just this one. Sent to the provider directly: the client library's
+   * Global sign-out of the identity behind `accessToken`.
+   *
+   * WHAT IT ENDS, precisely: the identity's REFRESH tokens. An access token
+   * already issued to another device is a signed document the provider holds no
+   * register for, so it keeps verifying until its own expiry (`jwt_expiry`) and
+   * this API keeps accepting it. Measured after a password change: a session
+   * signed in elsewhere answered 200 at +0, +15 and +30 seconds. The name of
+   * the endpoint is "logout"; the guarantee is narrower than the word, and
+   * every sentence this product shows about it has to match the guarantee, not
+   * the name.
+   *
+   * Sent to the provider directly: the client library's
    * `admin.signOut(jwt)` in the installed version answers "Auth session
    * missing" from inside the client without ever reaching the provider
    * (measured on the local stack with a client-library probe, P1-29 W9
@@ -387,7 +416,52 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     }
   }
 
-  private async signOutEverywhere(accessToken: string): Promise<void> {
+  /**
+   * Capability 14 — write a new credential for `subject`.
+   *
+   * The service-role user-update path, the same one `completePasswordReset`
+   * uses and for the same measured reason: the client library serves
+   * `auth.updateUser` from its OWN stored session, and with
+   * `persistSession: false` there is none, so a client carrying the caller's
+   * token as a header refuses with "session missing" before the provider is
+   * ever asked.
+   *
+   * A 400 or 422 here is GoTrue's credential policy speaking — `weak_password`
+   * and "Password should be at least N characters" both arrive that way — so it
+   * is translated to `credential-policy-rejected` with the provider's own
+   * sentence attached, BEFORE `translate` gets a chance to read the status as an
+   * invalid credential or an identity conflict, which is what those statuses
+   * mean everywhere else.
+   */
+  async setPassword(subject: string, newPassword: string): Promise<ProviderIdentity> {
+    if (subject.trim() === '') {
+      throw new ProviderFailure('identity-unavailable', 'A subject is required.');
+    }
+    let updated;
+    try {
+      updated = await this.admin.auth.admin.updateUserById(subject, { password: newPassword });
+    } catch (cause) {
+      throw unavailable(cause);
+    }
+    if (updated.error || !updated.data.user) {
+      const status = statusOf(updated.error);
+      if (status === 400 || status === 422) {
+        throw new ProviderFailure(
+          'credential-policy-rejected',
+          'The identity provider refused the new password.',
+          false,
+          policyMessageOf(updated.error)
+        );
+      }
+      throw translate(
+        updated.error,
+        new ProviderFailure('provider-rejected', 'The new password was refused.')
+      );
+    }
+    return this.identityOf(updated.data.user);
+  }
+
+  async signOutEverywhere(accessToken: string): Promise<void> {
     let response: Response;
     try {
       response = await fetch(`${this.options.url}/auth/v1/logout?scope=global`, {
@@ -561,5 +635,33 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     }
     if (disabled) await this.revokeAllSessions(subject);
     return this.identityOf(result.data.user);
+  }
+
+  /**
+   * Capability 13 — remove one identity, addressed by its subject.
+   *
+   * `deleteUser` takes the provider's own user id and nothing else: there is no
+   * address, no filter and no batch form of this call, so the narrowness of the
+   * compensation is a property of the endpoint rather than a convention this
+   * adapter is trusting itself to keep. A 404 is the desired end state already
+   * reached — the identity is gone — and is not reported as a refusal, so a
+   * retried compensation is idempotent.
+   */
+  async deleteIdentity(subject: string): Promise<void> {
+    if (subject.trim() === '') {
+      throw new ProviderFailure('identity-unavailable', 'A subject is required.');
+    }
+    let result;
+    try {
+      result = await this.admin.auth.admin.deleteUser(subject);
+    } catch (cause) {
+      throw unavailable(cause);
+    }
+    if (result.error && statusOf(result.error) !== 404) {
+      throw translate(
+        result.error,
+        new ProviderFailure('identity-unavailable', 'The identity could not be removed.')
+      );
+    }
   }
 }

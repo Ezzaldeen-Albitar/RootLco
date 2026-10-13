@@ -1,9 +1,79 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import {
+  TEST_BRANCH,
+  inBranch,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
+  RETIRED_BOX,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_COMPANY,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+import { PICKER_OPTION_WAIT_MS } from './support/picker-option';
+import { FAR_ZONE, clockName, expectOnClock, onClock } from './support/stock-operations';
+
+/*
+ * On Material UI since `P1-32-PRE-OD-INV5`: every render goes under the
+ * product's Material provider, as the locale layout mounts it. The issues of
+ * the order are a grid (`role="grid"`) whose Return carries the stock code, and
+ * the job is a combobox whose matches are options in a listbox — the selectors
+ * below moved with that structure; what each case asserts did not.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
+
+/**
+ * What an item picker holds. Since `P1-32-PRE-OD-INV1B` the inventory pickers
+ * are `EntityPicker`: one combobox whose value is the chosen record's name, and
+ * matches that are options of its listbox (in a portal, so found on the screen).
+ */
+function chosenIn(scope: HTMLElement, labelKey: string): string {
+  return (within(scope).getByRole('combobox', { name: EN[labelKey] as string }) as HTMLInputElement)
+    .value;
+}
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
+import { PLATFORM_WORK_ORDER_STATES } from '@/features/work-orders/work-orders-contract';
 
 /**
  * The parts of a work order, rendered (P1-30, `W5`, FE-011 and FE-012).
@@ -25,13 +95,26 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 
 const listPartIssues = vi.fn();
+const listItems = vi.fn();
 const listRequiredParts = vi.fn();
 const listReservations = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
 const createIssue = vi.fn();
 const createReturn = vi.fn();
+const createReservation = vi.fn();
+const listMaterialRequirements = vi.fn();
+const readMaterialRequirement = vi.fn();
+const closeMaterialRequest = vi.fn();
+const cancelMaterialRequest = vi.fn();
+const listItemCategoryPage = vi.fn();
+// P1-32-PRE-OD-INVF: units named through the list (UNIT-names).
+const listUnitsOfMeasure = vi.fn();
+// P1-32-PRE-OD-INVF: the requirement card names its part and service line (LANG-identifiers).
+const readItemDetail = vi.fn();
+const listServiceLines = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  readItemDetail: (...args: unknown[]) => readItemDetail(...args),
   listPartIssues: (...args: unknown[]) => listPartIssues(...args),
   listRequiredParts: (...args: unknown[]) => listRequiredParts(...args),
   listReservations: (...args: unknown[]) => listReservations(...args),
@@ -39,18 +122,39 @@ vi.mock('@/features/inventory/api', () => ({
   listBranches: (...args: unknown[]) => listBranches(...args),
   // `./shared` names this export; this screen never calls it.
   listItemCategories: vi.fn(),
+  // P1-32-PRE-OD-INV5: the material panel names an item family by the category tree.
+  listItemCategoryPage: (...args: unknown[]) => listItemCategoryPage(...args),
   createIssue: (...args: unknown[]) => createIssue(...args),
   createReturn: (...args: unknown[]) => createReturn(...args),
-  listItems: vi.fn(),
+  listItems: (...args: unknown[]) => listItems(...args),
   listAvailability: vi.fn(),
   listMovements: vi.fn(),
-  createReservation: vi.fn(),
+  createReservation: (...args: unknown[]) => createReservation(...args),
   releaseReservation: vi.fn(),
+  // P1-32: the material requirements panel this screen now mounts. The list is
+  // answered with an empty page by default so the panel settles; the tests that
+  // are about requirements give it rows of their own.
+  listMaterialRequirements: (...args: unknown[]) => listMaterialRequirements(...args),
+  readMaterialRequirement: (...args: unknown[]) => readMaterialRequirement(...args),
+  createMaterialRequirement: vi.fn(),
+  decideMaterialRequirement: vi.fn(),
+  recheckMaterialRequirement: vi.fn(),
+  cancelMaterialRequirement: vi.fn(),
+  requestMaterialException: vi.fn(),
+  decideMaterialException: vi.fn(),
+  closeMaterialRequest: (...args: unknown[]) => closeMaterialRequest(...args),
+  cancelMaterialRequest: (...args: unknown[]) => cancelMaterialRequest(...args),
+  listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
 }));
 
 const readWorkOrderDetail = vi.fn();
+const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+  listServiceLines: (...args: unknown[]) => listServiceLines(...args),
+}));
+vi.mock('@/features/work-orders/work-order-list-read', () => ({
+  listWorkOrdersCancellable: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 const push = vi.fn();
@@ -63,7 +167,11 @@ vi.mock('next/navigation', () => ({
 
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
-  requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+  requireSession: async () => ({
+    permissions: PERMISSIONS,
+    email: 'operator@test.local',
+    userId: USER_ID,
+  }),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -71,7 +179,32 @@ vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: (...args: unknown[]) => notifyActionResult(...args),
 }));
 
+/*
+ * What each operational grid of the screen was handed, by its test id. The real
+ * grid is drawn untouched: this only keeps the column definitions, because the
+ * width a column ASKS for is the one thing about widths a DOM test can see
+ * (jsdom lays nothing out — see `operational-grid-actions-width.dom.test.tsx`).
+ */
+const handedColumns = new Map<string, readonly { id: string; minChars?: number }[]>();
+vi.mock('@/components/data/OperationalGrid', async (original) => {
+  const real = await original<typeof import('@/components/data/OperationalGrid')>();
+  const Real = real.OperationalGrid as unknown as (props: Record<string, unknown>) => ReactElement;
+  return {
+    ...real,
+    OperationalGrid: (props: Record<string, unknown>) => {
+      if (typeof props['testId'] === 'string') {
+        handedColumns.set(
+          props['testId'],
+          props['columns'] as readonly { id: string; minChars?: number }[]
+        );
+      }
+      return <Real {...props} />;
+    },
+  };
+});
+
 const { PartsScreen } = await import('@/features/inventory/components/PartsScreen');
+const { columnMinWidth } = await import('@/components/data/OperationalGrid');
 type RoutePage = (args: {
   params: Promise<Record<string, string>>;
   searchParams: Promise<Record<string, string | undefined>>;
@@ -87,6 +220,14 @@ const RESERVATION_ID = '55555555-5555-4555-8555-555555555555';
 const ISSUE_ID = '66666666-6666-4666-8666-666666666666';
 const WORK_ORDER_ID = '77777777-7777-4777-8777-777777777777';
 const REQUIRED_PART_ID = '88888888-8888-4888-8888-888888888888';
+const USER_ID = '99999999-9999-4999-8999-999999999999';
+const OTHER_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const REQUIREMENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const SERVICE_LINE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const SPECIFICATION_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const UOM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const MATERIAL_REQUEST_ID = '12121212-1212-4212-8212-121212121212';
+const CATEGORY_ID = '13131313-1313-4313-8313-131313131313';
 
 const workOrder = {
   id: WORK_ORDER_ID,
@@ -167,6 +308,50 @@ function page(rows: readonly unknown[]) {
 }
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 
+/**
+ * One approved requirement, with every figure as the exact decimal string the
+ * server publishes. `remainingQuantity` is the SERVER's figure and is
+ * deliberately not the difference of the two beside it in every case: the screen
+ * must render what it was sent.
+ */
+function materialRequirement(over: Record<string, unknown> = {}) {
+  return {
+    id: REQUIREMENT_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    workOrderId: WORK_ORDER_ID,
+    serviceLineId: SERVICE_LINE_ID,
+    itemId: ITEM_ID,
+    itemCategoryId: null,
+    basis: 'specification',
+    specificationId: SPECIFICATION_ID,
+    serviceCondition: 'oil_change',
+    engineVariant: null,
+    uomId: UOM_ID,
+    sourceReference: null,
+    status: 'approved',
+    approvalRequiredReason: null,
+    requestedBy: OTHER_USER_ID,
+    approvedBy: USER_ID,
+    approvedAt: '2026-09-01T09:00:00Z',
+    rejectedBy: null,
+    rejectedAt: null,
+    rejectionReason: null,
+    allowanceQuantity: '4.250',
+    approvedExceptionQuantity: '0.500',
+    effectiveAllowance: '4.750',
+    requestedQuantity: '0.000',
+    reservedQuantity: '1.000',
+    issuedQuantity: '0.250',
+    returnedQuantity: '0.000',
+    committedQuantity: '1.250',
+    remainingQuantity: '3.500',
+    recordVersion: 1,
+    createdAt: '2026-09-01T08:30:00Z',
+    ...over,
+  };
+}
+
 function renderScreen(over: Record<string, unknown> = {}) {
   return renderLtr(
     <PartsScreen
@@ -178,6 +363,10 @@ function renderScreen(over: Record<string, unknown> = {}) {
       canOperate={false}
       canReadWorkOrder={true}
       canReadBranches={false}
+      currentUserId={USER_ID}
+      canRequestMaterial={false}
+      canApproveMaterial={false}
+      canDecideMaterialException={false}
       {...over}
     />
   );
@@ -198,8 +387,24 @@ const requiredRegion = () =>
 const issueForm = () =>
   screen.findByRole('form', { name: EN['inventory.issue.heading'] as string });
 
+/**
+ * Choose what this job is allowed to use. Every work-order draw is measured
+ * against a requirement and neither draw form can be submitted before one is
+ * chosen, so the issuing tests below do this first — exactly as an operator does.
+ */
+const chooseRequirement = async (user: ReturnType<typeof userEvent.setup>) =>
+  user.click(await screen.findByRole('button', { name: EN['inventory.material.use'] as string }));
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // P1-32-PRE-OD-INVF: the screen names a unit by code through the unit list.
+  listUnitsOfMeasure.mockResolvedValue({
+    status: 'ok',
+    data: { items: [] },
+    correlationId: 'corr',
+  });
+  readItemDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+  listServiceLines.mockResolvedValue({ status: 'ok', data: { items: [] }, correlationId: 'corr' });
   PERMISSIONS = [];
   // Fresh objects on every call, as a Server Action's deserialised answer is:
   // a stable mock would let a re-render loop hide behind React's bail-out.
@@ -213,22 +418,92 @@ beforeEach(() => {
   readWorkOrderDetail.mockImplementation(async () =>
     okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
   );
+  // A work order with material control on has a requirement per service line, so
+  // the default listing carries one. It covers a GROUP rather than a named part,
+  // which is what keeps the issue form unprefilled for the tests below that type
+  // the part themselves.
+  listMaterialRequirements.mockImplementation(async () =>
+    okRead({
+      items: [materialRequirement({ itemId: null, itemCategoryId: CATEGORY_ID })],
+      nextCursor: null,
+      hasMore: false,
+    })
+  );
+  readMaterialRequirement.mockImplementation(async () =>
+    okRead({ ...materialRequirement(), exceptions: [] })
+  );
+  listItemCategoryPage.mockImplementation(async () =>
+    okRead({ items: [], nextCursor: null, hasMore: false })
+  );
 });
 
 describe('reached from a work order', () => {
-  it('without a work order, explains and takes an identifier', async () => {
+  it('without a work order, finds the job on the working branch instead of asking for a reference', async () => {
+    listWorkOrders.mockResolvedValue({
+      status: 'ok',
+      rows: [workOrder],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-wo',
+    });
     const user = userEvent.setup();
     renderScreen({ workOrderId: null, workOrder: null });
     expect(screen.getByText(EN['inventory.parts.choose.explain'] as string)).toBeVisible();
     expect(listPartIssues).not.toHaveBeenCalled();
-    await user.type(
-      screen.getByLabelText(labelled('inventory.parts.choose.workOrderId')),
-      WORK_ORDER_ID
+    const box = screen.getByLabelText(EN['inventory.parts.choose.workOrderId'] as string);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.choose.submit'] as string })
+    );
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(push).not.toHaveBeenCalled();
+    await user.type(box, 'Corolla{Enter}');
+    await user.click(
+      await screen.findByRole('option', { name: /WO-000042/ }, { timeout: PICKER_OPTION_WAIT_MS })
+    );
+    expect(listWorkOrders).toHaveBeenCalledWith(
+      { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+      { q: 'Corolla' },
+      expect.objectContaining({ page: 1 }),
+      null,
+      // The read is cancellable: it carries the signal its search aborts.
+      expect.any(AbortSignal)
     );
     await user.click(
       screen.getByRole('button', { name: EN['inventory.parts.choose.submit'] as string })
     );
     expect(push).toHaveBeenCalledWith(`/en/inventory/parts?workOrderId=${WORK_ORDER_ID}`);
+  });
+
+  it('without the work-order code, keeps a labelled job reference, checks it, and opens that job', async () => {
+    /*
+     * The parts of a job are read with `inv.stock.read` alone, so the chooser
+     * must not take the way in away from a stock clerk without the job read
+     * (route sweep B2): the labelled reference they had before the picker.
+     */
+    const user = userEvent.setup();
+    renderScreen({ workOrderId: null, workOrder: null, canReadWorkOrder: false });
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    const box = screen.getByLabelText(labelled('inventory.workOrderReference.label'));
+    const submit = screen.getByRole('button', {
+      name: EN['inventory.parts.choose.submit'] as string,
+    });
+    expect(submit).toBeEnabled();
+    // Every id the submit is described by exists on the page.
+    for (const id of (submit.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean)) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+    await user.type(box, 'WO-000042');
+    await user.click(submit);
+    expect(
+      await screen.findByText(EN['inventory.workOrderReference.format'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(push).not.toHaveBeenCalled();
+    await user.clear(box);
+    await user.type(box, WORK_ORDER_ID);
+    await user.click(submit);
+    expect(push).toHaveBeenCalledWith(`/en/inventory/parts?workOrderId=${WORK_ORDER_ID}`);
+    expect(listWorkOrders).not.toHaveBeenCalled();
   });
 
   it('lists the issues on first paint with two figures as strings, and names the work order', async () => {
@@ -237,7 +512,7 @@ describe('reached from a work order', () => {
     expect(listPartIssues.mock.calls[0]?.[0]).toBe(WORK_ORDER_ID);
     expect(screen.getByText('WO-000042')).toBeVisible();
     expect(screen.getByText('Layla Haddad')).toBeVisible();
-    const table = await within(issuesRegion()).findByRole('table');
+    const table = await within(issuesRegion()).findByRole('grid');
     expect(within(table).getByText('2.500')).toBeVisible();
     expect(within(table).getByText('1.000')).toBeVisible();
     expect(within(table).getByText('BRK-001')).toBeVisible();
@@ -248,12 +523,37 @@ describe('reached from a work order', () => {
     // a third figure taken from them (1.5, 1.500, whatever its header) would
     // land in this list and fail the equality.
     const dataRow = within(table).getAllByRole('row')[1] as HTMLElement;
-    const cells = within(dataRow).getAllByRole('cell');
+    const cells = within(dataRow).getAllByRole('gridcell');
     expect(cells).toHaveLength(7);
     const figures = cells
       .map((cell) => (cell.textContent ?? '').trim())
       .filter((text) => /^-?\d+(\.\d+)?$/.test(text));
     expect(figures).toEqual(['2.500', '1.000']);
+  });
+
+  /**
+   * DEF-M-04. The header printed the state code itself, so English read
+   * "State in_progress" and Arabic carried the same Latin token inside an RTL
+   * sentence. Every code the platform seeds now has a sentence; a code a tenant
+   * invented has none and is rendered as the token it is rather than guessed at.
+   */
+  it('names every platform work-order state in words, in both languages', async () => {
+    for (const code of PLATFORM_WORK_ORDER_STATES) {
+      const key = `workOrders.state.${code}`;
+      expect(EN[key], `en is missing ${key}`).toBeTypeOf('string');
+      expect(AR[key], `ar is missing ${key}`).toBeTypeOf('string');
+    }
+    renderScreen({ workOrder: { ...workOrder, state: 'in_progress' } });
+    await waitFor(() => expect(listPartIssues).toHaveBeenCalled());
+    expect(screen.getByText(EN['workOrders.state.in_progress'] as string)).toBeVisible();
+    expect(screen.queryByText('in_progress')).toBeNull();
+  });
+
+  it('renders a state the platform does not define as the code it is, not as a key', async () => {
+    renderScreen({ workOrder: { ...workOrder, state: 'awaiting_paint_booth' } });
+    await waitFor(() => expect(listPartIssues).toHaveBeenCalled());
+    expect(screen.getByText('awaiting_paint_booth')).toBeVisible();
+    expect(screen.queryByText('workOrders.state.awaiting_paint_booth')).toBeNull();
   });
 
   it('says a refused work-order read was refused, not that the operator lacks access', async () => {
@@ -270,13 +570,42 @@ describe('reached from a work order', () => {
     expect(screen.getByText(EN['inventory.parts.workOrderNotReadable'] as string)).toBeVisible();
   });
 
-  it('shows the required parts with their item reference', async () => {
+  it('shows the required parts, saying the item cannot be named without the item read', async () => {
     renderScreen();
     await waitFor(() => expect(listRequiredParts).toHaveBeenCalledWith(WORK_ORDER_ID));
     const region = requiredRegion();
     expect(await within(region).findByText('Front brake pads')).toBeVisible();
     expect(within(region).getByText('2.000')).toBeVisible();
-    expect(within(region).getByText(ITEM_ID)).toBeVisible();
+    expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+      EN['inventory.material.itemUnavailable'] as string
+    );
+    expect(region.textContent).not.toContain(ITEM_ID);
+    expect(readItemDetail).not.toHaveBeenCalled();
+  });
+
+  it('names the item a required part is recorded against, never its identifier (LANG-identifiers)', async () => {
+    readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Brake pad set, front' }));
+    renderScreen({ canReadItems: true });
+    const region = requiredRegion();
+    await waitFor(() =>
+      expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+        'Brake pad set, front'
+      )
+    );
+    expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+    expect(region.textContent).not.toContain(ITEM_ID);
+  });
+
+  it('a refused item read leaves the required part unnamed in words, not by identifier', async () => {
+    renderScreen({ canReadItems: true });
+    const region = requiredRegion();
+    await waitFor(() =>
+      expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+        EN['inventory.material.itemUnavailable'] as string
+      )
+    );
+    expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+    expect(region.textContent).not.toContain(ITEM_ID);
   });
 
   it('renders the denied state instead of an empty list', async () => {
@@ -295,14 +624,396 @@ describe('reached from a work order', () => {
   });
 });
 
+describe('the job picker and the working context', () => {
+  /*
+   * The picker searches what the header holds when it is ONE branch, and
+   * nothing under "All my branches" or before a branch is chosen: the screen
+   * writes against the job it finds, so it is a concrete route and asks for one
+   * named branch instead (PR #467 review). A switch forgets the job
+   * found under the previous branch, asks first when one was chosen, and drops
+   * a reply that was still in flight.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const FAR_COMPANY = {
+    id: '88888888-8888-4888-8888-888888888888',
+    name: 'Far Operations',
+    code: 'FAR',
+  };
+  const FAR_BRANCH = {
+    ...OTHER_BRANCH,
+    id: '77777777-7777-4777-8777-777777777777',
+    companyId: FAR_COMPANY.id,
+    name: 'Far workshop',
+  };
+  const found = (rows: readonly unknown[]) => ({
+    status: 'ok' as const,
+    rows,
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr-wo',
+  });
+
+  function renderWith(snapshot: ReturnType<typeof branchSnapshot>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <BranchSwitch to="all" label="everywhere" />
+          <WorkingBranchProbe />
+          <PartsScreen
+            locale="en"
+            messages={en}
+            workOrderId={null}
+            workOrder={null}
+            workOrderRefused={false}
+            canOperate={false}
+            canReadWorkOrder={true}
+            canReadBranches={false}
+            currentUserId={USER_ID}
+            canRequestMaterial={false}
+            canApproveMaterial={false}
+            canDecideMaterialException={false}
+          />
+        </>,
+        { snapshot }
+      )
+    );
+  }
+  const box = () => screen.getByLabelText(EN['inventory.parts.choose.workOrderId'] as string);
+  const submit = () =>
+    screen.getByRole('button', { name: EN['inventory.parts.choose.submit'] as string });
+
+  it('under "All my branches" searches nothing, asks for one named branch right there, and disables the submit (PR #467 review)', async () => {
+    listWorkOrders.mockResolvedValue(found([workOrder]));
+    const user = userEvent.setup();
+    renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    const panel = await screen.findByTestId('work-order-picker-needs-branch');
+    expect(panel).toHaveTextContent(EN['workingContext.chooseBranchHere'] as string);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(submit()).toBeDisabled();
+    // No request at all — above all, none for every branch of the company.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(listWorkOrders).not.toHaveBeenCalled();
+    // The named chooser beside the ask is the working context's own switch,
+    // and nothing is pre-selected in it.
+    const chooser = screen.getByTestId('concrete-branch-chooser') as HTMLSelectElement;
+    expect(chooser.value).toBe('');
+    await user.selectOptions(chooser, OTHER_BRANCH.id);
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await user.type(box(), 'Layla{Enter}');
+    expect(
+      await screen.findByRole('option', { name: /WO-000042/ }, { timeout: PICKER_OPTION_WAIT_MS })
+    ).toBeVisible();
+    expect(listWorkOrders).toHaveBeenCalledWith(
+      { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
+      { q: 'Layla' },
+      expect.objectContaining({ page: 1 }),
+      null,
+      expect.any(AbortSignal)
+    );
+    for (const call of listWorkOrders.mock.calls) {
+      expect((call[0] as { branchId: string | null }).branchId).not.toBeNull();
+    }
+  });
+
+  it('under "All my branches" across companies, says why, reads nothing, and disables the submit with that reason', async () => {
+    const user = userEvent.setup();
+    renderWith({
+      ...branchSnapshot([TEST_BRANCH, FAR_BRANCH]),
+      companies: [TEST_COMPANY, FAR_COMPANY],
+    });
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    const panel = await screen.findByTestId('work-order-picker-needs-branch');
+    expect(panel).toHaveTextContent(EN['workingContext.chooseBranchHere'] as string);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    // A submit that would refuse with no control to point at is disabled
+    // instead, and described by the sentence that says why.
+    expect(submit()).toBeDisabled();
+    const describedBy = submit().getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      EN['workingContext.chooseBranchHere'] as string
+    );
+    expect(listWorkOrders).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('a reply still in flight when the branch changes is dropped, and the term goes with it', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    listWorkOrders.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(box(), 'Layla{Enter}');
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    // Nothing chosen yet, so nothing to lose: the switch does not ask.
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    answer(found([workOrder]));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The switch blurred and closed the box, and a closed list shows no option
+    // whatever it holds — so the list is OPENED before looking for the stale
+    // match: had the late reply been drawn, opening would show it.
+    await user.click(box());
+    await user.keyboard('{ArrowDown}');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.queryByRole('option', { name: /WO-000042/ })).toBeNull();
+    expect(box()).toHaveValue('');
+    expect(listWorkOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it('a chosen job is unsaved work: the switch asks, staying keeps it, discarding clears it', async () => {
+    listWorkOrders.mockResolvedValue(found([workOrder]));
+    const user = userEvent.setup();
+    renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(box(), 'Layla{Enter}');
+    await user.click(
+      await screen.findByRole('option', { name: /WO-000042/ }, { timeout: PICKER_OPTION_WAIT_MS })
+    );
+    expect((box() as HTMLInputElement).value).toContain('WO-000042');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect((box() as HTMLInputElement).value).toContain('WO-000042');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(box()).toHaveValue(''));
+    expect(box()).toHaveValue('');
+    // Nothing is opened for a job that belonged to the previous branch.
+    await user.click(submit());
+    expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe('a confirmed "Discard and change branch" opens the draw forms empty', () => {
+  /*
+   * The typed item reference is what makes the issue form unsaved work, and the
+   * quantity beside it is part of the same draw. Neither lives in a picker that
+   * forgets its choice on a switch, so without a reset the form would keep the
+   * previous branch's draw on screen, ready to send, after the operator had
+   * answered that it could go.
+   */
+  function renderInTwo() {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <PartsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={false}
+            canOperate={true}
+            canReadWorkOrder={true}
+            canReadBranches={false}
+            currentUserId={USER_ID}
+            canRequestMaterial={false}
+            canApproveMaterial={false}
+            canDecideMaterialException={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  it('empties the typed item reference and the quantity once the operator confirms', async () => {
+    const user = userEvent.setup();
+    renderInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.issue.open'] as string })
+    );
+    const reference = async () =>
+      within(await issueForm()).getByLabelText(labelled('inventory.itemPicker.reference'));
+    const quantity = async () =>
+      within(await issueForm()).getByLabelText(labelled('inventory.issue.quantity'));
+    try {
+      await user.type(await reference(), ITEM_ID);
+      await user.type(await quantity(), '3');
+
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      expect(await reference()).toHaveValue(ITEM_ID);
+
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(async () => expect(await reference()).toHaveValue(''));
+      expect(await quantity()).toHaveValue('');
+      // Nothing is left to lose, so the next switch asks nothing.
+      await switchWithoutQuestion(user, 'first');
+      expect(createIssue).not.toHaveBeenCalled();
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  /*
+   * A quantity is a draw in progress on its own. Before QA round three only the
+   * typed item reference asked: a quantity typed alone went silently on a
+   * switch, which is losing entries without the question.
+   */
+  it.each([
+    ['issue', 'inventory.issue.open', 'inventory.issue.heading', 'inventory.issue.quantity'],
+    [
+      'reserve',
+      'inventory.parts.reserve.open',
+      'inventory.parts.reserve.heading',
+      'inventory.reserve.quantity',
+    ],
+  ] as const)(
+    'a quantity typed alone in the %s form asks first, and the discard empties it',
+    async (_name, open, heading, label) => {
+      const user = userEvent.setup();
+      renderInTwo();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(await screen.findByRole('button', { name: EN[open] as string }));
+      const quantity = async () =>
+        within(await screen.findByRole('form', { name: EN[heading] as string })).getByLabelText(
+          labelled(label)
+        );
+      try {
+        // Nothing typed yet: an open, empty form is not unsaved work.
+        await switchWithoutQuestion(user, 'second');
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+
+        await user.type(await quantity(), '4');
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+        expect(heldBranch()).toBe(OTHER_BRANCH.id);
+        expect(await quantity()).toHaveValue('4');
+
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+        await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+        await waitFor(async () => expect(await quantity()).toHaveValue(''));
+        await switchWithoutQuestion(user, 'second');
+        expect(createIssue).not.toHaveBeenCalled();
+        expect(createReservation).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
+});
+
+describe('any choice in a draw form is a draw in progress, not only the quantity', () => {
+  /*
+   * The guard used to watch the quantity alone. An operator who had found the
+   * location — or the part — and not yet typed a number lost it to a branch
+   * switch without being asked. Each case below makes ONE choice and nothing
+   * else, so a guard that still watched only the quantity lets the switch
+   * through without the question and fails here.
+   */
+  function renderInTwo() {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <PartsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={false}
+            canOperate={true}
+            canReadWorkOrder={true}
+            canReadBranches={false}
+            currentUserId={USER_ID}
+            canRequestMaterial={false}
+            canApproveMaterial={false}
+            canDecideMaterialException={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  it.each([
+    ['issue', 'inventory.issue.open', 'inventory.issue.heading', 'inventory.issue.location'],
+    [
+      'reserve',
+      'inventory.parts.reserve.open',
+      'inventory.parts.reserve.heading',
+      'inventory.reserve.location',
+    ],
+  ] as const)(
+    'a location chosen alone in the %s form asks first, and the discard empties it',
+    async (_name, open, heading, label) => {
+      const user = userEvent.setup();
+      renderInTwo();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(await screen.findByRole('button', { name: EN[open] as string }));
+      const where = async () =>
+        within(await screen.findByRole('form', { name: EN[heading] as string })).getByLabelText(
+          labelled(label)
+        );
+      try {
+        expect(
+          await within(await where()).findByRole('option', { name: /WH-1/ })
+        ).toBeInTheDocument();
+        await user.selectOptions(await where(), LOCATION_ID);
+        expect(await where()).toHaveValue(LOCATION_ID);
+
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+        expect(heldBranch()).toBe(TEST_BRANCH.id);
+        expect(await where()).toHaveValue(LOCATION_ID);
+
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+        await waitFor(async () => expect(await where()).toHaveValue(''));
+        await switchWithoutQuestion(user, 'first');
+        expect(createIssue).not.toHaveBeenCalled();
+        expect(createReservation).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
+
+  it('a part typed alone in the reserve form asks first', async () => {
+    const user = userEvent.setup();
+    renderInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.parts.reserve.heading'] as string,
+    });
+    try {
+      await user.type(
+        within(form).getByLabelText(labelled('inventory.itemPicker.reference')),
+        ITEM_ID
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+});
+
 describe('FE-011 — issuing', () => {
   it('offers neither issuing nor returning without inv.stock.operate', async () => {
     renderScreen({ canOperate: false });
-    await within(issuesRegion()).findByRole('table');
+    await within(issuesRegion()).findByRole('grid');
     expect(screen.queryByRole('button', { name: EN['inventory.issue.open'] as string })).toBeNull();
-    expect(
-      screen.queryByRole('button', { name: EN['inventory.return.action'] as string })
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: labelled('inventory.return.action') })).toBeNull();
     expect(
       screen.queryByRole('button', { name: EN['inventory.parts.required.issueThis'] as string })
     ).toBeNull();
@@ -316,15 +1027,24 @@ describe('FE-011 — issuing', () => {
       created: { id: 'new-issue', quantity: '7.000', reservationId: null },
     });
     renderScreen({ canOperate: true });
+    // The requirement is chosen FIRST: choosing one clears any prefill, so an
+    // operator who picks the allowance after the line would lose the line.
+    await chooseRequirement(user);
     await user.click(
       await within(requiredRegion()).findByRole('button', {
         name: EN['inventory.parts.required.issueThis'] as string,
       })
     );
     const form = await issueForm();
-    expect(within(form).getByLabelText(labelled('inventory.issue.itemId'))).toHaveValue(ITEM_ID);
-    expect(within(form).getByLabelText(labelled('inventory.issue.requiredPartRef'))).toHaveValue(
-      REQUIRED_PART_ID
+    // Without the catalogue read the item stays in its labelled reference box,
+    // prefilled from the row; the line is chosen from the job's own list.
+    expect(within(form).getByLabelText(labelled('inventory.itemPicker.reference'))).toHaveValue(
+      ITEM_ID
+    );
+    await waitFor(() =>
+      expect(within(form).getByLabelText(labelled('inventory.issue.requiredPart'))).toHaveValue(
+        REQUIRED_PART_ID
+      )
     );
     expect(within(form).getByLabelText(labelled('inventory.issue.quantity'))).toHaveValue('2.000');
     await waitFor(() =>
@@ -354,6 +1074,7 @@ describe('FE-011 — issuing', () => {
       itemId: ITEM_ID,
       locationId: LOCATION_ID,
       quantity: '2.000',
+      materialRequirementId: REQUIREMENT_ID,
       requiredPartRef: REQUIRED_PART_ID,
     });
     const note = await screen.findByRole('status');
@@ -375,6 +1096,7 @@ describe('FE-011 — issuing', () => {
       correlationId: 'ref-res',
     }));
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     expect(
@@ -393,6 +1115,7 @@ describe('FE-011 — issuing', () => {
       created: { id: 'new-issue', quantity: '1.5', reservationId: RESERVATION_ID },
     });
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     await within(form).findByRole('option', { name: 'BRK-001 — WH-1 — 2.000' });
@@ -400,7 +1123,9 @@ describe('FE-011 — issuing', () => {
       within(form).getByLabelText(labelled('inventory.issue.reservation')),
       RESERVATION_ID
     );
-    expect(within(form).getByLabelText(labelled('inventory.issue.itemId'))).toHaveValue(ITEM_ID);
+    expect(within(form).getByLabelText(labelled('inventory.itemPicker.reference'))).toHaveValue(
+      ITEM_ID
+    );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     expect(within(form).getByLabelText(labelled('inventory.issue.location'))).toHaveValue(
       LOCATION_ID
@@ -415,6 +1140,7 @@ describe('FE-011 — issuing', () => {
       itemId: ITEM_ID,
       locationId: LOCATION_ID,
       quantity: '1.5',
+      materialRequirementId: REQUIREMENT_ID,
       reservationId: RESERVATION_ID,
     });
     expect(typeof (createIssue.mock.calls[0]?.[0] as { quantity: unknown }).quantity).toBe(
@@ -425,9 +1151,13 @@ describe('FE-011 — issuing', () => {
   it('refuses a zero quantity before sending anything', async () => {
     const user = userEvent.setup();
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
-    await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.itemPicker.reference')),
+      ITEM_ID
+    );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.issue.location')),
@@ -455,9 +1185,13 @@ describe('FE-011 — issuing', () => {
       created: null,
     });
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
-    await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.itemPicker.reference')),
+      ITEM_ID
+    );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.issue.location')),
@@ -472,40 +1206,383 @@ describe('FE-011 — issuing', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('when the work order cannot be read, takes the branch as identifiers and requests no list', async () => {
+  it('when the work order cannot be read, names the working branch instead of asking for one', async () => {
+    /*
+     * The work order's own branch is what a draw is addressed to. When that
+     * read is refused the screen falls back — and the fallback used to be two
+     * free-text boxes asking for a company reference and a branch reference,
+     * offered to the operator whose read had just been refused.
+     *
+     * It is the working context's named branch now (Owner directive,
+     * `P1-32-PRE-OD-UX`): a list, never a box, and the locations of that branch
+     * are read ONCE without anything being typed at all.
+     */
     const user = userEvent.setup();
     renderScreen({
       canOperate: true,
       canReadWorkOrder: false,
       workOrder: null,
-      canReadBranches: false,
     });
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     expect(within(form).getByText(EN['inventory.issue.branchUnknown'] as string)).toBeVisible();
+    // The shell already holds the named branches, so no directory is requested.
     expect(listBranches).not.toHaveBeenCalled();
-    expect(listLocations).not.toHaveBeenCalled();
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.common.companyIdField')),
-      COMPANY_ID
-    );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.common.branchIdField')),
-      BRANCH_ID
+    // Nothing to type: the branch is chosen, so the locations read themselves.
+    expect(within(form).queryAllByRole('textbox')).not.toContain(
+      within(form).queryByLabelText(RETIRED_BOX.en.company)
     );
     await waitFor(() =>
       expect(listLocations).toHaveBeenCalledWith({ companyId: COMPANY_ID, branchId: BRANCH_ID })
     );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
-    // Once the pair is complete the locations are read ONCE — not on every
-    // render the answer itself causes, and not again when another field changes.
+    // Read ONCE — not on every render the answer itself causes, and not again
+    // when another field changes.
     expect(listLocations).toHaveBeenCalledTimes(1);
-    await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
     await user.type(within(form).getByLabelText(labelled('inventory.issue.quantity')), '1');
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(listLocations).toHaveBeenCalledTimes(1);
     expect(listReservations).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the item and the required part are found, not typed (route sweep B2)', () => {
+  it('with the catalogue read, a required part opens the form on that part by name, and it is sent', async () => {
+    const user = userEvent.setup();
+    createIssue.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.issue.success', attempt: 1 },
+      created: { id: 'new-issue', quantity: '2.000', reservationId: null },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(
+      await within(requiredRegion()).findByRole('button', {
+        name: EN['inventory.parts.required.issueThis'] as string,
+      })
+    );
+    const form = await issueForm();
+    // The chosen item is the combobox's own value (`EntityPicker`, INV1b).
+    expect(chosenIn(form, 'inventory.issue.item')).toContain('Front brake pads');
+    expect(within(form).queryByDisplayValue(ITEM_ID)).toBeNull();
+    expect(
+      await within(form).findByRole('option', { name: 'Front brake pads — 2.000 set' })
+    ).toBeInTheDocument();
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalled());
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      requiredPartRef: REQUIRED_PART_ID,
+    });
+  });
+
+  it('with the catalogue read, an item is found by name; with none chosen, the control says so', async () => {
+    const user = userEvent.setup();
+    listItems.mockResolvedValue(
+      page([
+        {
+          id: ITEM_ID,
+          itemCategoryId: 'cat',
+          sku: 'BRK-001',
+          name: 'Brake pad',
+          description: null,
+          unitOfMeasure: { id: 'u', code: 'EA' },
+          itemType: 'part',
+          isStockTracked: true,
+          isSerialized: false,
+          lifecycleStatus: 'active',
+          recordVersion: 1,
+        },
+      ])
+    );
+    createIssue.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.issue.success', attempt: 1 },
+      created: { id: 'new-issue', quantity: '1', reservationId: null },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const form = await issueForm();
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.issue.quantity')), '1');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['inventory.itemPicker.required'] as string)
+    ).toBeVisible();
+    expect(createIssue).not.toHaveBeenCalled();
+    await user.type(
+      within(form).getByLabelText(EN['inventory.issue.item'] as string),
+      'BRK{Enter}'
+    );
+    // A match is an option of the combobox's listbox, drawn in a portal (INV1b).
+    await user.click(
+      await screen.findByRole(
+        'option',
+        { name: 'BRK-001 — Brake pad' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalled());
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({ itemId: ITEM_ID });
+    expect(listItems).toHaveBeenCalledWith(
+      { search: 'BRK', lifecycleStatus: 'active' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+  });
+
+  it('without the job read, the required-part line stays a labelled reference, checked before it is sent', async () => {
+    const user = userEvent.setup();
+    createIssue.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.issue.success', attempt: 1 },
+      created: { id: 'new-issue', quantity: '1', reservationId: null },
+    });
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+    await chooseRequirement(user);
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const form = await issueForm();
+    expect(listRequiredParts).not.toHaveBeenCalled();
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.issue.quantity')), '1');
+    const line = within(form).getByLabelText(
+      labelled('inventory.parts.requiredPartReference.label')
+    );
+    await user.type(line, 'line-1');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['inventory.parts.requiredPartReference.format'] as string)
+    ).toBeVisible();
+    expect(createIssue).not.toHaveBeenCalled();
+    await user.clear(line);
+    await user.type(line, REQUIRED_PART_ID);
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalled());
+    // The requirement names the item, which the reference box opened on.
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      requiredPartRef: REQUIRED_PART_ID,
+    });
+  });
+
+  it('a required part carried from "Issue" stays linked while the job’s list cannot be read, and is not sent once the operator unlinks it (route sweep B2 review)', async () => {
+    const user = userEvent.setup();
+    // Refused, so the form stays open for the second attempt below.
+    createIssue.mockResolvedValue({
+      state: { status: 'failed', messageKey: 'action.failed', attempt: 1 },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    const issueThis = await within(requiredRegion()).findByRole('button', {
+      name: EN['inventory.parts.required.issueThis'] as string,
+    });
+    // The panel's list answered; the form's own read of the same list does not.
+    listRequiredParts.mockImplementation(async () => ({
+      status: 'unavailable',
+      correlationId: 'ref-503',
+    }));
+    await user.click(issueThis);
+    const form = await issueForm();
+    const carried = await within(form).findByText(
+      (EN['inventory.issue.requiredPartCarried'] as string).replace('{part}', 'Front brake pads'),
+      { exact: false }
+    );
+    expect(carried).toBeVisible();
+    expect(carried).toHaveTextContent(EN['inventory.parts.required.unavailable'] as string);
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    const submit = () =>
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string });
+    await user.click(submit());
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    // Kept, and sent: never dropped because the select had nothing to show it in.
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({ requiredPartRef: REQUIRED_PART_ID });
+
+    // The operator's own choice: unlinked, the line is not sent.
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.issue.requiredPartUnlink'] as string,
+      })
+    );
+    expect(
+      within(form).queryByRole('button', {
+        name: EN['inventory.issue.requiredPartUnlink'] as string,
+      })
+    ).toBeNull();
+    await user.click(submit());
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(2));
+    expect(createIssue.mock.calls[1]?.[0]).not.toHaveProperty('requiredPartRef');
+  });
+
+  it('a carried part the job’s list no longer holds is said to be dropped, not dropped silently (route sweep B2 review)', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    const issueThis = await within(requiredRegion()).findByRole('button', {
+      name: EN['inventory.parts.required.issueThis'] as string,
+    });
+    listRequiredParts.mockImplementation(async () => okRead({ items: [] }));
+    createIssue.mockResolvedValue({
+      state: { status: 'failed', messageKey: 'action.failed', attempt: 1 },
+    });
+    await user.click(issueThis);
+    const form = await issueForm();
+    expect(
+      await within(form).findByText(EN['inventory.issue.requiredPartGone'] as string)
+    ).toBeVisible();
+    // Said to be dropped, and dropped: the draw goes out without the line
+    // (route sweep B3, the carried review nit).
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    expect(createIssue.mock.calls[0]?.[0]).not.toHaveProperty('requiredPartRef');
+  });
+
+  it('a required part carried from "Issue" stays linked while the job’s list is still being read, and is shown in the select once it answers (route sweep B3)', async () => {
+    const user = userEvent.setup();
+    createIssue.mockResolvedValue({
+      state: { status: 'failed', messageKey: 'action.failed', attempt: 1 },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    const issueThis = await within(requiredRegion()).findByRole('button', {
+      name: EN['inventory.parts.required.issueThis'] as string,
+    });
+    // The form's own read of the job's list is held open.
+    let answer: (value: unknown) => void = () => undefined;
+    listRequiredParts.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    await user.click(issueThis);
+    const form = await issueForm();
+    const carried = await within(form).findByText(
+      (EN['inventory.issue.requiredPartCarried'] as string).replace('{part}', 'Front brake pads'),
+      { exact: false }
+    );
+    expect(carried).toBeVisible();
+    // Still loading is not a refusal: no refusal is said beside it.
+    expect(carried).not.toHaveTextContent(EN['inventory.parts.required.unavailable'] as string);
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    // Sent while the list was still being read: never dropped for want of a select.
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({ requiredPartRef: REQUIRED_PART_ID });
+
+    answer(okRead({ items: [{ ...requiredPart }] }));
+    await waitFor(() =>
+      expect(
+        within(form).getByRole('combobox', { name: labelled('inventory.issue.requiredPart') })
+      ).toHaveValue(REQUIRED_PART_ID)
+    );
+  });
+
+  it('a late reply for an earlier item search is not drawn under a later one (route sweep B2 review)', async () => {
+    const held: Record<string, ((value: unknown) => void)[]> = { BR: [], BRK: [] };
+    const found = (sku: string, name: string) =>
+      page([
+        {
+          id: sku === 'BRK-001' ? ITEM_ID : '14141414-1414-4414-8414-141414141414',
+          itemCategoryId: 'cat',
+          sku,
+          name,
+          description: null,
+          unitOfMeasure: { id: 'u', code: 'EA' },
+          itemType: 'part',
+          isStockTracked: true,
+          isSerialized: false,
+          lifecycleStatus: 'active',
+          recordVersion: 1,
+        },
+      ]);
+    listItems.mockImplementation(
+      (criteria: { search: string }) =>
+        new Promise((resolve) => held[criteria.search]?.push(resolve))
+    );
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const form = await issueForm();
+    const box = within(form).getByLabelText(EN['inventory.issue.item'] as string);
+    await user.type(box, 'BR{Enter}');
+    await waitFor(() => expect(held['BR']?.length).toBeGreaterThan(0));
+    await user.type(box, 'K{Enter}');
+    await waitFor(() => expect(held['BRK']?.length).toBeGreaterThan(0));
+    for (const resolve of held['BRK'] ?? []) resolve(found('BRK-001', 'Brake pad'));
+    expect(
+      await screen.findByRole(
+        'option',
+        { name: 'BRK-001 — Brake pad' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    ).toBeVisible();
+    for (const resolve of held['BR'] ?? []) resolve(found('BRA-900', 'Bracket'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('option', { name: /BRA-900/ })).toBeNull();
+    expect(screen.getByRole('option', { name: 'BRK-001 — Brake pad' })).toBeVisible();
+  });
+
+  it('with the catalogue read, the reserve form opens on the item the requirement names, in words', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.parts.reserve.heading'] as string,
+    });
+    expect(chosenIn(form, 'inventory.reserve.item')).toContain(
+      EN['inventory.itemPicker.fromRequirement'] as string
+    );
+    expect(within(form).queryByDisplayValue(ITEM_ID)).toBeNull();
   });
 });
 
@@ -523,9 +1600,9 @@ describe('FE-012 — returning', () => {
       },
     });
     renderScreen({ canOperate: true });
-    const table = await within(issuesRegion()).findByRole('table');
+    const table = await within(issuesRegion()).findByRole('grid');
     await user.click(
-      within(table).getByRole('button', { name: EN['inventory.return.action'] as string })
+      within(table).getByRole('button', { name: labelled('inventory.return.action') })
     );
     const form = await screen.findByRole('form', { name: labelled('inventory.return.heading') });
     expect(
@@ -563,9 +1640,9 @@ describe('FE-012 — returning', () => {
       created: null,
     });
     renderScreen({ canOperate: true });
-    const table = await within(issuesRegion()).findByRole('table');
+    const table = await within(issuesRegion()).findByRole('grid');
     await user.click(
-      within(table).getByRole('button', { name: EN['inventory.return.action'] as string })
+      within(table).getByRole('button', { name: labelled('inventory.return.action') })
     );
     const form = await screen.findByRole('form', { name: labelled('inventory.return.heading') });
     await user.type(within(form).getByLabelText(labelled('inventory.return.quantity')), '9');
@@ -644,11 +1721,1401 @@ describe('Arabic, right to left', () => {
         canOperate={false}
         canReadWorkOrder={false}
         canReadBranches={false}
+        currentUserId={USER_ID}
+        canRequestMaterial={false}
+        canApproveMaterial={false}
+        canDecideMaterialException={false}
       />
     );
     await waitFor(() => expect(listPartIssues).toHaveBeenCalled());
-    const table = await screen.findByRole('table');
+    const table = await screen.findByRole('grid');
     expect(within(table).getByText('2.500')).toBeVisible();
     expect(screen.getByText(AR['inventory.parts.issues.heading'] as string)).toBeVisible();
+  });
+});
+
+/**
+ * P1-32 — a work-order draw is measured against a material requirement.
+ *
+ * The properties under test: neither draw form can be submitted before a
+ * requirement is chosen and both say so with the act to perform first; choosing
+ * one sends its identifier with the draw; a refusal the server published as a
+ * material-draw reason is rendered as a plain sentence naming the next step; and
+ * the material request a governed draw opened can be settled or withdrawn.
+ */
+describe('a work-order draw needs a requirement', () => {
+  const reserveForm = () =>
+    screen.findByRole('form', { name: EN['inventory.parts.reserve.heading'] as string });
+
+  it('offers no submit until a requirement is chosen, and names the act to do first', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    expect(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    ).toBeDisabled();
+    expect(
+      within(form).getByText(EN['inventory.parts.draw.needRequirement'] as string)
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const issue = await issueForm();
+    expect(
+      within(issue).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    ).toBeDisabled();
+    expect(createReservation).not.toHaveBeenCalled();
+    expect(createIssue).not.toHaveBeenCalled();
+  });
+
+  it('sends the chosen requirement with the reservation', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: {
+        id: RESERVATION_ID,
+        itemId: ITEM_ID,
+        locationId: LOCATION_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        workOrderId: WORK_ORDER_ID,
+        quantity: '1.000',
+        status: 'active',
+        expiresAt: null,
+        recordVersion: 1,
+        materialRequestId: MATERIAL_REQUEST_ID,
+        replayed: false,
+      },
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    await waitFor(() => expect(createReservation).toHaveBeenCalled());
+    expect(createReservation.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      locationId: LOCATION_ID,
+      quantity: '1.000',
+      workOrderId: WORK_ORDER_ID,
+      materialRequirementId: REQUIREMENT_ID,
+    });
+  });
+
+  it('states a reservation drawn on another service line beside the requirement, keeping the entry', async () => {
+    // The refusal is published against `body.materialRequirementId`, and the
+    // requirement note is the only place on this form that names one.
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { materialRequirementId: 'form.violation.other_requirement' },
+        attempt: 1,
+      },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    expect(
+      await within(form).findByText(EN['form.violation.other_requirement'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('inventory.reserve.quantity'))).toHaveValue(
+      '1.000'
+    );
+  });
+
+  it('renders a refused draw as the reason the server published, with its next step', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement',
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '9.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal).toHaveTextContent(
+      EN['inventory.refusal.materialDraw.exceeds_requirement'] as string
+    );
+    // The sentence names the remedy, not a code.
+    expect(EN['inventory.refusal.materialDraw.exceeds_requirement']).toContain('exception');
+  });
+
+  it('spends the three figures and their unit when the server published them', async () => {
+    // CC-OD-32. "More than the work order is approved to use" left the operator
+    // to guess by how much. The figures are the server's strings, filled into
+    // the sentence by the catalogue; nothing here is added up in the browser.
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement.figures',
+        messageValues: {
+          allowance: '4.000',
+          used: '3.500',
+          requested: '9.000',
+          unit: 'L',
+        },
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '9.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal).toHaveTextContent('approved 4.000 L');
+    expect(refusal).toHaveTextContent('already used 3.500 L');
+    expect(refusal).toHaveTextContent('requested 9.000 L');
+    // A placeholder left on screen is the defect this case was written against.
+    expect(refusal.textContent ?? '').not.toContain('{');
+    // What the operator typed is still there to correct.
+    expect(within(form).getByLabelText(labelled('inventory.reserve.quantity'))).toHaveValue(
+      '9.000'
+    );
+  });
+
+  it('says the same refusal in Arabic, figures and all', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement.figures',
+        messageValues: {
+          allowance: '4.000',
+          used: '3.500',
+          requested: '9.000',
+          unit: 'L',
+        },
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderRtl(
+      <PartsScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={false}
+        canOperate={true}
+        canReadWorkOrder={false}
+        canReadBranches={false}
+        currentUserId={USER_ID}
+        canRequestMaterial={false}
+        canApproveMaterial={false}
+        canDecideMaterialException={false}
+      />
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: AR['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: AR['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: AR['inventory.parts.reserve.heading'] as string,
+    });
+    await user.selectOptions(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.location'] as string)}`)
+      ),
+      LOCATION_ID
+    );
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.quantity'] as string)}`)
+      ),
+      '9.000'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: AR['inventory.parts.reserve.submit'] as string })
+    );
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent ?? '').toContain('4.000 L');
+    expect(refusal.textContent ?? '').toContain('3.500 L');
+    expect(refusal.textContent ?? '').toContain('9.000 L');
+    expect(refusal.textContent ?? '').not.toContain('{');
+    expect(refusal).not.toHaveTextContent(
+      EN['inventory.refusal.materialDraw.exceeds_requirement.figures'] as string
+    );
+  });
+
+  it('settles the material the draw opened, naming that request', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: {
+        id: RESERVATION_ID,
+        itemId: ITEM_ID,
+        locationId: LOCATION_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        workOrderId: WORK_ORDER_ID,
+        quantity: '1.000',
+        status: 'active',
+        expiresAt: null,
+        recordVersion: 1,
+        materialRequestId: MATERIAL_REQUEST_ID,
+        replayed: false,
+      },
+    }));
+    closeMaterialRequest.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.material.request.close.success' },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const region = await screen.findByRole('region', {
+      name: EN['inventory.parts.request.heading'] as string,
+    });
+    // The request is said by its heading and its sentence. Its identifier was
+    // drawn after the sentence as a "reference" and no longer is (INV-H).
+    expect(within(region).getByText(EN['inventory.parts.request.explain'] as string)).toBeVisible();
+    expect(region.textContent).not.toContain(MATERIAL_REQUEST_ID);
+    expect(region.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
+    expect(EN['inventory.parts.request.explain']).not.toMatch(/Reference/);
+    expect(AR['inventory.parts.request.explain']).not.toMatch(/المرجع/);
+    await user.click(
+      within(region).getByRole('button', { name: EN['inventory.parts.request.close'] as string })
+    );
+    await waitFor(() => expect(closeMaterialRequest).toHaveBeenCalledWith(MATERIAL_REQUEST_ID, {}));
+    expect(cancelMaterialRequest).not.toHaveBeenCalled();
+  });
+
+  it('refuses to withdraw the material without a reason', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: {
+        id: RESERVATION_ID,
+        itemId: ITEM_ID,
+        locationId: LOCATION_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        workOrderId: WORK_ORDER_ID,
+        quantity: '1.000',
+        status: 'active',
+        expiresAt: null,
+        recordVersion: 1,
+        materialRequestId: MATERIAL_REQUEST_ID,
+        replayed: false,
+      },
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const region = await screen.findByRole('region', {
+      name: EN['inventory.parts.request.heading'] as string,
+    });
+    await user.click(
+      within(region).getByRole('button', { name: EN['inventory.parts.request.cancel'] as string })
+    );
+    expect(cancelMaterialRequest).not.toHaveBeenCalled();
+    expect(within(region).getByText(EN['field.required'] as string)).toBeVisible();
+  });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — the parts screen on Material UI, and its moments on the
+ * branch's clock.
+ *
+ * The properties under test: each issue's moment is written on the clock of
+ * the work order's branch with that clock named, never the browser's (the
+ * branch here keeps a clock no test environment keeps), in both languages; a
+ * second press of any draw, return or settlement inside ONE `act` sends
+ * nothing more — the ref guard holds it, not a re-rendered disabled button; a
+ * refused return quantity is marked on its own box with what was typed kept and
+ * the cursor put there, in both languages; a half-typed return is unsaved work a
+ * branch switch asks about, and a confirmed discard closes it; a draw form that
+ * opens takes the cursor, and gives it back to its toggle when its write closes
+ * it.
+ */
+describe('the parts screen on Material UI (P1-32-PRE-OD-INV5)', () => {
+  const CATALOGUE = { en: EN, ar: AR } as const;
+  const escapeText = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const starts = (text: string) => new RegExp(`^${escapeText(text)}`);
+  const ISSUED = '2026-09-17T12:00:00Z';
+
+  function deferred<T>() {
+    let settle: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+      settle = resolve;
+    });
+    return { promise, settle };
+  }
+
+  const reservationEcho = {
+    id: RESERVATION_ID,
+    itemId: ITEM_ID,
+    locationId: LOCATION_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    workOrderId: WORK_ORDER_ID,
+    quantity: '1.000',
+    status: 'active',
+    expiresAt: null,
+    recordVersion: 1,
+    materialRequestId: MATERIAL_REQUEST_ID,
+    replayed: false,
+  };
+
+  function renderIn(
+    locale: 'en' | 'ar',
+    over: Record<string, unknown> = {},
+    snapshot = branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }])
+  ) {
+    const render = locale === 'en' ? renderInLtr : renderInRtl;
+    return render(
+      inBranch(
+        <PartsScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          workOrderId={WORK_ORDER_ID}
+          workOrder={workOrder as never}
+          workOrderRefused={false}
+          canOperate={false}
+          canReadWorkOrder={true}
+          canReadBranches={false}
+          currentUserId={USER_ID}
+          canRequestMaterial={false}
+          canApproveMaterial={false}
+          canDecideMaterialException={false}
+          {...over}
+        />,
+        { snapshot, locale }
+      )
+    );
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes each issue on the work order branch's clock, named, never the browser's (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      listPartIssues.mockImplementation(async () => page([partIssue({ issuedAt: ISSUED })]));
+      renderIn(locale);
+      const region = await screen.findByRole('region', {
+        name: T['inventory.parts.issues.heading'] as string,
+      });
+      const grid = await within(region).findByRole('grid');
+      await within(grid).findByText('BRK-001');
+      expectOnClock(within(grid).getAllByRole('row')[1] as HTMLElement, ISSUED, locale);
+    });
+  }
+
+  /** Chooses the requirement and opens the reserve form, filled in; returns its submit. */
+  async function readyReservation(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.parts.reserve.heading'] as string,
+    });
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    return within(form).getByRole('button', {
+      name: EN['inventory.parts.reserve.submit'] as string,
+    });
+  }
+
+  it('a second press of Reserve inside the same moment reserves once', async () => {
+    const answer = deferred<unknown>();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(() => answer.promise);
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+    const submit = await readyReservation(user);
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    await waitFor(() => expect(createReservation).toHaveBeenCalledTimes(1));
+    await act(async () =>
+      answer.settle({
+        state: { status: 'success', messageKey: 'inventory.reserve.success' },
+        created: reservationEcho,
+      })
+    );
+    expect(createReservation).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second press of Issue inside the same moment issues once', async () => {
+    const answer = deferred<unknown>();
+    createIssue.mockImplementation(() => answer.promise);
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true });
+    await chooseRequirement(user);
+    await user.click(
+      await within(requiredRegion()).findByRole('button', {
+        name: EN['inventory.parts.required.issueThis'] as string,
+      })
+    );
+    const form = await issueForm();
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    const submit = within(form).getByRole('button', {
+      name: EN['inventory.issue.submit'] as string,
+    });
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    await act(async () =>
+      answer.settle({
+        state: { status: 'success', messageKey: 'inventory.issue.success', attempt: 1 },
+        created: { id: 'new-issue', quantity: '2.000', reservationId: null },
+      })
+    );
+    expect(createIssue).toHaveBeenCalledTimes(1);
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a second press of Return inside the same moment returns once (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      const answer = deferred<unknown>();
+      createReturn.mockImplementation(() => answer.promise);
+      const user = userEvent.setup();
+      renderIn(locale, { canOperate: true }, branchSnapshot([TEST_BRANCH]));
+      const region = await screen.findByRole('region', {
+        name: T['inventory.parts.issues.heading'] as string,
+      });
+      const grid = await within(region).findByRole('grid');
+      await user.click(
+        within(grid).getByRole('button', { name: starts(T['inventory.return.action'] as string) })
+      );
+      const form = await screen.findByRole('form', {
+        name: starts(T['inventory.return.heading'] as string),
+      });
+      await user.type(
+        within(form).getByLabelText(starts(T['inventory.return.quantity'] as string)),
+        '0.5'
+      );
+      const submit = within(form).getByRole('button', {
+        name: T['inventory.return.submit'] as string,
+      });
+      act(() => {
+        submit.click();
+        submit.click();
+      });
+      await waitFor(() => expect(createReturn).toHaveBeenCalledTimes(1));
+      await act(async () =>
+        answer.settle({
+          state: { status: 'success', messageKey: 'inventory.return.success', attempt: 1 },
+          created: {
+            id: 'ret-1',
+            partIssueId: ISSUE_ID,
+            quantity: '0.500',
+            totalReturned: '1.500',
+            issuedQuantity: '2.500',
+          },
+        })
+      );
+      expect(createReturn).toHaveBeenCalledTimes(1);
+    });
+
+    it(`marks a refused return quantity on its own box, keeps it and puts the cursor there (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      const user = userEvent.setup();
+      renderIn(locale, { canOperate: true }, branchSnapshot([TEST_BRANCH]));
+      const region = await screen.findByRole('region', {
+        name: T['inventory.parts.issues.heading'] as string,
+      });
+      const grid = await within(region).findByRole('grid');
+      await user.click(
+        within(grid).getByRole('button', { name: starts(T['inventory.return.action'] as string) })
+      );
+      const form = await screen.findByRole('form', {
+        name: starts(T['inventory.return.heading'] as string),
+      });
+      const box = within(form).getByLabelText(starts(T['inventory.return.quantity'] as string));
+      expect(box).not.toHaveAttribute('aria-invalid');
+      expect(box).toHaveAttribute('dir', 'ltr');
+      expect(box).toHaveAttribute('inputmode', 'decimal');
+      await user.type(box, '0');
+      await user.click(
+        within(form).getByRole('button', { name: T['inventory.return.submit'] as string })
+      );
+      expect(box).toHaveAttribute('aria-invalid', 'true');
+      expect(within(form).getByText(T['inventory.reserve.quantityFormat'] as string)).toBeVisible();
+      expect(box).toHaveValue('0');
+      await waitFor(() => expect(box).toHaveFocus());
+      expect(createReturn).not.toHaveBeenCalled();
+    });
+  }
+
+  it('a second press of "Settle it" inside the same moment settles once', async () => {
+    const answer = deferred<unknown>();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: reservationEcho,
+    }));
+    closeMaterialRequest.mockImplementation(() => answer.promise);
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+    await user.click(await readyReservation(user));
+    const region = await screen.findByRole('region', {
+      name: EN['inventory.parts.request.heading'] as string,
+    });
+    const settle = within(region).getByRole('button', {
+      name: EN['inventory.parts.request.close'] as string,
+    });
+    act(() => {
+      settle.click();
+      settle.click();
+    });
+    await waitFor(() => expect(closeMaterialRequest).toHaveBeenCalledTimes(1));
+    await act(async () =>
+      answer.settle({
+        state: { status: 'success', messageKey: 'inventory.material.request.close.success' },
+        created: null,
+      })
+    );
+    expect(closeMaterialRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('the reserve form takes the cursor, and gives it back to its toggle once its write closes it', async () => {
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: reservationEcho,
+    }));
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+    const submit = await readyReservation(user);
+    const toggle = screen.getByRole('button', {
+      name: EN['inventory.parts.reserve.open'] as string,
+    });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await user.click(submit);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('form', { name: EN['inventory.parts.reserve.heading'] as string })
+      ).toBeNull()
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+      ).toHaveFocus()
+    );
+  });
+
+  it('opening the issue form puts the cursor on its heading', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.issue.open'] as string })
+    );
+    const form = await issueForm();
+    await waitFor(() =>
+      expect(
+        within(form).getByRole('heading', { name: EN['inventory.issue.heading'] as string })
+      ).toHaveFocus()
+    );
+  });
+
+  describe('a half-typed return and a branch switch', () => {
+    afterEach(forgetRememberedBranch);
+
+    it('asks before switching; staying keeps it, discarding closes the form', async () => {
+      const user = userEvent.setup();
+      renderInLtr(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <PartsScreen
+              locale="en"
+              messages={en}
+              workOrderId={WORK_ORDER_ID}
+              workOrder={workOrder as never}
+              workOrderRefused={false}
+              canOperate={true}
+              canReadWorkOrder={true}
+              canReadBranches={false}
+              currentUserId={USER_ID}
+              canRequestMaterial={false}
+              canApproveMaterial={false}
+              canDecideMaterialException={false}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
+      );
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      const grid = await within(issuesRegion()).findByRole('grid');
+      await user.click(
+        within(grid).getByRole('button', { name: labelled('inventory.return.action') })
+      );
+      const form = await screen.findByRole('form', { name: labelled('inventory.return.heading') });
+      const quantity = within(form).getByLabelText(labelled('inventory.return.quantity'));
+      await user.type(quantity, '0.5');
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      expect(quantity).toHaveValue('0.5');
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      expect(screen.queryByRole('form', { name: labelled('inventory.return.heading') })).toBeNull();
+    });
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVF — the parts screen in plain words.
+ *
+ * LANG-identifiers: the reserve and issue forms said "Measured against the
+ * chosen allowance. b2ba1062-…" — the requirement's identifier. They now say
+ * which part the allowance is for, by the name its card showed, and what is
+ * still available in the requirement's unit.
+ *
+ * UNIT-names: the refused draw's figures carried the unit code into the Arabic
+ * sentence ("المعتمد 1.000 each"). The unit is now named in the page language
+ * when the unit list names it.
+ */
+describe('P1-32-PRE-OD-INVF: the chosen allowance and its unit in words', () => {
+  const reserveForm = (messages: Record<string, string>) =>
+    screen.findByRole('form', { name: messages['inventory.parts.reserve.heading'] as string });
+  const litre = {
+    id: UOM_ID,
+    scope: 'platform',
+    code: 'litre',
+    name: 'Litre',
+    dimension: 'volume',
+  };
+
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const props = {
+      locale,
+      messages: locale === 'en' ? en : ar,
+      workOrderId: WORK_ORDER_ID,
+      workOrder: workOrder as never,
+      workOrderRefused: false,
+      canOperate: true,
+      canReadWorkOrder: false,
+      canReadBranches: false,
+      canReadItems: true,
+      currentUserId: USER_ID,
+      canRequestMaterial: false,
+      canApproveMaterial: false,
+      canDecideMaterialException: false,
+      ...over,
+    } as const;
+    return locale === 'en'
+      ? renderLtr(<PartsScreen {...props} />)
+      : renderRtl(<PartsScreen {...props} />);
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: the reserve form names the part the allowance is for, never the requirement identifier`, async () => {
+      const user = userEvent.setup();
+      listMaterialRequirements.mockImplementation(async () =>
+        okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+      );
+      listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre] }));
+      readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Engine oil 5W-30' }));
+      const { container } = renderIn(locale);
+      await waitFor(() =>
+        expect(screen.getByTestId('material-item').textContent).toBe('Engine oil 5W-30')
+      );
+      await user.click(
+        screen.getByRole('button', { name: messages['inventory.material.use'] as string })
+      );
+      await user.click(
+        screen.getByRole('button', { name: messages['inventory.parts.reserve.open'] as string })
+      );
+      const form = await reserveForm(messages);
+      const note = within(form).getByTestId('parts-chosen-requirement');
+      expect(note).toHaveTextContent(
+        messages['inventory.parts.draw.usingRequirementFor'] as string
+      );
+      expect(note).toHaveTextContent('Engine oil 5W-30');
+      expect(note).toHaveTextContent(
+        `3.500 ${locale === 'en' ? 'Litre' : (AR['units.name.litre'] as string)}`
+      );
+      expect(container.textContent).not.toContain(REQUIREMENT_ID);
+    });
+  }
+
+  it('without the item read, the form says the part cannot be named rather than identifying it', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    const { container } = renderIn('en', { canReadItems: false });
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm(EN);
+    const note = within(form).getByTestId('parts-chosen-requirement');
+    expect(note).toHaveTextContent(EN['inventory.material.itemUnavailable'] as string);
+    expect(container.textContent).not.toContain(REQUIREMENT_ID);
+    expect(readItemDetail).not.toHaveBeenCalled();
+  });
+
+  it('ar: a refused draw names its standard unit in Arabic inside the Arabic sentence', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre] }));
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement.figures',
+        messageValues: { allowance: '1.000', used: '1.000', requested: '0.500', unit: 'litre' },
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderIn('ar');
+    await user.click(
+      await screen.findByRole('button', { name: AR['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: AR['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm(AR);
+    await user.selectOptions(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.location'] as string)}`)
+      ),
+      LOCATION_ID
+    );
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.quantity'] as string)}`)
+      ),
+      '0.500'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: AR['inventory.parts.reserve.submit'] as string })
+    );
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent ?? '').toContain(`1.000 ${AR['units.name.litre'] as string}`);
+    expect(refusal.textContent ?? '').not.toContain('litre');
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVH — the runtime retest of CP-20261012-2 (finding F2): the
+ * "Reservation" column of "Parts issued" drew the reservation's identifier.
+ *
+ * An issue's row carries that identifier and nothing else about the
+ * reservation, so the panel reads the work order's reservations
+ * (`inv.stock-reservation-list`, in every state: a reservation an issue
+ * consumed is no longer active) and says how much the reservation held and
+ * when it was made, on two lines. Where that read cannot say, the row says the
+ * issue was drawn from a reservation, in words. The identifier is drawn in
+ * neither case.
+ *
+ * What these cases cannot show is what a browser lays out: jsdom lays nothing
+ * out. They hold the width the column ASKS for, by the grid's own estimate,
+ * that the whole text is in the cell, and that each of its two lines carries
+ * the utility that gives it a line height of its own — without which the
+ * second line is cut off by the row. Whether both are then read whole on a
+ * screen, and whether the grid scrolls sideways as it should, stays with the
+ * runtime retest.
+ */
+describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by its identifier', () => {
+  const CATALOGUE = { en: EN, ar: AR } as const;
+  const RESERVED_AT = '2026-09-01T08:30:00Z';
+  const ISSUED_AT = '2026-09-01T09:00:00Z';
+  const UNLISTED_RESERVATION = '77777777-7777-4777-8777-777777777777';
+  const OTHER_WORK_ORDER = '88888888-8888-4888-8888-888888888888';
+  const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const issues = [
+    partIssue({ id: 'issue-1', sku: 'BRK-001', reservationId: RESERVATION_ID }),
+    partIssue({ id: 'issue-2', sku: 'BRK-002', reservationId: UNLISTED_RESERVATION }),
+    partIssue({ id: 'issue-3', sku: 'BRK-003', reservationId: null }),
+  ];
+  /** The reservation the first issue consumed, as the list publishes it afterwards. */
+  const consumed = {
+    ...reservation,
+    status: 'consumed',
+    quantity: '2.000',
+    createdAt: RESERVED_AT,
+  };
+  const SCOPE = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+  const ALL_STATES = { workOrderId: WORK_ORDER_ID };
+  // One snapshot for every draw of a case, so drawing again is drawing again
+  // and not a new working context around a new screen.
+  const SNAPSHOT = branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]);
+
+  function screenFor(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    return inBranch(
+      <PartsScreen
+        locale={locale}
+        messages={locale === 'en' ? en : ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={false}
+        canOperate={false}
+        canReadWorkOrder={true}
+        canReadBranches={false}
+        currentUserId={USER_ID}
+        canRequestMaterial={false}
+        canApproveMaterial={false}
+        canDecideMaterialException={false}
+        {...over}
+      />,
+      { snapshot: SNAPSHOT, locale }
+    );
+  }
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    return (locale === 'en' ? renderInLtr : renderInRtl)(screenFor(locale, over));
+  }
+  async function issuesGrid(locale: 'en' | 'ar', lastSku = 'BRK-003'): Promise<HTMLElement> {
+    const region = await screen.findByRole('region', {
+      name: CATALOGUE[locale]['inventory.parts.issues.heading'] as string,
+    });
+    const grid = await within(region).findByRole('grid');
+    // (With the row actions drawn, a stock code is also in its row's button name.)
+    await within(grid).findAllByText(lastSku);
+    return grid;
+  }
+  const rowOf = (grid: HTMLElement, sku: string): HTMLElement =>
+    (within(grid).getAllByText(sku)[0] as HTMLElement).closest('[role="row"]') as HTMLElement;
+  const said = (grid: HTMLElement, sku: string): HTMLElement =>
+    within(rowOf(grid, sku)).getByTestId('issue-reservation');
+  /** Everything the panel asked the reservation list, in order. */
+  const asked = () => listReservations.mock.calls.map((call) => [call[0], call[1]]);
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: a listed reservation is said on two lines, what it held and when; an unlisted one in words`, async () => {
+      const T = CATALOGUE[locale];
+      listPartIssues.mockImplementation(async () => page(issues));
+      listReservations.mockImplementation(async () => page([consumed]));
+      renderIn(locale);
+      const grid = await issuesGrid(locale);
+      const held = (T['inventory.parts.issues.reserved'] as string).replace('{quantity}', '2.000');
+      await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent(held));
+      const first = said(grid, 'BRK-001');
+      // Two lines, each whole: the quantity, then the moment on the branch clock, named.
+      expect(first.children).toHaveLength(2);
+      const [line, made] = [...first.children] as [HTMLElement, HTMLElement];
+      expect(line.textContent).toBe(held);
+      expectOnClock(made, RESERVED_AT, locale);
+      // Each line has a line height of its own. A first line left to inherit the
+      // cell's is as tall as the row, and the moment under it is cut off: a
+      // count of two children cannot see that, these classes can.
+      expect(first).toHaveAttribute('data-grid-cell', 'two-line');
+      expect(line).toHaveClass('text-table-cell');
+      expect(made).toHaveClass('text-caption');
+      // No title on the cell: both lines are drawn, and each carries its own.
+      expect(first).not.toHaveAttribute('title');
+      // A reservation the list did not return: said in words.
+      expect(said(grid, 'BRK-002').textContent).toBe(T['inventory.parts.issues.fromReservation']);
+      // An issue drawn from none says so, as before.
+      expect(rowOf(grid, 'BRK-003')).toHaveTextContent(
+        T['inventory.parts.issues.noReservation'] as string
+      );
+      expect(within(rowOf(grid, 'BRK-003')).queryByTestId('issue-reservation')).toBeNull();
+      // No identifier anywhere in the table: not a reservation's, not an issue's.
+      const text = grid.textContent ?? '';
+      expect(text).not.toContain(RESERVATION_ID);
+      expect(text).not.toContain(UNLISTED_RESERVATION);
+      expect(text).not.toMatch(UUID_ANYWHERE);
+      // One read: the reservations of the work order in the rows' branch, in every state.
+      expect(listReservations).toHaveBeenCalledTimes(1);
+      expect(listReservations).toHaveBeenCalledWith(
+        SCOPE,
+        ALL_STATES,
+        expect.objectContaining({ pageSize: 100 }),
+        null
+      );
+    });
+
+    it(`${locale}: the moment an issue was made is whole in its cell, on one line`, async () => {
+      listPartIssues.mockImplementation(async () =>
+        page([partIssue({ sku: 'BRK-003', issuedAt: ISSUED_AT })])
+      );
+      renderIn(locale);
+      const grid = await issuesGrid(locale);
+      const issued = within(rowOf(grid, 'BRK-003')).getByTestId('issue-issued-at');
+      expectOnClock(issued, ISSUED_AT, locale);
+      expect(issued.textContent).toContain(onClock(ISSUED_AT, locale, FAR_ZONE));
+      // One line, in a column that asks for its width: no title beside it.
+      expect(issued).not.toHaveAttribute('title');
+    });
+
+    it(`${locale}: a refused read of the reservations leaves every such issue said in words`, async () => {
+      const T = CATALOGUE[locale];
+      listPartIssues.mockImplementation(async () => page(issues));
+      listReservations.mockImplementation(async () => ({
+        status: 'denied' as const,
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr-denied',
+      }));
+      renderIn(locale);
+      const grid = await issuesGrid(locale);
+      await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
+      for (const sku of ['BRK-001', 'BRK-002']) {
+        expect(said(grid, sku).textContent).toBe(T['inventory.parts.issues.fromReservation']);
+      }
+      expect(grid.textContent ?? '').not.toMatch(UUID_ANYWHERE);
+      // A secondary read: its refusal is not announced.
+      expect(notifyActionResult).not.toHaveBeenCalled();
+      expect(screen.queryByText('corr-denied')).toBeNull();
+    });
+  }
+
+  /*
+   * The evidence showed a moment in a column about 135 px wide, cut off after
+   * "GM". The two columns that draw a moment now ask for a width the longest
+   * moment on the page fits in, by the grid's own estimate, and the grid
+   * scrolls sideways before it cuts one off. That is the width ASKED for: the
+   * width a browser draws can only be seen at the runtime retest.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: the two columns that draw a moment ask for a width the whole moment fits in`, async () => {
+      const T = CATALOGUE[locale];
+      listPartIssues.mockImplementation(async () =>
+        page(issues.map((row) => ({ ...row, issuedAt: ISSUED_AT })))
+      );
+      listReservations.mockImplementation(async () => page([consumed]));
+      renderIn(locale);
+      const grid = await issuesGrid(locale);
+      await waitFor(() => expect(said(grid, 'BRK-001').children).toHaveLength(2));
+      const columns = handedColumns.get('parts-issues-grid') ?? [];
+      const asked = (id: string) => columns.find((column) => column.id === id)?.minChars ?? 0;
+      // The longest line each column draws, as the product writes it.
+      const issued = `${onClock(ISSUED_AT, locale, FAR_ZONE)} ${clockName(ISSUED_AT, locale, FAR_ZONE)}`;
+      const made = `${onClock(RESERVED_AT, locale, FAR_ZONE)} ${clockName(RESERVED_AT, locale, FAR_ZONE)}`;
+      const held = (T['inventory.parts.issues.reserved'] as string).replace('{quantity}', '2.000');
+      expect(asked('issuedAt')).toBeGreaterThanOrEqual(issued.length);
+      for (const line of [
+        made,
+        held,
+        T['inventory.parts.issues.fromReservation'] as string,
+        T['inventory.parts.issues.noReservation'] as string,
+      ]) {
+        expect(asked('reservation'), line).toBeGreaterThanOrEqual(line.length);
+      }
+      // In pixels: wider than the 135 px that cut the moment off, and than the floor.
+      for (const id of ['issuedAt', 'reservation']) {
+        expect(columnMinWidth(asked(id))).toBeGreaterThan(135);
+        expect(columnMinWidth(asked(id))).toBeGreaterThan(issued.length * 8);
+      }
+      // The whole text is in each cell, on lines of its own, not cut by the product.
+      expect(within(rowOf(grid, 'BRK-001')).getByTestId('issue-issued-at')).toHaveTextContent(
+        onClock(ISSUED_AT, locale, FAR_ZONE)
+      );
+      const first = said(grid, 'BRK-001');
+      expect(first.children[0]?.textContent).toBe(held);
+      expect(first.children[1]).toHaveTextContent(onClock(RESERVED_AT, locale, FAR_ZONE));
+      // The other columns ask for nothing and keep the floor every column has.
+      for (const id of ['sku', 'location', 'quantity', 'returned']) {
+        expect(columns.find((column) => column.id === id)?.minChars).toBeUndefined();
+      }
+    });
+  }
+
+  it('a read that fails in transit is settled to the same words: no rejection, no notice, no console error', async () => {
+    const complained = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // A rejection nobody handles is reported to the process a turn later; the
+    // runner would fail the run on it, and this case fails on it by name.
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      listPartIssues.mockImplementation(async () => page(issues));
+      listReservations.mockImplementation(async () => {
+        throw new Error('the web tier did not answer');
+      });
+      renderIn('en');
+      const grid = await issuesGrid('en');
+      await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(unhandled).toEqual([]);
+      for (const sku of ['BRK-001', 'BRK-002']) {
+        expect(said(grid, sku).textContent).toBe(EN['inventory.parts.issues.fromReservation']);
+      }
+      expect(notifyActionResult).not.toHaveBeenCalled();
+      expect(complained).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      complained.mockRestore();
+    }
+  });
+
+  it('an answer that arrives after the panel is gone is dropped', async () => {
+    const complained = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      let answer: (value: unknown) => void = () => undefined;
+      listPartIssues.mockImplementation(async () => page(issues));
+      listReservations.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          })
+      );
+      const { unmount } = renderIn('en');
+      const grid = await issuesGrid('en');
+      await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
+      // Still waiting: the rows already say it in words.
+      expect(said(grid, 'BRK-001').textContent).toBe(EN['inventory.parts.issues.fromReservation']);
+      unmount();
+      await act(async () => {
+        answer(page([consumed]));
+        await Promise.resolve();
+      });
+      expect(complained).not.toHaveBeenCalled();
+      expect(listReservations).toHaveBeenCalledTimes(1);
+    } finally {
+      complained.mockRestore();
+    }
+  });
+
+  /*
+   * The screen handed another work order while it stays mounted. The issues and
+   * the reservations they name belong to ONE work order, so the panel is keyed
+   * on it: the second work order starts with a table and a read of its own, and
+   * nothing of the first is drawn under it — not its rows, not its reservation
+   * words, and not its answer when that arrives late.
+   */
+  it('handed another work order while mounted, it draws that one alone: its rows, its read, no trace of the first', async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    listPartIssues.mockImplementation(async (workOrderId: string) =>
+      page(
+        workOrderId === WORK_ORDER_ID
+          ? [partIssue({ id: 'issue-1', sku: 'BRK-001', reservationId: RESERVATION_ID })]
+          : [
+              partIssue({
+                id: 'issue-9',
+                workOrderId: OTHER_WORK_ORDER,
+                sku: 'BRK-009',
+                reservationId: UNLISTED_RESERVATION,
+              }),
+            ]
+      )
+    );
+    listReservations.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        })
+    );
+    const { rerender } = renderIn('en');
+    await issuesGrid('en', 'BRK-001');
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
+    // The same mounted tree, with the other work order's identifier and nothing else changed.
+    rerender(withMui(screenFor('en', { workOrderId: OTHER_WORK_ORDER }), 'en'));
+    const grid = await issuesGrid('en', 'BRK-009');
+    expect(listPartIssues.mock.calls.at(-1)?.[0]).toBe(OTHER_WORK_ORDER);
+    expect(within(grid).queryByText('BRK-001')).toBeNull();
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(2));
+    expect(asked()).toEqual([
+      [SCOPE, ALL_STATES],
+      [SCOPE, { workOrderId: OTHER_WORK_ORDER }],
+    ]);
+    // The first work order's answer arrives late, holding a reservation of the same id.
+    await act(async () => {
+      answers[0]?.(page([{ ...consumed, id: UNLISTED_RESERVATION, quantity: '9.999' }]));
+      await Promise.resolve();
+    });
+    expect(said(grid, 'BRK-009').textContent).toBe(EN['inventory.parts.issues.fromReservation']);
+    expect(grid.textContent ?? '').not.toContain('9.999');
+    // Its own answer is the one drawn.
+    await act(async () => {
+      answers[1]?.(page([{ ...consumed, id: UNLISTED_RESERVATION, quantity: '1.250' }]));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(said(grid, 'BRK-009')).toHaveTextContent('1.250'));
+    expect(listReservations).toHaveBeenCalledTimes(2);
+    expect(within(grid).queryByText('BRK-001')).toBeNull();
+  });
+
+  /*
+   * "Again when the last read did not answer." The first page's reservations
+   * are answered; the second page's read fails; back on the first page the same
+   * reservations are named again — and must be asked for again, because the
+   * failure threw the answer away. Once: a failed read is not retried on its
+   * own, only the next time the issues are read.
+   */
+  it('after a read that failed, the reservations answered before are asked for again, once', async () => {
+    const user = userEvent.setup();
+    const first = partIssue({ id: 'issue-1', sku: 'BRK-001', reservationId: RESERVATION_ID });
+    const second = partIssue({
+      id: 'issue-2',
+      sku: 'BRK-002',
+      reservationId: UNLISTED_RESERVATION,
+    });
+    listPartIssues.mockImplementation(
+      async (_workOrderId: string, _request: unknown, cursor: string | null) =>
+        cursor === null ? { ...page([first]), nextCursor: 'page-2', hasMore: true } : page([second])
+    );
+    let reads = 0;
+    listReservations.mockImplementation(async () => {
+      reads += 1;
+      // The second read, for the second page, is refused; the others answer.
+      return reads === 2
+        ? {
+            status: 'denied' as const,
+            rows: [],
+            nextCursor: null,
+            hasMore: false,
+            correlationId: 'c',
+          }
+        : page([consumed]);
+    });
+    renderIn('en');
+    const region = await screen.findByRole('region', {
+      name: EN['inventory.parts.issues.heading'] as string,
+    });
+    const grid = await within(region).findByRole('grid');
+    await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent('2.000'));
+    expect(listReservations).toHaveBeenCalledTimes(1);
+
+    await user.click(within(region).getByRole('button', { name: EN['table.nextPage'] as string }));
+    await within(grid).findByText('BRK-002');
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(2));
+    expect(said(grid, 'BRK-002').textContent).toBe(EN['inventory.parts.issues.fromReservation']);
+
+    await user.click(
+      within(region).getByRole('button', { name: EN['table.previousPage'] as string })
+    );
+    await within(grid).findByText('BRK-001');
+    // Asked again, and answered: the two lines are back, not the fallback words.
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent('2.000'));
+    expect(said(grid, 'BRK-001').children).toHaveLength(2);
+    // And not asked a fourth time: nothing loops.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(listReservations).toHaveBeenCalledTimes(3);
+  });
+
+  /*
+   * A holder of the stock read who may not read work orders has no work-order
+   * header, so no branch from it. The issue rows carry their own.
+   */
+  it('without the work-order read, the branch of the reservations comes from the issue rows', async () => {
+    listPartIssues.mockImplementation(async () => page(issues));
+    listReservations.mockImplementation(async () => page([consumed]));
+    renderIn('en', { workOrder: null, canReadWorkOrder: false });
+    const grid = await issuesGrid('en');
+    const held = (EN['inventory.parts.issues.reserved'] as string).replace('{quantity}', '2.000');
+    await waitFor(() => expect(said(grid, 'BRK-001').children[0]?.textContent).toBe(held));
+    expect(listReservations).toHaveBeenCalledTimes(1);
+    expect(asked()).toEqual([[SCOPE, ALL_STATES]]);
+    expect(grid.textContent ?? '').not.toMatch(UUID_ANYWHERE);
+  });
+
+  it('rows that do not share a branch are not guessed at: nothing is read, and they say it in words', async () => {
+    listPartIssues.mockImplementation(async () =>
+      page([
+        issues[0],
+        partIssue({
+          id: 'issue-4',
+          sku: 'BRK-003',
+          branchId: '99999999-0000-4000-8000-000000000000',
+          reservationId: UNLISTED_RESERVATION,
+        }),
+      ])
+    );
+    renderIn('en');
+    const grid = await issuesGrid('en');
+    expect(said(grid, 'BRK-001').textContent).toBe(EN['inventory.parts.issues.fromReservation']);
+    expect(listReservations).not.toHaveBeenCalled();
+  });
+
+  it('reads no reservation when no listed issue was drawn from one', async () => {
+    listPartIssues.mockImplementation(async () => page([partIssue({ sku: 'BRK-003' })]));
+    renderIn('en');
+    await issuesGrid('en');
+    expect(listReservations).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not read again when the screen is drawn again', async () => {
+    listPartIssues.mockImplementation(async () => page(issues));
+    listReservations.mockImplementation(async () => page([consumed]));
+    const { rerender } = renderIn('en');
+    const grid = await issuesGrid('en');
+    await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent('2.000'));
+    // The same tree, drawn again twice: the screen is not mounted anew.
+    rerender(withMui(screenFor('en'), 'en'));
+    rerender(withMui(screenFor('en'), 'en'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(listReservations).toHaveBeenCalledTimes(1);
+    expect(said(grid, 'BRK-001')).toHaveTextContent('2.000');
+  });
+
+  /*
+   * The issue form asks the same list a different question — the ACTIVE
+   * reservations, which are what can still be issued from — and the table asks
+   * for every state, because a reservation an issue consumed is no longer
+   * active. Two questions, so two reads, and no more than two.
+   */
+  it("with the issue form open there are exactly two reads, the form's active ones and the table's", async () => {
+    const user = userEvent.setup();
+    listPartIssues.mockImplementation(async () => page(issues));
+    listReservations.mockImplementation(async () => page([consumed]));
+    renderIn('en', { canOperate: true });
+    const grid = await issuesGrid('en');
+    await waitFor(() => expect(said(grid, 'BRK-001')).toHaveTextContent('2.000'));
+    expect(listReservations).toHaveBeenCalledTimes(1);
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.issue.open'] as string })
+    );
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(listReservations).toHaveBeenCalledTimes(2);
+    expect(asked()).toEqual([
+      [SCOPE, ALL_STATES],
+      [SCOPE, { workOrderId: WORK_ORDER_ID, status: 'active' }],
+    ]);
   });
 });

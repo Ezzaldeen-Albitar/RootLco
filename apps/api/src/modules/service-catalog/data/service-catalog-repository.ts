@@ -25,6 +25,7 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { foldDigits } from '@/shared/text/normalization';
 
 /** Services are listed newest-code-first by a stable, indexed key. */
 export const SERVICE_ORDER: OrderingContract = Object.freeze({
@@ -227,10 +228,15 @@ export class ServiceCatalogRepository extends Repository {
       // a wildcard in the pattern, so a search for `%` would return the entire
       // catalog and a search for a literal `_` would match any character. Both are
       // wrong answers to the question the caller asked.
-      values.push(`${escapeLikeTerm(filter.search)}%`);
+      //
+      // Digits are folded on BOTH sides of the comparison: the term here with
+      // `foldDigits`, each column with its SQL twin `shared.fold_digits`. So a
+      // code typed with Arabic-Indic digits finds the same code stored in ASCII,
+      // and a name stored with Arabic-Indic digits is found by ASCII digits.
+      values.push(`${escapeLikeTerm(foldDigits(filter.search))}%`);
       clauses.push(
-        `(s.service_code ILIKE $${values.length} ESCAPE '\\'` +
-          ` OR s.name ILIKE $${values.length} ESCAPE '\\')`
+        `(shared.fold_digits(s.service_code) ILIKE $${values.length} ESCAPE '\\'` +
+          ` OR shared.fold_digits(s.name) ILIKE $${values.length} ESCAPE '\\')`
       );
     }
     if (filter.availableAtBranchId !== undefined) {

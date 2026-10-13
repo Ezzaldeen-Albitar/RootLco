@@ -40,22 +40,30 @@ Installed and in use (verified versions):
 - SCSS Modules for component styling (Next.js built-in support; `next` 16.2.10).
 - CSS custom properties generated from Sass token maps (see Section 4 and Section 15).
 
-Not installed:
+Also adopted (ADR-022, which supersedes ADR-020; exact versions are pinned in `apps/web/package.json` and listed in the ADR):
 
-- Tailwind CSS and shadcn/ui are **not installed** in this repository. The project was scaffolded with `--no-tailwind`, and ADR-002 records the styling-framework selection as **Open**. Nothing was removed; they were never present. Do not assume utility classes or shadcn components exist.
-- The division of responsibility in Section 3 is a binding owner decision **if and when** Tailwind and/or a component library is adopted. Their adoption remains an open decision; this document does not pre-empt ADR-002.
+- **Tailwind CSS 3** for layout, spacing and responsive utilities in markup. Its theme holds only `var(--…)` references; a colour utility that is not registered under `theme.extend.colors` renders nothing, so never invent a utility name (`validate:web-theme`).
+- **Material UI and the MUI X Community (MIT) editions** — data grid, date and time pickers, charts, tree view — as the component layer, styled by Emotion through the App Router cache, with a separate right-to-left cache (`muirtl`).
+- Material's theme (`src/components/ui-foundation/theme.ts`) references the same custom properties. The few values it needs as JavaScript numbers come from `src/styles/tokens/generated/tokens.ts`, generated from the Sass maps by `apps/web/scripts/generate-design-tokens.mjs`, committed, and drift-checked by `validate:web-tokens` and the web test tier. It carries no colours: colours are always `var(--color-…)`, so a `[data-theme]` remap reaches every layer.
+
+Rules that come with them:
+
+- **Cascade layers** (`src/styles/_layers.scss`, the first statement of the stylesheet): `rootlco-reset`, then `mui` (every Material rule), then unlayered Tailwind utilities and SCSS Modules, which therefore win over Material. The theme's `modularCssLayers` states the same order.
+- **Style objects** (`sx`, `styled()`, theme options and `styleOverrides`) take tokens only — `var(--…)` or the generated module — logical properties only (`marginInlineStart`, `insetInlineEnd`; never `ml`, `left` or `textAlign: 'left'`), and no raw length, duration or colour. `validate:web-tokens` reads them on the syntax tree. Every style position — an `sx` or `css` attribute, a `GlobalStyles` `styles`, an `sx` value, each `styleOverrides` slot, every argument of `createTheme()`, `extendTheme()`, `css()`, `keyframes()` and `styled(X)()`, and inside a style object a spread or the value of a selector, at-rule or computed key — is followed through same-file references (member access, conditionals, arrays, spreads, functions and the objects they return), resolved by scope so a parameter or inner declaration shadows an outer `const`. A reference it cannot follow (an import, a parameter, a call) is a finding, except in `components/ui-foundation/` and the grid wrapper. A member of the theme a style callback receives (`...theme.typography.body2`) is a token. The value of a CSS-property key is read whole — conditional branches, `||`/`??`/`&&`, arithmetic operands, template `${…}`, call arguments (`px(12)`), array and responsive-object members, through `as`/`satisfies`/`!` — following same-file `const`s and functions, so `width: open ? W : 0`, `width: W * 2` and `fontSize: 13 as const` are refused; a raw number in CSS text (`${W}px`, a helper argument) is refused, and `theme.spacing(n)` is a token multiple. `styled`, `css` and `keyframes` are recognised through import aliases, the `@emotion/styled` default import, namespace members and `styled.div`; a tagged template has its static text scanned for raw lengths, durations and colours and each `${…}` read strictly (only the theme or a token-layer import may stay unresolved). A raw length or duration held in any module-level declaration outside the token layer (tests excepted) is refused, so a value imported into a style has been checked where it was declared; its exact allow-list (`RAW_CONSTANT_ALLOWED`, path and name with a reason) is empty. Residual limits, not enforced: a value computed at run time from data; under a plain CSS-property key an import, parameter or call result is taken as a token (an imported bare number such as `export const W = 320` is not refused where declared); a raw string built inside another file's function body; and the React `style` attribute.
+- **Shared RootLco wrappers** over Material live in `apps/web/src/components/`: the foundation in `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid.tsx` or `components/data/OperationalGrid/` (an exact allow-list, not a name prefix). Feature code uses the wrappers; only the wrapper spreads props onto the data grid (`validate:web-boundary`).
+- **No competing design system** and no second utility framework. Base UI only where Material has no primitive. MUI X Pro or Premium packages and `@mui/x-license` are forbidden without a recorded licence entitlement (`validate:web-boundary`).
 
 The Sass compiler is a build-time tool only. It is verified absent from the production runtime image (`node_modules/sass` is not present in `rootlco/web:prod`).
 
-## 3. Division of responsibility (binding if the optional layers are adopted)
+## 3. Division of responsibility (binding)
 
-| Layer                                 | Status                                 | Responsibility                                                                                                                                       |
-| ------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tailwind CSS                          | Not installed; adoption Open (ADR-002) | Fast layout, spacing, and responsive utilities in markup — **if adopted**                                                                            |
-| UI component library (e.g. shadcn/ui) | Not installed; adoption Open (ADR-002) | Accessible interactive primitives (dialogs, menus, form controls) — **if adopted**                                                                   |
-| Sass / SCSS                           | Installed, binding                     | Design tokens, variables, mixins, functions, themes, RTL/LTR helpers, and complex component styling via SCSS Modules                                 |
-| CSS custom properties                 | Installed, binding                     | Runtime theming and dynamic values — anything that may change after the CSS is compiled (theme switching, user preference, per-tenant configuration) |
-| SCSS variables and maps               | Installed, binding                     | Compile-time configuration — breakpoints, token source maps, values that never change at runtime                                                     |
+| Layer                                  | Status                       | Responsibility                                                                                                                                       |
+| -------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tailwind CSS                           | Installed, binding (ADR-022) | Fast layout, spacing, and responsive utilities in markup                                                                                             |
+| Material UI and MUI X (Community, MIT) | Installed, binding (ADR-022) | Accessible interactive components (dialogs, menus, form controls, data grid, pickers, charts, tree view), through the shared RootLco wrappers        |
+| Sass / SCSS                            | Installed, binding           | Design tokens, variables, mixins, functions, themes, RTL/LTR helpers, and complex component styling via SCSS Modules                                 |
+| CSS custom properties                  | Installed, binding           | Runtime theming and dynamic values — anything that may change after the CSS is compiled (theme switching, user preference, per-tenant configuration) |
+| SCSS variables and maps                | Installed, binding           | Compile-time configuration — breakpoints, token source maps, values that never change at runtime                                                     |
 
 The dividing principle: if a value must be able to change in the browser without recompiling, it is a CSS custom property; if it is fixed at build time, it is an SCSS variable or map entry. Tokens live in Sass maps and are emitted as custom properties so both worlds share one source (Section 15 explains how drift is prevented).
 
@@ -92,17 +100,17 @@ Emitting nothing is the rule for `abstracts/`: those partials contain only maps,
 
 ## 5. Decision guide: when to use what
 
-| Need                                                                          | Use                                                                                      |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Quick layout/spacing/responsive tweak in markup                               | Tailwind utility — **only if adopted**; today, use an SCSS Module rule built from tokens |
-| Component-specific styling of any complexity                                  | SCSS Module (`ComponentName.module.scss`) using tokens and mixins                        |
-| Element defaults, resets, typography, utilities shared app-wide               | Global SCSS under `src/styles/` (via `globals.scss`)                                     |
-| A value that must change at runtime (theme, preference, tenant configuration) | CSS custom property, defined in a theme partial                                          |
+| Need                                                                          | Use                                                                                |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Quick layout/spacing/responsive tweak in markup                               | Tailwind utility registered in the theme, or an SCSS Module rule built from tokens |
+| Component-specific styling of any complexity                                  | SCSS Module (`ComponentName.module.scss`) using tokens and mixins                  |
+| Element defaults, resets, typography, utilities shared app-wide               | Global SCSS under `src/styles/` (via `globals.scss`)                               |
+| A value that must change at runtime (theme, preference, tenant configuration) | CSS custom property, defined in a theme partial                                    |
 
 Worked examples:
 
 1. **A card with padding, radius, and elevation.** This is component styling: create `Card.module.scss`, use `padding-inline: var(--space-4)`, `border-radius: var(--radius-*)`, and `box-shadow: var(--shadow-*)`. Do not add global classes and do not hard-code pixel values.
-2. **Making a two-column section stack on small screens.** Today: in the component's SCSS Module, write the mobile-first single-column rule and add the two-column rule inside `@include up(md)` (Section 11). If Tailwind is adopted, this is exactly the kind of fast responsive layout the utility layer takes over.
+2. **Making a two-column section stack on small screens.** Today: in the component's SCSS Module, write the mobile-first single-column rule and add the two-column rule inside `@include up(md)` (Section 11). Tailwind responsive utilities (`md:grid-cols-2`) are the equivalent in markup.
 3. **A surface colour that must respond to a future dark theme.** Never write `background: #fff` in a component. Write `background: var(--color-surface)`; the value is assigned in `themes/_default.scss` and a future sibling theme partial reassigns it at runtime (Section 14). The component needs no change when the theme lands.
 
 ## 6. Token naming

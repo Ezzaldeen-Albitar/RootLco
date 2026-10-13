@@ -85,16 +85,39 @@
  *   node scripts/ci/check-p1-27-closing-values.mjs [--json out.json]
  *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier>
  *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier> --hosted-run <runId>
+ *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier> [--hosted-run <runId>] --diagnostic
  * Exit: 0 clean · 1 a value is unclassified, unbound or misclassified · 2 IO.
+ *
+ * `--record` exits 0 when it wrote, 1 when it REFUSED the run (nothing is
+ * written), and 2 when it could not read or write at all (nothing is written).
+ * It records SUCCESS only: a run that failed, was cancelled, timed out, was
+ * skipped, is still in flight, describes another head, lacks its artifact or
+ * carries counts that disagree is refused. `--diagnostic` is the one way to keep
+ * such a run as history, and it writes to `diagnostics` — never to `tiers`,
+ * which is the only part of the ledger any gate reads as a measurement.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, posix, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { deriveCounts, walk } from './check-p1-27-doc-counts.mjs';
 import { executableChangesSince, commitExists } from './check-p1-27-lifecycle.mjs';
+import { writeFilesAtomically } from '../lib/atomic-files.mjs';
+import { resolveRecordsMode } from '../lib/development-profile.mjs';
+
+/** Appends the pending list to the step summary, when there is one to append to. */
+export function writePendingSummary(title, pending, env = process.env) {
+  if (!pending.length || !env.GITHUB_STEP_SUMMARY) return;
+  const lines = [
+    `### ${title}: pending until the next checkpoint (TDP-2026-10)`,
+    '',
+    ...pending.map((text) => `- ${text}`),
+    '',
+  ];
+  appendFileSync(env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+}
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -477,8 +500,30 @@ export const FAILURES = Object.freeze({
     'an excluded value that neither names the check binding it nor says why none can',
   EXCLUDED_REGION_NAMES_NO_SUBJECT:
     'a historical region that does not say which head, run or pull request it is history of',
-  RUN_RECORD_STALE: 'the local run record predates an executable change',
-  RUN_RECORD_FILE_COUNT_DISAGREES: 'the local run record counted a different set of files',
+  /*
+   * TDP-2026-10 split `RUN_RECORD_STALE` (six limbs under one id) and
+   * `RUN_RECORD_FILE_COUNT_DISAGREES` into ids that say WHICH limb fired, so
+   * the two that only mean "the tree has moved on since the record" can be
+   * deferred to a checkpoint while everything else stays fatal. Every id keeps
+   * the `RUN_RECORD_` prefix: `tests/ci/p1-27-closing-values.test.ts` filters on
+   * it to avoid the record-freshness deadlock described there.
+   */
+  RUN_RECORD_ABSENT: 'the local run ledger is absent',
+  RUN_RECORD_UNPINNED:
+    'a run record that names no 40-character commit, or one this repository cannot resolve',
+  RUN_RECORD_EXECUTABLE_DRIFT: 'the local run record predates an executable change',
+  RUN_RECORD_DIRTY: 'a run record taken with uncommitted executable paths in the tree',
+  RUN_RECORD_FILES_WRONG_FOR_ITS_HEAD:
+    'a run record whose file count is not the count its own commit holds',
+  RUN_RECORD_FILES_BEHIND_TREE:
+    'a run record that counted fewer files than this tree holds (the tree grew since)',
+  RUN_RECORD_FILES_SHRANK:
+    'a run record that counted MORE files than this tree holds — a file was lost',
+  RUN_RECORD_FAILED: 'a run record that recorded a failing case',
+  RUN_RECORD_HEAD_NOT_ANCESTOR:
+    'a run record taken at a commit that is not an ancestor of the tree being judged',
+  DERIVED_VALUE_BEHIND_TREE:
+    'a growth-only derived count the tree has since grown past (the tree grew since)',
   RUN_RECORD_INCOMPLETE:
     'the local run record does not carry the fields that make a vanished case visible',
   RUN_RECORD_FILE_RAN_NO_CASES: 'the local run reported a test file that contributed no case',
@@ -491,6 +536,8 @@ export const FAILURES = Object.freeze({
     'a hosted run record whose run describes a different head than the record does',
   RUN_RECORD_HOSTED_CLAIMS_LOCAL_MEASUREMENT:
     'a hosted run record carrying a local measurement it could not have taken',
+  RUN_RECORD_DIAGNOSTIC_MISPLACED:
+    'a diagnostic record standing where a measurement is read, or history that does not mark itself diagnostic',
   UNKNOWN_CLASS: 'an entry naming a class this gate does not implement',
   BAD_STANDING: 'a class and standing pair the vocabulary does not allow',
   UNSEALED_DOCUMENT: 'a document whose regions do not tile it',
@@ -498,7 +545,63 @@ export const FAILURES = Object.freeze({
 
 const problem = (id, text) => ({ id, text: `${id}: ${text}` });
 
-export function judge(facts) {
+/**
+ * TDP-2026-10 — the records modes.
+ *
+ * STRICT (the default, and the only mode without an explicit, corroborated
+ * request) refuses every failure above, exactly as this gate always has.
+ *
+ * CHECKPOINT_DEFERRED moves ONLY these three ids into a computed `pending` list.
+ * Each means one thing — the tree has moved on since the run record was taken,
+ * and only by GROWING — and each is owed at the next checkpoint, where the
+ * records pull request re-records and the gate runs STRICT again. A shrink, a
+ * lost file, a record wrong for its own commit, a commit that is not an
+ * ancestor, a dirty or failed run, and every classification, provenance and
+ * diagnostics failure stay fatal in both modes.
+ */
+export const RECORDS_MODE = Object.freeze({
+  STRICT: 'strict',
+  DEFERRED: 'checkpoint-deferred',
+});
+export const DRIFT_FAILURES = Object.freeze([
+  'RUN_RECORD_EXECUTABLE_DRIFT',
+  'RUN_RECORD_FILES_BEHIND_TREE',
+  'DERIVED_VALUE_BEHIND_TREE',
+]);
+
+/**
+ * The derived bindings that may only GROW in the ordinary course of work, and
+ * whose growth is therefore drift rather than a contradiction: the web test-file
+ * count, the migration count on disk and in git, and a committed test floor.
+ * Every other derivable value — every run field, every pinned commit, every
+ * tracked-phase-file count, every executable-diff span — stays exact.
+ */
+export function isDriftBinding(binding) {
+  if (!binding || typeof binding !== 'object') return false;
+  if (binding.kind === 'derived' && binding.table === 'counts') {
+    return binding.name === 'apps/web/tests' || binding.name === 'supabase/migrations';
+  }
+  if (binding.kind === 'git' && binding.op === 'lsTree') {
+    return binding.sha === 'HEAD' && binding.pathspec === 'supabase/migrations';
+  }
+  if (binding.kind === 'baseline') return binding.field === 'minTests';
+  return false;
+}
+
+/** Splits judged problems by mode. STRICT keeps them all. */
+export function partitionByMode(problems, mode = RECORDS_MODE.STRICT) {
+  if (mode !== RECORDS_MODE.DEFERRED) return { fatal: problems, pending: [] };
+  const fatal = [];
+  const pending = [];
+  for (const p of problems) (DRIFT_FAILURES.includes(p.id) ? pending : fatal).push(p);
+  return { fatal, pending };
+}
+
+/**
+ * @param {any} facts
+ * @param {{ mode?: string }} [options] `strict` (default) or `checkpoint-deferred`
+ */
+export function judge(facts, { mode = RECORDS_MODE.STRICT } = {}) {
   const problems = [];
   const entries = Array.isArray(facts.ledger?.values) ? facts.ledger.values : [];
   const claimed = new Map(); // document -> Set of claimed token indices
@@ -658,9 +761,16 @@ export function judge(facts) {
           )
         );
       } else if (value !== entry.value) {
+        // Growth of a growth-only count is drift (TDP-2026-10); every other
+        // disagreement — including EVERY decrease — is a contradiction.
+        const grew =
+          isDriftBinding(entry.binding) &&
+          /^\d+$/.test(value) &&
+          /^\d+$/.test(String(entry.value)) &&
+          Number(value) > Number(entry.value);
         problems.push(
           problem(
-            'DERIVED_VALUE_DISAGREES',
+            grew ? 'DERIVED_VALUE_BEHIND_TREE' : 'DERIVED_VALUE_DISAGREES',
             `\`${id}\` states \`${entry.value}\`; ${why} ` + `answers \`${value}\``
           )
         );
@@ -870,10 +980,14 @@ export function judge(facts) {
   /* -- the run record's own freshness ----------------------------------- */
   problems.push(...judgeRunLedger(facts));
 
+  const { fatal, pending } = partitionByMode(problems, mode);
   return {
-    ok: problems.length === 0,
-    problems: problems.map((p) => p.text),
-    failureIds: problems.map((p) => p.id),
+    ok: fatal.length === 0,
+    mode,
+    problems: fatal.map((p) => p.text),
+    failureIds: fatal.map((p) => p.id),
+    pending: pending.map((p) => p.text),
+    pendingIds: pending.map((p) => p.id),
     counters,
     byClass,
     values: entries.length,
@@ -1102,12 +1216,72 @@ export function judgeRunProvenance(tier, record) {
   return problems;
 }
 
+/**
+ * Where a failed run's history may live, and the words it must carry.
+ *
+ * A failed, cancelled or otherwise ineligible run may be KEPT — the history of
+ * what went wrong is worth having — but it may never become evidence of what
+ * went right. So it is written under `diagnostics`, which no reader of this
+ * ledger reads as a measurement (every one of them reads `tiers`), and it
+ * carries `diagnostic: true` and a notice saying so. The two halves are both
+ * enforced below: a record in `tiers` carrying the marker is refused, and an
+ * entry in `diagnostics` without it is refused, so neither can be passed off
+ * as the other.
+ */
+export const DIAGNOSTICS_KEY = 'diagnostics';
+export const DIAGNOSTIC_NOTICE =
+  'DIAGNOSTIC ONLY — a run that did not succeed, kept as history. It is not a measurement, ' +
+  'it is never success evidence, and no gate reads it as one.';
+
+export function judgeRunDiagnostics(runs) {
+  const problems = [];
+  for (const [tier, record] of Object.entries(runs?.tiers ?? {})) {
+    if (record !== null && typeof record === 'object' && 'diagnostic' in record) {
+      problems.push(
+        problem(
+          'RUN_RECORD_DIAGNOSTIC_MISPLACED',
+          `the \`${tier}\` tier holds a diagnostic record. A diagnostic is the history of a run ` +
+            `that did not succeed and belongs under \`${DIAGNOSTICS_KEY}\`, never where a ` +
+            'measurement is read'
+        )
+      );
+    }
+  }
+  const history = runs?.[DIAGNOSTICS_KEY];
+  if (history === undefined) return problems;
+  if (!Array.isArray(history)) {
+    problems.push(
+      problem('RUN_RECORD_DIAGNOSTIC_MISPLACED', `\`${DIAGNOSTICS_KEY}\` is not a list`)
+    );
+    return problems;
+  }
+  history.forEach((entry, index) => {
+    if (
+      entry?.diagnostic !== true ||
+      typeof entry?.evidence !== 'string' ||
+      !entry.evidence.startsWith('DIAGNOSTIC ONLY')
+    ) {
+      problems.push(
+        problem(
+          'RUN_RECORD_DIAGNOSTIC_MISPLACED',
+          `\`${DIAGNOSTICS_KEY}[${index}]\` does not mark itself diagnostic, so a reader could ` +
+            'take it for a measurement'
+        )
+      );
+    }
+  });
+  return problems;
+}
+
 export function judgeRunLedger(facts) {
   const problems = [];
   const runs = facts.runs;
   if (!runs || typeof runs !== 'object') {
-    return [problem('RUN_RECORD_STALE', `${RUN_LEDGER_PATH} is absent — run \`--record\``)];
+    return [problem('RUN_RECORD_ABSENT', `${RUN_LEDGER_PATH} is absent — run \`--record\``)];
   }
+  // Diagnostic history is judged for its MARKING only. Its contents are never
+  // read as a measurement: the loop below walks `tiers`, and nothing else.
+  problems.push(...judgeRunDiagnostics(runs));
   for (const [tier, record] of Object.entries(runs.tiers ?? {})) {
     // Completeness FIRST, and outside the staleness short-circuits below: a
     // record that names no resolvable commit `continue`s, and a run that ran
@@ -1117,7 +1291,7 @@ export function judgeRunLedger(facts) {
     const at = record.measuredAtCommit;
     if (typeof at !== 'string' || !/^[0-9a-f]{40}$/.test(at)) {
       problems.push(
-        problem('RUN_RECORD_STALE', `the \`${tier}\` run record names no 40-character commit`)
+        problem('RUN_RECORD_UNPINNED', `the \`${tier}\` run record names no 40-character commit`)
       );
       continue;
     }
@@ -1125,16 +1299,28 @@ export function judgeRunLedger(facts) {
     if (changed === undefined) {
       problems.push(
         problem(
-          'RUN_RECORD_STALE',
+          'RUN_RECORD_UNPINNED',
           `the \`${tier}\` run record names commit ${at}, ` + `which this repository cannot resolve`
         )
       );
       continue;
     }
+    // A record from a commit OFF this tree's history is not "behind" the tree,
+    // it describes a different tree. Fatal in every mode. Judged only when the
+    // fact was read (`readFacts` always reads it).
+    if (facts.ancestors !== undefined && facts.ancestors[at] !== true) {
+      problems.push(
+        problem(
+          'RUN_RECORD_HEAD_NOT_ANCESTOR',
+          `the \`${tier}\` run was taken at ${at.slice(0, 8)}, which is not an ancestor of the ` +
+            'tree being judged'
+        )
+      );
+    }
     if (changed.length > 0) {
       problems.push(
         problem(
-          'RUN_RECORD_STALE',
+          'RUN_RECORD_EXECUTABLE_DRIFT',
           `the \`${tier}\` run was taken at ${at.slice(0, 8)} and ` +
             `${changed.length} executable path(s) have changed since — ${changed.slice(0, 4).join(', ')}` +
             `${changed.length > 4 ? ', …' : ''}`
@@ -1144,24 +1330,39 @@ export function judgeRunLedger(facts) {
     if (Array.isArray(record.dirtyExecutablePaths) && record.dirtyExecutablePaths.length > 0) {
       problems.push(
         problem(
-          'RUN_RECORD_STALE',
+          'RUN_RECORD_DIRTY',
           `the \`${tier}\` run was taken with ` +
             `${record.dirtyExecutablePaths.length} uncommitted executable path(s) in the tree`
         )
       );
     }
-    const expected = facts.tierFiles?.[tier];
-    if (expected !== undefined && Number(record.files) !== expected) {
+    const recorded = Number(record.files);
+    // Against the record's OWN commit: a record is wrong for its head whatever
+    // the tree has done since. Judged only when that count was read.
+    const atHead = facts.tierFilesAtHead?.[tier];
+    if (atHead !== undefined && recorded !== atHead) {
       problems.push(
         problem(
-          'RUN_RECORD_FILE_COUNT_DISAGREES',
+          'RUN_RECORD_FILES_WRONG_FOR_ITS_HEAD',
+          `the \`${tier}\` run reported ${record.files} file(s); its own commit ` +
+            `${at.slice(0, 8)} holds ${atHead}`
+        )
+      );
+    }
+    // Against the live tree: growth is drift, a shrink is a lost file.
+    const expected = facts.tierFiles?.[tier];
+    if (expected !== undefined && recorded !== expected) {
+      const grew = Number.isFinite(recorded) && expected > recorded;
+      problems.push(
+        problem(
+          grew ? 'RUN_RECORD_FILES_BEHIND_TREE' : 'RUN_RECORD_FILES_SHRANK',
           `the \`${tier}\` run reported ` + `${record.files} file(s); this tree holds ${expected}`
         )
       );
     }
     if (Number(record.failed) !== 0) {
       problems.push(
-        problem('RUN_RECORD_STALE', `the \`${tier}\` run recorded ${record.failed} failure(s)`)
+        problem('RUN_RECORD_FAILED', `the \`${tier}\` run recorded ${record.failed} failure(s)`)
       );
     }
   }
@@ -1215,6 +1416,8 @@ function baselineFacts() {
       },
     },
     tierFiles: { web: 70 },
+    tierFilesAtHead: { web: 70 },
+    ancestors: { ['a'.repeat(40)]: true },
     executableChanges: { ['a'.repeat(40)]: [] },
     lifecycle: {
       observations: { CODE_CANDIDATE_SHA: null, PROTECTED_MERGE: { taken: false } },
@@ -1281,6 +1484,9 @@ function baselineFacts() {
 
 const clone = (facts) => JSON.parse(JSON.stringify(facts));
 
+/** A fresh copy of the self-check baseline, so a test can drive the same table in both modes. */
+export const selfCheckFacts = () => clone(baselineFacts());
+
 /**
  * Eight mutations, each of which must be REFUSED, and the failure each must name.
  *
@@ -1291,8 +1497,16 @@ const clone = (facts) => JSON.parse(JSON.stringify(facts));
 export const SELF_CHECK_CASES = Object.freeze([
   {
     id: 'A',
-    what: 'a derived value the tree contradicts',
+    what: 'a derived value the tree contradicts — a growth-only count that SHRANK',
     expect: 'DERIVED_VALUE_DISAGREES',
+    mutate: (f) => {
+      f.derived.counts['apps/web/tests'] = 69;
+    },
+  },
+  {
+    id: 'A2',
+    what: 'a growth-only derived count the tree has grown past',
+    expect: 'DERIVED_VALUE_BEHIND_TREE',
     mutate: (f) => {
       f.derived.counts['apps/web/tests'] = 71;
     },
@@ -1365,17 +1579,75 @@ export const SELF_CHECK_CASES = Object.freeze([
   {
     id: 'H',
     what: 'a run record taken before an executable change',
-    expect: 'RUN_RECORD_STALE',
+    expect: 'RUN_RECORD_EXECUTABLE_DRIFT',
     mutate: (f) => {
       f.executableChanges['a'.repeat(40)] = ['apps/web/src/lib/api/client.ts'];
     },
   },
   {
+    id: 'H0',
+    what: 'no run ledger at all',
+    expect: 'RUN_RECORD_ABSENT',
+    mutate: (f) => {
+      f.runs = null;
+    },
+  },
+  {
+    id: 'H1',
+    what: 'a run record that names no 40-character commit',
+    expect: 'RUN_RECORD_UNPINNED',
+    mutate: (f) => {
+      f.runs.tiers.web.measuredAtCommit = 'abc1234';
+    },
+  },
+  {
+    id: 'H2',
+    what: 'a run record taken at a commit off this tree’s history',
+    expect: 'RUN_RECORD_HEAD_NOT_ANCESTOR',
+    mutate: (f) => {
+      f.ancestors['a'.repeat(40)] = false;
+    },
+  },
+  {
+    id: 'H3',
+    what: 'a local run record taken with an uncommitted executable change',
+    expect: 'RUN_RECORD_DIRTY',
+    mutate: (f) => {
+      f.runs.tiers.web.dirtyExecutablePaths = ['apps/web/src/app/page.tsx'];
+    },
+  },
+  {
+    id: 'H4',
+    what: 'a run record that recorded a failing case',
+    expect: 'RUN_RECORD_FAILED',
+    mutate: (f) => {
+      f.runs.tiers.web.failed = 1;
+    },
+  },
+  {
     id: 'I',
-    what: 'a run record whose file count is not the tree’s',
-    expect: 'RUN_RECORD_FILE_COUNT_DISAGREES',
+    what: 'a run record that counted more files than the tree holds',
+    expect: 'RUN_RECORD_FILES_SHRANK',
+    mutate: (f) => {
+      f.runs.tiers.web.files = 75;
+      f.tierFilesAtHead.web = 75;
+    },
+  },
+  {
+    id: 'I2',
+    what: 'a run record the tree has grown past since it was taken',
+    expect: 'RUN_RECORD_FILES_BEHIND_TREE',
     mutate: (f) => {
       f.runs.tiers.web.files = 65;
+      f.tierFilesAtHead.web = 65;
+    },
+  },
+  {
+    id: 'I3',
+    what: 'a run record whose file count is not its own commit’s',
+    expect: 'RUN_RECORD_FILES_WRONG_FOR_ITS_HEAD',
+    mutate: (f) => {
+      f.tierFilesAtHead.web = 66;
     },
   },
   // The zero-case false-green class. Each mutation is the SMALLEST change that
@@ -1453,6 +1725,14 @@ export const SELF_CHECK_CASES = Object.freeze([
     },
   },
   {
+    id: 'R8',
+    what: 'a diagnostic record of a failed run standing where the measurement is read',
+    expect: 'RUN_RECORD_DIAGNOSTIC_MISPLACED',
+    mutate: (f) => {
+      f.runs.tiers.web.diagnostic = true;
+    },
+  },
+  {
     id: 'J',
     what: 'a document with an unsealed gap',
     expect: 'UNSEALED_DOCUMENT',
@@ -1514,6 +1794,24 @@ export function selfCheck(cases = SELF_CHECK_CASES) {
       failures.push(
         `self-check ${test.id} (${test.what}) was accepted, or named ` +
           `${result.failureIds.join('/') || 'nothing'} rather than ${test.expect}`
+      );
+    }
+    /*
+     * TDP-2026-10, both directions, on every invocation. Under
+     * CHECKPOINT_DEFERRED a drift id must move to `pending` and NOTHING else
+     * may: every other expectation must still be refused.
+     */
+    const deferred = judge(clone(facts), { mode: RECORDS_MODE.DEFERRED });
+    if (DRIFT_FAILURES.includes(test.expect)) {
+      if (!deferred.pendingIds.includes(test.expect) || deferred.failureIds.includes(test.expect)) {
+        failures.push(
+          `self-check ${test.id} (${test.what}) was not deferred under CHECKPOINT_DEFERRED`
+        );
+      }
+    } else if (!deferred.failureIds.includes(test.expect)) {
+      failures.push(
+        `self-check ${test.id} (${test.what}) was deferred or accepted under ` +
+          `CHECKPOINT_DEFERRED; only ${DRIFT_FAILURES.join(', ')} may be`
       );
     }
   }
@@ -1582,10 +1880,21 @@ export function readFacts(root = ROOT) {
   }
 
   const executableChanges = {};
+  const ancestors = {};
   for (const record of Object.values(runs?.tiers ?? {})) {
     const at = record?.measuredAtCommit;
     if (typeof at !== 'string' || at in executableChanges) continue;
-    executableChanges[at] = commitExists(at, root) ? executableChangesSince(at, root) : undefined;
+    const exists = commitExists(at, root);
+    executableChanges[at] = exists ? executableChangesSince(at, root) : undefined;
+    ancestors[at] = exists ? isAncestor(at, root) : false;
+  }
+  /* What each record's OWN commit holds, by the same rule the live walk uses. */
+  const tierFilesAtHead = {};
+  for (const [tier, record] of Object.entries(runs?.tiers ?? {})) {
+    const at = record?.measuredAtCommit;
+    if (typeof at !== 'string' || !/^[0-9a-f]{40}$/.test(at) || !executableChanges[at]) continue;
+    const count = tierFilesAt(tier, at, root);
+    if (count !== null) tierFilesAtHead[tier] = count;
   }
 
   return {
@@ -1601,8 +1910,47 @@ export function readFacts(root = ROOT) {
     lifecycle: readJson(root, LIFECYCLE_PATH),
     runs,
     executableChanges,
+    ancestors,
     tierFiles: { web: derived.counts['apps/web/tests'], unit: unitTierFiles(root) },
+    tierFilesAtHead,
   };
+}
+
+/** Whether `at` is an ancestor of (or is) HEAD. */
+export function isAncestor(at, root = ROOT) {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', at, 'HEAD'], {
+      cwd: root,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The tier's file count at a commit, from `git ls-tree` — the same rule
+ * `deriveCounts` (web) and `unitTierFiles` (unit) apply to the working tree.
+ * `null` when the tier has no rule here or git cannot answer.
+ */
+export function tierFilesAt(tier, at, root = ROOT) {
+  const listed = (pathspec) =>
+    git(['ls-tree', '-r', '--name-only', at, '--', pathspec], root).split('\n').filter(Boolean);
+  try {
+    if (tier === 'web') {
+      return listed('apps/web/tests').filter((p) => /\.test\.tsx?$/.test(p)).length;
+    }
+    if (tier === 'unit') {
+      return listed('tests').filter(
+        (p) =>
+          /\.test\.ts$/.test(p) && !p.startsWith('tests/db/') && !p.startsWith('tests/backend/')
+      ).length;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function resolveGit(binding, root) {
@@ -1656,7 +2004,7 @@ export const TIER_COMMANDS = Object.freeze({
  * blocks, which is 486 for a 90-file tier and would have made the cross-check
  * against the tree meaningless.
  */
-function record(tier, root = ROOT) {
+function record(tier, root = ROOT, { diagnostic = false } = {}) {
   const command = TIER_COMMANDS[tier];
   if (!command) {
     process.stderr.write(`::error::unknown tier \`${tier}\` — ${Object.keys(TIER_COMMANDS)}\n`);
@@ -1701,7 +2049,7 @@ function record(tier, root = ROOT) {
     howToTake: 'node scripts/ci/check-p1-27-closing-values.mjs --record <tier>',
     tiers: {},
   };
-  ledger.tiers[tier] = {
+  const entry = {
     command: `${command.join(' ')} --reporter=json`,
     tests: report.numTotalTests,
     passed: report.numPassedTests,
@@ -1713,12 +2061,108 @@ function record(tier, root = ROOT) {
     dirtyExecutablePaths: dirty.filter((p) => !p.startsWith('docs/') && !p.endsWith('.md')),
     measuredAt: new Date().toISOString(),
   };
-  writeFileSync(native(root, RUN_LEDGER_PATH), `${JSON.stringify(ledger, null, 2)}\n`);
+  // Judged BEFORE anything is written: a run that did not succeed may not take
+  // the place of the record a gate reads, whatever else it reports.
+  const problems = recordProblems(tier, entry);
+  if (!diagnostic) {
+    if (problems.length > 0) return refuseRecord(tier, problems);
+    ledger.tiers[tier] = entry;
+  } else {
+    if (problems.length === 0) return refuseDiagnosticOfSuccess(tier);
+    appendDiagnostic(ledger, localDiagnosticRecord(tier, entry, problems));
+  }
+  if (!writeLedger(root, ledger)) return 2;
   process.stdout.write(
-    `recorded ${tier}: ${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
+    `${diagnostic ? 'kept as DIAGNOSTIC history (not evidence) ' : 'recorded '}${tier}: ` +
+      `${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
       `${(report.testResults ?? []).length} files at ${head.slice(0, 8)}\n`
   );
   return 0;
+}
+
+/**
+ * Why a record may not be written as SUCCESS evidence — the completeness and
+ * provenance rules the gate applies to `tiers`, plus a recorded failure, run
+ * before the write rather than after it. Empty means it may be written.
+ */
+export function recordProblems(tier, entry) {
+  const problems = [...judgeRunCompleteness(tier, entry), ...judgeRunProvenance(tier, entry)];
+  if (Number(entry?.failed) !== 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+        `the \`${tier}\` run recorded ${String(entry?.failed)} failure(s)`
+      )
+    );
+  }
+  return problems;
+}
+
+function refuseRecord(tier, problems, write = (text) => process.stderr.write(text)) {
+  for (const each of problems) write(`::error::${each.text}\n`);
+  write(
+    `::error::the ${tier} run is not success evidence, so nothing was written. To keep it as ` +
+      'failure history instead, re-run with `--diagnostic`; that writes under ' +
+      `\`${DIAGNOSTICS_KEY}\` and never touches \`tiers\`\n`
+  );
+  return 1;
+}
+
+function refuseDiagnosticOfSuccess(tier, write = (text) => process.stderr.write(text)) {
+  write(
+    `::error::the ${tier} run is eligible success evidence; record it without \`--diagnostic\`. ` +
+      'A diagnostic is history of a run that did NOT succeed, and nothing was written\n'
+  );
+  return 1;
+}
+
+function appendDiagnostic(ledger, entry) {
+  const history = Array.isArray(ledger[DIAGNOSTICS_KEY]) ? ledger[DIAGNOSTICS_KEY] : [];
+  ledger[DIAGNOSTICS_KEY] = [...history, entry];
+}
+
+/**
+ * Writes the ledger in one step or not at all. The whole file is computed
+ * first; `writeFilesAtomically` swaps it in, and on a failure the file keeps
+ * the bytes it had.
+ */
+function writeLedger(root, ledger, { fs, write = (text) => process.stderr.write(text) } = {}) {
+  try {
+    writeFilesAtomically(
+      [{ path: native(root, RUN_LEDGER_PATH), content: `${JSON.stringify(ledger, null, 2)}\n` }],
+      fs
+    );
+    return true;
+  } catch (error) {
+    write(`::error::${RUN_LEDGER_PATH} was not written, and is unchanged: ${error.message}\n`);
+    return false;
+  }
+}
+
+/**
+ * The history a failed LOCAL run leaves when `--diagnostic` asks for it.
+ * Marked, and filed under `diagnostics`, so no reader can take it for a tier.
+ */
+export function localDiagnosticRecord(tier, entry, problems) {
+  return {
+    diagnostic: true,
+    evidence: DIAGNOSTIC_NOTICE,
+    source: 'local',
+    tier,
+    outcome: 'not successful',
+    refusedBecause: problems.map((each) => each.text),
+    measuredAtCommit: entry.measuredAtCommit,
+    measuredAt: entry.measuredAt,
+    command: entry.command,
+    exitCode: entry.exitCode,
+    counts: {
+      tests: entry.tests,
+      passed: entry.passed,
+      failed: entry.failed,
+      skipped: entry.skipped,
+      files: entry.files,
+    },
+  };
 }
 
 /**
@@ -1767,6 +2211,59 @@ export function hostedRunRecord(tier, hosted) {
 }
 
 /**
+ * The history an ineligible HOSTED run leaves when `--diagnostic` asks for it.
+ *
+ * Everything in it is what the run reported, as `hostedRunRecord` takes it —
+ * but it is marked, filed under `diagnostics`, and names why it was refused, so
+ * it can explain a failure without ever standing in for a success.
+ */
+export function hostedDiagnosticRecord(tier, observation, problems) {
+  const report = observation.report;
+  return {
+    diagnostic: true,
+    evidence: DIAGNOSTIC_NOTICE,
+    source: 'hosted',
+    tier,
+    outcome:
+      observation.jobConclusion ?? observation.runConclusion ?? observation.runStatus ?? 'unknown',
+    refusedBecause: problems.map((each) => each.text),
+    run: {
+      id: observation.runId,
+      url: observation.runUrl,
+      workflow: observation.workflow,
+      headSha: observation.headSha,
+      status: observation.runStatus,
+      conclusion: observation.runConclusion,
+    },
+    job:
+      observation.job === null
+        ? null
+        : {
+            id: observation.job,
+            name: observation.jobName,
+            status: observation.jobStatus,
+            conclusion: observation.jobConclusion,
+          },
+    step: { name: observation.step, conclusion: observation.stepConclusion },
+    artifact:
+      observation.artifactDigest === null
+        ? null
+        : { name: observation.artifact, digest: observation.artifactDigest },
+    counts:
+      report === null || typeof report !== 'object'
+        ? null
+        : {
+            tests: report.numTotalTests,
+            passed: report.numPassedTests,
+            failed: report.numFailedTests,
+            skipped: (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0),
+            files: (report.testResults ?? []).length,
+          },
+    observedAt: observation.completedAt,
+  };
+}
+
+/**
  * Records a tier from the GitHub run that produced it, rather than from a run of
  * it here.
  *
@@ -1785,65 +2282,110 @@ export function hostedRunRecord(tier, hosted) {
  * whose bytes are checked against the digest GitHub publishes for them. A caller
  * can pass the wrong run; it cannot pass the wrong numbers.
  *
- * The run must describe THIS head, and the record is filed against the commit it
- * was taken at, so the staleness rules expire it exactly as they expire a local
- * one. A hosted record buys authority, not permanence.
+ * ONLY SUCCESS IS RECORDED. `judgeHostedEligibility` decides, before anything is
+ * written, that the run describes THIS head, that the tier's own job belongs to
+ * it and concluded success, that the tier step concluded success, and that the
+ * artifact is the run's own, on its digest, with a report and a tier summary
+ * that agree and record no failure. A run whose OTHER jobs failed may still
+ * supply this tier — that is the per-tier rule in `ELIGIBLE_RUN_CONCLUSIONS` —
+ * but a cancelled, timed-out, skipped or unfinished run supplies nothing. The
+ * record is then put through the same completeness and provenance rules the
+ * gate applies, and only then written, in one step.
+ *
+ * `--diagnostic` inverts the last step for a run that is NOT eligible: it keeps
+ * the observation as marked history under `diagnostics`, and refuses a run that
+ * is eligible, so the two can never be confused.
+ *
+ * `options` exists for tests, which replay recorded API answers: `request`
+ * replaces the network, and `token`, `repo`, `head`, `fs`, `stdout` and `stderr`
+ * replace what the command line would otherwise read or write.
+ *
+ * Exit: 0 written · 1 refused, nothing written · 2 cannot read or write, nothing
+ * written.
  */
-export async function recordHosted(tier, runId, root = ROOT) {
+export async function recordHosted(tier, runId, root = ROOT, options = {}) {
+  const say = options.stdout ?? ((text) => process.stdout.write(text));
+  const warn = options.stderr ?? ((text) => process.stderr.write(text));
+  const diagnostic = options.diagnostic === true;
   if (!TIER_COMMANDS[tier]) {
-    process.stderr.write(`::error::unknown tier \`${tier}\` — ${Object.keys(TIER_COMMANDS)}\n`);
+    warn(`::error::unknown tier \`${tier}\` — ${Object.keys(TIER_COMMANDS)}\n`);
     return 2;
   }
   if (!/^\d+$/.test(String(runId ?? ''))) {
-    process.stderr.write('::error::--hosted-run needs a numeric GitHub run id\n');
+    warn('::error::--hosted-run needs a numeric GitHub run id\n');
     return 2;
   }
-  const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  const token = options.token ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
   if (!token) {
-    process.stderr.write(
+    warn(
       '::error::no GH_TOKEN/GITHUB_TOKEN. Reading a hosted run needs an authenticated read, and ' +
         'refusing is the only honest answer without one\n'
     );
     return 2;
   }
-  const remote = git(['remote', 'get-url', 'origin'], root).trim();
   const repo =
-    process.env.GITHUB_REPOSITORY ?? remote.match(/github\.com[/:]([^/]+\/[^/.]+)/)?.[1] ?? '';
+    options.repo ??
+    process.env.GITHUB_REPOSITORY ??
+    git(['remote', 'get-url', 'origin'], root)
+      .trim()
+      .match(/github\.com[/:]([^/]+\/[^/.]+)/)?.[1] ??
+    '';
   if (!repo) {
-    process.stderr.write('::error::cannot tell which repository this is from `origin`\n');
+    warn('::error::cannot tell which repository this is from `origin`\n');
     return 2;
   }
 
-  let hosted;
+  let observation;
+  let judgeHostedEligibility;
   try {
-    const { fetchHostedTierRun } = await import('../lib/hosted-run-report.mjs');
-    hosted = await fetchHostedTierRun({ repo, runId: String(runId), tier, token });
+    const hostedRunReport = await import('../lib/hosted-run-report.mjs');
+    judgeHostedEligibility = hostedRunReport.judgeHostedEligibility;
+    observation = await hostedRunReport.fetchHostedTierRun({
+      repo,
+      runId: String(runId),
+      tier,
+      token,
+      request: options.request,
+    });
   } catch (error) {
-    process.stderr.write(`::error::${error.message}\n`);
+    warn(`::error::${error.message}; nothing was written\n`);
     return 2;
   }
 
-  const head = git(['rev-parse', 'HEAD'], root).trim();
-  if (hosted.headSha !== head) {
-    // Filing a run of one tree against another is the single way this writer
-    // could manufacture a green record, so it is refused here rather than left
-    // for the gate to catch afterwards.
-    process.stderr.write(
-      `::error::run ${runId} describes ${hosted.headSha.slice(0, 8)} but HEAD is ` +
-        `${head.slice(0, 8)}; a record may only be filed against the head its run ran\n`
-    );
-    return 2;
-  }
-
+  const head = options.head ?? git(['rev-parse', 'HEAD'], root).trim();
+  const ineligible = judgeHostedEligibility(observation, { head });
   const ledger = readJson(root, RUN_LEDGER_PATH) ?? { tiers: {} };
-  ledger.tiers[tier] = hostedRunRecord(tier, hosted);
-  const report = hosted.report;
-  writeFileSync(native(root, RUN_LEDGER_PATH), `${JSON.stringify(ledger, null, 2)}\n`);
-  process.stdout.write(
-    `recorded ${tier} from hosted run ${hosted.runId} job ${hosted.job}: ` +
+
+  if (diagnostic) {
+    if (ineligible.length === 0) return refuseDiagnosticOfSuccess(tier, warn);
+    if (observation.runStatus !== 'completed') {
+      // A run in flight has no outcome yet, so there is nothing to keep.
+      for (const each of ineligible) warn(`::error::${each.text}\n`);
+      warn('::error::a run in flight has no outcome to keep as history; nothing was written\n');
+      return 1;
+    }
+    appendDiagnostic(ledger, hostedDiagnosticRecord(tier, observation, ineligible));
+    if (!writeLedger(root, ledger, { fs: options.fs, write: warn })) return 2;
+    say(
+      `kept ${tier} from hosted run ${observation.runId} as DIAGNOSTIC history (not evidence) ` +
+        `under \`${DIAGNOSTICS_KEY}\`: ${ineligible.map((each) => each.id).join(', ')}\n`
+    );
+    return 0;
+  }
+
+  if (ineligible.length > 0) return refuseRecord(tier, ineligible, warn);
+  const entry = hostedRunRecord(tier, observation);
+  const problems = recordProblems(tier, entry);
+  if (problems.length > 0) return refuseRecord(tier, problems, warn);
+
+  ledger.tiers[tier] = entry;
+  if (!writeLedger(root, ledger, { fs: options.fs, write: warn })) return 2;
+  const report = observation.report;
+  say(
+    `recorded ${tier} from hosted run ${observation.runId} job ${observation.job}: ` +
       `${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
-      `${(report.testResults ?? []).length} files, exit ${hosted.exitCode} at ` +
-      `${hosted.headSha.slice(0, 8)}\n`
+      `${(report.testResults ?? []).length} files, exit ${observation.exitCode} at ` +
+      `${observation.headSha.slice(0, 8)}\n`
   );
   return 0;
 }
@@ -1852,9 +2394,10 @@ export async function recordHosted(tier, runId, root = ROOT) {
  * Entry point
  * ------------------------------------------------------------------ */
 
-export function evaluate(root = ROOT) {
+/** @param {{ mode?: string }} [options] `strict` (default) or `checkpoint-deferred` */
+export function evaluate(root = ROOT, { mode = RECORDS_MODE.STRICT } = {}) {
   const selfFailures = selfCheck();
-  const result = judge(readFacts(root));
+  const result = judge(readFacts(root), { mode });
   return {
     ...result,
     ok: result.ok && selfFailures.length === 0,
@@ -1865,13 +2408,25 @@ export function evaluate(root = ROOT) {
 function main(argv) {
   if (argv.includes('--record')) {
     const tier = argv[argv.indexOf('--record') + 1];
+    const diagnostic = argv.includes('--diagnostic');
     return argv.includes('--hosted-run')
-      ? recordHosted(tier, argv[argv.indexOf('--hosted-run') + 1], ROOT)
-      : record(tier, ROOT);
+      ? recordHosted(tier, argv[argv.indexOf('--hosted-run') + 1], ROOT, { diagnostic })
+      : record(tier, ROOT, { diagnostic });
   }
+  /*
+   * TDP-2026-10. STRICT unless a deferral is REQUESTED (`--mode`, or the
+   * ROOTLCO_RECORDS_MODE variable a workflow step sets on purpose) AND the
+   * event corroborates it. Without a request no GITHUB_* variable is read.
+   */
+  const decided = resolveRecordsMode(argv, process.env);
+  if (decided.error) {
+    process.stderr.write(`::error::${decided.error}\n`);
+    return 2;
+  }
+  process.stdout.write(`records mode: ${decided.mode} — ${decided.reason}\n`);
   let result;
   try {
-    result = evaluate(ROOT);
+    result = evaluate(ROOT, { mode: decided.mode });
   } catch (error) {
     process.stderr.write(`::error::cannot classify P1-27 closing values: ${error.message}\n`);
     return 2;
@@ -1879,6 +2434,10 @@ function main(argv) {
   const jsonOut = argv.includes('--json') ? argv[argv.indexOf('--json') + 1] : null;
   if (jsonOut) writeFileSync(jsonOut, `${JSON.stringify(result, null, 2)}\n`);
   for (const text of result.problems) process.stderr.write(`::error::${text}\n`);
+  for (const text of result.pending ?? []) {
+    process.stdout.write(`::notice::PENDING until the next checkpoint (TDP-2026-10): ${text}\n`);
+  }
+  writePendingSummary('P1-27 closing values', result.pending ?? []);
   const c = result.counters;
   process.stdout.write(
     `P1-27 closing values: ${result.values} classified across ${result.documents} document(s) — ` +
@@ -1891,7 +2450,8 @@ function main(argv) {
       ` PROTECTED_VALUES_MISREPRESENTED_AS_PREMERGE=${c.PROTECTED_VALUES_MISREPRESENTED_AS_PREMERGE}` +
       ` HISTORICAL_VALUES_COUNTED_AS_CURRENT=${c.HISTORICAL_VALUES_COUNTED_AS_CURRENT}\n` +
       `  EXCLUDED_VALUES=${c.EXCLUDED_VALUES} (in banner-marked regions, each naming its subject)\n` +
-      `  ${result.problems.length} problem(s).\n`
+      `  ${result.problems.length} problem(s)` +
+      `${(result.pending ?? []).length ? `, ${result.pending.length} pending until the next checkpoint` : ''}.\n`
   );
   return result.ok ? 0 : 1;
 }

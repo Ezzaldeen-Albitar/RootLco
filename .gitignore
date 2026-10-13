@@ -7,6 +7,11 @@
 .env
 .env.*
 !.env.example
+# Tracked TEMPLATES. Both carry names and provenance markers only — never a
+# value — and both are scanned by the tracked-secrets gate like any other file.
+# Without this negation `.env.*` above swallows them and they are silently
+# untracked, which is how a template nobody can see gets written twice.
+!.env.production.example
 *.pem
 *.key
 *.p12

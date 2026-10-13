@@ -473,7 +473,7 @@ const INSTRUMENTED = globSync([...COVERAGE_INCLUDE], { cwd: join(__dirname, '..'
   .sort();
 
 const coverageOptions = webConfig.test?.coverage as
-  { provider?: string; all?: boolean; reporter?: string[] } | undefined;
+  { provider?: string; include?: string[]; reporter?: string[] } | undefined;
 
 describe('the web tier declares a coverage measurement', () => {
   it('declares it at the ROOT of the config, with the API tier’s provider', () => {
@@ -485,7 +485,17 @@ describe('the web tier declares a coverage measurement', () => {
   });
 
   it('measures files no test imports, so an unloaded screen cannot leave the denominator', () => {
-    expect(coverageOptions?.all).toBe(true);
+    // Vitest 3 spelled this guarantee `coverage.all: true`. Vitest 4 removed
+    // that option and gave the job to `coverage.include`: on a full-tier run the
+    // provider adds every file matching `include` that no test loaded, at 0%,
+    // before writing the report. So the thing to pin is no longer a boolean —
+    // it is that `include` is DECLARED and still lists the four instrumented
+    // roots. An empty or absent `include` would silently return the tier to
+    // "only what a test happened to import", which is the flattering
+    // measurement this assertion exists to refuse.
+    expect(coverageOptions?.include).toBeDefined();
+    expect(coverageOptions?.include).toEqual([...COVERAGE_INCLUDE]);
+    expect(coverageOptions?.include?.length).toBeGreaterThan(0);
   });
 
   it('declares coverage on NO project, because a project-level block is ignored in silence', () => {
@@ -541,6 +551,48 @@ describe('the instrumented surface is what it claims to be', () => {
     ]) {
       expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
     }
+  });
+
+  it('covers the three P1-31 feature trees (P1-31-QA-001, coverage hole H-2)', () => {
+    // Until 2026-09-15 none of these could be instrumented at all, because the
+    // include list named no P1-31 tree. One real file per tree, so a root that
+    // silently fell off the list fails here rather than in a coverage report
+    // nobody reads.
+    for (const file of [
+      'apps/web/src/features/delivery/components/ReceiverPanel.tsx',
+      'apps/web/src/features/delivery/receiver-capture.ts',
+      'apps/web/src/features/warranty/warranty-contract.ts',
+      'apps/web/src/features/reports/reports-contract.ts',
+    ]) {
+      expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
+    }
+  });
+
+  it('covers the Platform Owner Console, feature tree AND route group', () => {
+    // Same hole as H-2, one surface later: a tree missing from the include list
+    // is not measured badly, it is measured NOWHERE — so the baseline's
+    // touched-file floor skips every file in it, because coverage-gate.mjs
+    // iterates the report rather than the tree.
+    //
+    // The route group is asserted beside the feature tree because it carries the
+    // console's server-side gate, and because `(platform)` is subject to exactly
+    // the escaping trap the case above records for `(dashboard)`.
+    for (const file of [
+      'apps/web/src/features/platform/actions.ts',
+      'apps/web/src/features/platform/api.ts',
+      'apps/web/src/features/platform/api/session.ts',
+      'apps/web/src/features/platform/components/OrganizationDetailScreen.tsx',
+      'apps/web/src/app/[locale]/(platform)/layout.tsx',
+      'apps/web/src/app/[locale]/(platform)/platform/organizations/page.tsx',
+    ]) {
+      expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
+    }
+    const consolePattern = COVERAGE_INCLUDE.find(
+      (p) => p.startsWith('src/app/') && p.includes('platform')
+    );
+    expect(consolePattern).toBeDefined();
+    const unescaped = (consolePattern as string).split('\\').join('');
+    expect(globSync([unescaped], { cwd: join(__dirname, '..') })).toEqual([]);
   });
 
   it('refuses an exclusion pattern that matches nothing', () => {
@@ -662,5 +714,102 @@ describe('the client bundle carries no server secret', () => {
     };
     for (const root of roots) walk(root);
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * The two doors a client may legitimately name a resource SCOPE through.
+ *
+ * ## The distinction, and why it needs a pin rather than a convention
+ *
+ * Two different sentences share the same words:
+ *
+ *   "I am in company X"              — a claim about the CALLER. Never sent;
+ *                                      the server resolves it from the session
+ *                                      on every request, and `query()` throws on
+ *                                      the names rather than dropping them.
+ *   "show me company X's work"       — a claim about the RESOURCE, demanded by
+ *                                      the route schema and authorized
+ *                                      server-side exactly like any parameter.
+ *
+ * `companyFilterQuery` is the first exception and `p1-27-security.test.ts` pins
+ * its call sites to the one operation that has that shape.
+ * `branchScopeQuery` is the second, opened by the Owner directive
+ * (`P1-32-PRE-OD-UX`) when `branchId` became OPTIONAL on the reception board,
+ * the work-order board and the overview aggregate: an omitted branch asks for
+ * every branch of the named company the caller may read, and the API resolves
+ * that set one branch at a time against the operation's own permission code.
+ *
+ * Widening `BranchTarget` to accept a null branch would have relaxed the
+ * guarantee for every branch-addressed read at once, silently — the throw in
+ * `branchTargetQuery` is the only thing between a typo and a request that looks
+ * like a scope assertion. So the second door is a separate helper, and its call
+ * sites are pinned here for the same reason the first one's are: widening the
+ * exception has to mean changing a test that says why it is not wider.
+ *
+ * ## Why this lives here and not beside the pin it mirrors
+ *
+ * `p1-27-security.test.ts` is inside a SEALED evidence package: the P1-27
+ * record states its case count and digests the documents that state it, and the
+ * matrix cites line ranges of it that were correct when they were written.
+ * Adding two cases there moves a number in a sealed document and every citation
+ * below the insertion point. The rule being pinned is not P1-27's, so it does
+ * not have to be paid for in P1-27's record.
+ */
+describe('a resource scope reaches the wire through exactly two named doors', () => {
+  /** Comments stripped, so a helper NAMED in a docblock is not a call site. */
+  const callSites = (pattern: RegExp): string[] => {
+    const roots = [join(WEB_SRC, 'features'), join(WEB_SRC, 'lib')];
+    const found: string[] = [];
+    for (const root of roots) {
+      for (const file of walkSource(root)) {
+        const code = readFileSync(file, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        if (pattern.test(code)) found.push(file.split(/[\\/]/).slice(-3).join('/'));
+      }
+    }
+    return found.sort();
+  };
+
+  it('permits an optionally unnamed branch at exactly the reads whose route allows one', () => {
+    expect(callSites(/branchScopeQuery\s*\(/)).toEqual([
+      // The operations whose route schema made the branch optional. The three
+      // board and overview reads moved their bodies into server-only cores that
+      // the Server Action and the cancellable read route share
+      // (P1-32-PRE-OD-READ): the same three operations, one call site each.
+      'features/appointments/api.ts',
+      'features/overview/dashboard-summary-read.server.ts',
+      'features/receptions/reception-list-read.server.ts',
+      'features/warranty/warranty-api.ts',
+      'features/work-orders/work-order-list-read.server.ts',
+      // The definition itself, so this fails if the helper moves.
+      'lib/api/read-operation.ts',
+    ]);
+  });
+
+  it('still demands BOTH halves everywhere else', async () => {
+    const { branchTargetQuery } = await import('@/lib/api/read-operation');
+    // Unchanged by the directive: a half-built target is a coding error said at
+    // the call site, never a blank value serialised into a URL.
+    expect(() => branchTargetQuery({ companyId: 'c1' } as never)).toThrow(/branchId/);
+    expect(() => branchTargetQuery({ branchId: 'b1' } as never)).toThrow(/companyId/);
+  });
+
+  it('refuses a tenant, and a scope key smuggled among the filters of a branch scope', async () => {
+    const { branchScopeQuery } = await import('@/lib/api/read-operation');
+    // The company is mandatory and the branch is optional; neither may arrive
+    // twice, and a tenant may not arrive at all.
+    expect(() => branchScopeQuery({ companyId: '', branchId: null })).toThrow(/companyId/);
+    expect(() => branchScopeQuery({ companyId: 'c1', branchId: '  ' })).toThrow(/branchId/);
+    expect(() => branchScopeQuery({ companyId: 'c1', branchId: null }, { tenantId: 't1' })).toThrow(
+      /tenantId/
+    );
+    expect(() =>
+      branchScopeQuery({ companyId: 'c1', branchId: null }, { branchId: 'forged' })
+    ).toThrow(/branchId/);
+    // And the honest shapes travel: a named branch, and an omitted one.
+    expect(branchScopeQuery({ companyId: 'c1', branchId: 'b1' })).toBe('?companyId=c1&branchId=b1');
+    expect(branchScopeQuery({ companyId: 'c1', branchId: null })).toBe('?companyId=c1');
   });
 });

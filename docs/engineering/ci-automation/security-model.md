@@ -198,6 +198,42 @@ _exactly_ 8.4.31, and npm's only suggested remedy was downgrading Next to 9.3.3.
 **brace-expansion advisory: CLOSED on 2026-08-01. The exception has been removed and
 the tree carries zero advisories.**
 
+**braces advisory GHSA-vfj7-8cjw-p6xm (development tree): patched locally, because no
+upstream fix exists.** From P1-32-PRE-OD-DEP3, every dependent resolves to a
+RootLco-owned patched copy, `braces@3.0.3-rootlco.1` in `scripts/vendor/braces/`. npm
+audit does not verify that copy. It reports nothing for it only because the prerelease
+label falls outside the advisory range, so the evidence is
+`tests/ci/braces-patched-copy.test.ts`, not the audit. No exception was added. The
+record, including the replacement condition, is
+`docs/engineering/dependency-maintenance/ghsa-vfj7-8cjw-p6xm-braces/README.md`.
+
+**source-map-js and postcss-selector-parser advisories (2026-10-06): closed by an upgrade
+and one override.** GitHub reviewed both on 2026-10-05. GHSA-68fv-2mgg-jv7q (high) affects
+`source-map-js` below 1.2.2, which `next` reaches in production through `postcss`; the
+lockfile moves it to 1.2.2, which every parent range already admits, so it needs no
+override. GHSA-rj75-hqrm-r3gf (moderate, development only) affects `postcss-selector-parser`
+below 7.1.6. Upstream patched only the 7.x line, while `tailwindcss` 3.4.19 and
+`postcss-nested` 6.2.0 still ask for `^6`, so the root override `"postcss-selector-parser":
+"^7.1.6"` forces every copy to 7.1.6 across that major. A local API standalone build
+(not a CI-built image) carried neither package, and both are used only on
+repository-owned inputs at build, lint and test time. The limit: the override is a stopgap. Remove it when a `tailwindcss` v3 release
+depends on `^7`, when upstream publishes a patched 6.x, or when `apps/web` moves to
+`tailwindcss` v4 (change-control row CC-OD-56). No exception was added and no gate was
+changed. From P1-32-PRE-OD-DEP4.
+
+**sharp advisory GHSA-wq5f-xc86-pv6w (2026-10-06): closed by an upgrade.** GitHub published
+it on 2026-10-06 as high: sharp below 0.35.5 bundles a librsvg with a memory-safety defect
+(upstream CVE-2026-96889) that can lead to remote code execution on glibc-based Linux. sharp
+0.35.5 bundles librsvg 2.63.2. `sharp` is a production dependency: the API attachment scanner
+passes uploaded bytes to it, and sharp detects the format from the bytes before the service
+refuses anything that is not JPEG, PNG or WebP, so the SVG loader cannot be ruled out. It is
+also an optional dependency of `next`. The API image runs on `node:22-alpine` (musl), outside
+the glibc condition the advisory names, but development and test machines install the
+vulnerable binary too. `sharp` moves from 0.35.4 to 0.35.5 in lockstep — the root `overrides`
+entry, the root dependency and the `apps/api` dependency — and the lockfile moves the 26
+`@img/sharp-*` platform packages with it (libvips 1.3.3 to 1.3.4). No exception was added and
+no gate was changed (change-control row CC-OD-57). From P1-32-PRE-OD-DEP5.
+
 ### The one development exception, and why it is gone
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this

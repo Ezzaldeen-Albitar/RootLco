@@ -13,7 +13,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import { parseJsonBody, parseOrFail, pathScopeTarget, schemas } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
 
 export const runtime = 'nodejs';
@@ -62,14 +62,17 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ branchId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     BRANCH_SETTINGS_READ_OPERATION,
     request,
-    async ({ db }) => ({
-      body: { items: await iamModule().organization.listBranchSettings(db, params.branchId) },
-    }),
-    { params, authorizationTarget: { branchId: params.branchId } }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: { items: await iamModule().organization.listBranchSettings(db, params.branchId) },
+      };
+    },
+    { params: raw, authorizationTarget: pathScopeTarget(raw, 'branchId') }
   );
 }
 
@@ -77,7 +80,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ branchId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -85,14 +88,17 @@ export async function POST(
   return handleOperation(
     BRANCH_SETTINGS_WRITE_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      status: 201,
-      body: await iamModule().organization.writeBranchSetting(
-        db,
-        params.branchId,
-        await parseJsonBody(raw, SettingBody)
-      ),
-    }),
-    { params, body, authorizationTarget: { branchId: params.branchId } }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await iamModule().organization.writeBranchSetting(
+          db,
+          params.branchId,
+          await parseJsonBody(raw, SettingBody)
+        ),
+      };
+    },
+    { params: rawParams, body, authorizationTarget: pathScopeTarget(rawParams, 'branchId') }
   );
 }

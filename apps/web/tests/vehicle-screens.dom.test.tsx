@@ -49,8 +49,8 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-vi.mock('@/features/vehicles/api', () => ({
-  searchVehicles: (...args: unknown[]) => searchVehicles(...args),
+vi.mock('@/features/vehicles/vehicle-search-read', () => ({
+  searchVehiclesCancellable: (...args: unknown[]) => searchVehicles(...args),
 }));
 vi.mock('@/features/vehicles/duplicates-api', () => ({
   listVehicleDuplicates: (...args: unknown[]) => listVehicleDuplicates(...args),
@@ -68,15 +68,15 @@ const { VehicleAttributeHistorySection } =
   await import('@/features/vehicles/components/VehicleAttributeHistorySection');
 
 /**
- * The adapter this file mocks everywhere else, imported for real.
+ * The search core this file mocks everywhere else, imported for real.
  *
- * `vi.importActual` bypasses the mock for THIS module only; its own imports
- * still resolve through the registry, so `@/lib/api/server-client` above is
- * still the mocked one. That is exactly the arrangement the transport cases
- * need: production adapter, production client, a transport under test control.
+ * `vi.importActual` loads it as shipped, and its own imports still resolve
+ * through the registry, so `@/lib/api/server-client` above is still the mocked
+ * one — production core, production client, a transport under test control.
  */
-const realVehicleApi =
-  await vi.importActual<typeof import('@/features/vehicles/api')>('@/features/vehicles/api');
+const realVehicleApi = await vi.importActual<
+  typeof import('@/features/vehicles/vehicle-search-read.server')
+>('@/features/vehicles/vehicle-search-read.server');
 const { ApiClient } = await import('@/lib/api/client');
 
 /**
@@ -108,7 +108,7 @@ const CATALOGUE_OK: CatalogueResult = {
  * The annotation is the fix. `tsconfig.json` includes the test tree, so from
  * here the compiler owns this drift rather than a reviewer.
  */
-const HIT: VehicleSearchHit = {
+const HIT: VehicleSearchHit = withSearchProjection({
   id: 'a1b2c3d4-0000-4000-8000-000000000001',
   displayNumber: 'V-0001',
   vin: 'JH4KA7561PC008269',
@@ -120,7 +120,7 @@ const HIT: VehicleSearchHit = {
   powertrainCategory: 'ice',
   mergedIntoId: null,
   createdAt: '2026-08-04T10:00:00.000Z',
-};
+});
 
 const CANDIDATE = {
   id: 'cand-1',
@@ -422,17 +422,17 @@ describe('vehicle search asks nothing until it is asked', () => {
  * `ServerPage`, which means the mapping under test is supplied by the test.
  * These two hand the mock the REAL adapter and replace only `fetch`, so the
  * chain that runs is the shipped one: `VehicleSearchScreen` → `useServerTable` →
- * `searchVehicles` → `ApiClient.#request` → the catch block → `STATUS_BY_KIND` →
+ * `readVehicleSearch` → `ApiClient.#request` → the catch block → `STATUS_BY_KIND` →
  * `DataTable` → the English catalogue. Nothing in it is a fixture except the
  * transport, and the transport is where a timeout comes from in production too.
  *
  * ## What cancellation means on THIS screen, said exactly
  *
- * No P1-27 screen offers a Cancel control and no P1-27 adapter accepts an
- * `AbortSignal` — `searchVehicles` takes `(criteria, request, cursor)` and
- * nothing else. So the cancellation an operator can actually cause here is the
- * one the client's own comment names second: navigating away, which tears down
- * the in-flight request and rejects it with an `AbortError` the client did not
+ * No P1-27 screen offers a Cancel control. The search core does take an
+ * `AbortSignal` now (P1-32-PRE-OD-READ, proved in `cancellable-reads.test.ts`),
+ * but here the cancellation under test is the one the client's own comment
+ * names second: the transport torn down from outside, as navigating away does,
+ * which rejects the in-flight request with an `AbortError` the client did not
  * raise. That is what the second case drives. It is NOT a proof that a Cancel
  * button behaves, because there is no such button to prove.
  */
@@ -471,7 +471,7 @@ describe('a transport outcome an operator can actually meet, end to end', () => 
   }
 
   function renderSearchOver(fetchImpl: typeof fetch) {
-    searchVehicles.mockImplementation(realVehicleApi.searchVehicles);
+    searchVehicles.mockImplementation(realVehicleApi.readVehicleSearch);
     authorizedClient.mockResolvedValue(
       new ApiClient({
         baseUrl: 'https://api.invalid',
@@ -1042,3 +1042,153 @@ describe('this file is not vacuous', () => {
     }
   });
 });
+
+describe('friendly vehicle search (P1-32)', () => {
+  const render = () =>
+    renderLtr(
+      <VehicleSearchScreen locale="en" messages={en} canCreate={false} makes={CATALOGUE_OK} />
+    );
+
+  it('submits the search box on Enter, sending what was typed', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.q']), 'camry{Enter}');
+    await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
+    const [criteria] = searchVehicles.mock.calls[0] as [Record<string, string>];
+    expect(criteria.q).toBe('camry');
+  });
+
+  it('sends make and model filters', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.make']), 'Toy');
+    await user.type(screen.getByLabelText(en['vehicles.search.model']), 'Cam{Enter}');
+    await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
+    const [criteria] = searchVehicles.mock.calls[0] as [Record<string, string>];
+    expect(criteria.make).toBe('Toy');
+    expect(criteria.model).toBe('Cam');
+  });
+
+  it('refuses a one-character make and says why, without a request', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.make']), 'T{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent(en['vehicles.search.tooShort']);
+    expect(searchVehicles).not.toHaveBeenCalled();
+  });
+
+  it('shows names, the active plate and the owner the backend resolved', async () => {
+    searchVehicles.mockResolvedValue(
+      page([
+        {
+          ...HIT,
+          makeId: 'make-toyota',
+          makeName: 'Toyota',
+          modelName: 'Camry',
+          activePlate: 'NEW-2222',
+          customerDisplayName: 'Nadia Khoury',
+        },
+      ])
+    );
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.q']), 'camry{Enter}');
+    expect(await screen.findByText('Camry')).toBeInTheDocument();
+    expect(screen.getByText('Toyota')).toBeInTheDocument();
+    expect(screen.getByText('NEW-2222')).toBeInTheDocument();
+    expect(screen.getByText('Nadia Khoury')).toBeInTheDocument();
+    expect(screen.queryByTestId('previous-plate-badge')).toBeNull();
+  });
+
+  it('says clearly when the plate typed was a PREVIOUS plate, with its end date', async () => {
+    searchVehicles.mockResolvedValue(
+      page([
+        {
+          ...HIT,
+          activePlate: 'NEW-2222',
+          plateMatch: {
+            plate: 'OLD-1111',
+            active: false,
+            validFrom: '2020-01-01T00:00:00.000Z',
+            validTo: '2025-03-15T00:00:00.000Z',
+          },
+        },
+      ])
+    );
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), 'OLD-1111{Enter}');
+    const badge = await screen.findByTestId('previous-plate-badge');
+    expect(badge).toHaveTextContent(en['vehicles.search.previousPlateUntil']);
+    expect(badge).toHaveTextContent('OLD-1111');
+    expect(badge).toHaveTextContent('2025');
+    expect(screen.getByText('NEW-2222')).toBeInTheDocument();
+  });
+
+  it('shows no badge when the plate matched is the current one', async () => {
+    searchVehicles.mockResolvedValue(
+      page([
+        {
+          ...HIT,
+          activePlate: 'NEW-2222',
+          plateMatch: {
+            plate: 'NEW-2222',
+            active: true,
+            validFrom: '2025-03-15T00:00:00.000Z',
+            validTo: null,
+          },
+        },
+      ])
+    );
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), 'NEW-2222{Enter}');
+    expect(await screen.findByText('NEW-2222')).toBeInTheDocument();
+    expect(screen.queryByTestId('previous-plate-badge')).toBeNull();
+  });
+
+  it('states the empty result with a next step', async () => {
+    searchVehicles.mockResolvedValue(page([]));
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.q']), 'zz{Enter}');
+    expect(await screen.findByText(en['vehicles.search.noMatch'])).toBeInTheDocument();
+  });
+
+  it('keeps the search box readable in Arabic and echoes Arabic-Indic digits', async () => {
+    const user = userEvent.setup();
+    renderRtl(
+      <VehicleSearchScreen locale="ar" messages={ar} canCreate={false} makes={CATALOGUE_OK} />
+    );
+    await user.type(screen.getByLabelText(ar['vehicles.search.plate']), '١٢٣٤');
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent('1234');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
+    const [criteria] = searchVehicles.mock.calls[0] as [Record<string, string>];
+    expect(criteria.plate).toBe('١٢٣٤');
+  });
+});
+
+/**
+ * The fields P1-32 added to a search hit, defaulted to absent.
+ *
+ * A function DECLARATION at the foot of the file, so it is hoisted above the
+ * `HIT` fixture that uses it. It lives here rather than inline in the fixture so
+ * that adding the P1-32 projection moved no line that a phase record cites.
+ * Names are null so the catalogue fallback above stays exercised.
+ */
+function withSearchProjection(
+  hit: Omit<
+    VehicleSearchHit,
+    'makeName' | 'modelName' | 'activePlate' | 'plateMatch' | 'customerDisplayName'
+  >
+): VehicleSearchHit {
+  return {
+    ...hit,
+    makeName: null,
+    modelName: null,
+    activePlate: null,
+    plateMatch: null,
+    customerDisplayName: null,
+  };
+}

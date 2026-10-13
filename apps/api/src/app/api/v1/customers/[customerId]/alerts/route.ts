@@ -76,18 +76,21 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     ALERT_LIST_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      body: await crmModule().customerRead.listAlerts(
-        db,
-        params.customerId,
-        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
-      ),
-    }),
-    { params }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        body: await crmModule().customerRead.listAlerts(
+          db,
+          params.customerId,
+          parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+        ),
+      };
+    },
+    { params: rawParams }
   );
 }
 
@@ -95,7 +98,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -103,14 +106,17 @@ export async function POST(
   return handleOperation(
     ALERT_RAISE_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      status: 201,
-      body: await crmModule().customerGovernance.raiseAlert(
-        db,
-        params.customerId,
-        await parseJsonBody(raw, Body)
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await crmModule().customerGovernance.raiseAlert(
+          db,
+          params.customerId,
+          await parseJsonBody(raw, Body)
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }

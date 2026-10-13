@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SUPABASE_DIR = resolve(REPOSITORY_ROOT, 'supabase');
@@ -190,9 +191,11 @@ async function assertRetention(client) {
 }
 
 async function main() {
+  // No default port: a missing, inconsistent or unauthorised acceptance target is refused.
+  const target = resolveDatabaseTargetOrExit({ consumer: 'validate-seed-state' });
   const client = new pg.Client({
-    host: process.env.DB_HOST ?? '127.0.0.1',
-    port: Number(process.env.DB_PORT ?? 54322),
+    host: target.host,
+    port: target.port,
     database: process.env.DB_NAME ?? 'postgres',
     user: process.env.DB_USER ?? 'postgres',
     password: process.env.DB_PASSWORD ?? 'postgres',

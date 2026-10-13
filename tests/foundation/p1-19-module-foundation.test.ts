@@ -96,7 +96,7 @@ const PERMITTED_CROSS_SCHEMA: readonly {
     module: 'work-order',
     file: 'work-order-repository.ts',
     schema: 'tech',
-    why: 'closure blocker B2 — an open labor session on one of this order’s jobs',
+    why: 'closure blocker B2 — an open labor session on one of this order’s jobs; and, since the Owner directive P1-32-PRE-OD-UX, the technician register the board’s assigned-technician column resolves its profile against in the same LATERAL row',
   },
   {
     module: 'work-order',

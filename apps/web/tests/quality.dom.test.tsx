@@ -7,15 +7,60 @@
  * refuses. The adapters are mocked at the module boundary; the request they
  * build is proved in `quality-api.test.ts`, the responses in
  * `tests/backend/p1-29-w8-quality-and-closure.test.ts`.
+ *
+ * On the Material UI wrappers (ADR-022, Owner directive slice 4): the queue is
+ * `OperationalGrid` in server mode; every form is `forms/mui/*` — radios for
+ * the short closed answers, a checkbox for yes-or-no; finalizing a check and
+ * closing the order are asked first (`ConfirmDialog`); a reopen attempt and a
+ * withdrawal take their reason through `ReasonDialog`; every state is said in
+ * words; and each command stays busy until the re-read it caused has landed.
  */
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 const EN = en as Record<string, string>;
 const t = (key: string): string => EN[key] ?? key;
+
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const mount = (ui: ReactElement) => renderLtr(withMui(ui));
+const mountAr = (ui: ReactElement) => renderRtl(withMui(ui, 'ar'));
+
+/** A name that STARTS with the words — an action's name carries what it is about after them. */
+const startsWith = (text: string) =>
+  new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, (match) => `\\${match}`)}`);
+
+/** The question a decision dialog asks, answered with its own confirm button. */
+async function confirmIn(user: ReturnType<typeof userEvent.setup>, testId: string, name: string) {
+  const dialog = await screen.findByTestId(testId);
+  await user.click(within(dialog).getByRole('button', { name }));
+}
+
+/** The field error's own element — the one `aria-describedby` names. */
+const errorElement = (text: HTMLElement) => text.closest('[role="alert"]') as HTMLElement;
 
 const listQcQueue = vi.fn();
 const listQcChecks = vi.fn();
@@ -31,6 +76,11 @@ const readAdditionalWorkApproval = vi.fn();
 const writeQcCheckResult = vi.fn();
 const finalizeQcRecord = vi.fn();
 const closeWorkOrder = vi.fn();
+const requestAdditionalWork = vi.fn();
+const recordAdditionalWorkApproval = vi.fn();
+const signOffRework = vi.fn();
+const raiseReopenAttempt = vi.fn();
+const withdrawAdditionalWork = vi.fn();
 vi.mock('@/features/quality/api', () => ({
   listQcQueue: (...args: unknown[]) => listQcQueue(...args),
   listQcChecks: () => listQcChecks(),
@@ -49,14 +99,14 @@ vi.mock('@/features/quality/api', () => ({
   writeQcCheckResult: (...args: unknown[]) => writeQcCheckResult(...args),
   finalizeQcRecord: (...args: unknown[]) => finalizeQcRecord(...args),
   createRework: vi.fn(),
-  signOffRework: vi.fn(),
+  signOffRework: (...args: unknown[]) => signOffRework(...args),
   recordReworkCost: vi.fn(),
-  raiseReopenAttempt: vi.fn(),
-  requestAdditionalWork: vi.fn(),
+  raiseReopenAttempt: (...args: unknown[]) => raiseReopenAttempt(...args),
+  requestAdditionalWork: (...args: unknown[]) => requestAdditionalWork(...args),
   recordAdditionalWorkDetail: vi.fn(),
-  recordAdditionalWorkApproval: vi.fn(),
+  recordAdditionalWorkApproval: (...args: unknown[]) => recordAdditionalWorkApproval(...args),
   fulfillAdditionalWork: vi.fn(),
-  withdrawAdditionalWork: vi.fn(),
+  withdrawAdditionalWork: (...args: unknown[]) => withdrawAdditionalWork(...args),
   closeWorkOrder: (...args: unknown[]) => closeWorkOrder(...args),
   raiseJobBlocker: vi.fn(),
   resolveJobBlocker: vi.fn(),
@@ -77,8 +127,12 @@ const WORK_ORDER = '11111111-1111-4111-8111-111111111111';
 const RECORD = '22222222-2222-4222-8222-222222222222';
 const CHECK_A = '33333333-3333-4333-8333-333333333333';
 const CHECK_B = '44444444-4444-4444-8444-444444444444';
-const COMPANY = '88888888-8888-4888-8888-888888888888';
-const BRANCH = '99999999-9999-4999-8999-999999999999';
+const JOB = '55555555-5555-4555-8555-555555555555';
+// The branch the screen is standing in. It is no longer a pair of controls on
+// the queue form — the operator chooses once, in the header — so the test says
+// which branch the operator is working in rather than filling two boxes.
+const COMPANY = TEST_COMPANY.id;
+const BRANCH = TEST_BRANCH.id;
 
 const ok = <T,>(data: T) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 const denied = { status: 'denied' as const, correlationId: 'corr-denied' };
@@ -171,7 +225,18 @@ const workOrderDetail = {
     customer: null,
     vehicle: { id: 'veh', plate: null, vin: null, make: null, model: null, modelYear: null },
   },
-  jobs: [],
+  jobs: [
+    {
+      id: JOB,
+      workOrderId: WORK_ORDER,
+      title: 'Front brake service',
+      jobType: null,
+      departmentId: null,
+      state: 'in_progress',
+      requiresDiagnostic: false,
+      recordVersion: 1,
+    },
+  ],
   nextStates: [
     { code: 'closed', requiresReason: false, isTerminal: true, isCancellation: false },
     { code: 'cancelled', requiresReason: true, isTerminal: true, isCancellation: true },
@@ -207,6 +272,11 @@ beforeEach(() => {
     writeQcCheckResult,
     finalizeQcRecord,
     closeWorkOrder,
+    requestAdditionalWork,
+    recordAdditionalWorkApproval,
+    signOffRework,
+    raiseReopenAttempt,
+    withdrawAdditionalWork,
     readWorkOrderDetail,
   ]) {
     fn.mockReset();
@@ -227,8 +297,8 @@ beforeEach(() => {
           originatingJobId: null,
           originatingFindingId: null,
           summary: 'Rear pads',
-          state: 'requested',
-          fulfillmentState: 'pending',
+          state: 'pending',
+          fulfillmentState: 'unfulfilled',
           isRequired: false,
           createdAt: '2026-09-02T08:00:00.000Z',
           recordVersion: 1,
@@ -252,26 +322,71 @@ describe('the QC queue', () => {
     listQcQueue.mockResolvedValue(
       ok({ items: [{ ...record, cursor: 'c1' }], nextCursor: null, hasMore: false })
     );
-    renderLtr(
-      <QualityQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
-    const link = await screen.findByRole('link', { name: t('quality.queue.openOrder') });
+    mount(inBranch(<QualityQueueScreen locale="en" messages={en} />));
+    const link = await screen.findByRole('link', {
+      name: startsWith(t('quality.queue.openOrder')),
+    });
     expect(link).toHaveAttribute('href', `/en/work-orders/${WORK_ORDER}/closure`);
-    expect(listQcQueue).toHaveBeenCalledWith({ companyId: COMPANY, branchId: BRANCH }, {}, null);
+    // Server mode: one page of the grid's size, from the first cursor.
+    expect(listQcQueue).toHaveBeenCalledWith(
+      { companyId: COMPANY, branchId: BRANCH },
+      { limit: 25 },
+      null
+    );
+    // The result in words.
+    expect(screen.getAllByText(t('quality.result.open')).length).toBeGreaterThan(0);
+  });
+
+  it("names each row's action after its row, so two rows are two different links", async () => {
+    const second = { ...record, id: 'r2', workOrderId: 'wo-2', overallResult: 'passed' };
+    listQcQueue.mockResolvedValue(
+      ok({
+        items: [
+          { ...record, cursor: 'c1' },
+          { ...second, cursor: 'c2' },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    mount(inBranch(<QualityQueueScreen locale="en" messages={en} />));
+    const links = await screen.findAllByRole('link', {
+      name: startsWith(t('quality.queue.openOrder')),
+    });
+    expect(links).toHaveLength(2);
+    const names = links.map((link) => link.textContent);
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it("narrows by result as the read's key, and says an empty answer is about the result", async () => {
+    listQcQueue.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    const user = userEvent.setup();
+    mount(inBranch(<QualityQueueScreen locale="en" messages={en} />));
+    expect(await screen.findByText(t('quality.queue.emptyTitle'))).toBeVisible();
+    await user.selectOptions(
+      screen.getByLabelText(startsWith(t('quality.queue.filterResult'))),
+      'failed'
+    );
+    await waitFor(() =>
+      expect(listQcQueue).toHaveBeenLastCalledWith(
+        { companyId: COMPANY, branchId: BRANCH },
+        { overallResult: 'failed', limit: 25 },
+        null
+      )
+    );
+    expect(await screen.findByText(t('quality.queue.noneMatchingTitle'))).toBeVisible();
   });
 
   it('renders a refused queue as the refusal it was', async () => {
     listQcQueue.mockResolvedValue(denied);
-    renderLtr(
-      <QualityQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
+    mount(inBranch(<QualityQueueScreen locale="en" messages={en} />));
     expect(await screen.findByText('corr-denied', { exact: false })).toBeInTheDocument();
   });
 });
 
 describe('the closure view', () => {
-  it('renders the gate as the backend states it, with the deferred conditions named', async () => {
-    renderLtr(
+  it('renders each blocker as a plain sentence, with no developer note beside it', async () => {
+    const { container } = mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -280,22 +395,58 @@ describe('the closure view', () => {
       />
     );
     expect(await screen.findByText(t('quality.closure.notEligible'))).toBeInTheDocument();
-    expect(
-      screen.getByText('A job on this work order is not in a terminal state.', { exact: false })
-    ).toBeInTheDocument();
-    expect(screen.getByText('wo.guard_closure')).toBeInTheDocument();
-    expect(screen.getByText('B5, B6', { exact: false })).toBeInTheDocument();
+    const gate = container.querySelector('[data-blocker="B1"]');
+    expect(gate?.textContent).toBe(t('quality.closure.blocker.B1'));
+    // Browser QA part 7, row 2.10: the enforcing object, the blocker code, the
+    // deferred conditions, their reason and the owning phase were all printed for
+    // an operator. None of them may reach the screen.
+    const text = container.textContent ?? '';
+    for (const leaked of [
+      'wo.guard_closure',
+      'B5, B6',
+      'P1-21',
+      'Stock reservation is not represented yet.',
+      'A job on this work order is not in a terminal state.',
+    ]) {
+      expect(text, leaked).not.toContain(leaked);
+    }
     expect(screen.queryByText(t('quality.closure.inventoryBlocking'))).not.toBeInTheDocument();
     // Rework corrects a closed order: on an open one the form is withheld and the reason stated.
     expect(screen.getByText(t('quality.closure.reworkNeedsClosed'))).toBeInTheDocument();
     expect(screen.queryByText(t('quality.closure.openRework'))).not.toBeInTheDocument();
+    // Browser QA row B.S3: the order by its number and its state in words.
+    const order = screen.getByTestId('closure-order');
+    expect(order).toHaveTextContent('WO-0007');
+    expect(order).toHaveTextContent(t('workOrders.state.in_progress'));
+    expect(text).not.toContain('in_progress');
+    // An extra-work request's state and its fulfilment, in words.
+    expect(await screen.findByText(t('quality.requestState.pending'))).toBeInTheDocument();
+    expect(screen.getByText(t('quality.fulfillment.unfulfilled'))).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain('unfulfilled');
+  });
+
+  it('says the same blocker in Arabic, keyed by its code rather than the English prose', async () => {
+    const { container } = mountAr(
+      <WorkOrderClosureScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    expect(await screen.findByText(arT('quality.closure.notEligible'))).toBeInTheDocument();
+    const gate = container.querySelector('[data-blocker="B1"]');
+    expect(gate?.textContent).toBe(arT('quality.closure.blocker.B1'));
+    expect(arT('quality.closure.blocker.B1')).not.toBe(t('quality.closure.blocker.B1'));
+    expect(container.textContent ?? '').not.toContain('wo.guard_closure');
+    expect(container.textContent ?? '').not.toContain('P1-21');
   });
 
   it('offers the rework form once the gate reports the order terminal', async () => {
     readClosureEligibility.mockResolvedValue(
       ok({ ...eligibility, eligible: false, blockers: [], alreadyTerminal: true })
     );
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -316,7 +467,7 @@ describe('the closure view', () => {
         inventoryCommitments: { activeReservations: 2, openIssues: 1, blocking: true },
       })
     );
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -335,7 +486,7 @@ describe('the closure view', () => {
 
   it('joins the vocabulary to the record: the answered check shows its result, the mandatory one is unanswered', async () => {
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -344,22 +495,29 @@ describe('the closure view', () => {
       />
     );
     await user.click(await screen.findByRole('button', { name: t('quality.closure.openRecord') }));
-    expect(await screen.findByText('Road safety')).toBeInTheDocument();
-    const road = screen.getByText('Road safety').closest('li') as HTMLElement;
-    expect(within(road).getByText(t('quality.closure.unanswered'))).toBeInTheDocument();
+    const road = (await screen.findByText('Road safety', { selector: 'bdi' })).closest(
+      'li'
+    ) as HTMLElement;
+    expect(within(road).getByTestId('check-result')).toHaveTextContent(
+      t('quality.closure.unanswered')
+    );
     const cosmetic = screen.getByText('Cosmetic finish').closest('li') as HTMLElement;
-    // The answered check shows its result in the row's status span; the answer form's
-    // option of the same name is not the status.
+    // The answered check shows its result in the row's status; the answer form's
+    // radio of the same name is not the status.
+    expect(within(cosmetic).getByTestId('check-result')).toHaveTextContent(
+      t('quality.checkResult.pass')
+    );
+    // A check is named by its name, never its code — the mandatory ones still open too.
+    expect(document.body.textContent).not.toContain('road_safety');
     expect(
-      within(cosmetic).getByText(t('quality.checkResult.pass'), { selector: 'span' })
-    ).toBeInTheDocument();
-    expect(within(road).getByText('road_safety')).toBeInTheDocument();
+      screen.getByText(new RegExp(`^${t('quality.closure.unresolvedMandatory')}`))
+    ).toHaveTextContent('Road safety');
   });
 
   it('records a check result by the check’s id and re-reads the record', async () => {
     writeQcCheckResult.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -368,8 +526,10 @@ describe('the closure view', () => {
       />
     );
     await user.click(await screen.findByRole('button', { name: t('quality.closure.openRecord') }));
-    const road = (await screen.findByText('Road safety')).closest('li') as HTMLElement;
-    await user.selectOptions(within(road).getByRole('combobox'), 'pass');
+    const road = (await screen.findByText('Road safety', { selector: 'bdi' })).closest(
+      'li'
+    ) as HTMLElement;
+    await user.click(within(road).getByRole('radio', { name: t('quality.checkResult.pass') }));
     await user.click(within(road).getByRole('button', { name: t('quality.closure.record') }));
     await waitFor(() =>
       expect(writeQcCheckResult).toHaveBeenCalledWith(RECORD, CHECK_A, { result: 'pass' })
@@ -380,7 +540,7 @@ describe('the closure view', () => {
   it('finalizes with the record’s version and hands the outcome onward', async () => {
     finalizeQcRecord.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -389,11 +549,14 @@ describe('the closure view', () => {
       />
     );
     await user.click(await screen.findByRole('button', { name: t('quality.closure.openRecord') }));
-    await user.selectOptions(
-      await screen.findByLabelText(new RegExp(`^${t('quality.closure.overallResult')}`)),
-      'passed'
+    const finalize = within(
+      (await screen.findByText(t('quality.closure.finalizeHeading'))).closest('form') as HTMLElement
     );
-    await user.click(screen.getByRole('button', { name: t('quality.closure.finalize') }));
+    await user.click(finalize.getByRole('radio', { name: t('quality.result.passed') }));
+    await user.click(finalize.getByRole('button', { name: t('quality.closure.finalize') }));
+    // Asked first: a finalized check cannot be changed.
+    expect(finalizeQcRecord).not.toHaveBeenCalled();
+    await confirmIn(user, 'qc-finalize-confirm', t('quality.closure.finalize'));
     await waitFor(() =>
       expect(finalizeQcRecord).toHaveBeenCalledWith(RECORD, { overallResult: 'passed' }, 2)
     );
@@ -401,7 +564,7 @@ describe('the closure view', () => {
   });
 
   it('withholds the restricted description without the sensitive code, and reads it with it', async () => {
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -415,7 +578,7 @@ describe('the closure view', () => {
   });
 
   it('reads the restricted description only with iam.sensitive.view', async () => {
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -428,7 +591,7 @@ describe('the closure view', () => {
   });
 
   it('offers closure only to a terminal, non-cancelling state, and keeps it disabled while the gate refuses', async () => {
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -442,6 +605,10 @@ describe('the closure view', () => {
       .map((o) => (o as HTMLOptionElement).value);
     expect(options).toContain('closed');
     expect(options).not.toContain('cancelled');
+    // The closing state in words, never its code.
+    expect(
+      within(select).getByRole('option', { name: t('workOrders.state.closed') })
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: t('quality.closure.close') })).toBeDisabled();
     expect(screen.getByText(t('quality.closure.closeBlocked'))).toBeInTheDocument();
     expect(closeWorkOrder).not.toHaveBeenCalled();
@@ -451,7 +618,7 @@ describe('the closure view', () => {
     readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
     closeWorkOrder.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -464,14 +631,90 @@ describe('the closure view', () => {
       'closed'
     );
     await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+    await confirmIn(user, 'closure-confirm', t('quality.closure.close'));
     await waitFor(() =>
       expect(closeWorkOrder).toHaveBeenCalledWith(WORK_ORDER, { toState: 'closed' }, 4)
     );
     await waitFor(() => expect(readClosureEligibility).toHaveBeenCalledTimes(2));
   });
 
+  /**
+   * Owner directive, user-facing errors. Closing an order that still holds
+   * parts is refused by the service, and the screen printed the same line it
+   * prints for every other conflict: 'this record was changed by someone
+   * else', which is not what happened and says nothing about what to do. The
+   * service names the rule (`path.workOrderId`, so it arrives as the banner
+   * key), and the screen shows the sentence for the rules it has been told
+   * about.
+   */
+  it('says why a close was refused when parts are still held, not the generic conflict line', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.work_order_stock_still_held',
+      correlationId: 'corr-stock-held',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+    await confirmIn(user, 'closure-confirm', t('quality.closure.close'));
+
+    expect(
+      await screen.findByText(t('form.violation.work_order_stock_still_held'))
+    ).toBeInTheDocument();
+    expect(screen.queryByText(t('quality.closure.conflict'))).toBeNull();
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(document.body.textContent).not.toContain('work_order_stock_still_held');
+  });
+
+  /**
+   * And a rule the screen has NOT been told about still gets the fixed
+   * sentence. Without this, the membership test above could be satisfied by a
+   * screen that rendered whatever key arrived, which is how a raw rule name
+   * reaches an operator.
+   */
+  it('keeps the fixed sentence for a refusal it has not been told about', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.some_rule_this_screen_never_heard_of',
+      correlationId: 'corr-unknown-rule',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+    await confirmIn(user, 'closure-confirm', t('quality.closure.close'));
+
+    expect(await screen.findByText(t('quality.closure.conflict'))).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('some_rule_this_screen_never_heard_of');
+  });
+
   it('shows nothing of QC to a caller without the QC read code, and no closure command without the close code', async () => {
-    renderLtr(
+    mount(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -483,5 +726,577 @@ describe('the closure view', () => {
     expect(screen.queryByRole('heading', { name: t('quality.closure.qcHeading') })).toBeNull();
     expect(screen.queryByRole('heading', { name: t('quality.closure.closeHeading') })).toBeNull();
     expect(listQcRecords).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Owner directive, user-facing errors: the closure screen says what was
+ * refused, in the place the reader can act on.
+ *
+ * Every refusal below arrives as a violation against a path, and every one of
+ * them was invisible before: `body.toState` and `body.signOffBy` name controls
+ * the forms have but were not reading, while `closure.<blocker>` and
+ * `body.originatingJobId` name no control at all — the first because the
+ * blockers are keyed by their own codes, the second because the request form
+ * offers no origin. Both of the latter belong in the form alert.
+ */
+const AR = ar as Record<string, string>;
+const arT = (key: string): string => AR[key] ?? key;
+
+const reworkLink = {
+  id: 'rw1',
+  originalWorkOrderId: WORK_ORDER,
+  reworkWorkOrderId: '55555555-5555-4555-8555-555555555555',
+  rootCause: 'Caliper refitted out of true',
+  correctiveAction: 'Refit and retest',
+  responsibility: 'workshop',
+  leadTechnicianId: null,
+  isSafetyCritical: true,
+  independentSignOffBy: null,
+  signOffAt: null,
+  recordVersion: 1,
+};
+
+describe('the closure screen says why a command was refused', () => {
+  it('puts the not-a-closing-state refusal beside the state control and keeps the reason', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { toState: 'form.violation.not_a_closing_state' },
+      correlationId: 'corr-not-closing',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const select = await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`));
+    await user.selectOptions(select, 'closed');
+    // Scoped to the closure panel: the additional-work row carries a control
+    // under the same label, and this case is about the closure command.
+    const closure = within(screen.getByRole('region', { name: t('quality.closure.closeHeading') }));
+    const reason = closure.getByLabelText(new RegExp(`^${t('quality.closure.reason')}`));
+    await user.type(reason, 'Customer collected the vehicle');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+    await confirmIn(user, 'closure-confirm', t('quality.closure.close'));
+
+    const alert = errorElement(await screen.findByText(t('form.violation.not_a_closing_state')));
+    expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
+    const settled = screen.getByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`));
+    expect(settled.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((settled as HTMLSelectElement).value).toBe('closed');
+    expect((reason as HTMLInputElement).value).toBe('Customer collected the vehicle');
+    expect(document.body.textContent).not.toContain('not_a_closing_state');
+  });
+
+  it('lifts the outstanding-steps refusal into the alert, since each one is keyed by its own code', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: {
+        B1: 'form.violation.closure_blocked',
+        B3: 'form.violation.closure_blocked',
+      },
+      correlationId: 'corr-blocked',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+    await confirmIn(user, 'closure-confirm', t('quality.closure.close'));
+
+    expect(await screen.findByText(t('form.violation.closure_blocked'))).toBeVisible();
+    // Not the fixed conflict line, and not the blocker codes either.
+    expect(screen.queryByText(t('quality.closure.conflict'))).toBeNull();
+    expect(document.body.textContent).not.toContain('closure_blocked');
+  });
+
+  it('reads the outstanding-steps refusal in Arabic', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { B1: 'form.violation.closure_blocked' },
+      correlationId: 'corr-blocked-ar',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mountAr(
+      <WorkOrderClosureScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${arT('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: arT('quality.closure.close') }));
+    await confirmIn(user, 'closure-confirm', arT('quality.closure.close'));
+
+    expect(await screen.findByText(arT('form.violation.closure_blocked'))).toBeVisible();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('puts the deciding-party refusal beside the party control, naming nobody on the visit', async () => {
+    recordAdditionalWorkApproval.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { decidingPartyRoleId: 'form.violation.not_on_reception_visit' },
+      correlationId: 'corr-party',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.click(await screen.findByRole('radio', { name: t('quality.decision.approved') }));
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${t('quality.closure.channel')}`)),
+      'phone'
+    );
+    const party = screen.getByLabelText(new RegExp(`^${t('quality.closure.decidingParty')}`));
+    await user.type(party, 'the-party-reference');
+    const scope = screen.getByLabelText(new RegExp(`^${t('quality.closure.presentedScope')}`));
+    await user.type(scope, 'Rear pads only');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.recordApproval') }));
+
+    const alert = errorElement(await screen.findByText(t('form.violation.not_on_reception_visit')));
+    expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
+    expect(party.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((scope as HTMLInputElement).value).toBe('Rear pads only');
+  });
+
+  it('puts the independent sign-off refusal beside the name, and keeps the name', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    signOffRework.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { signOffBy: 'form.violation.not_independent' },
+      correlationId: 'corr-signoff',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const who = await screen.findByLabelText(new RegExp(`^${t('quality.closure.signOffBy')}`));
+    await user.type(who, 'the-colleague-reference');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.signOff') }));
+
+    const alert = errorElement(await screen.findByText(t('form.violation.not_independent')));
+    expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
+    expect(who.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((who as HTMLInputElement).value).toBe('the-colleague-reference');
+    // The rework order is reached by a link in words, never by its bare reference
+    // (route sweep B3).
+    expect(
+      screen.getByRole('link', { name: startsWith(t('quality.closure.openReworkOrder')) })
+    ).toHaveAttribute('href', `/en/work-orders/${reworkLink.reworkWorkOrderId}`);
+    expect(screen.queryByText(reworkLink.reworkWorkOrderId)).toBeNull();
+  });
+
+  it('sends the origin chosen from the job picker, and the request is accepted', async () => {
+    // The product defect this closes: the form sent neither origin and
+    // `additional-work-service` refuses exactly that, so every request raised
+    // from this screen was refused whatever was typed into it.
+    requestAdditionalWork.mockResolvedValue({
+      status: 'success',
+      messageKey: 'action.saved',
+      correlationId: 'corr-origin-ok',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    const origin = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    // The picker offers the order's own jobs by their titles, so nobody types
+    // a 36-character identifier to say where the work came from.
+    expect(
+      within(origin as HTMLSelectElement).getByRole('option', { name: 'Front brake service' })
+    ).toBeInTheDocument();
+    await user.selectOptions(origin, JOB);
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    await waitFor(() =>
+      expect(requestAdditionalWork).toHaveBeenCalledWith(WORK_ORDER, {
+        originatingJobId: JOB,
+        summary: 'Rear pads at 2 mm',
+      })
+    );
+  });
+
+  it('refuses a request with no origin chosen, beside the picker, and keeps the typed text', async () => {
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    const origin = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    const sentence = errorElement(await screen.findByText(t('form.violation.origin_required')));
+    expect(sentence).toBeVisible();
+    expect(sentence.id).not.toBe('');
+    expect(origin.getAttribute('aria-describedby') ?? '').toContain(sentence.id);
+    expect((summary as HTMLInputElement).value).toBe('Rear pads at 2 mm');
+    expect(requestAdditionalWork).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain('origin_required');
+  });
+
+  it('puts a refused origin from the service beside the picker, not in the form alert', async () => {
+    requestAdditionalWork.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { originatingJobId: 'form.violation.origin_conflict' },
+      correlationId: 'corr-origin-conflict',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    const origin = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    await user.selectOptions(origin, JOB);
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    const sentence = errorElement(await screen.findByText(t('form.violation.origin_conflict')));
+    expect(sentence.id).not.toBe('');
+    const refused = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    expect(refused.getAttribute('aria-describedby') ?? '').toContain(sentence.id);
+    // And the refusal did not cost the operator the choice they had made: the
+    // remounted control comes back on the same job, which is what the sentence
+    // beside it is about.
+    expect((refused as HTMLSelectElement).value).toBe(JOB);
+    expect((summary as HTMLInputElement).value).toBe('Rear pads at 2 mm');
+    expect(document.body.textContent).not.toContain('origin_conflict');
+  });
+
+  it('leaves a refusal it has not been told about to the generic banner', async () => {
+    requestAdditionalWork.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { somethingElse: 'form.violation.a_rule_this_screen_never_heard_of' },
+      correlationId: 'corr-unknown-field',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`)),
+      JOB
+    );
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    expect(await screen.findByText(t('form.violation.invalid'))).toBeVisible();
+    expect(document.body.textContent).not.toContain('a_rule_this_screen_never_heard_of');
+  });
+});
+
+describe('the QC queue is about ONE branch', () => {
+  it('reads nothing and says which control answers while "all my branches" is chosen', async () => {
+    // `qms.qc-record-branch-list` takes one branch. A board that guessed would
+    // show an operator somebody else work under a heading naming everybody.
+    const user = userEvent.setup();
+    listQcQueue.mockClear();
+    mount(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <QualityQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
+      t('workingContext.chooseBranchHere')
+    );
+    expect(listQcQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the unsaved-work guard stands down once a check is recorded', () => {
+  it('asks while a result is chosen and NOT after it is recorded', async () => {
+    /*
+     * The chosen result is deliberately RETAINED after a successful submit:
+     * blanking it would show an empty choice for a check the operator has just
+     * recorded. So
+     * "the draft is non-empty" was the wrong question — it left the guard
+     * permanently dirty, and the shell asked about every later branch switch
+     * for work that was saved. "Different from what was recorded" is the right
+     * one, and this case is the difference between them.
+     */
+    writeQcCheckResult.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    mount(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderClosureScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER}
+            capabilities={everything}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(await screen.findByRole('button', { name: t('quality.closure.openRecord') }));
+    const road = (await screen.findByText('Road safety', { selector: 'bdi' })).closest(
+      'li'
+    ) as HTMLElement;
+    await user.click(within(road).getByRole('radio', { name: t('quality.checkResult.pass') }));
+
+    // Chosen and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(within(road).getByRole('button', { name: t('quality.closure.record') }));
+    await waitFor(() => expect(writeQcCheckResult).toHaveBeenCalled());
+
+    // Recorded, and the result is still on screen because it is what was saved.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});
+
+describe('a confirmed "Discard and change branch" empties the rework draft', () => {
+  /*
+   * The closure view is the work order's, and nothing on it is keyed on the
+   * branch. The discard question says the typed entries go; without a reset
+   * the rework draft — including the safety answer — would stay on screen
+   * after the operator agreed to lose it.
+   */
+  it('empties the root cause, the corrective action and the safety answer', async () => {
+    readClosureEligibility.mockResolvedValue(
+      ok({ ...eligibility, eligible: false, blockers: [], alreadyTerminal: true })
+    );
+    const user = userEvent.setup();
+    mount(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderClosureScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER}
+            capabilities={everything}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await screen.findByText(t('quality.closure.openRework'));
+    const rootCause = () => screen.getByLabelText(new RegExp(`^${t('quality.closure.rootCause')}`));
+    const corrective = () =>
+      screen.getByLabelText(new RegExp(`^${t('quality.closure.correctiveAction')}`));
+    const safety = () =>
+      screen.getByRole('checkbox', {
+        name: t('quality.closure.safetyCritical'),
+      }) as HTMLInputElement;
+
+    await user.type(rootCause(), 'Caliper refitted out of true');
+    await user.type(corrective(), 'Refit and torque');
+    await user.click(safety());
+    expect(safety()).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: t('workingContext.discard.confirm') })
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    await waitFor(() => expect(rootCause()).toHaveValue(''));
+    expect(corrective()).toHaveValue('');
+    expect(safety()).not.toBeChecked();
+    // Nothing is left to lose, so the next switch asks nothing.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    window.localStorage.clear();
+  });
+});
+
+describe('a decision is asked, and the command waits for its re-read', () => {
+  it('records a reopen attempt through the reason dialog, reason required and sent trimmed', async () => {
+    raiseReopenAttempt.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.click(
+      await screen.findByRole('button', { name: t('quality.closure.attemptReopen') })
+    );
+    const dialog = within(await screen.findByTestId('reopen-reason-dialog'));
+    // No reason, no request: the action waits for one.
+    expect(dialog.getByRole('button', { name: t('quality.closure.attemptReopen') })).toBeDisabled();
+    await user.type(
+      dialog.getByLabelText(startsWith(t('quality.closure.reopenReason'))),
+      '  Customer reports a noise  '
+    );
+    await user.click(dialog.getByRole('button', { name: t('quality.closure.attemptReopen') }));
+    await waitFor(() =>
+      expect(raiseReopenAttempt).toHaveBeenCalledWith(WORK_ORDER, {
+        reason: 'Customer reports a noise',
+      })
+    );
+    await waitFor(() => expect(screen.queryByTestId('reopen-reason-dialog')).toBeNull());
+    await waitFor(() => expect(listReopenAttempts).toHaveBeenCalledTimes(2));
+  });
+
+  it('withdraws an extra-work request only through its reason dialog', async () => {
+    withdrawAdditionalWork.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.click(
+      await screen.findByRole('button', { name: startsWith(t('quality.closure.withdraw')) })
+    );
+    const dialog = within(await screen.findByTestId('withdraw-reason-dialog'));
+    await user.type(dialog.getByLabelText(startsWith(t('quality.closure.reason'))), 'Not needed');
+    await user.click(dialog.getByRole('button', { name: t('quality.closure.withdraw') }));
+    await waitFor(() =>
+      expect(withdrawAdditionalWork).toHaveBeenCalledWith('aw1', { reason: 'Not needed' })
+    );
+  });
+
+  it('keeps the closure busy until the order has been read again', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    let release: (value: unknown) => void = () => undefined;
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(startsWith(t('quality.closure.closeTo'))),
+      'closed'
+    );
+    // The re-read after the write is held back.
+    readWorkOrderDetail.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+    await confirmIn(user, 'closure-confirm', t('quality.closure.close'));
+    await waitFor(() => expect(closeWorkOrder).toHaveBeenCalledTimes(1));
+    // Written, not yet re-read: the dialog says it is working and cannot be pressed again.
+    const dialog = within(screen.getByTestId('closure-confirm'));
+    expect(dialog.getByRole('button', { name: t('overlay.working') })).toBeDisabled();
+    release(ok(workOrderDetail));
+    await waitFor(() => expect(screen.queryByTestId('closure-confirm')).toBeNull());
+    expect(closeWorkOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a retry on a read that was not answered, and reads again', async () => {
+    listReopenAttempts.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-down' });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const reopen = within(
+      await screen.findByRole('region', { name: t('quality.closure.reopenHeading') })
+    );
+    expect(await reopen.findByText(t('state.unavailable.title'))).toBeVisible();
+    await user.click(reopen.getByRole('button', { name: t('state.retry') }));
+    expect(await reopen.findByText(t('quality.closure.noReopen'))).toBeVisible();
   });
 });

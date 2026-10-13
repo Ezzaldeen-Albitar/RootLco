@@ -15,7 +15,29 @@
  * and are classified `restricted`) are never a search input and are never
  * projected by this contract; a caller that needs them uses a separate operation
  * gated by `iam.sensitive.view`.
+ *
+ * ## What P1-32 added
+ *
+ * The Owner directive asked that a vehicle be findable the way a person
+ * describes it — by make and model, by part of a plate, by a plate it used to
+ * carry — rather than only by an identifier quoted exactly. So the allow-list
+ * gains `make`, `model` and a single free-text `q`, all matched as folded
+ * CONTAINS (the trigram indexes added with this slice are what keep that
+ * bounded), and `plate` now spans the WHOLE plate history rather than the active
+ * row alone. A hit that matched a plate carries `plateMatch`, which says which
+ * plate matched and whether it is still current.
+ *
+ * `vin` keeps its exact semantics. An identifier quoted in full is a lookup, and
+ * turning it into a substring match would return neighbours of a VIN that was
+ * typed correctly. The free-text arm may do a contains match on a VIN, because
+ * there the caller has not told us what kind of thing they typed.
+ *
+ * The VIN itself stays UNMASKED. It is classified `internal`, the vehicle detail
+ * read already publishes it in full to the same `veh.vehicle.read` holder, and
+ * there is no existing VIN-masking rule in the platform to reuse — inventing one
+ * only in search would make two reads of the same field disagree.
  */
+import { foldSearchText, normalizePlate, normalizeVin } from '@/shared/text/normalization';
 
 /** The lifecycle vocabulary `veh.vehicles.lifecycle_status` permits. */
 export const VEHICLE_LIFECYCLE_STATUSES = [
@@ -65,6 +87,17 @@ export const VEHICLE_SEARCH_ORDERING = {
 export const MAX_VIN_FRAGMENT = 64;
 export const MAX_PLATE_FRAGMENT = 32;
 
+/** The maximum length of a make, model or free-text fragment. */
+export const MAX_VEHICLE_TEXT_FRAGMENT = 80;
+
+/**
+ * The shortest make, model or free-text fragment accepted.
+ *
+ * A one-character fragment matches nearly every row, so the page it returns says
+ * nothing; it is refused at the edge rather than answered badly.
+ */
+export const MIN_VEHICLE_FRAGMENT = 2;
+
 /** A validated, already-normalised search request handed to the repository. */
 export interface VehicleSearchFilter {
   /**
@@ -93,8 +126,48 @@ export interface VehicleSearchFilter {
    * so `display_number = ''` is an impossible predicate rather than a dropped one.
    */
   readonly vehicleNumber: string | null;
+  /**
+   * Folded, LIKE-escaped make-name fragment, or null. Matched as a CONTAINS over
+   * `shared.fold_search_text(makes.name)` — the expression
+   * `ix_makes_name_folded_trgm` indexes.
+   */
+  readonly makeFragment: string | null;
+  /** The same, for the model catalogue name. */
+  readonly modelFragment: string | null;
+  /**
+   * The free-text box, already reduced four ways because it has to be compared
+   * against four differently-normalised columns:
+   *
+   *   `text`  folded and LIKE-escaped, for the make, model and vehicle-number arms
+   *   `vin`   through the VIN rule, for a contains match on `vin_normalized`
+   *   `plate` through the plate rule, for a contains match on `plate_normalized`
+   *
+   * Reducing it here rather than in SQL keeps every comparison bound as a
+   * parameter and keeps the four rules in the one place that already owns them.
+   * `null` means no free-text filter was supplied.
+   */
+  readonly freeText: string | null;
+  readonly freeTextVin: string;
+  readonly freeTextPlate: string;
   readonly lifecycleStatus: VehicleLifecycleStatus | null;
   readonly powertrainCategory: PowertrainCategory | null;
+}
+
+/**
+ * The plate row a search actually matched, when the caller asked about a plate.
+ *
+ * Published because plate search now spans the WHOLE history: a hit may be a
+ * plate the vehicle carried two years ago, and a result row that did not say so
+ * would send an operator to the wrong car with complete confidence. `active`
+ * makes the distinction explicit rather than something a reader has to infer from
+ * a null `validTo`.
+ */
+export interface VehiclePlateMatch {
+  /** The plate as it was recorded, not the normalised comparison key. */
+  readonly plate: string;
+  readonly active: boolean;
+  readonly validFrom: string;
+  readonly validTo: string | null;
 }
 
 /** A safe, non-restricted projection of a matched vehicle. */
@@ -120,6 +193,35 @@ export interface VehicleSearchHit {
    * detail read has always published it.
    */
   readonly mergedIntoId: string | null;
+  /**
+   * The catalogue names behind `makeId` and `modelId`, or null when the vehicle
+   * names no catalogue entry or the entry is not visible to this tenant.
+   *
+   * Published because a result list identified a car by two uuids and a year,
+   * which is not something a person can choose between. Resolving the names in
+   * the same query is what makes the row readable; `makeId`/`modelId` stay, so
+   * nothing that consumed them breaks.
+   */
+  readonly makeName: string | null;
+  readonly modelName: string | null;
+  /** The plate the vehicle carries today, as recorded. Null when it has none. */
+  readonly activePlate: string | null;
+  /**
+   * The plate row this hit matched on, or null when the search did not ask about
+   * a plate. When `active` is false the match is a HISTORICAL plate.
+   */
+  readonly plateMatch: VehiclePlateMatch | null;
+  /**
+   * The current owner's name, when this caller may be told it.
+   *
+   * Null both when the vehicle has no live ownership row and when the caller does
+   * not hold `crm.customer.read` — the two are deliberately indistinguishable
+   * here, because the alternative is a field that tells a caller a name exists
+   * while refusing to show it. `docs/database/veh-ownership-visibility-matrix.md`
+   * is what reserves the CRM columns to a CRM reader; the vehicle read narrows to
+   * it rather than widening past it.
+   */
+  readonly customerDisplayName: string | null;
 }
 
 /** Raw (edge-validated) inputs before domain normalisation. */
@@ -127,6 +229,9 @@ export interface VehicleSearchInput {
   readonly vin?: string | undefined;
   readonly plate?: string | undefined;
   readonly vehicleNumber?: string | undefined;
+  readonly make?: string | undefined;
+  readonly model?: string | undefined;
+  readonly q?: string | undefined;
   readonly lifecycleStatus?: VehicleLifecycleStatus | undefined;
   readonly powertrainCategory?: PowertrainCategory | undefined;
 }
@@ -150,18 +255,46 @@ export interface VehicleSearchInput {
  * by construction — `veh.normalize_plate('')` is SQL NULL, and
  * `ck_vehicles_display_number_not_blank` guarantees no stored display number is
  * blank. Fewer moving parts, and the closed filter contract stays honest.
+ *
+ * The P1-32 text arms (`make`, `model`, `q`) follow the OPPOSITE convention, and
+ * the difference is deliberate: a text fragment that folds to nothing collapses
+ * to `null`, because a CONTAINS match on an empty fragment matches every row
+ * anyway. Saying so with a null is honest; leaving an empty string to be appended
+ * as `LIKE '%%'` would produce the same page by accident.
  */
 export function toVehicleSearchFilter(
   input: VehicleSearchInput,
   vinNormalized: string | null
 ): VehicleSearchFilter {
   const hasVin = input.vin !== undefined;
+  const make = foldFragment(input.make);
+  const model = foldFragment(input.model);
+  const freeText = foldFragment(input.q);
   return {
     vinNormalized: hasVin ? vinNormalized : null,
     hasVin,
     plateRaw: input.plate !== undefined ? input.plate.trim() : null,
     vehicleNumber: input.vehicleNumber !== undefined ? input.vehicleNumber.trim() : null,
+    makeFragment: make,
+    modelFragment: model,
+    freeText,
+    freeTextVin: input.q === undefined ? '' : (normalizeVin(input.q) ?? ''),
+    freeTextPlate: input.q === undefined ? '' : (normalizePlate(input.q) ?? ''),
     lifecycleStatus: input.lifecycleStatus ?? null,
     powertrainCategory: input.powertrainCategory ?? null,
   };
+}
+
+/**
+ * Folds a text fragment by the shared name rule and escapes the LIKE
+ * metacharacters, so a caller can never inject a wildcard: a `%`, `_` or `\` in
+ * the fragment becomes a literal (matched with `ESCAPE '\'`), and the `%`
+ * characters the repository appends are the only wildcards. Returns null when the
+ * fragment was absent or folded to nothing.
+ */
+function foldFragment(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  const folded = foldSearchText(raw);
+  if (folded === null) return null;
+  return folded.replace(/[\\%_]/g, (character) => `\\${character}`);
 }

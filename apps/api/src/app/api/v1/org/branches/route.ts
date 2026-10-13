@@ -24,8 +24,10 @@
  * The reach rule is `sel_branches_scope`, not this file. See the sibling
  * company list for why it is not restated in TypeScript.
  */
+import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
+import { parseOrFail, schemas } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
 
 export const runtime = 'nodejs';
@@ -48,4 +50,87 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(BRANCH_LIST_OPERATION, request, async ({ db }) => ({
     body: await iamModule().organizationAdministration.listBranches(db),
   }));
+}
+
+/**
+ * `timezone` is REQUIRED and has no default.
+ *
+ * `org.branches.timezone_name` is NOT NULL with a foreign key into the approved
+ * IANA list, and there is no platform-wide default timezone to fall back on. A
+ * branch inherits nothing here: picking one for the operator would be inventing
+ * a fact about where their business is.
+ */
+export const CreateBody = z
+  .object({
+    companyId: schemas.uuid,
+    code: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$'),
+    name: z.string().trim().min(1).max(200),
+    timezone: z.string().trim().min(3).max(64),
+    city: z.string().trim().min(1).max(120).optional(),
+    countryCode: z
+      .string()
+      .regex(/^[A-Z]{2}$/, 'must be a two-letter country code')
+      .optional(),
+  })
+  .strict();
+
+/**
+ * POST /api/v1/org/branches — the Owner directive.
+ *
+ * The FIRST operation that can add a branch to a company. `org.provision_organization`
+ * creates the pilot branch and nothing after it, so an organisation that opened
+ * a second workshop had no way to record it.
+ *
+ * `scope: 'company'` with the company taken from the BODY, because there is no
+ * branch to resolve yet — the same arrangement `org.department-create` uses, and
+ * for the same reason. The service re-checks the company against what this
+ * session can SEE before the insert, so a cross-tenant identifier is a denial
+ * rather than a composite-foreign-key 500.
+ */
+export const BRANCH_CREATE_OPERATION = defineOperation({
+  id: 'org.branch-create',
+  successStatus: 201,
+  module: 'iam',
+  method: 'POST',
+  path: '/org/branches',
+  summary: 'Add a branch to a legal company.',
+  permissions: ['org.branch.manage'],
+  scope: 'company',
+  auditClass: 'privileged',
+  auditAction: 'org.branch.created',
+  idempotent: true,
+  rateLimitPolicy: 'standard-command',
+  cacheCategory: 'never',
+});
+
+export async function POST(request: Request): Promise<Response> {
+  const body = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  return handleOperation(
+    BRANCH_CREATE_OPERATION,
+    request,
+    async ({ db, authorizeScope }) => {
+      const parsed = parseOrFail(CreateBody, body, 'body');
+      const result = await iamModule().organizationAdministration.createBranch(
+        db,
+        {
+          companyId: parsed.companyId,
+          branchCode: parsed.code,
+          name: parsed.name,
+          timezoneName: parsed.timezone,
+          ...(parsed.city === undefined ? {} : { city: parsed.city }),
+          ...(parsed.countryCode === undefined ? {} : { countryCode: parsed.countryCode }),
+        },
+        authorizeScope
+      );
+      return {
+        status: 201,
+        body: result,
+        recordVersion: result.branch.recordVersion,
+      };
+    },
+    { body }
+  );
 }

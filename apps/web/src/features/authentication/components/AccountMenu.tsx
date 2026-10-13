@@ -40,11 +40,17 @@ export function AccountMenu({
   messages,
   displayName,
   email,
+  showProfile = true,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly displayName: string;
   readonly email: string;
+  /**
+   * The profile link belongs to the workspace. The Platform Owner Console has no
+   * profile screen and no email to show, so it turns both off (P1-32-PRE-062).
+   */
+  readonly showProfile?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -99,7 +105,7 @@ export function AccountMenu({
           <span className="truncate text-supporting font-medium text-text-primary">
             {displayName}
           </span>
-          <span className="truncate text-caption text-text-muted">{email}</span>
+          {email ? <span className="truncate text-caption text-text-muted">{email}</span> : null}
         </span>
         <span className="sr-only">{translate(messages, 'auth.session.account')}</span>
       </button>
@@ -110,18 +116,22 @@ export function AccountMenu({
           aria-label={translate(messages, 'auth.session.account')}
           className="absolute end-0 z-dropdown mt-1 w-64 rounded-lg border border-border bg-surface p-1 shadow-lg"
         >
-          <p className="px-3 py-2 text-caption text-text-muted">
-            {translate(messages, 'auth.session.signedInAs')}{' '}
-            <span className="block truncate text-supporting text-text-secondary">{email}</span>
-          </p>
-          <Link
-            role="menuitem"
-            href={`/${locale}/profile`}
-            onClick={() => setOpen(false)}
-            className="block rounded-md px-3 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
-          >
-            {translate(messages, 'nav.profile')}
-          </Link>
+          {email ? (
+            <p className="px-3 py-2 text-caption text-text-muted">
+              {translate(messages, 'auth.session.signedInAs')}{' '}
+              <span className="block truncate text-supporting text-text-secondary">{email}</span>
+            </p>
+          ) : null}
+          {showProfile ? (
+            <Link
+              role="menuitem"
+              href={`/${locale}/profile`}
+              onClick={() => setOpen(false)}
+              className="block rounded-md px-3 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
+            >
+              {translate(messages, 'nav.profile')}
+            </Link>
+          ) : null}
           <form action={logoutAction}>
             <input type="hidden" name="locale" value={locale} />
             <button

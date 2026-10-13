@@ -35,13 +35,16 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<Record<string, string>> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await context.params, 'params');
+  const raw = await context.params;
   return handleOperation(
     ATTACHMENT_LINK_WITHDRAW_OPERATION,
     request,
-    async ({ db }) => ({
-      body: await sharedServicesModule().attachments.unlink(db, params.linkId),
-    }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'params');
+      return {
+        body: await sharedServicesModule().attachments.unlink(db, params.linkId),
+      };
+    },
+    { params: raw }
   );
 }

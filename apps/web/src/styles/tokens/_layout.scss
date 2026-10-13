@@ -16,4 +16,7 @@ $scale: (
   'control-height-lg': 44px,
   'table-row-height': 48px,
   'table-row-height-compact': 40px,
+  // The plotting height of a chart panel (ADR-022). MUI X charts take their
+  // height as a number, so it reaches them through the generated token module.
+  'chart-height': 240px,
 );

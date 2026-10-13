@@ -24,28 +24,33 @@
  *
  * ## The searchable surface is a CLOSED allow-list
  *
- * Four fields, and the route's Zod schema is `.strict()` — any other parameter
+ * Six fields, and the route's Zod schema is `.strict()` — any other parameter
  * is a 422 before the query runs.
  *
- * | parameter          | semantics                                       |
- * | ------------------ | ----------------------------------------------- |
- * | `name`             | normalised **prefix**, max 80 characters        |
- * | `customerNumber`   | **exact** display number, max 64                |
- * | `partyType`        | `individual` \| `organization`                  |
- * | `lifecycleStatus`  | `prospect`…`merged`                             |
+ * | parameter          | semantics                                              |
+ * | ------------------ | ------------------------------------------------------ |
+ * | `name`             | folded **contains**, max 80 characters                 |
+ * | `customerNumber`   | **exact** display number, max 64                       |
+ * | `phone`            | exact, or a tail of at least seven digits, max 32      |
+ * | `q`                | one box: name, number or phone, 2 to 80 characters     |
+ * | `partyType`        | `individual` \| `organization`                         |
+ * | `lifecycleStatus`  | `prospect`…`merged`                                    |
  *
  * Plus `cursor` and `limit` (1–100).
  *
- * ## What is NOT searchable, and must not be offered
+ * ## Phone is searchable (P1-32); email is not
  *
- * **Phone and email are not search inputs.** `NFR-PRV-001` makes that a privacy
- * decision rather than an omission: the domain file states that raw contact
- * values "are never a search input and are never projected by this contract",
- * and widening the allow-list is a reviewed change to the backend.
+ * P1-32 widened the backend allow-list with `phone` and `q`. The backend folds
+ * Arabic-Indic digits before comparing, so the value is sent exactly as typed.
+ * The projected primary phone is masked to its last four digits unless the
+ * caller also holds `iam.sensitive.view`, and `phoneMasked` says which.
  *
- * A phone or email box on this screen would therefore be a control that cannot
- * work. Offering one and disabling it would be worse — it would advertise a
- * capability the product deliberately does not have.
+ * **Email is still not a search input**, and no screen may offer a box for it.
+ *
+ * ## Search terms never reach the browser address bar
+ *
+ * `NFR-PRV-001` / `P1-27-SEC-002`: criteria live in screen state and travel only
+ * to the API as request parameters.
  *
  * ## There is no sort parameter at all
  *
@@ -80,14 +85,17 @@ export type LifecycleStatus = (typeof LIFECYCLE_STATUSES)[number];
 export const MAX_NAME_LENGTH = 80;
 /** The route's own bound on an exact display number. */
 export const MAX_CUSTOMER_NUMBER_LENGTH = 64;
+/** `MAX_PHONE_FRAGMENT` in the domain. */
+export const MAX_PHONE_LENGTH = 32;
+/** `MIN_SEARCH_FRAGMENT` in the domain: the free-text box needs two characters. */
+export const MIN_FREE_TEXT_LENGTH = 2;
 
 /**
  * A safe, non-sensitive projection of a matched customer.
  *
- * Exactly the six fields `CustomerSearchHit` publishes. A results table cannot
- * show a primary contact, an alert indicator or a last-activity date, because
- * this contract carries none of them — and inventing a column that renders
- * blank for every row is worse than not offering it.
+ * Exactly the fields `CustomerSearchHit` publishes. P1-32 added the primary
+ * phone (masked unless the caller holds `iam.sensitive.view`) and the live
+ * vehicle count. There is still no alert indicator or last-activity date.
  */
 export interface CustomerSearchHit {
   readonly id: string;
@@ -96,12 +104,20 @@ export interface CustomerSearchHit {
   readonly partyType: PartyType;
   readonly lifecycleStatus: LifecycleStatus;
   readonly createdAt: string;
+  /** The primary phone, masked to its last four digits when `phoneMasked` is true. */
+  readonly primaryPhone: string | null;
+  /** True when `primaryPhone` is shown partly hidden. */
+  readonly phoneMasked: boolean;
+  /** Vehicles currently linked to this customer. */
+  readonly vehicleCount: number;
 }
 
-/** What an operator may search on. Every field is optional; all four may combine. */
+/** What an operator may search on. Every field is optional; all six may combine. */
 export interface CustomerSearchCriteria {
   readonly name?: string | undefined;
   readonly customerNumber?: string | undefined;
+  readonly phone?: string | undefined;
+  readonly q?: string | undefined;
   readonly partyType?: PartyType | undefined;
   readonly lifecycleStatus?: LifecycleStatus | undefined;
 }
@@ -111,6 +127,8 @@ export function isEmptyCriteria(criteria: CustomerSearchCriteria): boolean {
   return (
     !criteria.name?.trim() &&
     !criteria.customerNumber?.trim() &&
+    !criteria.phone?.trim() &&
+    !criteria.q?.trim() &&
     !criteria.partyType &&
     !criteria.lifecycleStatus
   );
@@ -124,16 +142,29 @@ export function isEmptyCriteria(criteria: CustomerSearchCriteria): boolean {
  * 422, which is correct of it and useless to an operator who pasted a
  * paragraph — the form bounds the field with `maxLength` too, so this is the
  * second line of the same defence rather than the only one.
+ *
+ * A free-text value shorter than `MIN_FREE_TEXT_LENGTH` is dropped rather than
+ * sent, because the backend refuses it. Screens say so before submitting.
  */
 export function normalizeCriteria(criteria: CustomerSearchCriteria): CustomerSearchCriteria {
   const name = criteria.name?.trim().slice(0, MAX_NAME_LENGTH);
   const customerNumber = criteria.customerNumber?.trim().slice(0, MAX_CUSTOMER_NUMBER_LENGTH);
+  const phone = criteria.phone?.trim().slice(0, MAX_PHONE_LENGTH);
+  const q = criteria.q?.trim().slice(0, MAX_NAME_LENGTH);
   return {
     ...(name ? { name } : {}),
     ...(customerNumber ? { customerNumber } : {}),
+    ...(phone ? { phone } : {}),
+    ...(q && q.length >= MIN_FREE_TEXT_LENGTH ? { q } : {}),
     ...(criteria.partyType ? { partyType: criteria.partyType } : {}),
     ...(criteria.lifecycleStatus ? { lifecycleStatus: criteria.lifecycleStatus } : {}),
   };
+}
+
+/** True when the free-text box holds something too short for the backend to accept. */
+export function isFreeTextTooShort(criteria: CustomerSearchCriteria): boolean {
+  const q = criteria.q?.trim() ?? '';
+  return q.length > 0 && q.length < MIN_FREE_TEXT_LENGTH;
 }
 
 /**

@@ -14,6 +14,28 @@
  *    expression language and no dynamic column.
  *
  * Export as a feature is explicitly out of scope and no endpoint offers it.
+ *
+ * ## Who did it, by name (`P1-32-PRE-OD-ADM6`, route-checklist prerequisite 10)
+ *
+ * `iam.audit_records` stores an `actor_id` and no name, so the audit screen
+ * printed a uuid in the column headed "who". Both reads now name the actor —
+ * and, where the record is about a user account, the account it is about —
+ * resolved in the same read through the module's own identity directory:
+ *
+ *  - **one lookup per page**, never one per row: the ids of the whole page go
+ *    to `resolveDisplayIdentities` together (one capability check and one
+ *    tenant-scoped statement);
+ *  - **only for a caller who may read users.** The audit read is guarded by
+ *    `iam.audit.view`; naming everybody to every holder of that code would
+ *    publish a staff directory it does not grant. Without `iam.user.read` both
+ *    names are `null` and the identifiers stay, exactly as before;
+ *  - **only inside the caller's tenant.** The directory's statement is bound to
+ *    the principal's tenant, so an id belonging to another organisation is
+ *    never named — it resolves to `null` like any id that cannot be named.
+ *
+ * Both names are REQUIRED and nullable on the published type, so a read that
+ * forgot to resolve cannot satisfy it. The fields are additive: `actorId`,
+ * `actorKind` and `entityId` are unchanged on the wire.
  */
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
@@ -28,11 +50,26 @@ import {
   type AuditRecordRow,
 } from '../data/audit-repository';
 import { AuthorizationRepository } from '../data/authorization-repository';
+import type { IdentityDirectoryService } from './identity-directory-service';
 
 /** Longest range a single query may cover. */
 const MAX_RANGE_DAYS = 92;
 
-export interface AuditRecordView extends AuditRecordRow {
+/** The entity type every user-account audit record is written under. */
+const USER_ACCOUNT_ENTITY = 'iam.user_account';
+
+/**
+ * An audit record with its people named. `null` means "not named for this
+ * caller": no actor, an actor this caller may not have named, or an id outside
+ * the caller's tenant. `subjectDisplayName` is set only for a record about a
+ * user account (`entityType` `iam.user_account`).
+ */
+export interface NamedAuditRecord extends AuditRecordRow {
+  readonly actorDisplayName: string | null;
+  readonly subjectDisplayName: string | null;
+}
+
+export interface AuditRecordView extends NamedAuditRecord {
   readonly details?: readonly AuditDetailRow[];
 }
 
@@ -41,7 +78,8 @@ export class AuditViewService extends ApplicationService {
 
   constructor(
     private readonly audit: AuditRepository,
-    private readonly authorization: AuthorizationRepository
+    private readonly authorization: AuthorizationRepository,
+    private readonly directory: IdentityDirectoryService
   ) {
     super();
   }
@@ -67,17 +105,45 @@ export class AuditViewService extends ApplicationService {
     return { from: new Date(start).toISOString(), to: new Date(end).toISOString() };
   }
 
+  /**
+   * Names the actor, and a user-account subject, of every record handed in —
+   * with ONE directory lookup for all of them. The directory checks
+   * `iam.user.read` itself and answers an empty map without it.
+   */
+  private async nameRecords(
+    db: DbHandle,
+    records: readonly AuditRecordRow[]
+  ): Promise<NamedAuditRecord[]> {
+    const subjectOf = (record: AuditRecordRow): string | null =>
+      record.entityType === USER_ACCOUNT_ENTITY ? record.entityId : null;
+    const ids = new Set<string>();
+    for (const record of records) {
+      if (record.actorId !== null) ids.add(record.actorId);
+      const subject = subjectOf(record);
+      if (subject !== null) ids.add(subject);
+    }
+    const names = await this.directory.resolveDisplayIdentities(db, [...ids]);
+    const nameOf = (id: string | null): string | null =>
+      id === null ? null : (names.get(id)?.displayName ?? null);
+    return records.map((record) => ({
+      ...record,
+      actorDisplayName: nameOf(record.actorId),
+      subjectDisplayName: nameOf(subjectOf(record)),
+    }));
+  }
+
   /** Raw page inputs, for the same boundary reason as the other list services. */
   async list(
     db: DbHandle,
     page: { cursor?: string | undefined; limit?: number | undefined },
     input: Omit<AuditFilters, 'from' | 'to'> & { from: string; to: string }
-  ): Promise<Page<AuditRecordRow>> {
+  ): Promise<Page<NamedAuditRecord>> {
     const range = this.resolveRange(input.from, input.to);
     const context = this.contextOf(db);
     const request: PageRequest = pageRequest(AUDIT_ORDERING, page);
 
     const result = await this.audit.listRecords(db, request, { ...input, ...range });
+    const items = await this.nameRecords(db, result.items);
 
     // Audited *after* the read, so a refused read is not recorded as a
     // successful one. The record names the window and the result size, never the
@@ -95,7 +161,7 @@ export class AuditViewService extends ApplicationService {
       ],
     });
 
-    return result;
+    return { ...result, items };
   }
 
   /**
@@ -112,6 +178,7 @@ export class AuditViewService extends ApplicationService {
       throw new AppFailure('ERR-RES-001', { message: 'Audit record not found in this tenant' });
     }
 
+    const [named] = await this.nameRecords(db, [record]);
     const permissions = await this.authorization.effectivePermissionsOfCaller(db);
     const details = permissions.has('iam.sensitive.view')
       ? await this.audit.listDetails(db, recordId)
@@ -130,6 +197,9 @@ export class AuditViewService extends ApplicationService {
       ],
     });
 
-    return { ...record, ...(details ? { details } : {}) };
+    return {
+      ...(named ?? { ...record, actorDisplayName: null, subjectDisplayName: null }),
+      ...(details ? { details } : {}),
+    };
   }
 }

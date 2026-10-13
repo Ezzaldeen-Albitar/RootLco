@@ -40,14 +40,17 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     DUPLICATE_SCAN_OPERATION,
     request,
-    async ({ db }) => ({
-      status: 200,
-      body: await crmModule().customerIdentity.scanForDuplicates(db, params.customerId),
-    }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        status: 200,
+        body: await crmModule().customerIdentity.scanForDuplicates(db, params.customerId),
+      };
+    },
+    { params: raw }
   );
 }

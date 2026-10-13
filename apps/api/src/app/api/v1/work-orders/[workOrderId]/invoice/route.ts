@@ -1,22 +1,26 @@
 /**
  * GET /api/v1/work-orders/{workOrderId}/invoice (Phase 1-30 A2, seam S-10).
  *
- * The invoice a work order has, or the fact that it has none.
+ * The invoices a work order has, or the fact that it has none.
  *
  * ## Why this is class A
  *
- * `BillingRepository.liveInvoiceForWorkOrder` has existed since P1-22 and had no
+ * `BillingRepository.liveInvoiceForWorkOrder` (now `liveInvoicesForWorkOrder`) had no
  * route in front of it. Its only two callers are internal: the duplicate-create
  * refusal in `InvoiceService`, and the delivery module's financial-blocker port —
  * neither reachable by a screen. So a work-order screen could not answer "has this
  * been invoiced?" without listing invoices and filtering client-side. This publishes
  * the existing read; it adds no query and no second mapper.
  *
- * ## At most one row, by unique index
+ * ## The current invoice, and every live one
  *
- * `uq_invoices_work_order_active` makes the live invoice for a work order unique, and
- * the query excludes `void_before_issue`. So this is a singleton read: no pagination,
- * no ordering contract, no cursor. There is no ordered set to page.
+ * Since ADR-023 D5/D15 (P1-32-PRE-OD-FD5) a work order may carry several live
+ * invoices, each billing approved quantity none of the others holds. `invoice` is the
+ * one a screen acts on — the open draft when there is one (`uq_invoices_work_order_draft`
+ * allows one), else the newest — and `invoices` lists every live one, draft first and
+ * then newest first, bounded (`invoicesTruncated` says when the bound was reached).
+ * `approvedWorkToInvoice` says whether approved quotation work remains that no live
+ * invoice holds. No pagination: the set is the live invoices of one work order.
  *
  * ## Absence is a 200, not a 404
  *

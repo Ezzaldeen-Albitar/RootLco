@@ -9,6 +9,8 @@ import {
   VEHICLE_LIFECYCLE_STATUSES,
   WORKSHOP_STATUSES,
   CRITERIA_KEYS,
+  MIN_VEHICLE_TEXT,
+  hasTooShortCriteria,
   isEmptyCriteria,
   normalizeCriteria,
   normalizeVinForDisplay,
@@ -122,14 +124,27 @@ describe('criteria are sent as the strict schema expects', () => {
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
-  it('names exactly the five keys the strict schema accepts', () => {
+  it('names exactly the keys the strict schema accepts (P1-32 added make, model and q)', () => {
     expect([...CRITERIA_KEYS].sort()).toEqual([
       'lifecycleStatus',
+      'make',
+      'model',
       'plate',
       'powertrainCategory',
+      'q',
       'vehicleNumber',
       'vin',
     ]);
+  });
+
+  it('flags a one-character search box, make or model, and nothing else (P1-32)', () => {
+    expect(MIN_VEHICLE_TEXT).toBe(2);
+    expect(hasTooShortCriteria({ ...EMPTY_CRITERIA, q: 'a' })).toBe(true);
+    expect(hasTooShortCriteria({ ...EMPTY_CRITERIA, make: ' T ' })).toBe(true);
+    expect(hasTooShortCriteria({ ...EMPTY_CRITERIA, model: 'C' })).toBe(true);
+    expect(hasTooShortCriteria({ ...EMPTY_CRITERIA, q: 'ab', make: 'To' })).toBe(false);
+    // Exact filters take one character, as the route allows.
+    expect(hasTooShortCriteria({ ...EMPTY_CRITERIA, vin: 'X', plate: 'Y' })).toBe(false);
   });
 
   it('never produces a sort, page or total parameter', () => {
@@ -139,12 +154,15 @@ describe('criteria are sent as the strict schema expects', () => {
     }
   });
 
-  it('carries exactly the five criteria the query schema names', () => {
-    // A sixth key would be a 422 for the whole request under `.strict()`.
+  it('carries exactly the criteria the query schema names', () => {
+    // An extra key would be a 422 for the whole request under `.strict()`.
     expect(Object.keys(EMPTY_CRITERIA).sort()).toEqual([
       'lifecycleStatus',
+      'make',
+      'model',
       'plate',
       'powertrainCategory',
+      'q',
       'vehicleNumber',
       'vin',
     ]);

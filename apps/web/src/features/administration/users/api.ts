@@ -5,6 +5,7 @@ import type { ApiFailureKind } from '@/lib/api/client';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage, ServerPageStatus } from '../shared/use-server-table';
 import { query, type CursorPage } from '../shared/api';
+import type { GrantScopeView } from './types';
 
 /**
  * Reads for the Users screen.
@@ -86,6 +87,8 @@ export interface UserGrantRow {
   readonly status: string;
   readonly validFrom: string;
   readonly validTo: string | null;
+  /** The grant's version, sent as `If-Match` when a role is taken away. */
+  readonly recordVersion: number;
 }
 
 export interface UserSessionRow {
@@ -175,4 +178,81 @@ export async function listGrantableRoles(): Promise<readonly RoleOption[]> {
   const result = await client.get<CursorPage<RoleOption>>('/api/v1/iam/roles?limit=100');
   if (!result.ok) return [];
   return result.data.items.filter((role) => !role.isSystem);
+}
+
+export interface AccessGrant extends UserGrantRow {
+  /** Null when the scopes could not be read — never an empty list pretending to be known. */
+  readonly scopes: readonly GrantScopeView[] | null;
+}
+
+export interface UserAccessResult {
+  readonly status: ServerPageStatus;
+  readonly user: UserRow | null;
+  readonly grants: readonly AccessGrant[];
+  readonly roles: readonly RoleOption[];
+  readonly correlationId: string | null;
+}
+
+/**
+ * One user's access: the account, its grants, and where each grant applies.
+ *
+ *   `GET /api/v1/iam/users/{userId}`          — `iam.user.read`
+ *   `GET /api/v1/iam/grants/{grantId}/scopes` — `iam.role.read`
+ *   `GET /api/v1/iam/roles`                   — `iam.role.read`
+ *
+ * The scope and role reads are made only when `canReadRoles` is true, which the
+ * route decides from the session before calling. A grant whose scopes were not
+ * read carries `null`, so the screen says "not available" rather than
+ * presenting an unread list as "applies nowhere".
+ */
+export async function readUserAccess(
+  userId: string,
+  canReadRoles: boolean
+): Promise<UserAccessResult> {
+  const client = await authorizedClient();
+  if (!client) {
+    return { status: 'expired', user: null, grants: [], roles: [], correlationId: null };
+  }
+
+  const detail = await client.get<UserDetailView>(
+    `/api/v1/iam/users/${encodeURIComponent(userId)}`
+  );
+  if (!detail.ok) {
+    return {
+      status: STATUS_BY_KIND[detail.kind],
+      user: null,
+      grants: [],
+      roles: [],
+      correlationId: detail.correlationId,
+    };
+  }
+
+  const grants: AccessGrant[] = [];
+  for (const grant of detail.data.grants) {
+    if (!canReadRoles || grant.scopeMode !== 'scoped') {
+      grants.push({ ...grant, scopes: grant.scopeMode === 'scoped' ? null : [] });
+      continue;
+    }
+    const scopes = await client.get<{ items: readonly GrantScopeView[] }>(
+      `/api/v1/iam/grants/${encodeURIComponent(grant.id)}/scopes`
+    );
+    grants.push({ ...grant, scopes: scopes.ok ? scopes.data.items : null });
+  }
+
+  let roles: readonly RoleOption[] = [];
+  if (canReadRoles) {
+    const read = await client.get<CursorPage<RoleOption>>('/api/v1/iam/roles?limit=100');
+    roles = read.ok ? read.data.items : [];
+  }
+
+  const user: UserRow = {
+    id: detail.data.id,
+    email: detail.data.email,
+    displayName: detail.data.displayName,
+    status: detail.data.status,
+    mfaRequired: detail.data.mfaRequired,
+    createdAt: detail.data.createdAt,
+    recordVersion: detail.data.recordVersion,
+  };
+  return { status: 'ok', user, grants, roles, correlationId: detail.correlationId };
 }

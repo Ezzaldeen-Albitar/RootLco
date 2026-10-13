@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ReactElement } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ReadBoundary } from '@/features/administration/shared/components/ScreenStates';
 import {
   ADMINISTRATION_PERMISSIONS,
@@ -19,6 +19,8 @@ import {
   TAX_PREFIX,
 } from '@/features/administration/shared/settings-keys';
 import { coerce } from '@/features/administration/organization/types';
+import { updateTenantAction } from '@/features/administration/organization/actions';
+import { IDLE } from '@/lib/forms/action-result';
 import { pageCount, type TableResponse } from '@/components/data-table/table-state';
 import { orderingKeyOf } from '@/components/data-table/use-cursor-pages';
 import { INITIAL_REQUEST, withPage, withSearch } from '@/components/data-table/table-state';
@@ -32,6 +34,10 @@ import en from '../src/i18n/messages/en.json';
  * longer exists, a setting key the backend would refuse, a table that starts
  * inventing a total.
  */
+
+/** Only the HTTP client is replaced; the action under test is the real one. */
+const send = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ send }) }));
 
 const WEB = join(__dirname, '..');
 const SEED = join(WEB, '..', '..', 'supabase', 'seeds', '04_iam_permission_catalog.sql');
@@ -311,5 +317,49 @@ describe('ReadBoundary hands the correlation reference to every backend failure'
       return element.type;
     });
     expect(new Set(tags).size).toBe(5);
+  });
+});
+
+describe('a tenant setting the platform does not hold is refused beside its field', () => {
+  /*
+   * The API answers an unknown language or time zone as a refusal of THAT field.
+   * The action used to replace every refusal with one sentence in the banner, so
+   * the operator was told something was wrong without being told which of the
+   * two values it was.
+   */
+  function tenantForm(): FormData {
+    const form = new FormData();
+    form.set('displayName', 'Tenant One');
+    form.set('defaultLocale', 'zz');
+    form.set('defaultTimezone', 'Etc/Unheld');
+    form.set('recordVersion', '3');
+    return form;
+  }
+
+  const refusal = (path: string) => ({
+    ok: false as const,
+    kind: 'validation' as const,
+    status: 422,
+    problem: { code: 'ERR-VAL-001', violations: [{ path, rule: 'unknown_reference' }] },
+    correlationId: 'corr-tenant',
+  });
+
+  it('puts an unknown time zone under Default time zone, not in the banner', async () => {
+    send.mockReset();
+    send.mockResolvedValue(refusal('body.defaultTimezone'));
+    const state = await updateTenantAction(IDLE, tenantForm());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors).toEqual({ defaultTimezone: 'form.violation.unknown_reference' });
+    expect(state.messageKey).not.toBe('organization.error.unknownReference');
+    expect(state.correlationId).toBe('corr-tenant');
+  });
+
+  it('puts an unknown language under Default language', async () => {
+    send.mockReset();
+    send.mockResolvedValue(refusal('body.defaultLocale'));
+    const state = await updateTenantAction(IDLE, tenantForm());
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors).toEqual({ defaultLocale: 'form.violation.unknown_reference' });
   });
 });

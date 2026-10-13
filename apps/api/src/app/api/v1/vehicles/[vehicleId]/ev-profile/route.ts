@@ -65,14 +65,17 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     VEHICLE_EV_PROFILE_READ_OPERATION,
     request,
-    async ({ db }) => ({
-      body: await vehicleModule().vehicleLifecycle.getEvProfile(db, params.vehicleId),
-    }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: await vehicleModule().vehicleLifecycle.getEvProfile(db, params.vehicleId),
+      };
+    },
+    { params: raw }
   );
 }
 
@@ -80,7 +83,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -89,6 +92,7 @@ export async function POST(
     VEHICLE_EV_PROFILE_SET_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const result = await vehicleModule().vehicleLifecycle.setEvProfile(
         db,
         params.vehicleId,
@@ -96,6 +100,6 @@ export async function POST(
       );
       return { status: result.created ? 201 : 200, body: result };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }

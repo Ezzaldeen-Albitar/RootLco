@@ -327,6 +327,85 @@ export const PROFILES = {
       supabase: 'a repository tooling change must not change the database',
     },
   },
+  'dependency-security': {
+    why:
+      'a dependency-advisory remediation — the npm manifests and the single root lockfile, in ' +
+      'every workspace that declares an affected package, plus the maintenance record. It ' +
+      'belongs to no phase because an upstream advisory lands on `develop` and every open ' +
+      'branch at once, and it declares itself rather than borrowing a phase profile that would ' +
+      'say nothing about it',
+    // `web` is allowed because it is the narrowest bucket that reaches
+    // apps/web/package.json: there is no `webConfig`, and introducing one would
+    // silently re-classify that manifest out from under every existing Frontend
+    // profile. `apiConfig` carries apps/api/package.json for the same reason,
+    // and `rootConfig` carries the root manifest, the lockfile and the
+    // ci-baselines record.
+    allowed: ['rootConfig', 'web', 'apiConfig', 'docs', 'tooling', 'tests'],
+    forbidden: {
+      apiSource: 'a version move that needs an API source change is a phase change, not a bump',
+      webGenerated:
+        'no dependency version decides the generated Frontend contract manifest — a regenerated ' +
+        'manifest here would mean something else changed',
+      webContract: 'nor a contract mirror: an advisory publishes no operation',
+      migrations: 'a dependency bump carries no migration',
+      dbSeeds: 'nor a seed',
+      supabase: 'nor any other database change',
+    },
+  },
+  /*
+   * The LOCAL acceptance harness, which is the one thing in this repository
+   * that belongs to no phase because every phase is accepted ON it.
+   *
+   * `supabase/config.toml` and the mail/auth templates it names are the local
+   * identity stack: the site URL a recovery link is built from, the redirect
+   * allow-list that link must land inside, and the local mail limits a human
+   * testing the flow runs into. Every phase profile in this file forbids the
+   * `supabase` bucket BY NAME and says so in the same words — config.toml and
+   * the local bootstrap are their own review — so when the harness itself is
+   * broken, no lane may repair it. That is correct, and it leaves a gap: the
+   * review those profiles defer to has to exist. This is it.
+   *
+   * The precedent for a lane adding the profile it travels under is P1-30 A0,
+   * which added `p1-30-frontend` and `p1-30-backend` on the branch they judge.
+   * A gate whose first run is against its own diff is a gate that has run.
+   */
+  'acceptance-harness': {
+    why:
+      'the LOCAL acceptance harness ONLY — the Supabase local configuration and the mail and ' +
+      'auth templates it names, plus the tooling, tests and documentation that prove them. It ' +
+      'belongs to no phase, and exists because every phase profile forbids the `supabase` ' +
+      'bucket by name: the review they defer to had nowhere to happen',
+    allowed: ['supabase', 'tooling', 'tests', 'docs', 'rootConfig'],
+    forbidden: {
+      // Written as one refusal in seven clauses on purpose. A harness repair is
+      // the most tempting carrier in the repository — it is urgent, it is
+      // reviewed by whoever is unblocking themselves, and it touches the file
+      // that decides how a credential link is built. A profile that opened even
+      // one product bucket here would be a lane with no reviewer.
+      apiSource:
+        'a harness repair must not smuggle product: the local identity configuration is not a ' +
+        'place to change how the application behaves. API source belongs to the phase that owns it',
+      apiConfig:
+        'nor API workspace configuration — a dependency or compiler move is its own review, and a ' +
+        'broken local link is not an argument for one',
+      web:
+        'nor the web tree. If the harness repair reveals that a page mishandles the link it is ' +
+        'now delivered correctly, that is a second change on its own branch, reviewed as Frontend',
+      webGenerated:
+        'the harness publishes no operation, so the generated Frontend contract manifest cannot ' +
+        'move; a regenerated manifest here would mean something else changed',
+      webContract:
+        'nor a contract mirror, for the same reason: no operation, no exhaustiveness assertion to ' +
+        'satisfy',
+      migrations:
+        'a harness repair must not change a migration. Configuring how the local stack starts and ' +
+        'changing what the schema IS are different questions with different reviewers',
+      dbSeeds:
+        'nor a seed. A seed is shipping data with its own gate and its own lane ' +
+        '(`p1-09-database-seed`); declaring one under [db.seed] is a harness change, writing one ' +
+        'is not',
+    },
+  },
   'api-boundary': {
     why: 'the pre-P1-26 API file-boundary remediation',
     allowed: [
@@ -395,6 +474,43 @@ export const PROFILES = {
         'PRE-P1-29 must not change the database HARNESS — config.toml and the local bootstrap. ' +
         'The permission catalogue it does need is supabase/seeds, which travels under its own ' +
         'dbSeeds bucket, and the Owner acceptance fixtures live under scripts/dev/owner-acceptance',
+    },
+  },
+  /*
+   * The Owner directive of 2026-09-16 — modelled on `pre-p1-29-initiative`,
+   * which is the nearest shape, and distinct from it in the one bucket that
+   * matters: `apiConfig`. The directive requires a complete environment
+   * configuration inventory with tracked templates, and `apps/api/.env.example`
+   * classifies as `apiConfig`, which `pre-p1-29-initiative` forbids by name.
+   * `api-boundary`, the other candidate, forbids `migrations`. No committed
+   * profile permits apiSource + apiConfig + migrations + dbSeeds + web + docs
+   * together, so borrowing one would have meant refusing the directive's own
+   * first requirement.
+   */
+  'owner-directive-saas-operation': {
+    why:
+      'the Owner directive of 2026-09-16 (SaaS operation before daily use): the Platform Owner ' +
+      'Console, subscription and capacity administration, company/branch/user administration, ' +
+      'inventory, external sales, barcodes, returns, duplicate-demand controls, search and the ' +
+      'environment configuration — spanning API source and its env template, migrations, the ' +
+      'permission seed, the web app, docs, tooling and tests',
+    allowed: [
+      'apiSource',
+      'apiConfig',
+      'migrations',
+      'dbSeeds',
+      'web',
+      'webGenerated',
+      'webContract',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      supabase:
+        'the owner directive must not change the database HARNESS — config.toml and the local ' +
+        'bootstrap are their own review; seeds travel under dbSeeds',
     },
   },
   'pre-p1-29-backend': {
@@ -643,6 +759,74 @@ export const PROFILES = {
       supabase:
         'the database HARNESS is untouched; the one migration this slice does need travels under ' +
         'its own bucket',
+    },
+  },
+  'p1-31-frontend': {
+    why:
+      'the Frontend lane of P1-31: the vehicle-delivery, warranty, operational-dashboard and ' +
+      'reporting screens. Declared under its own name rather than borrowed from p1-30-frontend, ' +
+      'which would also have permitted the diff: that profile describes the commercial screens ' +
+      'that render server arithmetic, and this phase renders a delivery custody chain and a ' +
+      'report catalogue, so borrowing it would have declared nothing about this one. The A0 ' +
+      'preflight travels on this lane: it adds these profiles (tooling) and the canonical plan ' +
+      'and preflight records (docs), and no screen',
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through the Backend lane. P1-31 ' +
+        'Field 13 says the same thing in the plan: backend work is not new feature development ' +
+        'here, and a defect returns to the owning backend phase under change control',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      webGenerated:
+        'the idempotent-operations manifest is GENERATED from the Backend register — a screen ' +
+        'that hand-edits it desynchronises the two, and the register is not on this side of the ' +
+        'lane',
+      webContract:
+        'that allow-list holds six frozen P1-28 files. A P1-31 mirror is new source under ' +
+        'apps/web and travels as web',
+      migrations: 'a screen must not carry a migration',
+      dbSeeds:
+        'a screen must not seed a permission — and P1-31 needs two of them minted (a warranty ' +
+        'read code, and whatever resolves RES-05), which is exactly why they travel on the ' +
+        'Backend lane where the operation that uses them is reviewed',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-31-backend': {
+    why:
+      'the Backend prerequisite lane of P1-31: the read seams and configuration writers the A0 ' +
+      'preflight proved missing (docs/phase-1/phase-1-31/a0-preflight.md), one branch per seam, ' +
+      'with the permission seeds and generated manifest they need. Field 13 of the chapter routes ' +
+      'them here rather than into the screens: backend capability is not new feature development ' +
+      'in P1-31, and a defect found by the Frontend returns to its owning backend phase under ' +
+      'change control',
+    allowed: [
+      'apiSource',
+      'migrations',
+      // A seam that needs a least-privilege READ code mints it in the only
+      // shipping insert into iam.permissions, supabase/seeds/04_iam_permission_catalog.sql.
+      // P1-31 needs at least one: the warranty detail read is gated on the WRITE
+      // code `wty.warranty.issue` because the catalogue seeds no `wty` read code.
+      'dbSeeds',
+      // The idempotent-operations manifest is GENERATED from the Backend
+      // register; a slice that publishes an operation must regenerate it.
+      'webGenerated',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      web:
+        'the P1-31 Backend lane is Backend-only — the screens are a separate change under ' +
+        'p1-31-frontend, so no screen ships against a contract nobody reviewed',
+      webContract:
+        'the contract-mirror allow-list names P1-28 files. A P1-31 operation has no row in it, ' +
+        "so a Backend slice reaching for one is reaching for another phase's sealed artefact",
+      apiConfig: 'P1-31 must not change API workspace configuration',
+      supabase:
+        'P1-31 must not change the database HARNESS — the migrations and the permission ' +
+        'catalogue it does need travel under their own buckets',
     },
   },
   'p1-09-database-seed': {

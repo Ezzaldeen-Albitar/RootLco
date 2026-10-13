@@ -947,4 +947,75 @@ export class QualityRepository extends Repository {
         }
       : null;
   }
+  /**
+   * The latest `overall_result` per work order, and the ids whose latest record
+   * is still `pending` (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `qms.*` is this module's schema (ADR-001 rule 3), so the work-order board
+   * cannot read it — `tests/foundation/p1-19-module-foundation.test.ts` refuses a
+   * schema reference from another module's data layer, and it is right to: a
+   * second reader of `qms.quality_control_records` is a second definition of what
+   * a quality result IS. The board asks for the fact and this module answers it.
+   *
+   * ONE statement for a whole page, never one per row: the board renders a
+   * quality column, and a per-row lookup is the N+1 the projection exists to
+   * avoid. An empty input returns an empty map without issuing a statement.
+   *
+   * `DISTINCT ON (work_order_id)` with the same ordering the board's scalar used —
+   * newest record wins — so a work order whose QC was re-opened reports the
+   * current attempt and not the first one.
+   */
+  async latestOverallResults(
+    db: DbHandle,
+    workOrderIds: readonly string[]
+  ): Promise<ReadonlyMap<string, string>> {
+    if (workOrderIds.length === 0) return new Map();
+    const context = this.assertContext(db);
+    const result = await this.run<{ work_order_id: string; overall_result: string }>(
+      db,
+      `SELECT DISTINCT ON (work_order_id) work_order_id, overall_result
+         FROM qms.quality_control_records
+        WHERE tenant_id = $1
+          AND work_order_id = ANY($2::uuid[])
+          AND deleted_at IS NULL
+        ORDER BY work_order_id, created_at DESC, id DESC`,
+      [context.principal.tenantId, [...workOrderIds]]
+    );
+    return new Map(result.rows.map((row) => [row.work_order_id, row.overall_result]));
+  }
+
+  /**
+   * The work orders in one scope whose quality control is still `pending`.
+   *
+   * Backs the board's `awaitingQuality` flag. It returns IDS rather than a SQL
+   * fragment on purpose: a fragment handed across the boundary would put a
+   * `qms.` reference back into the work-order query under a different name, and
+   * the rule is about schema references and not only about imports.
+   *
+   * Bounded by the same company and branch set the board is reading, so the array
+   * the caller binds is the size of one branch's open quality work rather than
+   * the tenant's.
+   */
+  async workOrderIdsAwaitingQuality(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds?: readonly string[] | undefined }
+  ): Promise<readonly string[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ work_order_id: string }>(
+      db,
+      `SELECT DISTINCT work_order_id
+         FROM qms.quality_control_records
+        WHERE tenant_id = $1
+          AND company_id = $2
+          AND ($3::uuid[] IS NULL OR branch_id = ANY($3::uuid[]))
+          AND deleted_at IS NULL
+          AND overall_result = 'pending'`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchIds === undefined ? null : [...scope.branchIds],
+      ]
+    );
+    return result.rows.map((row) => row.work_order_id);
+  }
 }

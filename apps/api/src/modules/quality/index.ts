@@ -25,6 +25,7 @@ import { QualityGateService } from './application/quality-gate-service';
 import { QualityControlService } from './application/quality-control-service';
 import { ReworkService } from './application/rework-service';
 import { QcQueueService } from './application/qc-queue-service';
+import { WorkOrderQualityPort } from './application/work-order-quality-port';
 
 export type {
   QcCheckResultRow,
@@ -64,6 +65,7 @@ export {
 
 /** Composition root: constructs the module's services once per process. */
 export type { QcCheckVocabularyRow, QcRecordRow } from './data/quality-repository';
+export { WorkOrderQualityPort } from './application/work-order-quality-port';
 
 export const qualityModule = composeModule({
   module: 'quality',
@@ -77,6 +79,10 @@ export const qualityModule = composeModule({
       // `qms` is this module's schema. The operation is declared
       // `module: 'quality'` for the same reason.
       qcQueue: new QcQueueService(repository),
+      // Owner directive P1-32-PRE-OD-UX. The quality facts the work-order board
+      // labels its rows with, answered by the module that owns `qms.*` — see
+      // `WorkOrderQualityPort` for why the board may not read the schema itself.
+      workOrderPort: new WorkOrderQualityPort(repository),
     };
   },
 });

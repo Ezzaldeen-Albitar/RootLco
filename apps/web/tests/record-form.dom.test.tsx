@@ -3,14 +3,17 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr } from './render';
+import { BOTH_DIRECTIONS, messagesFor, renderLtr } from './render';
 import { RecordForm } from '@/components/forms/RecordForm';
+import { TextField } from '@/components/forms/Field';
 import {
   composeInstant,
   instantFieldError,
   toLocalDateTimeValue,
 } from '@/components/forms/instant';
-import type { ActionState } from '@/lib/forms/action-result';
+import { fromFailure, type ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { ApiClient } from '@/lib/api/client';
 
 /**
  * `RecordForm`, rendered directly (`P1-27-QA-001`).
@@ -113,6 +116,251 @@ describe('RecordForm keeps what the operator typed when the write fails', () => 
 
     await waitFor(() => expect(action).toHaveBeenCalled());
     expect(screen.getByLabelText(en['crm.customers.alerts.severity'])).toHaveValue('critical');
+  });
+
+  it('keeps every entry, and says so, when the connection is what failed', async () => {
+    /*
+     * The transport half, driven end to end rather than from a hand-written
+     * state: a real client whose `fetch` rejects, the real kind it derives, the
+     * real mapping, and the sentence the operator is actually shown.
+     *
+     * Before this, a lost connection rendered "Service unavailable" — a label,
+     * with no statement about what had happened to the two minutes of typing on
+     * the screen. The catalogue now says the entries are still there, and this
+     * case is what makes that sentence true rather than reassuring: it asserts
+     * the promise and the text in the same run, so neither can drift from the
+     * other.
+     */
+    const client = new ApiClient({
+      baseUrl: 'https://api.invalid',
+      fetchImpl: () => Promise.reject(new TypeError('Failed to fetch')),
+      newCorrelationId: () => 'corr-network',
+    });
+    const result = await client.send('POST', '/api/v1/health/ready', { any: 'body' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe('network');
+
+    const action = vi.fn(async (): Promise<ActionState> => fromFailure(result, 1));
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const field = screen.getByLabelText(en['crm.customers.notes.body']);
+    await user.type(field, 'Two minutes of typing nobody should have to repeat');
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.alerts.severity']),
+      'critical'
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(en['state.unavailable.message']);
+    // The promise the sentence makes, asserted against the form itself.
+    expect(screen.getByLabelText(en['crm.customers.notes.body'])).toHaveValue(
+      'Two minutes of typing nobody should have to repeat'
+    );
+    expect(screen.getByLabelText(en['crm.customers.alerts.severity'])).toHaveValue('critical');
+  });
+
+  it('says nothing at all when the operator was the one who stopped it', async () => {
+    /*
+     * A cancellation is not a fault and must not be dressed as one. It used to
+     * render "Something went wrong"; the state now carries no message key, so
+     * there is no banner to find — and the entries are still on the page,
+     * because the operator may well be about to press the button again.
+     */
+    const controller = new AbortController();
+    const client = new ApiClient({
+      baseUrl: 'https://api.invalid',
+      fetchImpl: (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          );
+        }),
+      newCorrelationId: () => 'corr-cancelled',
+    });
+    const pending = client.send(
+      'POST',
+      '/api/v1/health/ready',
+      { any: 'body' },
+      {
+        signal: controller.signal,
+      }
+    );
+    controller.abort(new DOMException('aborted', 'AbortError'));
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe('cancelled');
+
+    const state = fromFailure(result, 1);
+    expect(state.status).toBe('cancelled');
+    expect(state.messageKey).toBeUndefined();
+
+    const action = vi.fn(async (): Promise<ActionState> => state);
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const field = screen.getByLabelText(en['crm.customers.notes.body']);
+    await user.type(field, 'Half an entry the operator abandoned');
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(en['state.error.title'])).toBeNull();
+    expect(screen.getByLabelText(en['crm.customers.notes.body'])).toHaveValue(
+      'Half an entry the operator abandoned'
+    );
+  });
+
+  it('fills the number a refusal sentence names, instead of printing the placeholder', async () => {
+    /*
+     * The banner renders `messageKey`, and two families of refusal sentence
+     * carry a `{name}` placeholder the server's own figures fill: the throttle
+     * wait, and the capacity ceiling. This component translated the key and
+     * dropped `messageValues`, so an operator who sent one request too many was
+     * told to "Wait {seconds} seconds" — the catalogue's source text, on screen,
+     * in front of a customer.
+     *
+     * Driven through `fromFailure` rather than from a hand-written state, so the
+     * key and the values are paired by the code that pairs them in production.
+     * Both assertions are needed: the first would pass against a form that
+     * rendered nothing at all, and the second is the one that fails when the
+     * values are dropped again.
+     */
+    const state = fromFailure(
+      {
+        ok: false,
+        kind: 'rate-limited',
+        status: 429,
+        problem: { retryAfterSeconds: 30 },
+        correlationId: 'corr-throttled',
+      },
+      1
+    );
+    const action = vi.fn(async (): Promise<ActionState> => state);
+    const user = userEvent.setup();
+    renderForm(action);
+
+    await user.type(
+      screen.getByLabelText(en['crm.customers.notes.body']),
+      'An entry worth keeping'
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(
+      'Too many requests were sent in a short time. Wait 30 seconds, then try again.'
+    );
+    expect(banner.textContent).not.toContain('{seconds}');
+  });
+
+  it.each(BOTH_DIRECTIONS)(
+    'adds the next step under a refused permission (%s)',
+    async (locale, renderIn) => {
+      /*
+       * `state.denied.title` is a LABEL — "You do not have access" — and for a
+       * 403 it is the whole of what this banner said. True, and the reader is no
+       * further forward: nothing on screen named who can undo it. The heading is
+       * left exactly as it was, because sealed records and the user manual quote
+       * it by that key; the sentence is a second element beneath it.
+       *
+       * Both languages, in the same case, because the sentence is only worth
+       * anything to the operator who reads the one they were given. The last
+       * assertion is the direction that actually fails when the pairing is
+       * dropped: the heading alone would still satisfy the first.
+       */
+      const catalogue = messagesFor(locale);
+      const action = vi.fn(async (): Promise<ActionState> => ({
+        status: 'denied',
+        messageKey: 'state.denied.title',
+        correlationId: 'corr-denied',
+        attempt: 1,
+      }));
+      const user = userEvent.setup();
+      renderIn(
+        <RecordForm
+          messages={catalogue}
+          fields={FIELDS}
+          action={action}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: catalogue['form.submit'] }));
+
+      await waitFor(() => expect(action).toHaveBeenCalled());
+      const banner = await screen.findByRole('alert');
+      // The heading still reads exactly as it did, as its own node.
+      expect(screen.getByText(catalogue['state.denied.title'])).toBeInTheDocument();
+      expect(banner).toHaveTextContent(catalogue['state.denied.message']);
+      // And the Arabic really is Arabic: a catalogue that copied the English
+      // would satisfy every assertion above in both runs.
+      expect(en['state.denied.message']).not.toBe(ar['state.denied.message']);
+    }
+  );
+
+  it.each(BOTH_DIRECTIONS)(
+    'adds the next step under a refused save (%s)',
+    async (locale, renderIn) => {
+      /*
+       * The same defect as the case above, on the kind an operator meets most
+       * often. "Someone else changed this" is a verdict; the reader was not told
+       * that reloading is what makes the save possible, nor that the record may
+       * simply be in a state that refuses the change. The heading is untouched —
+       * the sealed P1-27 records quote the client line that chooses it — and the
+       * sentence arrives as the second element the same pairing already builds.
+       */
+      const catalogue = messagesFor(locale);
+      const action = vi.fn(async (): Promise<ActionState> => ({
+        status: 'conflict',
+        messageKey: 'state.conflict.title',
+        correlationId: 'corr-conflict',
+        attempt: 1,
+      }));
+      const user = userEvent.setup();
+      renderIn(
+        <RecordForm
+          messages={catalogue}
+          fields={FIELDS}
+          action={action}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: catalogue['form.submit'] }));
+
+      await waitFor(() => expect(action).toHaveBeenCalled());
+      const banner = await screen.findByRole('alert');
+      expect(screen.getByText(catalogue['state.conflict.title'])).toBeInTheDocument();
+      expect(banner).toHaveTextContent(catalogue['state.conflict.message']);
+      expect(en['state.conflict.message']).not.toBe(ar['state.conflict.message']);
+    }
+  );
+
+  it('leaves a key that is already a sentence with no second line', async () => {
+    // The control on the case above. A pairing that fired for every key would
+    // append the wrong sentence to `state.expired.message`, which explains
+    // itself, and both cases would still be green.
+    const action = vi.fn(async (): Promise<ActionState> => ({
+      status: 'expired',
+      messageKey: 'state.expired.message',
+      attempt: 1,
+    }));
+    const user = userEvent.setup();
+    renderForm(action);
+
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(en['state.expired.message']);
+    expect(banner.textContent?.trim()).toBe(en['state.expired.message']);
   });
 
   it('DOES clear on success, so the next entry starts empty', async () => {
@@ -404,5 +652,352 @@ describe('instantFieldError — the rule for a browser with no date-time control
       expect(key in (en as Record<string, string>), key).toBe(true);
       expect(key in (ar as Record<string, string>), key).toBe(true);
     }
+  });
+});
+
+/* ====================================================================== *
+ * After a refusal: where the cursor goes, what stops complaining, and how
+ * the complaint is carried
+ * ====================================================================== */
+
+/**
+ * Three behaviours that did not exist, and one that did and is now pinned.
+ *
+ * A form refused, marked three fields and left focus on the submit button. The
+ * operator was told the save failed and had to hunt for red text — red text
+ * being the only carrier of "this one", and the corrections they made having no
+ * effect on it until they spent another request finding out.
+ */
+function refusal(fieldErrors: Record<string, string>, attempt = 1): ActionState {
+  return { status: 'invalid', messageKey: 'form.formError', fieldErrors, attempt };
+}
+
+describe('after a refusal the cursor lands on the first thing to fix', () => {
+  it('focuses the first invalid control in DOM ORDER, not the first error key', async () => {
+    // Both fields are refused and the error map is deliberately written with
+    // the SECOND field first, so a hook that trusted key order would focus the
+    // wrong control and this case would catch it.
+    const action = vi.fn(async (): Promise<ActionState> =>
+      refusal({ severity: 'field.required', reason: 'field.required' })
+    );
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const submit = screen.getByRole('button', { name: en['form.submit'] });
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    await waitFor(() => expect(document.activeElement).toBe(reason));
+    // And not where it was left, which is the whole defect.
+    expect(document.activeElement).not.toBe(submit);
+  });
+
+  it('marks ONLY the fields that are wrong, so the query cannot pick a healthy one', async () => {
+    const action = vi.fn(async (): Promise<ActionState> => refusal({ severity: 'field.required' }));
+    const user = userEvent.setup();
+    renderForm(action);
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    const severity = screen.getByLabelText(en['crm.customers.alerts.severity'], { exact: false });
+    // Absent, not `"false"`. `aria-invalid="false"` would be invisible to the
+    // query; a bare attribute on every control would make the first field the
+    // answer every time.
+    expect(reason).not.toHaveAttribute('aria-invalid');
+    expect(severity).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(document.activeElement).toBe(severity));
+  });
+
+  it('does NOT move focus on MOUNT, and DOES on the attempt that follows', async () => {
+    /*
+     * A mount is not a refusal.
+     *
+     * `RecordForm` itself cannot reach this: its `useActionState` starts at
+     * `EMPTY`, so attempt zero with no errors is the only state it can mount
+     * with. The guard is for the OTHER callers the hook is exposed to — a
+     * hand-built `useActionState` form whose state is held by a parent, or one
+     * remounted under a new key while its last result is still in hand. Those
+     * can mount carrying an attempt and its errors, and moving the cursor then
+     * takes the operator somewhere they did not ask to go, on arrival, while a
+     * screen reader is still announcing the page.
+     *
+     * So the hook is driven DIRECTLY here, with the state as an input. The
+     * previous version of this case rendered a `RecordForm` that had not been
+     * submitted, asserted that focus was still on the body, and would have
+     * passed against a hook with no guard at all — it proved nothing, because
+     * nothing in it was ever marked invalid.
+     */
+    function FocusHarness({ state }: { readonly state: ActionState }) {
+      const formRef = useFocusFirstInvalid(state);
+      return (
+        <form ref={formRef}>
+          <input aria-label="first" />
+          <input
+            aria-label="second"
+            aria-invalid={state.fieldErrors?.['second'] === undefined ? undefined : true}
+          />
+        </form>
+      );
+    }
+
+    const carried = refusal({ second: 'field.required' }, 4);
+    const { rerender } = renderLtr(<FocusHarness state={carried} />);
+
+    // The control IS marked invalid — without this the case would be vacuous
+    // in the same way the old one was.
+    expect(screen.getByLabelText('second')).toHaveAttribute('aria-invalid', 'true');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(document.activeElement).toBe(document.body);
+
+    // One new attempt, same errors: now it moves.
+    rerender(<FocusHarness state={refusal({ second: 'field.required' }, 5)} />);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('second')));
+  });
+
+  it('does NOT move focus when the refusal names no field', async () => {
+    // A rate limit or an outage is a banner, not a field, and stealing focus on
+    // one would take the operator away from whatever they had moved on to.
+    const action = vi.fn(async (): Promise<ActionState> => ({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.title',
+      correlationId: 'corr-x',
+      attempt: 1,
+    }));
+    const user = userEvent.setup();
+    renderForm(action);
+    const submit = screen.getByRole('button', { name: en['form.submit'] });
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(document.activeElement).toBe(submit);
+  });
+});
+
+describe('the focus a frame later never takes the cursor from where the operator went', () => {
+  /*
+   * The hook focuses one animation frame after the refusal. In that frame the
+   * operator may already have clicked into another field and begun typing;
+   * moving the cursor then would send their next keystrokes into the refused
+   * field. The frame is HELD here — queued, not run — so the operator's move
+   * can be made inside it, deterministically.
+   */
+  function FrameHarness({ state }: { readonly state: ActionState }) {
+    const formRef = useFocusFirstInvalid(state);
+    const refused = (name: string) => state.fieldErrors?.[name] !== undefined;
+    return (
+      <form ref={formRef} onSubmit={(event) => event.preventDefault()}>
+        <input aria-label="other field" />
+        <input aria-label="refused field" aria-invalid={refused('refused') ? true : undefined} />
+        <button type="button" data-invalid={refused('choice') ? 'true' : undefined}>
+          change the choice
+        </button>
+        <button type="submit">send it</button>
+      </form>
+    );
+  }
+
+  function holdFrames() {
+    const queued: FrameRequestCallback[] = [];
+    const spy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+    return {
+      run: () => {
+        for (const callback of queued.splice(0)) callback(0);
+      },
+      restore: () => spy.mockRestore(),
+    };
+  }
+
+  it('leaves the cursor, and the text, where the operator typed before the frame', async () => {
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      screen.getByRole('button', { name: 'send it' }).focus();
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+
+      const other = screen.getByLabelText('other field');
+      await user.type(other, 'still typing');
+      frames.run();
+
+      expect(document.activeElement).toBe(other);
+      expect(other).toHaveValue('still typing');
+      expect(screen.getByLabelText('refused field')).toHaveAttribute('aria-invalid', 'true');
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('still moves the cursor to the first thing to fix when the operator has not moved', async () => {
+    const frames = holdFrames();
+    try {
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      screen.getByRole('button', { name: 'send it' }).focus();
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+      expect(document.activeElement).toBe(screen.getByLabelText('refused field'));
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('remembers where the cursor was at SUBMIT: a field chosen during a slow save keeps it', async () => {
+    /*
+     * The save is slow. The operator presses Send, then clicks into another
+     * field and types while the request is out. The refusal arrives with the
+     * cursor ALREADY in that field — so a position taken at the refusal is the
+     * operator's new field, and "focus has not moved since" is true of it. The
+     * position is the one at submission, and the operator has left it.
+     */
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      await user.click(screen.getByRole('button', { name: 'send it' }));
+
+      const other = screen.getByLabelText('other field');
+      await user.type(other, 'while it saves');
+      expect(document.activeElement).toBe(other);
+
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+
+      expect(document.activeElement).toBe(other);
+      expect(other).toHaveValue('while it saves');
+      expect(screen.getByLabelText('refused field')).toHaveAttribute('aria-invalid', 'true');
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('still moves the cursor after a submit when the operator stayed on the submitting control', async () => {
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      const send = screen.getByRole('button', { name: 'send it' });
+      await user.click(send);
+      expect(document.activeElement).toBe(send);
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+      expect(document.activeElement).toBe(screen.getByLabelText('refused field'));
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('reaches a refused choice marked without aria-invalid, which a button may not carry', async () => {
+    const frames = holdFrames();
+    try {
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      rerender(<FrameHarness state={refusal({ choice: 'field.required' }, 1)} />);
+      frames.run();
+      const change = screen.getByRole('button', { name: 'change the choice' });
+      expect(change).not.toHaveAttribute('aria-invalid');
+      expect(document.activeElement).toBe(change);
+    } finally {
+      frames.restore();
+    }
+  });
+});
+
+describe('a corrected field stops complaining before the next submission', () => {
+  it('clears the error for the field the operator edits, and only that one', async () => {
+    const action = vi.fn(async (): Promise<ActionState> =>
+      refusal({ reason: 'field.required', severity: 'field.required' })
+    );
+    const user = userEvent.setup();
+    renderForm(action);
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(2);
+
+    // The refusal moves the cursor to the first refused box one frame later
+    // (`useFocusFirstInvalid`), and the operator sees it land before typing; so
+    // does this test. Typing earlier races that frame: the first keystroke
+    // withdraws this box's complaint, the second box becomes the first refused
+    // one, and a frame landing then moves the cursor there mid-word.
+    const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    await waitFor(() => expect(reason).toHaveFocus());
+    await user.type(reason, 'ok');
+    expect(reason).toHaveValue('ok');
+
+    await waitFor(() => expect(reason).not.toHaveAttribute('aria-invalid'));
+    // The one the operator has NOT touched still says so: a correction must
+    // never quieten a complaint about a different field.
+    expect(
+      screen.getByLabelText(en['crm.customers.alerts.severity'], { exact: false })
+    ).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('brings the complaint BACK when the next attempt refuses the same field', async () => {
+    // The direction that makes the clearing honest. It does not claim the new
+    // value is acceptable — only that the old sentence was about a value that
+    // is no longer there.
+    let attempt = 0;
+    const action = vi.fn(async (): Promise<ActionState> => {
+      attempt += 1;
+      return refusal({ reason: 'field.required' }, attempt);
+    });
+    const user = userEvent.setup();
+    renderForm(action);
+    const submit = screen.getByRole('button', { name: en['form.submit'] });
+
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false }), 'x');
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })
+      ).not.toHaveAttribute('aria-invalid')
+    );
+
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })
+      ).toHaveAttribute('aria-invalid', 'true')
+    );
+  });
+});
+
+describe('an error is not carried by colour alone', () => {
+  it('leads the message with a glyph that is hidden from assistive technology', async () => {
+    const action = vi.fn(async (): Promise<ActionState> => refusal({ reason: 'field.required' }));
+    const user = userEvent.setup();
+    renderForm(action);
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const alert = screen.getAllByRole('alert')[0] as HTMLElement;
+    // The sentence is there, and so is a shape in front of it. Under forced
+    // colours or in greyscale, red supporting text and grey supporting text are
+    // the same text.
+    expect(alert).toHaveTextContent(en['field.required']);
+    const glyph = alert.querySelector('[aria-hidden="true"]');
+    expect(glyph, 'the error carries no non-colour cue').not.toBeNull();
+    expect(glyph).toHaveTextContent('!');
+    // Announcing "exclamation mark" before every message is noise; the sentence
+    // and `aria-invalid` already carry the meaning.
+    expect(alert.textContent).toContain(en['field.required']);
+  });
+
+  it('carries the same cue on a FieldFrame control', () => {
+    renderLtr(<TextField label="Chassis number" error="This does not look right" />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('This does not look right');
+    expect(alert.querySelector('[aria-hidden="true"]')).toHaveTextContent('!');
+    // And nothing is marked invalid when there is nothing wrong.
+    expect(screen.getByLabelText('Chassis number')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('writes no aria-invalid at all on a healthy FieldFrame control', () => {
+    renderLtr(<TextField label="Chassis number" />);
+    expect(screen.getByLabelText('Chassis number')).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

@@ -11,7 +11,7 @@ import { RefusalStep } from '../components/steps/RefusalStep';
 import { SignatureStep } from '../components/steps/SignatureStep';
 import { SummaryStep } from '../components/steps/SummaryStep';
 import { WarningLightsStep } from '../components/steps/WarningLightsStep';
-import type { CheckInStepDefinition } from './wizard';
+import { PARTIES_STEP_ID, type CheckInStepDefinition } from './wizard';
 
 /**
  * The check-in wizard's step registry — THE extension point (P1-28, Wave D).
@@ -50,7 +50,7 @@ export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
     Component: ConfirmationStep,
   },
   {
-    id: 'parties-and-authorization',
+    id: PARTIES_STEP_ID,
     titleKey: 'receptions.steps.parties.title',
     descriptionKey: 'receptions.steps.parties.description',
     Component: PartiesStep,

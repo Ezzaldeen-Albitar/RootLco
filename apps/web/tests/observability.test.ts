@@ -285,6 +285,50 @@ describe('API failures reach the monitoring boundary', () => {
       expect(fetchImpl).toHaveBeenCalledTimes(2);
       expect(seen).toHaveLength(2);
     });
+
+    /*
+     * Checkpoint browser QA: reads the cancellable-read design abandons on
+     * purpose were logged `level=error web.api.failure kind=network` — ten on
+     * the reception board in one session. A Route Handler's signal is aborted
+     * with the framework's own reason, not an `AbortError`, and the fetch
+     * rejects with that reason; the caller's signal is what says it was a
+     * cancellation.
+     */
+    it('reports a read its caller abandoned as cancelled, at debug, whatever the fetch threw', async () => {
+      const caller = new AbortController();
+      const fetchImpl = vi.fn(async () => {
+        const reason = new Error('the client disconnected');
+        caller.abort(reason);
+        throw reason;
+      });
+      const result = await clientWith(fetchImpl as never).get('/api/v1/receptions', {
+        signal: caller.signal,
+        retries: 0,
+      });
+      expect(result.ok).toBe(false);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.level).toBe('debug');
+      expect(seen[0]?.context).toEqual({
+        method: 'GET',
+        status: null,
+        kind: 'cancelled',
+        code: null,
+      });
+    });
+
+    it('keeps a real network failure at error when the caller is still waiting', async () => {
+      const caller = new AbortController();
+      const fetchImpl = vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      });
+      await clientWith(fetchImpl as never).get('/api/v1/receptions', {
+        signal: caller.signal,
+        retries: 0,
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.level).toBe('error');
+      expect(seen[0]?.context?.['kind']).toBe('network');
+    });
   });
 
   describe('what the event may not carry', () => {
@@ -799,5 +843,23 @@ describe('alert routing — the threshold decides what leaves the browser', () =
         );
       }
     });
+  });
+});
+
+describe('every console line carries its own time', () => {
+  it('opens the line with an ISO-8601 UTC time field', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const before = Date.now();
+    report({ level: 'info', event: 'web.timed' });
+    const after = Date.now();
+
+    expect(info).toHaveBeenCalledTimes(1);
+    const line = String(info.mock.calls[0]?.[0]);
+    const record = JSON.parse(line) as Record<string, unknown>;
+    expect(Object.keys(record)[0]).toBe('time');
+    expect(record.time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    const stamped = Date.parse(String(record.time));
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(after);
   });
 });

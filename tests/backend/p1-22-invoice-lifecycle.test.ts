@@ -358,6 +358,8 @@ const PLAIN_HUNDRED_LINE: QuotationLineSpec = {
 };
 
 interface Billable {
+  /** The reception visit the work order came from, whose customer it bills by default. */
+  readonly visitId: string;
   readonly tag: string;
   readonly workOrderId: string;
   readonly companyId: string;
@@ -365,6 +367,121 @@ interface Billable {
   readonly quotationId: string;
   readonly revisionId: string;
   readonly itemIds: readonly string[];
+}
+
+/**
+ * The discount approval an issued, discounted revision owes (P1-32-PRE-OD-DISC-04, -07).
+ *
+ * `quo.guard_revision_discount_approval` refuses the draft -> issued transition of a
+ * revision whose discount needs approval and has none approved — with no policy in force
+ * when the quotation was written, the threshold is zero, so this fixture's discounted
+ * line needs one. The fixture therefore records what the two-step flow would have: a
+ * request by `USER_A`, carrying the quotation's pinned policy, and an approval of exactly
+ * that amount by a DIFFERENT, real person, both summed from the lines by PostgreSQL. The
+ * approval is recorded as that person — `quo.guard_discount_approval` checks that the
+ * decider is the signed-in user, holds the recorded permission and has a limit that
+ * counts, and `decided_by` is a foreign key into `iam.user_accounts`. A revision with no
+ * discount records nothing, exactly like the service.
+ */
+async function recordFixtureDiscountApproval(
+  client: PoolClient,
+  revisionId: string
+): Promise<void> {
+  const requested = await client.query<{ id: string; company_id: string }>(
+    `INSERT INTO quo.discount_approvals
+       (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id, currency_code,
+        discount_total, discount_base, elevated_line_count, policy_id, policy_version_no,
+        threshold_kind, threshold_value, threshold_currency_code, required_permission_code,
+        requested_by, created_by)
+     SELECT r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, r.currency_code,
+            sum(i.captured_discount), round(sum(i.captured_unit_price * i.captured_quantity), 4),
+            count(*) FILTER (WHERE i.captured_discount > 0), p.id, p.version_no,
+            p.threshold_kind, p.threshold_value, p.currency_code,
+            COALESCE(p.required_permission_code, 'svc.price.manage'), $2, $2
+       FROM quo.quotation_revisions r
+       JOIN quo.quotation_items i
+         ON i.tenant_id = r.tenant_id AND i.quotation_revision_id = r.id AND i.deleted_at IS NULL
+       LEFT JOIN LATERAL quo.quotation_discount_policy(r.tenant_id, r.quotation_id) p ON true
+      WHERE r.id = $1
+      GROUP BY r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, r.currency_code,
+               p.id, p.version_no, p.threshold_kind, p.threshold_value, p.currency_code,
+               p.required_permission_code
+     HAVING sum(i.captured_discount) > 0
+     RETURNING id, company_id`,
+    [revisionId, USER_A]
+  );
+  const approval = requested.rows[0];
+  if (approval === undefined) return;
+  await ensureFixtureDiscountApprover(client, approval.company_id);
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [FIXTURE_DISCOUNT_APPROVER]);
+  await client.query(
+    `UPDATE quo.discount_approvals
+        SET status = 'approved', decided_by = $2, decided_at = now(),
+            approved_discount_total = discount_total, approved_currency_code = currency_code
+      WHERE id = $1`,
+    [approval.id, FIXTURE_DISCOUNT_APPROVER]
+  );
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [USER_A]);
+}
+
+/**
+ * Somebody other than `USER_A`, so the approval above is a separate person's act: a real
+ * tenant-A user account, granted `svc.price.manage` through an unrestricted role, with a
+ * discount approval limit that a fixture administrator — neither they nor `USER_A`, the
+ * requester — set in the revision's company: since ADR-023 D8 (P1-32-PRE-OD-FD8) a limit
+ * the requester set never counts for their own discount. Committed with the fixture and
+ * removed with the tenant by the suite's cleanup.
+ */
+const FIXTURE_DISCOUNT_APPROVER = 'f1220000-0000-4000-8000-00000000da01';
+const FIXTURE_DISCOUNT_APPROVER_ROLE = 'f1220000-0000-4000-8000-00000000da02';
+/** Sets the approver's limit; signed in only for that write. */
+const FIXTURE_LIMIT_ADMINISTRATOR = 'f1220000-0000-4000-8000-00000000da03';
+
+async function ensureFixtureDiscountApprover(client: PoolClient, companyId: string): Promise<void> {
+  await client.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1::uuid, $2::uuid, 'test_harness', 'fx_p1_22_discount_approver', 'fx-p1-22-discount-approver@example.test',
+             'Fixture discount approver', 'active', $3::uuid)
+     ON CONFLICT (id) DO NOTHING`,
+    [FIXTURE_DISCOUNT_APPROVER, TENANT_A, USER_A]
+  );
+  await client.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1::uuid, $2::uuid, 'fx_p1_22_discount_approver', 'Fixture discount approver', $3::uuid)
+     ON CONFLICT (id) DO NOTHING`,
+    [FIXTURE_DISCOUNT_APPROVER_ROLE, TENANT_A, USER_A]
+  );
+  await client.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid, $2::uuid, p.id, 'allow', $3::uuid
+       FROM iam.permissions p WHERE p.permission_code = 'svc.price.manage'
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, FIXTURE_DISCOUNT_APPROVER_ROLE, USER_A]
+  );
+  await client.query(
+    `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'unrestricted', $4::uuid, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.role_grants
+         WHERE tenant_id = $1::uuid AND user_id = $2::uuid AND role_id = $3::uuid
+           AND status = 'active')`,
+    [TENANT_A, FIXTURE_DISCOUNT_APPROVER, FIXTURE_DISCOUNT_APPROVER_ROLE, USER_A]
+  );
+  // `iam.stamp_approval_limit_creator` holds `created_by` to the signed-in person, so
+  // the administrator signs in for this one write and USER_A signs in again after it.
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [FIXTURE_LIMIT_ADMINISTRATOR]);
+  await client.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 1000000, 'USD', current_date - 1, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND company_id = $2::uuid AND user_id = $3::uuid
+           AND limit_type = 'discount')`,
+    [TENANT_A, companyId, FIXTURE_DISCOUNT_APPROVER, FIXTURE_LIMIT_ADMINISTRATOR]
+  );
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [USER_A]);
 }
 
 /**
@@ -387,6 +504,8 @@ async function seedAcceptedQuotation(input: {
   readonly lines?: readonly QuotationLineSpec[];
   /** `none` leaves the revision undecided, so `rollUpDecisions` yields neither outcome. */
   readonly decision?: 'approved' | 'rejected' | 'none';
+  /** The quotation's payer; `null` names none (DX-3). `PARTNER_A` unless stated. */
+  readonly payer?: string | null;
 }): Promise<{
   readonly quotationId: string;
   readonly revisionId: string;
@@ -409,7 +528,7 @@ async function seedAcceptedQuotation(input: {
         input.workOrderId,
         `FXQ-${input.tag}`,
         currency,
-        PARTNER_A,
+        input.payer === undefined ? PARTNER_A : input.payer,
         USER_A,
       ]
     );
@@ -463,6 +582,7 @@ async function seedAcceptedQuotation(input: {
       itemIds.push(item.rows[0]?.id ?? '');
     }
 
+    await recordFixtureDiscountApproval(client, revisionId);
     await client.query(
       `UPDATE quo.quotation_revisions r
           SET status = 'issued', issued_at = now(),
@@ -511,6 +631,7 @@ async function seedBillable(
     readonly currency?: string;
     readonly lines?: readonly QuotationLineSpec[];
     readonly decision?: 'approved' | 'rejected' | 'none';
+    readonly payer?: string | null;
   } = {}
 ): Promise<Billable> {
   const chain = await seedWorkOrderChain(
@@ -525,8 +646,10 @@ async function seedBillable(
     ...(options.currency === undefined ? {} : { currency: options.currency }),
     ...(options.lines === undefined ? {} : { lines: options.lines }),
     ...(options.decision === undefined ? {} : { decision: options.decision }),
+    ...(options.payer === undefined ? {} : { payer: options.payer }),
   });
   return {
+    visitId: chain.visitId,
     tag: chain.tag,
     workOrderId: chain.workOrderId,
     companyId: chain.companyId,
@@ -880,9 +1003,21 @@ describe('sal.invoice-create', () => {
     expect(created.invoice.currency).toBe('USD');
 
     // Header totals, each as an exact decimal STRING with its currency beside it.
-    expect(created.invoice.totals?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(created.invoice.totals?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(created.invoice.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(created.invoice.totals?.net).toEqual({
+      amount: '150.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(created.invoice.totals?.tax).toEqual({
+      amount: '15.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(created.invoice.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     expect(created.lines).toHaveLength(1);
     const line = created.lines[0];
@@ -893,15 +1028,23 @@ describe('sal.invoice-create', () => {
     expect(line?.quantity).toBe('2.000');
     expect(line?.currency).toBe('USD');
     expect(line?.sourceQuotationItemId).toBe(billable.itemIds[0]);
-    expect(line?.money?.unitPrice).toEqual({ amount: '100.0000', currency: 'USD' });
-    expect(line?.money?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(line?.money?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(line?.money?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(line?.money?.unitPrice).toEqual({ amount: '100.0000', currency: 'USD', minorUnit: 2 });
+    expect(line?.money?.net).toEqual({ amount: '150.0000', currency: 'USD', minorUnit: 2 });
+    expect(line?.money?.tax).toEqual({ amount: '15.0000', currency: 'USD', minorUnit: 2 });
+    expect(line?.money?.gross).toEqual({ amount: '165.0000', currency: 'USD', minorUnit: 2 });
     // FR-WTY-004: the payer split always sums to gross, and the whole gross is the
     // customer's because no protected configuration determines a warranty share at
     // invoice time. A non-zero warranty share here could only have come from a client.
-    expect(line?.money?.payerSplit.customer).toEqual({ amount: '165.0000', currency: 'USD' });
-    expect(line?.money?.payerSplit.warranty).toEqual({ amount: '0.0000', currency: 'USD' });
+    expect(line?.money?.payerSplit.customer).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(line?.money?.payerSplit.warranty).toEqual({
+      amount: '0.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     // The ROW carries it too, in the same exact form, and the preview's own gross agreed.
     const row = await invoiceRowOf(created.invoice.id);
@@ -999,7 +1142,11 @@ describe('sal.invoice-create', () => {
     expect(replay.status).toBe(200);
     const replayed = await bodyOf<CreatedInvoiceBody>(replay);
     expect(replayed.invoice.id).toBe(original.invoice.id);
-    expect(replayed.invoice.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(replayed.invoice.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     expect(await invoiceRowsForWorkOrder(billable.workOrderId)).toBe(1);
     expect((await auditTotalFor('sal.invoice.created')) - auditBefore).toBe(1);
@@ -1012,10 +1159,10 @@ describe('sal.invoice-create', () => {
     const first = await draftInvoiceFor(billable);
 
     // A DIFFERENT key, so this is the work-order uniqueness rule answering and not the
-    // idempotency store. `uq_invoices_work_order_active` permits at most one live
-    // invoice per work order, which makes staged or progress billing structurally
-    // impossible — and this must be a 409 with a code, never the bare `23505` five
-    // layers down and never a 500.
+    // idempotency store. `uq_invoices_work_order_draft` permits at most one DRAFT
+    // invoice per work order (and, since ADR-023 D5/D15, a later invoice may bill only
+    // approved quantity no live invoice holds — none remains here) — and this must be
+    // a 409 with a code, never the bare `23505` five layers down and never a 500.
     authAs(SAL_FULL);
     const second = await createInvoice({ workOrderId: billable.workOrderId }, randomUUID());
     expect(second.status).toBe(409);
@@ -1065,6 +1212,96 @@ describe('sal.invoice-create', () => {
     const response = await createInvoice({ workOrderId: billable.workOrderId });
     expect(response.status).toBe(404);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-RES-001');
+    expect(await invoiceRowsForWorkOrder(billable.workOrderId)).toBe(0);
+  });
+});
+
+/**
+ * Who an invoice bills (DX-3, finance QA fixes E).
+ *
+ * The invoice screen's "a different paying customer" box says "Optional. Leave it
+ * empty to bill the customer on the work order." That was true only when the
+ * accepted quotation named a payer: with none, an empty box was refused 422 on
+ * `body.payerPartnerId`. The order is now the quotation's payer, then the one the
+ * request names, then the work order's own customer — and a work order with no
+ * single customer is refused with a rule that says so.
+ */
+describe('sal.invoice-create, who pays', () => {
+  /** A second tenant-A partner, so "which payer won" is observable. */
+  const PAYER_OF_RECORD = 'c2200000-0000-4000-8000-0000000000e1';
+
+  beforeAll(async () => {
+    await inTenantTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO crm.business_partners
+           (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+         VALUES ($1,$2,'organization','Payer of record','active',$3)
+         ON CONFLICT (id) DO NOTHING`,
+        [PAYER_OF_RECORD, TENANT_A, USER_A]
+      );
+    });
+  });
+
+  it('bills the payer the quotation names, even when the request names another', async () => {
+    const billable = await seedBillable('inv_payer_quoted', { payer: PAYER_OF_RECORD });
+    authAs(SAL_FULL);
+    const response = await createInvoice({
+      workOrderId: billable.workOrderId,
+      payerPartnerId: PARTNER_A,
+    });
+    expect(response.status).toBe(201);
+    expect((await bodyOf<CreatedInvoiceBody>(response)).invoice.payerPartnerId).toBe(
+      PAYER_OF_RECORD
+    );
+  });
+
+  it('bills the payer the request names when the quotation names none', async () => {
+    const billable = await seedBillable('inv_payer_named', { payer: null });
+    authAs(SAL_FULL);
+    const response = await createInvoice({
+      workOrderId: billable.workOrderId,
+      payerPartnerId: PAYER_OF_RECORD,
+    });
+    expect(response.status).toBe(201);
+    expect((await bodyOf<CreatedInvoiceBody>(response)).invoice.payerPartnerId).toBe(
+      PAYER_OF_RECORD
+    );
+  });
+
+  it("bills the work order's customer when neither the quotation nor the request names a payer", async () => {
+    const billable = await seedBillable('inv_payer_customer', { payer: null });
+    authAs(SAL_FULL);
+    // The body names no payer at all, exactly as the screen sends an empty box.
+    const response = await createInvoice({ workOrderId: billable.workOrderId });
+    expect(response.status).toBe(201);
+    // PARTNER_A is the party who brought the car: the check-in fixture's
+    // `service_requester`, which is the customer the work order screens show.
+    expect((await bodyOf<CreatedInvoiceBody>(response)).invoice.payerPartnerId).toBe(PARTNER_A);
+  });
+
+  it('refuses, naming the payer box, when the work order has no customer to bill either', async () => {
+    const billable = await seedBillable('inv_payer_none', { payer: null });
+    // The visit's only customer is dated out before the work order was opened, so
+    // as at `opened_at` the work order has none. `valid_to` is the one column of a
+    // party role a supersession may write.
+    const dated = await inTenantTransaction((client) =>
+      client.query(
+        `UPDATE rec.reception_party_roles
+            SET valid_to = valid_from + interval '1 microsecond'
+          WHERE reception_visit_id = $1 AND relationship_role = 'service_requester'
+            AND valid_to IS NULL AND deleted_at IS NULL`,
+        [billable.visitId]
+      )
+    );
+    expect(dated.rowCount).toBe(1);
+    authAs(SAL_FULL);
+    const response = await createInvoice({ workOrderId: billable.workOrderId });
+    expect(response.status).toBe(422);
+    const problem = await bodyOf<ProblemBody>(response);
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations).toEqual([
+      { path: 'body.payerPartnerId', rule: 'invoice_payer_required' },
+    ]);
     expect(await invoiceRowsForWorkOrder(billable.workOrderId)).toBe(0);
   });
 });
@@ -1458,22 +1695,52 @@ describe('sal.invoice-detail', () => {
     const detail = await bodyOf<InvoiceDetailBody>(response);
 
     expect(detail.invoice.invoiceNumber).toBe(issued.invoiceNumber);
-    expect(detail.invoice.totals?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(detail.invoice.totals?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(detail.invoice.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(detail.invoice.totals?.net).toEqual({
+      amount: '150.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.invoice.totals?.tax).toEqual({
+      amount: '15.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.invoice.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     expect(detail.lines).toHaveLength(1);
-    expect(detail.lines[0]?.money?.unitPrice).toEqual({ amount: '100.0000', currency: 'USD' });
-    expect(detail.lines[0]?.money?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(detail.lines[0]?.money?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(detail.lines[0]?.money?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(detail.lines[0]?.money?.unitPrice).toEqual({
+      amount: '100.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.lines[0]?.money?.net).toEqual({
+      amount: '150.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.lines[0]?.money?.tax).toEqual({
+      amount: '15.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.lines[0]?.money?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
     expect(detail.lines[0]?.money?.payerSplit.customer).toEqual({
       amount: '165.0000',
       currency: 'USD',
+      minorUnit: 2,
     });
     expect(detail.lines[0]?.money?.payerSplit.warranty).toEqual({
       amount: '0.0000',
       currency: 'USD',
+      minorUnit: 2,
     });
 
     // The ETag the version-guarded commands consume, and it describes the INVOICE.
@@ -1582,7 +1849,7 @@ describe('sal.invoice-outstanding-read', () => {
     // all, so the invoice's own `currency_code` is the only thing that labels it — and
     // this operation always returns the pair, never the scalar. Compared as an exact
     // decimal STRING: `Number` appears nowhere in this assertion.
-    expect(outstanding.outstanding).toEqual({ amount: '100.0000', currency: 'USD' });
+    expect(outstanding.outstanding).toEqual({ amount: '100.0000', currency: 'USD', minorUnit: 2 });
     expect(outstanding.outstanding.currency).toBe(
       (await invoiceRowOf(draft.invoice.id))?.currencyCode
     );
@@ -1602,7 +1869,7 @@ describe('sal.invoice-outstanding-read', () => {
     expect(response.status).toBe(200);
     const outstanding = await bodyOf<OutstandingBody>(response);
     expect(outstanding.status).toBe('draft');
-    expect(outstanding.outstanding).toEqual({ amount: '0.0000', currency: 'USD' });
+    expect(outstanding.outstanding).toEqual({ amount: '0.0000', currency: 'USD', minorUnit: 2 });
     expect(outstanding.isSettled).toBe(true);
   });
 

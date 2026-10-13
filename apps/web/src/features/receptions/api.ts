@@ -4,14 +4,17 @@ import { z } from 'zod';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
-import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
+import {
+  fromFailure,
+  fromStateRefusal,
+  invalid,
+  type ActionState,
+} from '@/lib/forms/action-result';
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 import {
   STATUS_BY_KIND,
-  branchTargetQuery,
   query,
   readOperation,
-  type BranchTarget,
   type CursorPage,
   type ReadState,
 } from '@/lib/api/read-operation';
@@ -77,8 +80,6 @@ import {
   type ReceptionCreateInput,
   type ReceptionCreated,
   type ReceptionDetail,
-  type ReceptionListCriteria,
-  type ReceptionListEntry,
   type RefusalInput,
   type RefusalRecorded,
   type SignatureInput,
@@ -89,9 +90,9 @@ import {
 /**
  * Reception adapters (P1-28, Wave A).
  *
- * Reads follow the vehicle precedent; the board list carries its mandatory
- * `companyId`/`branchId` pair through `branchTargetQuery` (a resource
- * selector, `P1-18-A-01`), and the per-visit reads take only what each
+ * Reads follow the vehicle precedent; the board list carries its company and,
+ * when the operator is working in one, its branch through `branchScopeQuery` (a
+ * resource selector, `P1-18-A-01`), and the per-visit reads take only what each
  * `.strict()` schema names. Writes follow the P1-27 order — validate, session,
  * send, map — set no `Idempotency-Key` of their own, and the four guarded
  * commands (`approve`, `convert-to-work-order`, `close-without-work`,
@@ -299,41 +300,6 @@ const closeSchema = z.object({ reason: z.string().trim().min(1).max(MAX_CLOSURE_
  * ------------------------------------------------------------------ */
 
 /**
- * The branch reception board (`rec.reception-list`), most recently received
- * first. `retries: 0` — `expensive-read`, and the table offers Retry.
- */
-export async function listReceptions(
-  target: BranchTarget,
-  criteria: ReceptionListCriteria,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<ReceptionListEntry>> {
-  const client = await authorizedClient();
-  if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
-
-  const path =
-    '/api/v1/receptions' +
-    branchTargetQuery(target, {
-      status: criteria.status,
-      vehicleId: criteria.vehicleId,
-      cursor,
-      limit: request.pageSize,
-    });
-
-  const result = await client.get<CursorPage<ReceptionListEntry>>(path, { retries: 0 });
-  if (!result.ok) {
-    return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
-  }
-  return {
-    status: 'ok',
-    rows: result.data.items,
-    nextCursor: result.data.nextCursor,
-    hasMore: result.data.hasMore,
-    correlationId: result.correlationId,
-  };
-}
-
-/**
  * One visit (`rec.reception-detail`). The returned `recordVersion` is the
  * `If-Match` the four guarded commands demand — the read that ended the
  * "reachable in exactly one unbroken session" era (`P1-27-INT-010`).
@@ -459,7 +425,7 @@ export async function createReception(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionCreated>('POST', '/api/v1/receptions', parsed.data);
   if (!result.ok) return fromFailure(result, attempt);
@@ -481,7 +447,7 @@ export async function assignPartyRole(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<PartyRoleAssigned>(
     'POST',
@@ -512,7 +478,7 @@ export async function recordAuthorization(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AuthorizationRecorded>(
     'POST',
@@ -538,7 +504,7 @@ export async function recordConditionEvidence(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ConditionEvidenceRecorded>(
     'POST',
@@ -567,7 +533,7 @@ export async function recordSignature(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<SignatureRecorded>(
     'POST',
@@ -596,7 +562,7 @@ export async function recordRefusal(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<RefusalRecorded>(
     'POST',
@@ -624,7 +590,7 @@ export async function approveReception(
   attempt = 1
 ): Promise<ReceptionApproveState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionApproved>(
     'POST',
@@ -653,7 +619,7 @@ export async function convertReceptionToWorkOrder(
   attempt = 1
 ): Promise<ReceptionConvertState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionConverted>(
     'POST',
@@ -714,7 +680,7 @@ async function closeVisit(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionClosed>(
     'POST',
@@ -722,7 +688,7 @@ async function closeVisit(
     parsed.data,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, closed: result.data };
 }
@@ -805,7 +771,7 @@ export async function bindEvidence(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<EvidenceBindingRecorded>(
     'POST',
@@ -838,7 +804,7 @@ export async function finalizeEvidenceBinding(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<EvidenceBindingFinalized>(
     'POST',
@@ -886,7 +852,7 @@ export async function overrideCaptureRequirement(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<CaptureOverrideRecorded>(
     'POST',
@@ -940,7 +906,7 @@ export async function recordSignatureEvent(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<SignatureEventRecorded>(
     'POST',

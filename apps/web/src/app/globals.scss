@@ -1,9 +1,12 @@
 // The single stylesheet entry point.
 //
-// Order matters: tokens must be emitted before anything reads them, and
-// Tailwind's layers must come after the reset so preflight does not override
-// the base layer.
+// Order matters: the cascade-layer order is declared first (ADR-022, see
+// `styles/_layers.scss`), tokens must be emitted before anything reads them,
+// and the element reset — including the vendored preflight, since Tailwind's
+// own is disabled — lives in the `rootlco-reset` layer below Material UI.
+// Tailwind's components and utilities stay unlayered, so they win over both.
 
+@use '../styles/layers';
 @use '../styles/tokens';
 @use '../styles/themes';
 @use '../styles/base';

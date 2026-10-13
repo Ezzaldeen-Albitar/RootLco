@@ -112,13 +112,92 @@ describe('the theme gate can still fail', () => {
     expect(findings).toEqual([]);
   });
 
+  it('does not read a CSS keyword in a Material style object as a utility (ADR-022)', () => {
+    // `border-box` and `text-top` are values a style object writes. The
+    // scanner PARSES the file and skips style objects (`sx`, `style`,
+    // `createTheme()`, a same-file const an `sx` names); no exclusion list
+    // was widened to make this pass.
+    const known = new Set(['primary']);
+    for (const source of [
+      "export const A = () => <div sx={{ boxSizing: 'border-box', verticalAlign: 'text-top' }} />;",
+      "export const A = () => <div style={{ boxSizing: 'border-box', verticalAlign: 'text-bottom' }} />;",
+      "const cardSx = { boxSizing: 'border-box' } as const;\nexport const A = () => <div sx={cardSx} />;",
+      "export const t = createTheme({ components: { MuiCard: { styleOverrides: { root: { boxSizing: 'border-box' } } } } });",
+    ]) {
+      expect(inspect('x.tsx', source, known), source).toEqual([]);
+    }
+  });
+
+  it('still reports the same words in a class position', () => {
+    // Negative controls: the words the style objects write are NOT exempt as
+    // classes, wherever a class list is written.
+    const known = new Set(['primary']);
+    const utilities = (source: string) =>
+      (inspect('x.tsx', source, known) as { utility: string }[]).map((f) => f.utility);
+    expect(utilities('<p className="text-top" />')).toEqual(['text-top']);
+    expect(utilities('<p className="border-box" />')).toEqual(['border-box']);
+    expect(utilities("export const c = cn('text-bottom', { 'border-box': true });")).toEqual([
+      'text-bottom',
+      'border-box',
+    ]);
+    // A class list held in a constant is still read, wherever it is used.
+    expect(
+      utilities(
+        "const TONE = { quiet: 'text-top' };\nexport const P = () => <p className={TONE.quiet} />;"
+      )
+    ).toEqual(['text-top']);
+    // A class map that shares its name with an sx const in ANOTHER scope is
+    // still a class map: style objects resolve by scope, not by name alone.
+    expect(
+      utilities(
+        "export function P() { const tone = { quiet: 'text-top' }; return <p className={tone.quiet} />; }\nexport function Q() { const tone = { boxSizing: 'border-box' }; return <div sx={tone} />; }"
+      )
+    ).toEqual(['text-top']);
+    // A class position inside a style object is read again.
+    expect(
+      utilities(
+        "export const t = createTheme({ components: { MuiButton: { defaultProps: { className: 'border-box' } } } });"
+      )
+    ).toEqual(['border-box']);
+  });
+
+  it('does not read a style scalar held in a const as a class, unless a class position reads it', () => {
+    const known = new Set(['primary']);
+    const utilities = (source: string) =>
+      (inspect('x.tsx', source, known) as { utility: string }[]).map((f) => f.utility);
+    expect(
+      utilities("const B = 'border-box';\nexport const A = () => <div sx={{ boxSizing: B }} />;")
+    ).toEqual([]);
+    expect(
+      utilities(
+        "const S = { box: 'border-box' };\nexport const A = () => <div sx={{ boxSizing: S.box }} />;"
+      )
+    ).toEqual([]);
+    // The same constant read by a class position is a class list again.
+    expect(
+      utilities(
+        "const B = 'border-box';\nexport const A = () => <><div sx={{ boxSizing: B }} /><p className={B} /></>;"
+      )
+    ).toEqual(['border-box']);
+    expect(
+      utilities(
+        "const S = { box: 'border-box' };\nexport const A = () => <><div sx={{ boxSizing: S.box }} /><p className={S.box} /></>;"
+      )
+    ).toEqual(['border-box']);
+  });
+
+  it('refuses a file it cannot parse rather than skipping it', () => {
+    const findings = inspect('x.tsx', '<p className="bg-brand-primary" ', new Set(['primary']));
+    expect(findings).toHaveLength(1);
+  });
+
   it('does not read a comment or a route template as a class', () => {
     // Both were reported on this gate's first run. A text scanner cannot tell
     // code from a sentence about code unless it is made to.
     const prose = inspect('x.tsx', '// reads left-to-right in Arabic too\n', new Set([]));
     const route = inspect(
       'x.ts',
-      "  template: '/receptions/{id}/convert-to-work-order',",
+      "export const r = { template: '/receptions/{id}/convert-to-work-order' };",
       new Set([])
     );
     expect(prose).toEqual([]);

@@ -61,6 +61,9 @@ const APPEND_ONLY = [
   'wty.warranty_status_history',
   'sal.payment_allocations',
   'sal.delivery_signatures',
+  // P1-32-PRE-OD-FD16B (Owner decision D16): a saved report snapshot is never
+  // changed; a correction is a restatement, a new row.
+  'rpt.report_snapshots',
 ];
 
 const setUser = (c: { query: Client['query'] }, u: string) =>

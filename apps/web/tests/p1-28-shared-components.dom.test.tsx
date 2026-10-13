@@ -1,9 +1,28 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+} from './support/branch-switch';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 
 /**
  * The shared pieces the appointment and reception screens are built out of
@@ -40,15 +59,17 @@ vi.mock('@/features/receptions/api', () => ({
 }));
 
 const listCustomerVehicles = vi.fn();
-vi.mock('@/lib/customers/vehicles', () => ({
-  listCustomerVehicles: (...args: unknown[]) => listCustomerVehicles(...args),
+vi.mock('@/lib/customers/vehicles-read', () => ({
+  listCustomerVehiclesCancellable: (...args: unknown[]) => listCustomerVehicles(...args),
 }));
 
 const searchVehicles = vi.fn();
 const createVehicleAction = vi.fn();
 vi.mock('@/features/vehicles/api', () => ({
-  searchVehicles: (...args: unknown[]) => searchVehicles(...args),
   createVehicleAction: (...args: unknown[]) => createVehicleAction(...args),
+}));
+vi.mock('@/features/vehicles/vehicle-search-read', () => ({
+  searchVehiclesCancellable: (...args: unknown[]) => searchVehicles(...args),
 }));
 
 const linkCustomerAction = vi.fn();
@@ -103,7 +124,8 @@ beforeEach(() => {
 /** A `ServerTable` in one state, without running the hook that produces one. */
 function table(over: Record<string, unknown> = {}) {
   return {
-    request: { page: 1, pageSize: 25 },
+    // The whole request `OperationalGrid` draws its pager and chips from.
+    request: { page: 1, pageSize: 25, sort: null, filters: [] },
     setRequest: vi.fn(),
     response: null,
     status: 'idle',
@@ -503,84 +525,83 @@ describe('EvidenceSection', () => {
 });
 
 /* ====================================================================== *
- * BranchTargetFields — a resource selector, and the directory that is missing
+ * BranchTargetFields — a resource selector, now NAMED
  * ====================================================================== */
 
 describe('BranchTargetFields', () => {
-  const COMPANY = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
-  const BRANCH = '10101010-1010-4010-8010-101010101010';
-
-  it('offers the session’s OWN resolved references, and says why there are no names', () => {
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[COMPANY]}
-        branchIds={[BRANCH]}
-        companyId={COMPANY}
-        branchId={BRANCH}
-        onCompanyChange={vi.fn()}
-        onBranchChange={vi.fn()}
-      />
+  function fields(over: Record<string, unknown> = {}, snapshot = branchSnapshot()) {
+    return renderLtr(
+      inBranch(
+        <BranchTargetFields
+          messages={en}
+          companyId=""
+          branchId=""
+          onCompanyChange={vi.fn()}
+          onBranchChange={vi.fn()}
+          {...over}
+        />,
+        { snapshot }
+      )
     );
-    // Two selects, each carrying the contract-gap sentence: the platform
-    // publishes no company or branch directory, so there are no names to show.
-    expect(screen.getAllByRole('combobox')).toHaveLength(2);
-    expect(screen.getAllByText(EN['admin.contractGap.noDirectory'] as string)).toHaveLength(2);
-    expect(screen.getByRole('option', { name: COMPANY })).toBeInTheDocument();
+  }
+
+  it('NAMES the branch instead of offering a reference to recognise', () => {
+    /*
+     * This block used to assert the opposite, and it was right at the time:
+     * two selects whose options were raw references, each carrying the sentence
+     * "the service publishes no company or branch directory". The directory now
+     * exists — `GET /auth/working-context` publishes named, active entities —
+     * so the reference is gone from the screen entirely.
+     */
+    fields();
+    const shown = screen.getByTestId('appointment-branch-target');
+    expect(shown).toHaveTextContent(TEST_BRANCH.name);
+    expect(shown).toHaveTextContent(TEST_COMPANY.name);
+    expect(shown).not.toHaveTextContent(TEST_BRANCH.id);
   });
 
-  it('falls back to a typed reference when the session resolves NO scope', () => {
-    // An empty resolved list means unrestricted within the workspace, not "no
-    // access" — offering an empty select would read as the opposite.
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[]}
-        branchIds={[]}
-        companyId=""
-        branchId=""
-        onCompanyChange={vi.fn()}
-        onBranchChange={vi.fn()}
-      />
-    );
+  it('offers NO control at all, because the header owns the choice', () => {
+    // A second editable pair here would be a second authority for one fact.
+    fields();
     expect(screen.queryAllByRole('combobox')).toHaveLength(0);
-    expect(screen.getAllByText(EN['admin.scope.noneResolved'] as string)).toHaveLength(2);
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
   });
 
-  it('reports each half separately, so an error lands on the field it is about', () => {
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[]}
-        branchIds={[]}
-        companyId=""
-        branchId=""
-        onCompanyChange={vi.fn()}
-        onBranchChange={vi.fn()}
-        branchError="This branch is required"
-      />
-    );
-    expect(screen.getByText('This branch is required')).toBeVisible();
+  it('never offers a free-text box, not even to an operator with no narrowing', () => {
+    /*
+     * The defect this closes. An EMPTY resolved scope means unrestricted within
+     * the workspace, so the operator with the MOST reach was the one handed two
+     * boxes and asked to type a reference. They now get the same named list as
+     * everybody else.
+     */
+    fields({}, branchSnapshot([TEST_BRANCH], 'ready'));
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+    expect(screen.getByTestId('appointment-branch-target')).toHaveTextContent(TEST_BRANCH.name);
   });
 
-  it('reports what the operator typed, for the branch half only', async () => {
+  it('reports the branch upward, so the surrounding form still builds its request', async () => {
+    // The props did not change: the screen keeps its own copy of the pair, and
+    // the header's choice is pushed into it.
     const onCompanyChange = vi.fn();
     const onBranchChange = vi.fn();
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[]}
-        branchIds={[]}
-        companyId=""
-        branchId=""
-        onCompanyChange={onCompanyChange}
-        onBranchChange={onBranchChange}
-      />
+    fields({ onCompanyChange, onBranchChange });
+    await waitFor(() => expect(onBranchChange).toHaveBeenCalledWith(TEST_BRANCH.id));
+    expect(onCompanyChange).toHaveBeenCalledWith(TEST_COMPANY.id);
+  });
+
+  it('says what to do when several branches are authorized and none is chosen', () => {
+    const second = { ...TEST_BRANCH, id: '66666666-6666-4666-8666-666666666666', name: 'Second' };
+    fields({}, branchSnapshot([TEST_BRANCH, second]));
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      EN['workingContext.chooseBranchHere'] as string
     );
-    const fields = screen.getAllByRole('textbox');
-    await userEvent.type(fields[1] as HTMLElement, 'b');
-    expect(onBranchChange).toHaveBeenCalledWith('b');
-    expect(onCompanyChange).not.toHaveBeenCalled();
+  });
+
+  it('renders a server complaint about either half once, under the pair', () => {
+    fields({ branchError: 'This branch is required' });
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('This branch is required');
   });
 });
 
@@ -589,8 +610,17 @@ describe('BranchTargetFields', () => {
  * ====================================================================== */
 
 describe('WindowFields', () => {
-  function fields(over: Record<string, unknown> = {}) {
+  /** The product's Material provider, around a working context. */
+  function framed(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
     return (
+      <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+        {inBranch(ui, { locale })}
+      </UiFoundationProvider>
+    );
+  }
+
+  function fields(over: Record<string, unknown> = {}) {
+    return framed(
       <WindowFields
         messages={en}
         locale="en"
@@ -600,27 +630,42 @@ describe('WindowFields', () => {
         draft={{ from: '', to: '' }}
         onChange={vi.fn()}
         errors={{}}
+        timezone={TEST_BRANCH.timezone}
         {...over}
       />
     );
   }
 
-  it('names the clock the composed instants will carry', () => {
+  it('names the branch clock the moments are typed on', () => {
     // A booking made in Amman for a branch in Riyadh is a decision the operator
     // must be able to SEE, not discover afterwards.
     renderLtr(fields());
     expect(
       screen.getByText(EN['appointments.window.clockNote'] as string, { exact: false })
     ).toBeVisible();
+    expect(screen.getByTestId('appointment-window-zone')).toHaveTextContent(TEST_BRANCH.timezone);
   });
 
-  it('shows what will actually be sent, once a half is complete', () => {
-    renderLtr(fields({ draft: { from: '2026-09-01T09:00', to: '' } }));
-    const willSend = EN['appointments.window.willSend'] as string;
-    const shown = screen.getAllByText(new RegExp(willSend));
-    expect(shown).toHaveLength(1);
-    // The offset is what makes the value unambiguous, and it is visible.
-    expect(shown[0]?.textContent).toMatch(/2026-09-01T09:00:00(Z|[+-]\d{2}:\d{2})/);
+  it('names the clock it is given, whatever the working branch', () => {
+    renderLtr(fields({ timezone: 'Asia/Tokyo' }));
+    expect(screen.getByTestId('appointment-window-zone')).toHaveTextContent('Asia/Tokyo');
+  });
+
+  it('takes no moment without a clock, and says what the caller says instead', () => {
+    renderLtr(fields({ timezone: null, refusal: <p>No single clock</p> }));
+    expect(screen.getByTestId('appointment-window-refused')).toHaveTextContent('No single clock');
+    expect(screen.queryByRole('group', { name: /^From/ })).toBeNull();
+    expect(screen.queryByTestId('appointment-window-zone')).toBeNull();
+  });
+
+  it('shows a stored moment on that clock', () => {
+    renderLtr(fields({ draft: { from: '2026-09-01T09:00:00+03:00', to: '' } }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    // The Riyadh wall clock, part by part: nothing converted to the reader's.
+    expect(from).toHaveTextContent('01');
+    expect(from).toHaveTextContent('09');
+    expect(from).toHaveTextContent('2026');
+    expect(from).toHaveTextContent('00');
   });
 
   it('renders a SERVER window complaint once, under the pair', () => {
@@ -644,30 +689,38 @@ describe('WindowFields', () => {
     renderLtr(fields({ errors: { from: 'field.required', to: 'field.windowEndsBeforeStart' } }));
     expect(screen.getByText(EN['field.required'] as string)).toBeVisible();
     expect(screen.getByText(EN['field.windowEndsBeforeStart'] as string)).toBeVisible();
+    expect(screen.getByRole('group', { name: /^From/ })).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('group', { name: /^To/ })).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('reports every keystroke to its owner, keeping the other half untouched', async () => {
+  it('reports a whole moment with the branch offset, keeping the other half untouched', async () => {
     const onChange = vi.fn();
-    renderLtr(fields({ onChange }));
-    const inputs = screen.getAllByLabelText(/From|To/);
-    await userEvent.type(inputs[0] as HTMLElement, '2026-09-01T09:00');
-    expect(onChange).toHaveBeenCalled();
-    const last = onChange.mock.calls.at(-1)?.[0] as { from: string; to: string };
-    expect(last.to).toBe('');
+    const onEdit = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(fields({ onChange, onEdit }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('010920260900');
+    expect(onEdit).toHaveBeenCalledWith('from');
+    expect(onChange).toHaveBeenLastCalledWith({ from: '2026-09-01T09:00:00+03:00', to: '' });
   });
 
   it('carries real Arabic for the clock note', () => {
     renderRtl(
-      <WindowFields
-        messages={ar}
-        locale="ar"
-        legend="نافذة"
-        fromLabel="من"
-        toLabel="إلى"
-        draft={{ from: '', to: '' }}
-        onChange={vi.fn()}
-        errors={{}}
-      />
+      framed(
+        <WindowFields
+          messages={ar}
+          locale="ar"
+          legend="نافذة"
+          fromLabel="من"
+          toLabel="إلى"
+          draft={{ from: '', to: '' }}
+          onChange={vi.fn()}
+          errors={{}}
+          timezone={TEST_BRANCH.timezone}
+        />,
+        'ar'
+      )
     );
     expect(/[؀-ۿ]/.test(AR['appointments.window.clockNote'] as string)).toBe(true);
     expect(
@@ -749,8 +802,13 @@ describe('IntakeCustomerCreate', () => {
         onBack={vi.fn()}
       />
     );
-    expect(screen.getByLabelText(EN['crm.customers.create.givenName'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(EN['crm.customers.create.legalName'] as string)).toBeNull();
+    // Named by its label (the required mark is decorative and not part of the name).
+    expect(
+      screen.getByRole('textbox', { name: EN['crm.customers.create.givenName'] as string })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('textbox', { name: EN['crm.customers.create.legalName'] as string })
+    ).toBeNull();
     individual.unmount();
 
     renderLtr(
@@ -762,8 +820,12 @@ describe('IntakeCustomerCreate', () => {
         onBack={vi.fn()}
       />
     );
-    expect(screen.getByLabelText(EN['crm.customers.create.legalName'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(EN['crm.customers.create.givenName'] as string)).toBeNull();
+    expect(
+      screen.getByRole('textbox', { name: EN['crm.customers.create.legalName'] as string })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('textbox', { name: EN['crm.customers.create.givenName'] as string })
+    ).toBeNull();
   });
 
   it('renders in Arabic with the document in RTL', () => {
@@ -870,5 +932,266 @@ describe('IntakeVehicleStep', () => {
       screen.getByRole('button', { name: EN['receptions.intake.vehicle.change'] as string })
     );
     expect(onVehicleCleared).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* ====================================================================== *
+ * The Material UI pieces every step is built from (ADR-022)
+ * ====================================================================== */
+
+const { InstantOrRaw, RecordReadState, RetryButton, SubmitButton, useStepForm } =
+  await import('@/features/receptions/components/steps/EvidencePanels');
+const { PartyRoleGrid } = await import('@/features/receptions/components/steps/PartiesStep');
+const { FormTextField } = await import('@/components/forms/mui/FormTextField');
+const { unreachable } = await import('@/lib/forms/action-result');
+const { useFocusFirstInvalid } = await import('@/lib/forms/use-focus-first-invalid');
+
+describe('RecordReadState', () => {
+  it('says "not found" as itself, never as a fault with a retry', () => {
+    renderLtr(
+      <RecordReadState
+        messages={en}
+        status="not-found"
+        correlationId="corr-404"
+        onRetry={vi.fn()}
+      />
+    );
+    expect(screen.getByText(EN['state.notFound.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('says an unanswered read is unavailable, with the reference and a retry that runs', async () => {
+    const retry = vi.fn();
+    renderLtr(
+      <RecordReadState
+        messages={en}
+        status="unavailable"
+        correlationId="corr-503"
+        onRetry={retry}
+      />
+    );
+    expect(screen.getByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(screen.getByText('corr-503')).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no retry at all when the caller has none to offer', () => {
+    renderLtr(<RecordReadState messages={en} status="error" correlationId="corr-500" />);
+    expect(screen.getByText(EN['state.error.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+});
+
+describe('RetryButton and SubmitButton', () => {
+  it('RetryButton asks again when pressed', async () => {
+    const retry = vi.fn();
+    renderRtl(<RetryButton messages={ar} onRetry={retry} />);
+    await userEvent.click(screen.getByRole('button', { name: AR['state.retry'] as string }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('SubmitButton says it is working, and cannot be pressed twice', () => {
+    const { rerender } = renderLtr(
+      <form>
+        <SubmitButton messages={en} pending={false} labelKey="receptions.complaint.record" />
+      </form>
+    );
+    const idle = screen.getByRole('button', { name: EN['receptions.complaint.record'] as string });
+    expect(idle).toBeEnabled();
+    expect(idle).toHaveAttribute('type', 'submit');
+    rerender(
+      <form>
+        <SubmitButton messages={en} pending labelKey="receptions.complaint.record" />
+      </form>
+    );
+    const busy = screen.getByRole('button', { name: EN['form.pending'] as string });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+  });
+});
+
+describe('InstantOrRaw', () => {
+  it('renders an instant as a time, and an unreadable one exactly as it arrived', () => {
+    const { container } = renderLtr(
+      <>
+        <InstantOrRaw value="2026-08-13T07:30:00.000Z" locale="en" />
+        <InstantOrRaw value="not-a-time" locale="en" />
+      </>
+    );
+    expect(container.querySelector('time')).toHaveAttribute('datetime', '2026-08-13T07:30:00.000Z');
+    expect(screen.getByText('not-a-time').tagName).toBe('CODE');
+  });
+});
+
+describe('PartyRoleGrid', () => {
+  const ROLE = {
+    id: 'role-1',
+    partnerId: 'partner-1',
+    partnerDisplayName: 'Layla Haddad',
+    partnerDisplayNumber: 'C-0001',
+    relationshipRole: 'service_requester',
+    validFrom: '2026-08-13T07:00:00.000Z',
+    validTo: null,
+    assignmentSource: 'Front desk',
+    recordVersion: 1,
+  };
+
+  it('names each party and its role, and never the partner identifier', async () => {
+    const { container } = renderLtr(
+      <PartyRoleGrid
+        locale="en"
+        messages={en}
+        table={table({
+          response: { rows: [ROLE], total: null, page: 1, pageSize: 25, hasMore: false },
+        })}
+      />
+    );
+    expect(await screen.findByText('Layla Haddad')).toBeVisible();
+    expect(screen.getByText(EN['receptions.partyRole.service_requester'] as string)).toBeVisible();
+    expect(screen.getByText(EN['receptions.parties.roleActive'] as string)).toBeVisible();
+    expect(container.textContent).not.toContain('partner-1');
+  });
+
+  it('says the empty answer in the words its caller chose', () => {
+    renderLtr(
+      <PartyRoleGrid
+        locale="en"
+        messages={en}
+        table={table({ response: { rows: [], total: null, page: 1, pageSize: 25 } })}
+        showInterval={false}
+        emptyKey="receptions.summary.partiesEmpty"
+      />
+    );
+    expect(screen.getByText(EN['receptions.summary.partiesEmpty'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['receptions.parties.rolesEmpty'] as string)).toBeNull();
+  });
+});
+
+/**
+ * `useStepForm` — the behaviour every capture form of the wizard shares.
+ *
+ * Proved on a one-field harness, so each claim is about the hook rather than
+ * about a step: the refusal on the field, the cursor, the kept entry, the
+ * withdrawn complaint, the answer that never arrives, and the unsaved work.
+ */
+function StepFormHarness({
+  send,
+}: {
+  readonly send: (draft: { readonly zone: string }, attempt: number) => Promise<unknown>;
+}) {
+  const form = useStepForm<{ readonly zone: string }>({
+    messages: en,
+    empty: { zone: '' },
+    // The complaint is filed under the name the service would use.
+    errorNames: { zone: 'vehicleZone' },
+    check: (draft) =>
+      draft.zone.trim() === '' ? { vehicleZone: 'receptions.finding.error.zoneRequired' } : {},
+    send: send as never,
+  });
+  const formRef = useFocusFirstInvalid(form.state);
+  return (
+    <form ref={formRef} aria-label="harness" onSubmit={form.onSubmit} noValidate>
+      <FormTextField
+        label="Zone"
+        value={form.draft.zone}
+        onChange={(value) => {
+          form.update('zone', value);
+        }}
+        onEdit={() => undefined}
+        error={form.fieldError('vehicleZone')}
+      />
+      <p data-testid="harness-state">{form.state.messageKey ?? ''}</p>
+      <SubmitButton messages={en} pending={form.pending} labelKey="receptions.finding.record" />
+    </form>
+  );
+}
+
+describe('useStepForm', () => {
+  const zoneBox = () => screen.getByRole('textbox', { name: 'Zone' });
+  const record = () =>
+    screen.getByRole('button', { name: EN['receptions.finding.record'] as string });
+
+  it('refuses on the field, moves the cursor there, and withdraws the complaint on correction', async () => {
+    const send = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(<StepFormHarness send={send} />);
+    await user.click(record());
+
+    await waitFor(() => expect(zoneBox()).toHaveFocus());
+    expect(zoneBox()).toHaveAttribute('aria-invalid', 'true');
+    expect(zoneBox()).toHaveAccessibleDescription(
+      expect.stringContaining(EN['receptions.finding.error.zoneRequired'] as string)
+    );
+    expect(send).not.toHaveBeenCalled();
+
+    // FALSIFICATION of the clearing half: typing withdraws the complaint.
+    await user.type(zoneBox(), 'rear');
+    expect(zoneBox()).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText(EN['receptions.finding.error.zoneRequired'] as string)).toBeNull();
+  });
+
+  it('says an answer that never arrived is unavailable, keeps the entry and frees the button', async () => {
+    const send = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderLtr(<StepFormHarness send={send} />);
+    await user.type(zoneBox(), 'rear bumper');
+    await user.click(record());
+
+    await waitFor(() =>
+      expect(screen.getByTestId('harness-state')).toHaveTextContent('state.unavailable.message')
+    );
+    expect(zoneBox()).toHaveValue('rear bumper');
+    expect(record()).toBeEnabled();
+    expect(unreachable(2)).toEqual({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.message',
+      attempt: 2,
+    });
+  });
+
+  it('empties the form once the write is stored, and is no longer unsaved work', async () => {
+    const send = vi.fn().mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <StepFormHarness send={send} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.type(zoneBox(), 'rear');
+    await user.click(record());
+    await waitFor(() => expect(zoneBox()).toHaveValue(''));
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    forgetRememberedBranch();
+  });
+
+  it('asks before a switch while something is typed: Stay keeps it, Discard empties it', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <StepFormHarness send={vi.fn()} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.type(zoneBox(), 'rear');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'use second'));
+    expect(zoneBox()).toHaveValue('rear');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'use second'));
+    await waitFor(() => expect(zoneBox()).toHaveValue(''));
+    forgetRememberedBranch();
   });
 });

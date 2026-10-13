@@ -80,18 +80,21 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     NOTE_LIST_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      body: await crmModule().customerRead.listNotes(
-        db,
-        params.customerId,
-        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
-      ),
-    }),
-    { params }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        body: await crmModule().customerRead.listNotes(
+          db,
+          params.customerId,
+          parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+        ),
+      };
+    },
+    { params: rawParams }
   );
 }
 
@@ -99,7 +102,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -108,6 +111,7 @@ export async function POST(
     NOTE_ADD_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const input = await parseJsonBody(raw, Body);
       return {
         status: 201,
@@ -120,6 +124,6 @@ export async function POST(
         }),
       };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }

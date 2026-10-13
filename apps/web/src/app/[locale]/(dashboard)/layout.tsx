@@ -3,6 +3,10 @@ import { notFound } from 'next/navigation';
 import { AppShell } from '@/components/shell/AppShell';
 import { requireSession } from '@/features/authentication/api/session';
 import { AccountMenu } from '@/features/authentication/components/AccountMenu';
+import { loadWorkingContext } from '@/features/working-context/api';
+import { RouteScopeProvider } from '@/features/working-context/components/RouteScopeProvider';
+import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
+import { WorkingContextProvider } from '@/features/working-context/WorkingContextProvider';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 
@@ -42,22 +46,28 @@ export default async function DashboardLayout({
 
   const session = await requireSession(locale);
   const messages = getMessages(locale);
+  const workingContext = await loadWorkingContext(session.userId);
 
   return (
-    <AppShell
-      locale={locale}
-      messages={messages}
-      capabilities={{ permissions: session.permissions }}
-      account={
-        <AccountMenu
+    <WorkingContextProvider snapshot={workingContext} messages={messages}>
+      <RouteScopeProvider permissions={session.permissions}>
+        <AppShell
           locale={locale}
           messages={messages}
-          displayName={session.displayName}
-          email={session.email}
-        />
-      }
-    >
-      {children}
-    </AppShell>
+          capabilities={{ permissions: session.permissions }}
+          workingContext={<WorkingContextControl messages={messages} />}
+          account={
+            <AccountMenu
+              locale={locale}
+              messages={messages}
+              displayName={session.displayName}
+              email={session.email}
+            />
+          }
+        >
+          {children}
+        </AppShell>
+      </RouteScopeProvider>
+    </WorkingContextProvider>
   );
 }

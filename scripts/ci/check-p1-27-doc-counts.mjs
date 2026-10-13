@@ -65,11 +65,14 @@
  * code. The stripper below is a scanner with modes, not a regular expression,
  * and it leaves string, template and regular-expression literals intact.
  *
- * Usage:  node scripts/ci/check-p1-27-doc-counts.mjs [--json out.json]
+ * Usage:  node scripts/ci/check-p1-27-doc-counts.mjs [--json out.json] [--mode strict|checkpoint-deferred]
+ *
+ * TDP-2026-10: STRICT unless a checkpoint deferral is requested and corroborated
+ * (scripts/lib/development-profile.mjs). Only DOC_MARKER_BEHIND_TREE defers.
  * Exit:   0 clean · 1 a document disagrees with the tree · 2 IO error.
  */
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { appendFileSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -80,6 +83,7 @@ import {
   readWorkflowInvocations,
   evaluate as evaluateCommandCoverage,
 } from './check-command-coverage.mjs';
+import { resolveRecordsMode } from '../lib/development-profile.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -922,7 +926,7 @@ const LINE_COLUMN_ROOTS = {
  * on a ~950 ms gate whose enclosing case has a 5-second timeout that `H-18`
  * records as already flaking under load.
  */
-function staleLineCells(source, from, base, lines, seen = { rows: 0 }) {
+function staleLineCells(source, from, base, lines, seen = { rows: 0 }, kinds = []) {
   /*
    * Blank lines and further markers are skipped, and `rows` deliberately is NOT
    * given the same latitude. `rows` counts the table immediately below it and
@@ -943,10 +947,12 @@ function staleLineCells(source, from, base, lines, seen = { rows: 0 }) {
     const actual = lines[relative];
     if (actual === undefined) {
       stale.push(`${relative} is listed and this gate cannot derive its line count`);
+      kinds.push('gone');
       continue;
     }
     if (actual !== Number(row[2])) {
       stale.push(`${relative} states ${row[2]} lines; the tree holds ${actual}`);
+      kinds.push('length');
     }
   }
   return stale;
@@ -967,12 +973,52 @@ function staleLineCells(source, from, base, lines, seen = { rows: 0 }) {
  * unchecked in a way indistinguishable from being checked.
  */
 export function checkDocument(relative, source, derived, root = ROOT) {
+  return checkDocumentClassified(relative, source, derived, root).map((p) => p.text);
+}
+
+/**
+ * TDP-2026-10. The failure ids this gate assigns. The TEXT of every problem is
+ * exactly what it always was; the id says what kind of disagreement it is, so a
+ * checkpoint-deferred run can tell "the tree grew since the page was refreshed"
+ * from everything else.
+ *
+ *   DOC_MARKER_BEHIND_TREE  a growth-only count the tree has grown past (files,
+ *                           cases, commands, tracked docs/product), or a line
+ *                           count of a LIVING product document that still exists
+ *   DOC_MARKER_SHRANK       a growth-only count the tree now holds FEWER of
+ *   DOC_MARKER_DISAGREES    every other disagreement, including every P1-27 page
+ *   DOC_MARKER_MALFORMED    a marker that is not well formed or names nothing
+ *   DOC_MARKER_UNDERIVABLE  a marker naming something the tree no longer holds
+ *   CHECKED_CLAIM_FAILED    a `checked` claim the live code contradicts
+ *
+ * Only DOC_MARKER_BEHIND_TREE is deferrable, and only in CHECKPOINT_DEFERRED.
+ */
+export const DOC_FAILURES = Object.freeze([
+  'DOC_MARKER_BEHIND_TREE',
+  'DOC_MARKER_SHRANK',
+  'DOC_MARKER_DISAGREES',
+  'DOC_MARKER_MALFORMED',
+  'DOC_MARKER_UNDERIVABLE',
+  'CHECKED_CLAIM_FAILED',
+]);
+export const DOC_DRIFT_FAILURES = Object.freeze(['DOC_MARKER_BEHIND_TREE']);
+
+/** Kinds whose count may only GROW in the ordinary course of work. */
+const GROWTH_ONLY_KINDS = new Set(['files', 'cases', 'commands']);
+const isGrowthOnly = (kind, name) =>
+  GROWTH_ONLY_KINDS.has(kind) || (kind === 'tracked' && name.startsWith(`${PRODUCT_DIR}`));
+/** A living product document's length moves both ways; it is not a completeness measure. */
+const isLivingDocLength = (kind, name) => kind === 'lines' && name.startsWith(`${PRODUCT_DIR}/`);
+
+export function checkDocumentClassified(relative, source, derived, root = ROOT) {
   const problems = [];
+  const add = (id, text) => problems.push({ id, text });
 
   for (const m of source.matchAll(ANY_DERIVED)) {
     const parsed = WELL_FORMED.exec(m[1]);
     if (!parsed) {
-      problems.push(
+      add(
+        'DOC_MARKER_MALFORMED',
         `${relative}: malformed derived marker \`${m[0].trim()}\` — ` +
           'the shape is `<!-- derived: KIND NAME = N -->`.'
       );
@@ -983,9 +1029,15 @@ export function checkDocument(relative, source, derived, root = ROOT) {
     if (kind === 'rows') {
       const actual = tableRowsAfter(source, m.index + m[0].length);
       if (actual === null) {
-        problems.push(`${relative}: \`rows ${name}\` is not immediately followed by a table.`);
+        add(
+          'DOC_MARKER_MALFORMED',
+          `${relative}: \`rows ${name}\` is not immediately followed by a table.`
+        );
       } else if (Number(stated) !== actual) {
-        problems.push(`${relative}: states rows ${name} = ${stated}; the table has ${actual}.`);
+        add(
+          'DOC_MARKER_DISAGREES',
+          `${relative}: states rows ${name} = ${stated}; the table has ${actual}.`
+        );
       }
       continue;
     }
@@ -993,7 +1045,8 @@ export function checkDocument(relative, source, derived, root = ROOT) {
     if (kind === 'linecolumn') {
       const base = LINE_COLUMN_ROOTS[name];
       if (base === undefined) {
-        problems.push(
+        add(
+          'DOC_MARKER_MALFORMED',
           `${relative}: \`linecolumn ${name}\` names no table — ` +
             `this gate knows ${Object.keys(LINE_COLUMN_ROOTS).join(', ')}.`
         );
@@ -1005,9 +1058,11 @@ export function checkDocument(relative, source, derived, root = ROOT) {
        * recorded in four scanners. A marker that inspected nothing fails.
        */
       const seen = { rows: 0 };
-      const stale = staleLineCells(source, m.index + m[0].length, base, derived.lines, seen);
+      const kinds = [];
+      const stale = staleLineCells(source, m.index + m[0].length, base, derived.lines, seen, kinds);
       if (seen.rows === 0) {
-        problems.push(
+        add(
+          'DOC_MARKER_MALFORMED',
           `${relative}: \`linecolumn ${name}\` inspected no row — ` +
             'the marker must sit above a table whose first column is a backticked path ' +
             'and whose second is a line count.'
@@ -1015,7 +1070,16 @@ export function checkDocument(relative, source, derived, root = ROOT) {
         continue;
       }
       if (stale.length !== Number(stated)) {
-        problems.push(
+        // Partitioned PER CELL: a living product document that changed length
+        // is drift; a listed file that is gone, or any phase-page cell, is not.
+        const id =
+          name === 'product-documentation'
+            ? kinds.includes('gone')
+              ? 'DOC_MARKER_UNDERIVABLE'
+              : 'DOC_MARKER_BEHIND_TREE'
+            : 'DOC_MARKER_DISAGREES';
+        add(
+          id,
           `${relative}: states linecolumn ${name} = ${stated}; ` +
             `${stale.length} cell(s) disagree with the tree — ${stale.join('; ')}`
         );
@@ -1025,7 +1089,8 @@ export function checkDocument(relative, source, derived, root = ROOT) {
 
     const tableName = TABLE_KINDS[kind];
     if (!tableName) {
-      problems.push(
+      add(
+        'DOC_MARKER_MALFORMED',
         `${relative}: unknown derived kind \`${kind}\` — ` +
           `this gate derives ${[...Object.keys(TABLE_KINDS), 'rows', 'linecolumn'].join(', ')}.`
       );
@@ -1034,7 +1099,8 @@ export function checkDocument(relative, source, derived, root = ROOT) {
 
     const actual = derived[tableName][name];
     if (actual === undefined) {
-      problems.push(
+      add(
+        'DOC_MARKER_UNDERIVABLE',
         `${relative}: claims ${kind} for \`${name}\`, which this gate cannot derive. ` +
           (kind === 'cases'
             ? 'A file whose cases are generated at runtime is deliberately excluded — cite it without a derived marker.'
@@ -1043,7 +1109,14 @@ export function checkDocument(relative, source, derived, root = ROOT) {
       continue;
     }
     if (Number(stated) !== actual) {
-      problems.push(`${relative}: states ${kind} ${name} = ${stated}; the tree holds ${actual}.`);
+      const id = isLivingDocLength(kind, name)
+        ? 'DOC_MARKER_BEHIND_TREE'
+        : isGrowthOnly(kind, name)
+          ? actual > Number(stated)
+            ? 'DOC_MARKER_BEHIND_TREE'
+            : 'DOC_MARKER_SHRANK'
+          : 'DOC_MARKER_DISAGREES';
+      add(id, `${relative}: states ${kind} ${name} = ${stated}; the tree holds ${actual}.`);
     }
   }
 
@@ -1051,16 +1124,83 @@ export function checkDocument(relative, source, derived, root = ROOT) {
     const name = m[1].trim();
     const claim = GUIDE_CLAIMS[name];
     if (!claim) {
-      problems.push(
+      add(
+        'DOC_MARKER_MALFORMED',
         `${relative}: unknown checked claim \`${name}\` — ` +
           `this gate proves ${Object.keys(GUIDE_CLAIMS).join(', ')}.`
       );
       continue;
     }
-    for (const problem of claim(root, source)) problems.push(`${relative}: ${problem}`);
+    for (const problem of claim(root, source))
+      add('CHECKED_CLAIM_FAILED', `${relative}: ${problem}`);
   }
 
   return problems;
+}
+
+/**
+ * The marker self-check, run on every invocation. Each row is one marker
+ * against one derived table, and the id it must earn. A drift id must also be
+ * deferred under CHECKPOINT_DEFERRED, and every other id must not be.
+ */
+export const MARKER_SELF_CHECK_CASES = Object.freeze([
+  {
+    what: 'a file count the tree grew past',
+    marker: 'files tests/ci = 3',
+    expect: 'DOC_MARKER_BEHIND_TREE',
+  },
+  {
+    what: 'a file count the tree shrank below',
+    marker: 'files tests/ci = 5',
+    expect: 'DOC_MARKER_SHRANK',
+  },
+  {
+    what: 'a scan-root count that fell',
+    marker: 'files p1-27-frontend-gate:trees = 6',
+    expect: 'DOC_MARKER_SHRANK',
+  },
+  { what: 'a removed case', marker: 'cases a.test.ts = 3', expect: 'DOC_MARKER_SHRANK' },
+  {
+    what: 'a P1-27 page whose length changed',
+    marker: 'lines docs/phase-1/phase-1-27/x.md = 9',
+    expect: 'DOC_MARKER_DISAGREES',
+  },
+  {
+    what: 'a living product document whose length changed',
+    marker: 'lines docs/product/x.md = 9',
+    expect: 'DOC_MARKER_BEHIND_TREE',
+  },
+  {
+    what: 'a product document that no longer exists',
+    marker: 'lines docs/product/gone.md = 9',
+    expect: 'DOC_MARKER_UNDERIVABLE',
+  },
+  { what: 'a malformed marker', marker: 'files = x', expect: 'DOC_MARKER_MALFORMED' },
+]);
+
+const SELF_CHECK_DERIVED = Object.freeze({
+  counts: { 'tests/ci': 4, 'p1-27-frontend-gate:trees': 5 },
+  cases: { 'a.test.ts': 2 },
+  lines: { 'docs/phase-1/phase-1-27/x.md': 10, 'docs/product/x.md': 10 },
+  tracked: {},
+  commands: {},
+});
+
+export function markerSelfCheck(cases = MARKER_SELF_CHECK_CASES) {
+  const failures = [];
+  for (const test of cases) {
+    const found = checkDocumentClassified(
+      'self-check.md',
+      `<!-- derived: ${test.marker} -->`,
+      SELF_CHECK_DERIVED
+    ).map((p) => p.id);
+    if (!found.includes(test.expect)) {
+      failures.push(
+        `self-check (${test.what}) named ${found.join('/') || 'nothing'} rather than ${test.expect}`
+      );
+    }
+  }
+  return failures;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1722,9 +1862,19 @@ export function checkRatificationClaims(root = ROOT) {
  * Entry point
  * ------------------------------------------------------------------ */
 
-export function evaluate(root = ROOT) {
+/** Splits classified problems by records mode. STRICT keeps them all. */
+export function partitionDocProblems(classified, mode = 'strict') {
+  if (mode !== 'checkpoint-deferred') return { fatal: classified, pending: [] };
+  return {
+    fatal: classified.filter((p) => !DOC_DRIFT_FAILURES.includes(p.id)),
+    pending: classified.filter((p) => DOC_DRIFT_FAILURES.includes(p.id)),
+  };
+}
+
+/** @param {{ mode?: string }} [options] `strict` (default) or `checkpoint-deferred` */
+export function evaluate(root = ROOT, { mode = 'strict' } = {}) {
   const derived = deriveCounts(root);
-  const problems = [];
+  const classified = [];
   let claims = 0;
   const docs = walk(native(root, PHASE_DIR), (p) => p.endsWith('.md'));
   for (const file of docs) {
@@ -1734,18 +1884,39 @@ export function evaluate(root = ROOT) {
       .join(posix.sep);
     const source = readFileSync(file, 'utf8');
     claims += (source.match(/<!--\s*(?:derived|checked):/g) ?? []).length;
-    problems.push(...checkDocument(relative, source, derived, root));
+    classified.push(...checkDocumentClassified(relative, source, derived, root));
   }
-  problems.push(...checkCatalogue(root).map((p) => `${CATALOGUE_PATH}: ${p}`));
-  problems.push(...checkRoundFive(root));
-  problems.push(...checkRatificationClaims(root));
-  return { ok: problems.length === 0, problems, claims, documents: docs.length, derived };
+  const fatalRecord = (text) => ({ id: 'DOC_MARKER_DISAGREES', text });
+  classified.push(...checkCatalogue(root).map((p) => fatalRecord(`${CATALOGUE_PATH}: ${p}`)));
+  classified.push(...checkRoundFive(root).map(fatalRecord));
+  classified.push(...checkRatificationClaims(root).map(fatalRecord));
+  classified.push(...markerSelfCheck().map(fatalRecord));
+  const { fatal, pending } = partitionDocProblems(classified, mode);
+  const problems = fatal.map((p) => p.text);
+  return {
+    ok: problems.length === 0,
+    mode,
+    problems,
+    pending: pending.map((p) => p.text),
+    classified,
+    claims,
+    documents: docs.length,
+    derived,
+  };
 }
 
 function main(argv) {
+  // TDP-2026-10: STRICT unless a deferral is requested AND corroborated; see
+  // resolveRecordsMode in scripts/lib/development-profile.mjs.
+  const decided = resolveRecordsMode(argv, process.env);
+  if (decided.error) {
+    process.stderr.write(`::error::${decided.error}\n`);
+    return 2;
+  }
+  process.stdout.write(`records mode: ${decided.mode} — ${decided.reason}\n`);
   let result;
   try {
-    result = evaluate(ROOT);
+    result = evaluate(ROOT, { mode: decided.mode });
   } catch (error) {
     process.stderr.write(`::error::cannot derive P1-27 document counts: ${error.message}\n`);
     return 2;
@@ -1755,9 +1926,20 @@ function main(argv) {
     writeJson(jsonOut, result);
   }
   for (const problem of result.problems) process.stderr.write(`::error::${problem}\n`);
+  for (const text of result.pending) {
+    process.stdout.write(`::notice::PENDING until the next checkpoint (TDP-2026-10): ${text}\n`);
+  }
+  if (result.pending.length && process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `### P1-27 document counts: pending until the next checkpoint (TDP-2026-10)\n\n` +
+        `${result.pending.map((t) => `- ${t}`).join('\n')}\n\n`
+    );
+  }
   process.stdout.write(
     `P1-27 document counts: ${result.claims} derived claim(s) across ${result.documents} document(s), ` +
-      `${result.problems.length} disagreement(s).\n`
+      `${result.problems.length} disagreement(s)` +
+      `${result.pending.length ? `, ${result.pending.length} pending until the next checkpoint` : ''}.\n`
   );
   return result.ok ? 0 : 1;
 }

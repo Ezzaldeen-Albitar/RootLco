@@ -54,12 +54,20 @@ whether rates are per-company or per-branch.
 
 ## P1-26-OD-003 — base currency and enabled currencies
 
-**Type:** business decision · **Status:** Open — implemented decision-neutrally
+**Type:** business decision · **Status:** Closed — P1-32-PRE-OD-REF (2026-09-27)
 
 No base currency is chosen. No exchange rate is held or calculated. Currency
 codes are validated for shape (`^[A-Z]{3}$`, the same expression the
 approval-limit contract uses) and never against a list, because
 `shared.currencies` has no read operation.
+
+**Closure.** The reason this stayed open is gone: `shared.currencies` is now
+read through `org.reference-values-read` and `platform.reference-values-read`
+(`P1-26-F-005`), and a company's base currency is chosen from the platform's
+active currencies — the codes enabled on the Currencies screen first, where any
+are. Nothing else changed: no base currency is chosen for a tenant, no exchange
+rate is held or calculated, and which currencies the platform holds is still the
+Owner's open decision (OIR-04).
 
 ---
 

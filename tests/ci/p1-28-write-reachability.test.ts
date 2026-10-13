@@ -257,7 +257,7 @@ describe('the gate is green on the CURRENT tree', () => {
     expect(live.counts.NOT_YET_WIRED ?? 0).toBe(0);
   });
 
-  it('pins the live DELIBERATELY_ABSENT count at exactly 25', () => {
+  it('pins the live DELIBERATELY_ABSENT count at exactly 16', () => {
     // WHAT THIS NUMBER MEANS, now that it has moved DOWN as well as up.
     //
     // The pin exists because DELIBERATELY_ABSENT is the sideways exit from the
@@ -311,7 +311,21 @@ describe('the gate is green on the CURRENT tree', () => {
     // capture-policy set are all reception configuration administered through a
     // surface no canonical task in this phase binds. Nothing else may join them
     // without moving this line again.
-    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(25);
+    //
+    // It came down again, to 16, on the Owner decision of 2026-09-29, which
+    // answered that decision for the three APPOINTMENT catalogues: the tenant
+    // administrator administers them on the appointment setup screen. Their nine
+    // writes left for REACHABLE on the same two-sided terms as the four above —
+    // each is called from `features/appointments/catalogue-api.ts`, consumed by
+    // the setup screen, and a manifest edit alone would have been refused. What
+    // remains is the reception configuration only.
+    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(16);
+    expect(
+      live.results
+        .filter((r) => r.classification === 'DELIBERATELY_ABSENT')
+        .filter((r) => r.id.startsWith('apt.'))
+        .map((r) => r.id)
+    ).toEqual([]);
   });
 
   it('resolves every live DELIBERATELY_ABSENT reference against the plan §7', () => {
@@ -321,7 +335,7 @@ describe('the gate is green on the CURRENT tree', () => {
     const referenced = live.results
       .filter((r) => r.classification === 'DELIBERATELY_ABSENT')
       .map((r) => r.decisionRef);
-    expect(referenced).toHaveLength(25);
+    expect(referenced).toHaveLength(16);
     expect(live.decisions.length).toBeGreaterThan(0);
     const unresolved = referenced.filter((ref) => !ref || !live.decisions.includes(ref));
     expect(unresolved, 'a decisionRef naming no decision recorded in the plan §7').toEqual([]);

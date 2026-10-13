@@ -1,6 +1,10 @@
 import {
+  STATE_TRANSITION_CODE,
   VIOLATION_FALLBACK_KEY,
-  failureMessageKey,
+  controlNameFor,
+  namesRouteParameter,
+  refusalMessageKey,
+  failureMessageValues,
   violationKeysOf,
   type ApiFailure,
 } from '@/lib/api/client';
@@ -58,6 +62,17 @@ export type ActionStatus =
   | 'throttled'
   /** The backend could not be reached, timed out, or failed. */
   | 'unavailable'
+  /**
+   * The caller aborted the request — a Cancel button, or leaving the screen.
+   *
+   * Its own status rather than `error`, because it is not one. A cancellation
+   * used to arrive here as `error` with the key "Something went wrong", so an
+   * operator who pressed Cancel was told the system had failed and invited to
+   * try again. Nothing failed and nothing was sent to completion, so this status
+   * carries no message key at all: every renderer already drops a state with no
+   * key, and `notifyActionResult` raises no toast for a status with no tone.
+   */
+  | 'cancelled'
   /** Anything else the backend reported. */
   | 'error';
 
@@ -65,6 +80,19 @@ export interface ActionState {
   readonly status: ActionStatus;
   /** A translation key. Never a server-authored sentence. */
   readonly messageKey?: string;
+  /**
+   * Values for the `{name}` placeholders in the catalogue text of `messageKey`.
+   *
+   * Only numbers the backend published about the refusal itself — the capacity
+   * ceiling and its usage, the wait a throttle advised — and never prose.
+   * Present only when the key is the failure's own key, so an override or a
+   * violation banner never receives values meant for a different sentence.
+   *
+   * A renderer that shows `messageKey` must pass this to `translateWithValues`.
+   * Dropping it does not fall back to a shorter sentence; it prints `{limit}` or
+   * `{seconds}` to the operator exactly as the catalogue spells it.
+   */
+  readonly messageValues?: Readonly<Record<string, string>>;
   /**
    * Translation keys, by control name.
    *
@@ -81,6 +109,14 @@ export interface ActionState {
    * vehicle screens. They were right and this sentence was wrong.
    */
   readonly fieldErrors?: Readonly<Record<string, string>>;
+  /**
+   * Set by `fromFailure` only, and only on a conflict whose every violation is a
+   * duplicate value on a named control (see `DUPLICATE_VALUE_RULES`). It is what
+   * `isFieldConflict` reads, so no other state — one that happens to share the
+   * generic `form.formError` banner and carry field errors — can be taken for a
+   * duplicate and lose its toast.
+   */
+  readonly duplicateField?: true;
   /** Safe to display. The only diagnostic a user ever sees. */
   readonly correlationId?: string | null;
   /**
@@ -105,9 +141,49 @@ const STATUS_BY_KIND: Record<ApiFailure['kind'], ActionStatus> = {
   server: 'error',
   unavailable: 'unavailable',
   timeout: 'unavailable',
-  cancelled: 'error',
+  cancelled: 'cancelled',
   network: 'unavailable',
 };
+
+/**
+ * The neutral banner a conflict about one named field carries (see `fromFailure`):
+ * the form was not saved, and the field says why.
+ */
+export const FIELD_CONFLICT_KEY = 'form.formError';
+
+/**
+ * The violation rules that say a value is already taken by another record —
+ * nothing else. `duplicate_code` is what the catalogue, intake, service
+ * catalogue, price list, report configuration, warranty policy and checklist
+ * template services answer for a code that is already used; `duplicate_sku` is
+ * the inventory catalogue's answer for a stock code already used. A conflict
+ * carrying any other rule — a stale version, a state rule, a rule the catalogue
+ * does not carry — is not a duplicate and keeps its own banner and toast.
+ */
+export const DUPLICATE_VALUE_RULES: ReadonlySet<string> = new Set([
+  'duplicate_code',
+  'duplicate_sku',
+]);
+
+/**
+ * Whether every violation a conflict carries is a duplicate value on a named
+ * control. At least one violation is required, and one that names no control
+ * (the whole request, a route parameter) or carries any other rule makes the
+ * answer false, so a mix keeps the failure's own message.
+ */
+function isDuplicateValueConflict(failure: ApiFailure): boolean {
+  if (failure.kind !== 'conflict') return false;
+  const violations = failure.problem?.violations;
+  if (!Array.isArray(violations) || violations.length === 0) return false;
+  return violations.every(
+    (violation) =>
+      typeof violation?.path === 'string' &&
+      typeof violation?.rule === 'string' &&
+      DUPLICATE_VALUE_RULES.has(violation.rule) &&
+      !namesRouteParameter(violation.path) &&
+      controlNameFor(violation.path) !== null
+  );
+}
 
 /**
  * Maps a client failure onto an action state.
@@ -148,16 +224,110 @@ export function fromFailure(
   attempt: number,
   messageKeyOverride?: string
 ): ActionState {
+  /*
+   * A cancellation the CALLER asked for, reported as nothing.
+   *
+   * `#request` already separates a caller abort from the client's own deadline,
+   * precisely so a user pressing Cancel is not rendered as a backend fault. That
+   * distinction was then thrown away one layer up: `cancelled` mapped to
+   * `error`, whose banner reads "Something went wrong" and whose page-level
+   * description ends "Trying again is safe" — an apology and an invitation, for
+   * an outcome the operator chose. No key is returned, so every renderer in the
+   * application drops it: `FormFeedback` and `RecordForm` both require a
+   * `messageKey`, and `notifyActionResult` has no tone for this status.
+   *
+   * An override still wins. A caller that genuinely wants to say something about
+   * an abort — none does today — passes its own key and gets it.
+   */
+  if (failure.kind === 'cancelled' && messageKeyOverride === undefined) {
+    return { status: 'cancelled', correlationId: failure.correlationId, attempt };
+  }
   const status = STATUS_BY_KIND[failure.kind];
   const { fieldErrors, formKeys } = violationKeysOf(failure);
   const stated = formKeys.find((key) => key !== VIOLATION_FALLBACK_KEY);
+  const own = messageKeyOverride === undefined && stated === undefined;
+  /*
+   * A conflict that names the FIELD it is about (P1-32-PRE-OD-INVF,
+   * SETUP-cat-errors / SETUP-item-errors).
+   *
+   * A unique index refusing a duplicate — a category code, a stock code, a
+   * location code — arrives as a conflict carrying a violation on the field
+   * (`body.code` + `duplicate_code`). The field already says the true reason
+   * ("This code is already used."), but the banner beside it fell through to the
+   * kind's key and said "Someone else changed this", and the explanation and the
+   * toast added "Reload to see the current record" — sending the operator to
+   * look for a person and a reload that change nothing. So the banner says only
+   * that the form could not be saved, beside the field that says why, and
+   * `isFieldConflict` keeps the toast off it as for any refused input.
+   *
+   * The status stays `conflict`: a screen that re-reads on a conflict still
+   * does. Only a conflict whose EVERY violation is a duplicate value on a named
+   * control qualifies (`isDuplicateValueConflict`). A conflict that names no
+   * field — a stale record version, the genuine race — one carrying any other
+   * rule, and a mix of a duplicate with anything else are untouched and keep the
+   * kind's sentence, its values and its toast.
+   */
+  const namesField =
+    own && Object.keys(fieldErrors).length > 0 && isDuplicateValueConflict(failure);
+  const values = own && !namesField ? failureMessageValues(failure) : undefined;
   return {
     status,
-    messageKey: messageKeyOverride ?? stated ?? failureMessageKey(failure),
+    messageKey:
+      messageKeyOverride ??
+      stated ??
+      (namesField ? FIELD_CONFLICT_KEY : refusalMessageKey(failure)),
+    ...(values !== undefined ? { messageValues: values } : {}),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
+    ...(namesField ? { duplicateField: true as const } : {}),
     correlationId: failure.correlationId,
     attempt,
   };
+}
+
+/**
+ * `fromFailure` for an operation whose `ERR-TRN-001` means one thing only: the
+ * record's stage no longer allows the step (a quotation on a closed job, a
+ * cancellation of an appointment already ended, a closure of a visit already
+ * closed).
+ *
+ * `fromFailure` cannot know that. The same code also reports a broken bound or
+ * invariant elsewhere (a payment allocation over the open balance, a billing
+ * invariant), where "refresh to see where it stands" is false, so the shared
+ * mapping keeps the sentence that claims no cause (`STATE_TRANSITION_CODE` in
+ * `lib/api/client.ts`). An adapter opts in here only after checking that every
+ * `ERR-TRN-001` its operation can answer is a stage refusal.
+ *
+ * A named precondition still speaks first: a refusal that carries any violation
+ * is left exactly as `fromFailure` said it (a discount-approval refusal names
+ * its rule this way), and only the generic blocked sentence is ever replaced.
+ */
+export function fromStateRefusal(failure: ApiFailure, attempt: number): ActionState {
+  const state = fromFailure(failure, attempt);
+  if (
+    failure.kind === 'conflict' &&
+    failure.problem?.code === STATE_TRANSITION_CODE &&
+    (failure.problem.violations?.length ?? 0) === 0 &&
+    state.messageKey === 'state.conflict.blocked.title'
+  ) {
+    return { ...state, messageKey: 'state.conflict.transition.title' };
+  }
+  return state;
+}
+
+/**
+ * Whether a state is a conflict about a field the operator can correct — a
+ * duplicate on a named field — rather than about the record having moved on.
+ * It reads the marker `fromFailure` sets, never the shared banner key alone.
+ * Such a refusal belongs beside the field, like any refused input: no toast,
+ * and no advice to reload.
+ */
+export function isFieldConflict(state: ActionState): boolean {
+  return (
+    state.status === 'conflict' &&
+    state.duplicateField === true &&
+    state.messageKey === FIELD_CONFLICT_KEY &&
+    Object.keys(state.fieldErrors ?? {}).length > 0
+  );
 }
 
 export function invalid(
@@ -166,6 +336,21 @@ export function invalid(
   messageKey = 'form.formError'
 ): ActionState {
   return { status: 'invalid', messageKey, fieldErrors, attempt };
+}
+
+/**
+ * A write whose answer never arrived: the Server Action's promise was REJECTED
+ * — the connection dropped, or the server did not answer — so there is no
+ * refusal to render, only the fact that nothing came back.
+ *
+ * Without it a handler that set its button pending, awaited the action and then
+ * cleared it left the button pending for good and the rejection unhandled. A
+ * submit handler therefore awaits inside `try`, clears its pending flag in
+ * `finally`, and renders this state from `catch`: the operator's entries stay
+ * on the page and the sentence says to check the connection and try again.
+ */
+export function unreachable(attempt: number): ActionState {
+  return { status: 'unavailable', messageKey: 'state.unavailable.message', attempt };
 }
 
 export function success(messageKey: string, attempt: number): ActionState {

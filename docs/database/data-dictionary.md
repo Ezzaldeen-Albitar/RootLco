@@ -275,6 +275,13 @@ NOT claimed implemented here.
 | `created_by`           | uuid                     | NO   | —                 | internal       |
 | `updated_at`           | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`           | uuid                     | YES  | —                 | internal       |
+| `list_price`           | numeric(18,4)            | YES  | —                 | internal       |
+| `currency_code`        | text                     | YES  | —                 | internal       |
+| `term_months`          | integer                  | YES  | —                 | internal       |
+| `display_name`         | text                     | YES  | —                 | internal       |
+
+The four commercial columns (P1-32-PRE-023) are configured through `platform.plan-create` /
+`platform.plan-update` and never seeded; `list_price` and `currency_code` are NULL together.
 
 ### `org.tenant_subscriptions`
 
@@ -294,6 +301,65 @@ NOT claimed implemented here.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `org.tenant_subscription_events`
+
+**Scope:** tenant · **Retention class:** operational · Append-only trail of every act on a subscription (P1-32-PRE-023); tenant reads its own rows, Platform Owner appends.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `subscription_id` | uuid                     | NO   | —                 | internal       |
+| `event_kind`      | text                     | NO   | —                 | internal       |
+| `from_plan_id`    | uuid                     | YES  | —                 | internal       |
+| `to_plan_id`      | uuid                     | YES  | —                 | internal       |
+| `effective_from`  | date                     | NO   | —                 | internal       |
+| `effective_to`    | date                     | YES  | —                 | internal       |
+| `reason`          | text                     | NO   | —                 | internal       |
+| `actor_id`        | uuid                     | YES  | —                 | internal       |
+| `correlation_id`  | uuid                     | YES  | —                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+
+### `org.subscription_charges`
+
+**Scope:** tenant (platform revenue, not tenant-facing) · **Retention class:** financial · Subscription fees the Platform Owner recorded against an organisation (P1-32-PRE-024); app_runtime holds no grant.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `subscription_id` | uuid                     | YES  | —                 | internal       |
+| `amount`          | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code`   | text                     | NO   | —                 | internal       |
+| `due_on`          | date                     | NO   | —                 | internal       |
+| `description`     | text                     | NO   | —                 | internal       |
+| `status`          | text                     | NO   | 'open'::text      | internal       |
+| `void_reason`     | text                     | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `org.subscription_receipts`
+
+**Scope:** tenant (platform revenue, not tenant-facing) · **Retention class:** financial · Append-only receipts against a platform subscription charge (P1-32-PRE-024); currency must equal the charge's.
+
+| Column          | Type                     | Null | Default           | Classification |
+| --------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`            | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`     | uuid                     | NO   | —                 | internal       |
+| `charge_id`     | uuid                     | NO   | —                 | internal       |
+| `amount`        | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code` | text                     | NO   | —                 | internal       |
+| `received_on`   | date                     | NO   | —                 | internal       |
+| `reference`     | text                     | YES  | —                 | internal       |
+| `method`        | text                     | NO   | —                 | internal       |
+| `notes`         | text                     | YES  | —                 | internal       |
+| `created_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`    | uuid                     | NO   | —                 | internal       |
 
 ### `org.legal_companies`
 
@@ -402,6 +468,28 @@ NOT claimed implemented here.
 | `deleted_by`      | uuid                     | YES  | —                 | internal       |
 | `archived_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `archived_by`     | uuid                     | YES  | —                 | internal       |
+
+### `org.employees`
+
+**Scope:** tenant/company/branch · **Retention class:** operational · P1-31 P-17. The tenant-owned employee identity, distinct from the login account: `user_account_id` is NULLABLE, which is the property `tech.technician_profiles` and `iam.user_employee_links` could not offer. Not an HR record — no contract, salary, contact detail or document. Retirement is `status = 'inactive'`; no application role holds DELETE.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `company_id`      | uuid                     | NO   | —                 | internal       |
+| `branch_id`       | uuid                     | NO   | —                 | internal       |
+| `display_name`    | text                     | NO   | —                 | internal       |
+| `user_account_id` | uuid                     | YES  | —                 | internal       |
+| `employment_ref`  | text                     | YES  | —                 | internal       |
+| `status`          | text                     | NO   | 'active'::text    | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+| `deleted_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`      | uuid                     | YES  | —                 | internal       |
 
 ### `org.warehouses`
 
@@ -721,27 +809,29 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.role_grants`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Role→user assignment with validity, revocation, approval ref; scope_mode/identity immutable; self-grant denied.
+**Scope:** tenant · **Retention class:** evidence-audit · Role→user assignment with validity, revocation, approval ref; scope_mode/identity immutable; self-grant denied. `issued_by` is the signed-in person who wrote the grant, stamped by `iam.record_role_grant_provenance` on insert and never moved (`granted_by` is the writer's claim), and `grant_changed_by` keeps everyone who ever changed its status, `valid_from`, `valid_to` or `revoked_at`, appended from the session and never removed; a role's discount approval limit counts toward an approver's ceiling only through a grant neither issued, granted nor changed by the requester (P1-32-PRE-OD-FD8 fix round 5, ADR-023 D8; rows written before migration 20261007140000 carry `created_by` and their `updated_by`).
 
-| Column           | Type                     | Null | Default           | Classification |
-| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`      | uuid                     | NO   | —                 | internal       |
-| `user_id`        | uuid                     | NO   | —                 | internal       |
-| `role_id`        | uuid                     | NO   | —                 | internal       |
-| `scope_mode`     | text                     | NO   | 'unrestricted'    | internal       |
-| `status`         | text                     | NO   | 'active'::text    | internal       |
-| `valid_from`     | timestamp with time zone | NO   | now()             | internal       |
-| `valid_to`       | timestamp with time zone | YES  | —                 | internal       |
-| `granted_by`     | uuid                     | NO   | —                 | internal       |
-| `approval_ref`   | text                     | YES  | —                 | internal       |
-| `revoked_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `revoke_reason`  | text                     | YES  | —                 | internal       |
-| `record_version` | integer                  | NO   | 1                 | internal       |
-| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`     | uuid                     | NO   | —                 | internal       |
-| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| Column             | Type                     | Null | Default           | Classification |
+| ------------------ | ------------------------ | ---- | ----------------- | -------------- |
+| `id`               | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`        | uuid                     | NO   | —                 | internal       |
+| `user_id`          | uuid                     | NO   | —                 | internal       |
+| `role_id`          | uuid                     | NO   | —                 | internal       |
+| `scope_mode`       | text                     | NO   | 'unrestricted'    | internal       |
+| `status`           | text                     | NO   | 'active'::text    | internal       |
+| `valid_from`       | timestamp with time zone | NO   | now()             | internal       |
+| `valid_to`         | timestamp with time zone | YES  | —                 | internal       |
+| `granted_by`       | uuid                     | NO   | —                 | internal       |
+| `approval_ref`     | text                     | YES  | —                 | internal       |
+| `revoked_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `revoke_reason`    | text                     | YES  | —                 | internal       |
+| `record_version`   | integer                  | NO   | 1                 | internal       |
+| `created_at`       | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`       | uuid                     | NO   | —                 | internal       |
+| `updated_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`       | uuid                     | YES  | —                 | internal       |
+| `issued_by`        | uuid                     | YES  | —                 | internal       |
+| `grant_changed_by` | uuid[]                   | NO   | ARRAY[]::uuid[]   | internal       |
 
 ### `iam.platform_grants`
 
@@ -764,7 +854,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.grant_scopes`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only.
+**Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only. `added_by` is the signed-in person who added the scope, stamped by `iam.stamp_grant_scope_adder` on insert and never moved (`created_by` is the writer's claim); a scope the requester added does not bring a role's discount approval limit to the approver for their request (P1-32-PRE-OD-FD8 fix round 5, ADR-023 D8; rows written before migration 20261007140000 carry `created_by`).
 
 | Column          | Type                     | Null | Default           | Classification |
 | --------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -777,28 +867,30 @@ credential authority. Contact fields are classified `restricted`.
 | `department_id` | uuid                     | YES  | —                 | internal       |
 | `created_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`    | uuid                     | NO   | —                 | internal       |
+| `added_by`      | uuid                     | YES  | —                 | internal       |
 
 ### `iam.approval_limits`
 
-**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4); non-overlapping; identity/amount immutable.
+**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4), fitting the currency's minor unit on insert; non-overlapping per (company, subject, limit_type), and per currency for a `credit_note` limit (ADR-023 D13; a `credit_note` limit is above zero); identity/amount immutable. `window_changed_by` keeps everyone who ever changed the end date, appended from the session by `iam.record_approval_limit_window_change` and never removed (P1-32-PRE-OD-FD8 fix round 2, ADR-023 D8; rows updated before migration 20261007110000 carry their `updated_by`).
 
-| Column           | Type                     | Null | Default           | Classification |
-| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`      | uuid                     | NO   | —                 | internal       |
-| `company_id`     | uuid                     | NO   | —                 | internal       |
-| `role_id`        | uuid                     | YES  | —                 | internal       |
-| `user_id`        | uuid                     | YES  | —                 | internal       |
-| `limit_type`     | text                     | NO   | —                 | internal       |
-| `amount`         | numeric(18,4)            | NO   | —                 | internal       |
-| `currency_code`  | text                     | NO   | —                 | internal       |
-| `effective_from` | date                     | NO   | —                 | internal       |
-| `effective_to`   | date                     | YES  | —                 | internal       |
-| `record_version` | integer                  | NO   | 1                 | internal       |
-| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`     | uuid                     | NO   | —                 | internal       |
-| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `company_id`        | uuid                     | NO   | —                 | internal       |
+| `role_id`           | uuid                     | YES  | —                 | internal       |
+| `user_id`           | uuid                     | YES  | —                 | internal       |
+| `limit_type`        | text                     | NO   | —                 | internal       |
+| `amount`            | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code`     | text                     | NO   | —                 | internal       |
+| `effective_from`    | date                     | NO   | —                 | internal       |
+| `effective_to`      | date                     | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+| `window_changed_by` | uuid[]                   | NO   | ARRAY[]::uuid[]   | internal       |
 
 ### `iam.sensitive_data_permissions`
 
@@ -2976,6 +3068,10 @@ Governed visit-reason attachments (P1-08-DB-008). Archived reasons cannot be new
 
 Reception complaint metadata (P1-08-DB-009). SAFE fields; restricted narrative in rec.complaint_details. Corrections linked.
 
+`severity` is `not_stated` when the customer gave none, and one of `low`, `medium`, `high`, `critical` as stated
+(`20261004090000_rec_complaint_severity_not_stated.sql`). Rows recorded before that migration hold `medium` where the
+severity was omitted, which cannot be told apart from a stated `medium`; they are not rewritten.
+
 | Column                   | Type                     | Null | Default             | Class    |
 | ------------------------ | ------------------------ | ---- | ------------------- | -------- |
 | `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
@@ -2985,7 +3081,7 @@ Reception complaint metadata (P1-08-DB-009). SAFE fields; restricted narrative i
 | `reception_visit_id`     | uuid                     | NO   | —                   | internal |
 | `reported_by_partner_id` | uuid                     | YES  | —                   | internal |
 | `category`               | text                     | NO   | —                   | internal |
-| `severity`               | text                     | NO   | `'medium'`          | internal |
+| `severity`               | text                     | NO   | `'not_stated'`      | internal |
 | `evidence_document_id`   | uuid                     | YES  | —                   | internal |
 | `correction_of`          | uuid                     | YES  | —                   | internal |
 | `correlation_id`         | uuid                     | YES  | —                   | internal |
@@ -3913,6 +4009,42 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 
 ### Quotation & Approvals (`quo`)
 
+#### quo.acceptance_records
+
+P1-32-PRE-OD-FD11 (ADR-023 D11). One append-only row per ACCEPTED quotation revision
+(`uq_acceptance_records_revision`), written only by the decision that completes the acceptance,
+in its transaction. `customer_partner_id` is the quotation's payer when the employee said the
+payer decided, otherwise null. `contact_name` and `contact_phone` are typed — the CRM model holds
+contact channels, not contact persons — and either may be null; `contact_phone` is normalised (an
+optional leading `+` and 3 to 20 ASCII digits). `channel`, `evidence_kind`, `reference_note` and
+`evidence_document_version_id` are those of the completing decision, null when none was given.
+`quo.guard_acceptance_record` stamps `recorded_by`, `created_by`, `accepted_at` and `created_at`
+from the session, refuses a row for anything but the accepted current revision of its quotation
+or naming a customer other than the payer, and refuses every UPDATE; `ins_acceptance_records_scope`
+also pins `recorded_by` to the signed-in user. SELECT and INSERT only for `app_runtime`. Revisions
+accepted before this table existed have no row and are not backfilled. Not an electronic
+signature.
+
+| #   | Column                         | Type                     | Nullable |
+| --- | ------------------------------ | ------------------------ | -------- |
+| 1   | `id`                           | uuid                     | no       |
+| 2   | `tenant_id`                    | uuid                     | no       |
+| 3   | `company_id`                   | uuid                     | no       |
+| 4   | `branch_id`                    | uuid                     | no       |
+| 5   | `quotation_id`                 | uuid                     | no       |
+| 6   | `quotation_revision_id`        | uuid                     | no       |
+| 7   | `customer_partner_id`          | uuid                     | yes      |
+| 8   | `contact_name`                 | text                     | yes      |
+| 9   | `contact_phone`                | text                     | yes      |
+| 10  | `channel`                      | text                     | no       |
+| 11  | `evidence_kind`                | text                     | yes      |
+| 12  | `reference_note`               | text                     | yes      |
+| 13  | `evidence_document_version_id` | uuid                     | yes      |
+| 14  | `accepted_at`                  | timestamp with time zone | no       |
+| 15  | `recorded_by`                  | uuid                     | no       |
+| 16  | `created_at`                   | timestamp with time zone | no       |
+| 17  | `created_by`                   | uuid                     | no       |
+
 #### quo.approval_decisions
 
 | #   | Column                  | Type                     | Nullable |
@@ -3948,37 +4080,158 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 10  | `created_at`           | timestamp with time zone | no       |
 | 11  | `created_by`           | uuid                     | no       |
 
+#### quo.discount_approvals
+
+P1-32-PRE-OD-DISC-01, -04, -07. One row per quotation revision whose discount needs approval.
+Born `pending` with `requested_by` = the signed-in person (`ins_discount_approvals_scope`, which
+also refuses `origin = 'backfilled'`), carrying its quotation's pinned policy version and the
+discount its lines carry (`quo.guard_discount_approval` refuses any other snapshot or total).
+`requested_by` and `decided_by` are foreign keys into `iam.user_accounts` of the same tenant. A
+decision is checked by `quo.guard_discount_approval` whoever writes it: `decided_by` is the
+signed-in person, is not the requester (also `ck_discount_approvals_separation`), and holds the
+recorded permission in the request's company and branch (`iam.has_permission_in_scope`); an
+approval also needs a limit that counts, which the guard computes from `iam.approval_limits` (the
+approver's own before a role's, the largest role limit whose grant reaches the company, never a
+limit the approver created) and writes into `approver_limit_amount` itself (restricted, never
+returned to a reader). An approval records the amount it approved, which must be the discount
+asked for (`ck_discount_approvals_approved_amount`). While a request is not superseded its
+revision's lines are frozen (`tg_quotation_items_discount_freeze`). A new revision of the
+quotation supersedes an open request (`superseded_at`, `superseded_by_revision_id`), after which it
+can never be decided. `quo.guard_revision_discount_approval` refuses to issue a revision whose
+approval is not `approved`, whose live lines do not sum to the approved amount, or which has no
+request although its discount needs one under its quotation's pinned policy
+(`quo.revision_discount_needs_approval`). `origin = 'backfilled'` marks a request
+`quo.backfill_discount_approvals` recorded for a draft written under the single-request flow,
+requested by that draft's creator.
+
+P1-32-PRE-OD-FD8 (ADR-023 D8 and D3). `requester_set_policy` and `requester_set_price` say why
+another person must approve whatever the threshold: the requester recorded the policy version the
+quotation is held to, or had last changed or published a line's price; both are computed by
+`quo.guard_discount_approval` when the request is written and frozen. An approval's limit never
+counts when the approver OR the requester created it, and the limit relied on is recorded in
+`approver_limit_id` (restricted). Since fix round 3 (20261007120000) a revision whose writer set a
+price one of its lines was priced at needs another person's approval whatever its discount, so its
+request may carry a discount total of zero; `ck_discount_approvals_amounts` admits zero only with
+`requester_set_price`. The requester may withdraw a PENDING request: status `withdrawn`,
+with `withdrawn_by` (a foreign key into `iam.user_accounts`, always the requester) and
+`withdrawn_at` stamped by the guard; a withdrawn request is terminal — never approved, rejected or
+superseded — and its revision cannot be issued.
+
+| #   | Column                         | Type                     | Nullable |
+| --- | ------------------------------ | ------------------------ | -------- |
+| 1   | `id`                           | uuid                     | no       |
+| 2   | `tenant_id`                    | uuid                     | no       |
+| 3   | `company_id`                   | uuid                     | no       |
+| 4   | `branch_id`                    | uuid                     | no       |
+| 5   | `quotation_id`                 | uuid                     | no       |
+| 6   | `quotation_revision_id`        | uuid                     | no       |
+| 7   | `status`                       | text                     | no       |
+| 8   | `origin`                       | text                     | no       |
+| 9   | `currency_code`                | text                     | no       |
+| 10  | `discount_total`               | numeric                  | no       |
+| 11  | `discount_base`                | numeric                  | no       |
+| 12  | `elevated_line_count`          | integer                  | no       |
+| 13  | `policy_id`                    | uuid                     | yes      |
+| 14  | `policy_version_no`            | integer                  | yes      |
+| 15  | `threshold_kind`               | text                     | yes      |
+| 16  | `threshold_value`              | numeric                  | yes      |
+| 17  | `threshold_currency_code`      | text                     | yes      |
+| 18  | `required_permission_code`     | text                     | no       |
+| 19  | `requested_by`                 | uuid                     | no       |
+| 20  | `requested_at`                 | timestamp with time zone | no       |
+| 21  | `decided_by`                   | uuid                     | yes      |
+| 22  | `decided_at`                   | timestamp with time zone | yes      |
+| 23  | `decision_reason`              | text                     | yes      |
+| 24  | `approver_limit_amount`        | numeric                  | yes      |
+| 25  | `approver_limit_currency_code` | text                     | yes      |
+| 26  | `approved_discount_total`      | numeric                  | yes      |
+| 27  | `approved_currency_code`       | text                     | yes      |
+| 28  | `superseded_at`                | timestamp with time zone | yes      |
+| 29  | `superseded_by_revision_id`    | uuid                     | yes      |
+| 30  | `record_version`               | integer                  | no       |
+| 31  | `created_at`                   | timestamp with time zone | no       |
+| 32  | `created_by`                   | uuid                     | no       |
+| 33  | `updated_at`                   | timestamp with time zone | yes      |
+| 34  | `updated_by`                   | uuid                     | yes      |
+| 35  | `requester_set_policy`         | boolean                  | no       |
+| 36  | `requester_set_price`          | boolean                  | no       |
+| 37  | `approver_limit_id`            | uuid                     | yes      |
+| 38  | `withdrawn_by`                 | uuid                     | yes      |
+| 39  | `withdrawn_at`                 | timestamp with time zone | yes      |
+
 #### quo.quotation_items
 
-| #   | Column                     | Type                     | Nullable |
-| --- | -------------------------- | ------------------------ | -------- |
-| 1   | `id`                       | uuid                     | no       |
-| 2   | `tenant_id`                | uuid                     | no       |
-| 3   | `company_id`               | uuid                     | no       |
-| 4   | `branch_id`                | uuid                     | no       |
-| 5   | `quotation_revision_id`    | uuid                     | no       |
-| 6   | `line_number`              | integer                  | no       |
-| 7   | `item_kind`                | text                     | no       |
-| 8   | `service_id`               | uuid                     | yes      |
-| 9   | `item_ref`                 | uuid                     | yes      |
-| 10  | `source_service_line_ref`  | uuid                     | yes      |
-| 11  | `source_required_part_ref` | uuid                     | yes      |
-| 12  | `price_rule_ref`           | uuid                     | yes      |
-| 13  | `description`              | text                     | yes      |
-| 14  | `currency_code`            | text                     | no       |
-| 15  | `captured_unit_price`      | numeric                  | no       |
-| 16  | `captured_quantity`        | numeric                  | no       |
-| 17  | `captured_discount`        | numeric                  | no       |
-| 18  | `captured_tax_rate`        | numeric                  | no       |
-| 19  | `captured_tax_amount`      | numeric                  | no       |
-| 20  | `captured_line_total`      | numeric                  | no       |
-| 21  | `record_version`           | integer                  | no       |
-| 22  | `created_at`               | timestamp with time zone | no       |
-| 23  | `created_by`               | uuid                     | no       |
-| 24  | `updated_at`               | timestamp with time zone | yes      |
-| 25  | `updated_by`               | uuid                     | yes      |
-| 26  | `deleted_at`               | timestamp with time zone | yes      |
-| 27  | `deleted_by`               | uuid                     | yes      |
+P1-32-PRE-OD-FD6 (ADR-023 D6) adds columns 28 to 33, the snapshot of a PART line: the
+`inv.item_sale_prices` row that priced it, the item's stock code and name, its unit of measure
+code and name, and the tax class the price named. All six are NULL on a service line.
+`quo.guard_quotation_part_line` (BEFORE INSERT OR UPDATE) admits a part line only at exactly what
+`inv.resolve_item_sale_price` answers for the line's branch — price row, unit price, currency and
+tax class — with that class's effective rate (zero for none, as a counter sale), the item's current
+words and unit, and a linked required part of the quotation's own work order; it freezes the
+snapshot, and a part line's unit price, tax rate and currency, on UPDATE. Cost is never read.
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds the provenance snapshot of the price a line was priced from,
+copied by `quo.snapshot_quotation_item_price_provenance` when the line is written and kept while it
+keeps its source: who had last changed the price rule or item selling price (`price_changed_by`,
+`price_changed_at`) and, for a rule, who had published its price-list version (`price_published_by`,
+`price_published_at`). A writer's value is ignored; a later change to the source does not move it.
+NULL for lines written before migration 20261007090000. Fix round 1 (migration 20261007100000) adds
+who had set the source's AMOUNT (`price_amount_set_by`, `price_amount_set_at`), copied the same way;
+NULL for lines written before it. Fix round 4 (migration 20261007130000) adds the customer class a
+service line was priced for (`price_customer_class`, written by the application as it asked
+`svc.resolve_price`) and the snapshot of the `svc.price_list_assignments` row that selected the
+list of the line's price rule (`price_assignment_ref`) — chosen with `svc.resolve_price`'s filter
+and order among the assignments naming that list — with who had made it (`price_assigned_by`,
+`price_assigned_at`) and who had changed it (`price_assignment_changed_by`). A writer's value is
+ignored; NULL on a part line, when no assignment names the rule's list, and for lines written
+before it.
+
+| #   | Column                        | Type                     | Nullable |
+| --- | ----------------------------- | ------------------------ | -------- |
+| 1   | `id`                          | uuid                     | no       |
+| 2   | `tenant_id`                   | uuid                     | no       |
+| 3   | `company_id`                  | uuid                     | no       |
+| 4   | `branch_id`                   | uuid                     | no       |
+| 5   | `quotation_revision_id`       | uuid                     | no       |
+| 6   | `line_number`                 | integer                  | no       |
+| 7   | `item_kind`                   | text                     | no       |
+| 8   | `service_id`                  | uuid                     | yes      |
+| 9   | `item_ref`                    | uuid                     | yes      |
+| 10  | `source_service_line_ref`     | uuid                     | yes      |
+| 11  | `source_required_part_ref`    | uuid                     | yes      |
+| 12  | `price_rule_ref`              | uuid                     | yes      |
+| 13  | `description`                 | text                     | yes      |
+| 14  | `currency_code`               | text                     | no       |
+| 15  | `captured_unit_price`         | numeric                  | no       |
+| 16  | `captured_quantity`           | numeric                  | no       |
+| 17  | `captured_discount`           | numeric                  | no       |
+| 18  | `captured_tax_rate`           | numeric                  | no       |
+| 19  | `captured_tax_amount`         | numeric                  | no       |
+| 20  | `captured_line_total`         | numeric                  | no       |
+| 21  | `record_version`              | integer                  | no       |
+| 22  | `created_at`                  | timestamp with time zone | no       |
+| 23  | `created_by`                  | uuid                     | no       |
+| 24  | `updated_at`                  | timestamp with time zone | yes      |
+| 25  | `updated_by`                  | uuid                     | yes      |
+| 26  | `deleted_at`                  | timestamp with time zone | yes      |
+| 27  | `deleted_by`                  | uuid                     | yes      |
+| 28  | `item_sale_price_ref`         | uuid                     | yes      |
+| 29  | `quoted_item_sku`             | text                     | yes      |
+| 30  | `quoted_item_name`            | text                     | yes      |
+| 31  | `quoted_unit_code`            | text                     | yes      |
+| 32  | `quoted_unit_name`            | text                     | yes      |
+| 33  | `quoted_tax_class_ref`        | uuid                     | yes      |
+| 34  | `price_changed_by`            | uuid                     | yes      |
+| 35  | `price_changed_at`            | timestamp with time zone | yes      |
+| 36  | `price_published_by`          | uuid                     | yes      |
+| 37  | `price_published_at`          | timestamp with time zone | yes      |
+| 38  | `price_amount_set_by`         | uuid                     | yes      |
+| 39  | `price_amount_set_at`         | timestamp with time zone | yes      |
+| 40  | `price_customer_class`        | text                     | yes      |
+| 41  | `price_assignment_ref`        | uuid                     | yes      |
+| 42  | `price_assigned_by`           | uuid                     | yes      |
+| 43  | `price_assigned_at`           | timestamp with time zone | yes      |
+| 44  | `price_assignment_changed_by` | uuid[]                   | yes      |
 
 #### quo.quotation_revisions
 
@@ -4027,25 +4280,37 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 
 #### quo.quotations
 
-| #   | Column                | Type                     | Nullable |
-| --- | --------------------- | ------------------------ | -------- |
-| 1   | `id`                  | uuid                     | no       |
-| 2   | `tenant_id`           | uuid                     | no       |
-| 3   | `company_id`          | uuid                     | no       |
-| 4   | `branch_id`           | uuid                     | no       |
-| 5   | `work_order_id`       | uuid                     | no       |
-| 6   | `quotation_number`    | text                     | no       |
-| 7   | `currency_code`       | text                     | no       |
-| 8   | `payer_partner_ref`   | uuid                     | yes      |
-| 9   | `current_revision_id` | uuid                     | yes      |
-| 10  | `status`              | text                     | no       |
-| 11  | `record_version`      | integer                  | no       |
-| 12  | `created_at`          | timestamp with time zone | no       |
-| 13  | `created_by`          | uuid                     | no       |
-| 14  | `updated_at`          | timestamp with time zone | yes      |
-| 15  | `updated_by`          | uuid                     | yes      |
-| 16  | `deleted_at`          | timestamp with time zone | yes      |
-| 17  | `deleted_by`          | uuid                     | yes      |
+| #   | Column                       | Type                     | Nullable |
+| --- | ---------------------------- | ------------------------ | -------- |
+| 1   | `id`                         | uuid                     | no       |
+| 2   | `tenant_id`                  | uuid                     | no       |
+| 3   | `company_id`                 | uuid                     | no       |
+| 4   | `branch_id`                  | uuid                     | no       |
+| 5   | `work_order_id`              | uuid                     | no       |
+| 6   | `quotation_number`           | text                     | no       |
+| 7   | `currency_code`              | text                     | no       |
+| 8   | `payer_partner_ref`          | uuid                     | yes      |
+| 9   | `current_revision_id`        | uuid                     | yes      |
+| 10  | `status`                     | text                     | no       |
+| 11  | `record_version`             | integer                  | no       |
+| 12  | `created_at`                 | timestamp with time zone | no       |
+| 13  | `created_by`                 | uuid                     | no       |
+| 14  | `updated_at`                 | timestamp with time zone | yes      |
+| 15  | `updated_by`                 | uuid                     | yes      |
+| 16  | `deleted_at`                 | timestamp with time zone | yes      |
+| 17  | `deleted_by`                 | uuid                     | yes      |
+| 18  | `discount_policy_id`         | uuid                     | yes      |
+| 19  | `discount_policy_version_no` | integer                  | yes      |
+| 20  | `discount_policy_pinned_at`  | timestamp with time zone | yes      |
+
+`discount_policy_id`, `discount_policy_version_no` and `discount_policy_pinned_at`
+(P1-32-PRE-OD-DISC-07) pin the discount policy version the quotation is held to for its whole
+life. `tg_quotations_discount_policy_pin` sets them on insert from the policy in force
+(`svc.discount_policy_in_force`), whatever the writer supplied, and refuses any later change; a
+quotation written before migration 20260925090000 was pinned by `quo.backfill_discount_approvals`.
+Every revision's discount is measured against this version, by the application and at issue, so a
+threshold change reaches only quotations written after it. A NULL `discount_policy_id` beside a
+set `discount_policy_pinned_at` means no policy was in force: the threshold is zero.
 
 ### Service Catalog & Pricing (`svc`)
 
@@ -4096,27 +4361,43 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 
 #### svc.price_list_assignments
 
-| #   | Column           | Type                     | Nullable |
-| --- | ---------------- | ------------------------ | -------- |
-| 1   | `id`             | uuid                     | no       |
-| 2   | `tenant_id`      | uuid                     | no       |
-| 3   | `price_list_id`  | uuid                     | no       |
-| 4   | `company_id`     | uuid                     | yes      |
-| 5   | `branch_id`      | uuid                     | yes      |
-| 6   | `customer_class` | text                     | yes      |
-| 7   | `priority`       | integer                  | no       |
-| 8   | `effective_from` | date                     | no       |
-| 9   | `effective_to`   | date                     | yes      |
-| 10  | `status`         | text                     | no       |
-| 11  | `record_version` | integer                  | no       |
-| 12  | `created_at`     | timestamp with time zone | no       |
-| 13  | `created_by`     | uuid                     | no       |
-| 14  | `updated_at`     | timestamp with time zone | yes      |
-| 15  | `updated_by`     | uuid                     | yes      |
-| 16  | `deleted_at`     | timestamp with time zone | yes      |
-| 17  | `deleted_by`     | uuid                     | yes      |
+P1-32-PRE-OD-FD8 fix round 4 (ADR-023 D8, migration 20261007130000) adds who made the assignment
+(`assigned_by`, `assigned_at`), stamped from the signed-in person on insert and never moved, and
+everyone who ever changed what it selects afterwards — its list, company, branch, customer class,
+priority, dates, status or deletion (`assignment_changed_by`), appended from the session and never
+removed. Both are kept by `svc.stamp_price_list_assignment_provenance` (BEFORE INSERT OR UPDATE);
+a writer's value is ignored. Rows written before the migration carry `created_by` and, where
+updated, `updated_by`.
+
+| #   | Column                  | Type                     | Nullable |
+| --- | ----------------------- | ------------------------ | -------- |
+| 1   | `id`                    | uuid                     | no       |
+| 2   | `tenant_id`             | uuid                     | no       |
+| 3   | `price_list_id`         | uuid                     | no       |
+| 4   | `company_id`            | uuid                     | yes      |
+| 5   | `branch_id`             | uuid                     | yes      |
+| 6   | `customer_class`        | text                     | yes      |
+| 7   | `priority`              | integer                  | no       |
+| 8   | `effective_from`        | date                     | no       |
+| 9   | `effective_to`          | date                     | yes      |
+| 10  | `status`                | text                     | no       |
+| 11  | `record_version`        | integer                  | no       |
+| 12  | `created_at`            | timestamp with time zone | no       |
+| 13  | `created_by`            | uuid                     | no       |
+| 14  | `updated_at`            | timestamp with time zone | yes      |
+| 15  | `updated_by`            | uuid                     | yes      |
+| 16  | `deleted_at`            | timestamp with time zone | yes      |
+| 17  | `deleted_by`            | uuid                     | yes      |
+| 18  | `assigned_by`           | uuid                     | yes      |
+| 19  | `assigned_at`           | timestamp with time zone | yes      |
+| 20  | `assignment_changed_by` | uuid[]                   | no       |
 
 #### svc.price_list_versions
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `published_by` and `published_at`: who published the version,
+stamped from the signed-in person by `svc.stamp_price_list_version_publication` when it becomes
+published and never changed. NULL for a draft, when nobody was signed in, and for a version
+published before migration 20261007090000 (no row recorded who).
 
 | #   | Column           | Type                     | Nullable |
 | --- | ---------------- | ------------------------ | -------- |
@@ -4135,6 +4416,8 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 13  | `updated_by`     | uuid                     | yes      |
 | 14  | `deleted_at`     | timestamp with time zone | yes      |
 | 15  | `deleted_by`     | uuid                     | yes      |
+| 16  | `published_by`   | uuid                     | yes      |
+| 17  | `published_at`   | timestamp with time zone | yes      |
 
 #### svc.price_lists
 
@@ -4157,6 +4440,14 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 
 #### svc.price_rules
 
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the
+values that price a line from this rule (amount, tax class, narrowing, priority, status, deletion),
+stamped from the signed-in person by `svc.stamp_price_rule_provenance` (NULL when nobody was signed
+in). Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1
+(migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the amount itself,
+stamped by the same trigger when the rule is written and when its amount changes, and never by a
+change to anything else; rows written before it carry `price_changed_by`.
+
 | #   | Column                  | Type                     | Nullable |
 | --- | ----------------------- | ------------------------ | -------- |
 | 1   | `id`                    | uuid                     | no       |
@@ -4177,8 +4468,18 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 16  | `updated_by`            | uuid                     | yes      |
 | 17  | `deleted_at`            | timestamp with time zone | yes      |
 | 18  | `deleted_by`            | uuid                     | yes      |
+| 19  | `price_changed_by`      | uuid                     | yes      |
+| 20  | `price_changed_at`      | timestamp with time zone | yes      |
+| 21  | `amount_set_by`         | uuid                     | yes      |
+| 22  | `amount_set_at`         | timestamp with time zone | yes      |
 
 #### svc.pricing_approval_policies
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `set_by` and `set_at`: who recorded this threshold version and
+when, stamped from the signed-in person by `svc.stamp_pricing_approval_policy_provenance` (NULL when
+nobody was signed in) and never changed. A quotation whose requester recorded the version it is held
+to needs another person's approval for any discount (`quo.revision_self_change_basis`). Rows written
+before migration 20261007090000 carry `created_by` / `created_at`.
 
 | #   | Column                     | Type                     | Nullable |
 | --- | -------------------------- | ------------------------ | -------- |
@@ -4201,6 +4502,22 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 17  | `updated_by`               | uuid                     | yes      |
 | 18  | `deleted_at`               | timestamp with time zone | yes      |
 | 19  | `deleted_by`               | uuid                     | yes      |
+| 20  | `version_no`               | integer                  | no       |
+| 21  | `set_by`                   | uuid                     | yes      |
+| 22  | `set_at`                   | timestamp with time zone | yes      |
+
+`version_no` (P1-32-PRE-OD-DISC-01, -04) numbers the versions of one (company, policy type)
+policy from 1, unique over every row of the scope including deleted and inactive ones
+(`uq_pricing_approval_policies_version`). A version is written only as the next number, and
+writing an active one retires the current version (`tg_pricing_approval_policies_record_version`).
+Nothing else changes a version: its content, `effective_to` and `deleted_at` are immutable
+(`tg_pricing_approval_policies_version_immutable`) and its status moves only through that
+retirement (`tg_pricing_approval_policies_status`). `maker_approver_distinct` is a legacy column
+that nothing reads: separation of duties cannot be configured off.
+A version written on the request path (`app_runtime` or a login member of it) takes effect on
+the day it is recorded and has no end date: the same trigger refuses any other `effective_from`
+and any `effective_to` (P1-32-PRE-OD-FD8 fix round 6, migration 20261007150000, ADR-023 D8), so
+the version that retires the one in force always takes its place.
 
 #### svc.service_categories
 
@@ -4281,6 +4598,450 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 13  | `deleted_at`         | timestamp with time zone | yes      |
 | 14  | `deleted_by`         | uuid                     | yes      |
 
+### Inventory operations (`inv`, P1-32 preparatory slice)
+
+Generated from the live catalog after `20260917090000_inv_transfers_receipts_counts.sql`. Transfers hold stock in a branch-level `transit` location between dispatch and receipt; goods receipts append restricted cost layers and never rewrite earlier ones; stock counts raise pending adjustments and post nothing. Restricted columns: `inv.item_cost_layers.unit_cost` (every policy gated by `inv.cost.view`) and `inv.goods_receipt_lines.unit_cost` (the posting input, never returned by any read).
+
+#### inv.goods_receipt_lines
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `receipt_id`     | uuid                     | no       |
+| 6   | `line_no`        | integer                  | no       |
+| 7   | `item_id`        | uuid                     | no       |
+| 8   | `location_id`    | uuid                     | no       |
+| 9   | `quantity`       | numeric                  | no       |
+| 10  | `unit_cost`      | numeric                  | yes      |
+| 11  | `currency_code`  | text                     | yes      |
+| 12  | `record_version` | integer                  | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+| 15  | `updated_at`     | timestamp with time zone | yes      |
+| 16  | `updated_by`     | uuid                     | yes      |
+
+#### inv.goods_receipts
+
+| #   | Column               | Type                     | Nullable |
+| --- | -------------------- | ------------------------ | -------- |
+| 1   | `id`                 | uuid                     | no       |
+| 2   | `tenant_id`          | uuid                     | no       |
+| 3   | `company_id`         | uuid                     | no       |
+| 4   | `branch_id`          | uuid                     | no       |
+| 5   | `reference`          | text                     | yes      |
+| 6   | `supplier_reference` | text                     | yes      |
+| 7   | `received_on`        | date                     | no       |
+| 8   | `status`             | text                     | no       |
+| 9   | `notes`              | text                     | yes      |
+| 10  | `posted_at`          | timestamp with time zone | yes      |
+| 11  | `posted_by`          | uuid                     | yes      |
+| 12  | `cancelled_at`       | timestamp with time zone | yes      |
+| 13  | `cancelled_by`       | uuid                     | yes      |
+| 14  | `correlation_id`     | uuid                     | yes      |
+| 15  | `idempotency_key`    | text                     | yes      |
+| 16  | `record_version`     | integer                  | no       |
+| 17  | `created_at`         | timestamp with time zone | no       |
+| 18  | `created_by`         | uuid                     | no       |
+| 19  | `updated_at`         | timestamp with time zone | yes      |
+| 20  | `updated_by`         | uuid                     | yes      |
+
+#### inv.item_cost_layers
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `item_id`        | uuid                     | no       |
+| 6   | `source_kind`    | text                     | no       |
+| 7   | `source_id`      | uuid                     | no       |
+| 8   | `quantity`       | numeric                  | no       |
+| 9   | `unit_cost`      | numeric                  | no       |
+| 10  | `currency_code`  | text                     | no       |
+| 11  | `effective_at`   | timestamp with time zone | no       |
+| 12  | `classification` | text                     | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+
+#### inv.stock_count_lines
+
+| #   | Column                        | Type                     | Nullable |
+| --- | ----------------------------- | ------------------------ | -------- |
+| 1   | `id`                          | uuid                     | no       |
+| 2   | `tenant_id`                   | uuid                     | no       |
+| 3   | `company_id`                  | uuid                     | no       |
+| 4   | `branch_id`                   | uuid                     | no       |
+| 5   | `count_id`                    | uuid                     | no       |
+| 6   | `item_id`                     | uuid                     | no       |
+| 7   | `snapshot_qty`                | numeric                  | no       |
+| 8   | `counted_qty`                 | numeric                  | yes      |
+| 9   | `movement_delta_during_count` | numeric                  | no       |
+| 10  | `variance_qty`                | numeric                  | yes      |
+| 11  | `adjustment_id`               | uuid                     | yes      |
+| 12  | `record_version`              | integer                  | no       |
+| 13  | `created_at`                  | timestamp with time zone | no       |
+| 14  | `created_by`                  | uuid                     | no       |
+| 15  | `updated_at`                  | timestamp with time zone | yes      |
+| 16  | `updated_by`                  | uuid                     | yes      |
+
+#### inv.stock_counts
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `company_id`      | uuid                     | no       |
+| 4   | `branch_id`       | uuid                     | no       |
+| 5   | `location_id`     | uuid                     | no       |
+| 6   | `status`          | text                     | no       |
+| 7   | `snapshot_at`     | timestamp with time zone | no       |
+| 8   | `counted_by`      | uuid                     | no       |
+| 9   | `reconciled_at`   | timestamp with time zone | yes      |
+| 10  | `reconciled_by`   | uuid                     | yes      |
+| 11  | `cancelled_at`    | timestamp with time zone | yes      |
+| 12  | `cancelled_by`    | uuid                     | yes      |
+| 13  | `cancel_reason`   | text                     | yes      |
+| 14  | `notes`           | text                     | yes      |
+| 15  | `correlation_id`  | uuid                     | yes      |
+| 16  | `idempotency_key` | text                     | yes      |
+| 17  | `record_version`  | integer                  | no       |
+| 18  | `created_at`      | timestamp with time zone | no       |
+| 19  | `created_by`      | uuid                     | no       |
+| 20  | `updated_at`      | timestamp with time zone | yes      |
+| 21  | `updated_by`      | uuid                     | yes      |
+
+#### inv.stock_transfers
+
+| #   | Column                 | Type                     | Nullable |
+| --- | ---------------------- | ------------------------ | -------- |
+| 1   | `id`                   | uuid                     | no       |
+| 2   | `tenant_id`            | uuid                     | no       |
+| 3   | `company_id`           | uuid                     | no       |
+| 4   | `branch_id`            | uuid                     | no       |
+| 5   | `item_id`              | uuid                     | no       |
+| 6   | `from_location_id`     | uuid                     | no       |
+| 7   | `transit_location_id`  | uuid                     | no       |
+| 8   | `to_branch_id`         | uuid                     | no       |
+| 9   | `to_location_id`       | uuid                     | no       |
+| 10  | `quantity`             | numeric                  | no       |
+| 11  | `received_quantity`    | numeric                  | yes      |
+| 12  | `status`               | text                     | no       |
+| 13  | `reason`               | text                     | yes      |
+| 14  | `cancel_reason`        | text                     | yes      |
+| 15  | `dispatched_at`        | timestamp with time zone | no       |
+| 16  | `dispatched_by`        | uuid                     | no       |
+| 17  | `received_at`          | timestamp with time zone | yes      |
+| 18  | `received_by`          | uuid                     | yes      |
+| 19  | `cancelled_at`         | timestamp with time zone | yes      |
+| 20  | `cancelled_by`         | uuid                     | yes      |
+| 21  | `correlation_id`       | uuid                     | yes      |
+| 22  | `idempotency_key`      | text                     | yes      |
+| 23  | `record_version`       | integer                  | no       |
+| 24  | `created_at`           | timestamp with time zone | no       |
+| 25  | `created_by`           | uuid                     | no       |
+| 26  | `updated_at`           | timestamp with time zone | yes      |
+| 27  | `updated_by`           | uuid                     | yes      |
+| 28  | `resolved_quantity`    | numeric                  | no       |
+| 29  | `outstanding_quantity` | numeric                  | yes      |
+
+Since `20260917098000_inv_transfer_partial_receipt.sql` a receipt records only what arrived: `received_quantity` may be less than `quantity`, `resolved_quantity` counts units settled without arriving (returned to origin or written off), and `outstanding_quantity` is GENERATED from the three. Status adds `partially_received` and `settled`; each part settlement is a row of `inv.stock_transfer_settlements`.
+
+### Item identifiers (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917091000_inv_item_identifiers.sql`. Barcodes and packaging identifiers of a tenant item: `normalized_value` is GENERATED by `inv.normalize_item_identifier`, GTIN/EAN/UPC check digits are enforced by `ck_item_identifiers_check_digit`, a live code is unique per (tenant, kind, normalised value), and internal codes are allocated by `inv.assign_internal_barcode`. A scan resolves to the item, never to a serialised unit. No restricted column.
+
+#### inv.item_identifiers
+
+| #   | Column             | Type                     | Nullable |
+| --- | ------------------ | ------------------------ | -------- |
+| 1   | `id`               | uuid                     | no       |
+| 2   | `tenant_id`        | uuid                     | no       |
+| 3   | `item_id`          | uuid                     | no       |
+| 4   | `identifier_kind`  | text                     | no       |
+| 5   | `value`            | text                     | no       |
+| 6   | `normalized_value` | text                     | yes      |
+| 7   | `unit_id`          | uuid                     | no       |
+| 8   | `pack_quantity`    | numeric                  | no       |
+| 9   | `is_primary`       | boolean                  | no       |
+| 10  | `retired_at`       | timestamp with time zone | yes      |
+| 11  | `retired_by`       | uuid                     | yes      |
+| 12  | `record_version`   | integer                  | no       |
+| 13  | `created_at`       | timestamp with time zone | no       |
+| 14  | `created_by`       | uuid                     | no       |
+| 15  | `updated_at`       | timestamp with time zone | yes      |
+| 16  | `updated_by`       | uuid                     | yes      |
+
+### Item selling prices (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917092000_inv_item_sale_prices.sql`. What the tenant SELLS an item for, optionally narrowed to a company and a branch: one live row per (tenant, item, company, branch) (`uq_item_sale_prices_signature`, NULLS NOT DISTINCT), resolved most-specific-first by `inv.resolve_item_sale_price`, which returns NO ROW when nothing is configured. This is a selling price and is `internal`; item COST stays in `inv.item_cost_details` / `inv.item_cost_layers`, gated by `inv.cost.view`. The tax CLASS is stored and the rate is read from `org.tax_rates` at the moment of sale.
+
+#### inv.item_sale_prices
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the selling price, its currency, tax class, status or deletion, stamped from the signed-in person by `inv.stamp_item_sale_price_provenance` (NULL when nobody was signed in). Setting the same price again changes nothing. Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1 (migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the unit price and currency, stamped by the same trigger when the row is written and when either changes, and never by a change to the tax class or status; rows written before it carry `price_changed_by`. Fix round 5 (migration 20261007140000) adds `availability_changed_by`: everyone who ever changed the row's status or deletion, appended from the signed-in person by `inv.record_item_sale_price_availability_change` and never removed. Withdrawing a more specific price hands a line to a less specific one, so `quo.revision_self_change_basis` reads it for every selling price of a part line's item; inactive or deleted rows written before the migration carry their `deleted_by` and `updated_by`.
+
+| #   | Column                    | Type                     | Nullable |
+| --- | ------------------------- | ------------------------ | -------- |
+| 1   | `id`                      | uuid                     | no       |
+| 2   | `tenant_id`               | uuid                     | no       |
+| 3   | `item_id`                 | uuid                     | no       |
+| 4   | `company_id`              | uuid                     | yes      |
+| 5   | `branch_id`               | uuid                     | yes      |
+| 6   | `currency_code`           | text                     | no       |
+| 7   | `unit_price`              | numeric                  | no       |
+| 8   | `tax_class_id`            | uuid                     | yes      |
+| 9   | `status`                  | text                     | no       |
+| 10  | `record_version`          | integer                  | no       |
+| 11  | `created_at`              | timestamp with time zone | no       |
+| 12  | `created_by`              | uuid                     | no       |
+| 13  | `updated_at`              | timestamp with time zone | yes      |
+| 14  | `updated_by`              | uuid                     | yes      |
+| 15  | `deleted_at`              | timestamp with time zone | yes      |
+| 16  | `deleted_by`              | uuid                     | yes      |
+| 17  | `price_changed_by`        | uuid                     | yes      |
+| 18  | `price_changed_at`        | timestamp with time zone | yes      |
+| 19  | `amount_set_by`           | uuid                     | yes      |
+| 20  | `amount_set_at`           | timestamp with time zone | yes      |
+| 21  | `availability_changed_by` | uuid[]                   | no       |
+
+### Sales returns (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917094000_inv_sales_returns.sql`. A part coming back, from the part issue it was fitted from or the counter-sale invoice line it was sold on. `return_condition` decides the destination cell — the receiving location when `restockable`, the quarantine location when `damaged` — and `inv.guard_sales_return_ceiling` bounds the running total against the source, counting `inv.part_returns` as well for a part-issue source. An invoice-line source also raises a PENDING `sal.credit_notes` row, linked by `credit_note_id`. No restricted column: the amount lives on the credit note, under its own policy.
+
+#### inv.sales_returns
+
+| #   | Column                   | Type                     | Nullable |
+| --- | ------------------------ | ------------------------ | -------- |
+| 1   | `id`                     | uuid                     | no       |
+| 2   | `tenant_id`              | uuid                     | no       |
+| 3   | `company_id`             | uuid                     | no       |
+| 4   | `branch_id`              | uuid                     | no       |
+| 5   | `source_kind`            | text                     | no       |
+| 6   | `source_id`              | uuid                     | no       |
+| 7   | `item_id`                | uuid                     | no       |
+| 8   | `quantity`               | numeric                  | no       |
+| 9   | `return_condition`       | text                     | no       |
+| 10  | `received_location_id`   | uuid                     | no       |
+| 11  | `quarantine_location_id` | uuid                     | yes      |
+| 12  | `reason`                 | text                     | yes      |
+| 13  | `credit_note_id`         | uuid                     | yes      |
+| 14  | `status`                 | text                     | no       |
+| 15  | `idempotency_key`        | text                     | yes      |
+| 16  | `record_version`         | integer                  | no       |
+| 17  | `created_at`             | timestamp with time zone | no       |
+| 18  | `created_by`             | uuid                     | no       |
+| 19  | `updated_at`             | timestamp with time zone | yes      |
+| 20  | `updated_by`             | uuid                     | yes      |
+
+### Material demand control (`inv`, P1-32 preparatory slice 3a)
+
+Generated from the live catalog after `20260917095000_inv_item_unit_conversions.sql`, `20260917096000_inv_vehicle_fluid_specifications.sql`, `20260917097000_inv_material_requirements.sql` and `20260917098000_inv_transfer_partial_receipt.sql`. A work-order material draw needs an APPROVED requirement for its service line and item or item family; a missing specification or a missing unit conversion is stored as `approval_required` with its reason and no allowance is assumed. `inv.material_requirement_usage` counts each unit once across open requests, active reservations, issues and restockable returns, and `inv.guard_material_request_ceiling` enforces the allowance plus approved exceptions under the requirement row lock. Exceptions are finite and decided by a person other than the requester. Conversions are exact numeric factors in one direction; specifications resolve only once confirmed and never as zero. No column in this section is restricted: none is a cost or a price.
+
+#### inv.item_unit_conversions
+
+| #   | Column             | Type                     | Nullable |
+| --- | ------------------ | ------------------------ | -------- |
+| 1   | `id`               | uuid                     | no       |
+| 2   | `tenant_id`        | uuid                     | no       |
+| 3   | `item_id`          | uuid                     | yes      |
+| 4   | `from_uom_id`      | uuid                     | no       |
+| 5   | `to_uom_id`        | uuid                     | no       |
+| 6   | `factor`           | numeric                  | no       |
+| 7   | `source_reference` | text                     | no       |
+| 8   | `status`           | text                     | no       |
+| 9   | `retired_at`       | timestamp with time zone | yes      |
+| 10  | `retired_by`       | uuid                     | yes      |
+| 11  | `record_version`   | integer                  | no       |
+| 12  | `created_at`       | timestamp with time zone | no       |
+| 13  | `created_by`       | uuid                     | no       |
+| 14  | `updated_at`       | timestamp with time zone | yes      |
+| 15  | `updated_by`       | uuid                     | yes      |
+
+#### inv.vehicle_fluid_specifications
+
+| #   | Column              | Type                     | Nullable |
+| --- | ------------------- | ------------------------ | -------- |
+| 1   | `id`                | uuid                     | no       |
+| 2   | `tenant_id`         | uuid                     | no       |
+| 3   | `make_id`           | uuid                     | no       |
+| 4   | `model_id`          | uuid                     | yes      |
+| 5   | `model_year_from`   | integer                  | yes      |
+| 6   | `model_year_to`     | integer                  | yes      |
+| 7   | `engine_variant`    | text                     | yes      |
+| 8   | `service_condition` | text                     | no       |
+| 9   | `item_category_id`  | uuid                     | yes      |
+| 10  | `capacity`          | numeric                  | no       |
+| 11  | `uom_id`            | uuid                     | no       |
+| 12  | `source_reference`  | text                     | no       |
+| 13  | `status`            | text                     | no       |
+| 14  | `confirmed_by`      | uuid                     | yes      |
+| 15  | `confirmed_at`      | timestamp with time zone | yes      |
+| 16  | `retired_by`        | uuid                     | yes      |
+| 17  | `retired_at`        | timestamp with time zone | yes      |
+| 18  | `record_version`    | integer                  | no       |
+| 19  | `created_at`        | timestamp with time zone | no       |
+| 20  | `created_by`        | uuid                     | no       |
+| 21  | `updated_at`        | timestamp with time zone | yes      |
+| 22  | `updated_by`        | uuid                     | yes      |
+
+#### inv.material_requirements
+
+| #   | Column                     | Type                     | Nullable |
+| --- | -------------------------- | ------------------------ | -------- |
+| 1   | `id`                       | uuid                     | no       |
+| 2   | `tenant_id`                | uuid                     | no       |
+| 3   | `company_id`               | uuid                     | no       |
+| 4   | `branch_id`                | uuid                     | no       |
+| 5   | `work_order_id`            | uuid                     | no       |
+| 6   | `service_line_id`          | uuid                     | no       |
+| 7   | `item_id`                  | uuid                     | yes      |
+| 8   | `item_category_id`         | uuid                     | yes      |
+| 9   | `basis`                    | text                     | no       |
+| 10  | `specification_id`         | uuid                     | yes      |
+| 11  | `service_condition`        | text                     | yes      |
+| 12  | `engine_variant`           | text                     | yes      |
+| 13  | `allowance_quantity`       | numeric                  | yes      |
+| 14  | `uom_id`                   | uuid                     | yes      |
+| 15  | `source_reference`         | text                     | yes      |
+| 16  | `status`                   | text                     | no       |
+| 17  | `approval_required_reason` | text                     | yes      |
+| 18  | `requested_by`             | uuid                     | no       |
+| 19  | `approved_by`              | uuid                     | yes      |
+| 20  | `approved_at`              | timestamp with time zone | yes      |
+| 21  | `rejected_by`              | uuid                     | yes      |
+| 22  | `rejected_at`              | timestamp with time zone | yes      |
+| 23  | `rejection_reason`         | text                     | yes      |
+| 24  | `cancelled_by`             | uuid                     | yes      |
+| 25  | `cancelled_at`             | timestamp with time zone | yes      |
+| 26  | `cancel_reason`            | text                     | yes      |
+| 27  | `record_version`           | integer                  | no       |
+| 28  | `created_at`               | timestamp with time zone | no       |
+| 29  | `created_by`               | uuid                     | no       |
+| 30  | `updated_at`               | timestamp with time zone | yes      |
+| 31  | `updated_by`               | uuid                     | yes      |
+
+#### inv.material_requirement_exceptions
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `requirement_id`      | uuid                     | no       |
+| 6   | `additional_quantity` | numeric                  | no       |
+| 7   | `resulting_allowance` | numeric                  | yes      |
+| 8   | `reason`              | text                     | no       |
+| 9   | `status`              | text                     | no       |
+| 10  | `requested_by`        | uuid                     | no       |
+| 11  | `decided_by`          | uuid                     | yes      |
+| 12  | `decided_at`          | timestamp with time zone | yes      |
+| 13  | `decision_note`       | text                     | yes      |
+| 14  | `record_version`      | integer                  | no       |
+| 15  | `created_at`          | timestamp with time zone | no       |
+| 16  | `created_by`          | uuid                     | no       |
+| 17  | `updated_at`          | timestamp with time zone | yes      |
+| 18  | `updated_by`          | uuid                     | yes      |
+
+#### inv.material_requests
+
+| #   | Column                    | Type                     | Nullable |
+| --- | ------------------------- | ------------------------ | -------- |
+| 1   | `id`                      | uuid                     | no       |
+| 2   | `tenant_id`               | uuid                     | no       |
+| 3   | `company_id`              | uuid                     | no       |
+| 4   | `branch_id`               | uuid                     | no       |
+| 5   | `requirement_id`          | uuid                     | no       |
+| 6   | `work_order_id`           | uuid                     | no       |
+| 7   | `item_id`                 | uuid                     | no       |
+| 8   | `quantity`                | numeric                  | no       |
+| 9   | `requirement_unit_factor` | numeric                  | no       |
+| 10  | `status`                  | text                     | no       |
+| 11  | `requested_by`            | uuid                     | no       |
+| 12  | `closed_by`               | uuid                     | yes      |
+| 13  | `closed_at`               | timestamp with time zone | yes      |
+| 14  | `close_reason`            | text                     | yes      |
+| 15  | `cancelled_by`            | uuid                     | yes      |
+| 16  | `cancelled_at`            | timestamp with time zone | yes      |
+| 17  | `cancel_reason`           | text                     | yes      |
+| 18  | `idempotency_key`         | text                     | yes      |
+| 19  | `correlation_id`          | uuid                     | yes      |
+| 20  | `record_version`          | integer                  | no       |
+| 21  | `created_at`              | timestamp with time zone | no       |
+| 22  | `created_by`              | uuid                     | no       |
+| 23  | `updated_at`              | timestamp with time zone | yes      |
+| 24  | `updated_by`              | uuid                     | yes      |
+
+#### inv.material_request_fulfillments
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `material_request_id` | uuid                     | no       |
+| 6   | `fulfillment_kind`    | text                     | no       |
+| 7   | `reservation_id`      | uuid                     | yes      |
+| 8   | `part_issue_id`       | uuid                     | yes      |
+| 9   | `created_at`          | timestamp with time zone | no       |
+| 10  | `created_by`          | uuid                     | no       |
+
+#### inv.stock_transfer_settlements
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `company_id`      | uuid                     | no       |
+| 4   | `branch_id`       | uuid                     | no       |
+| 5   | `transfer_id`     | uuid                     | no       |
+| 6   | `to_branch_id`    | uuid                     | no       |
+| 7   | `settlement_kind` | text                     | no       |
+| 8   | `quantity`        | numeric                  | no       |
+| 9   | `reason`          | text                     | yes      |
+| 10  | `status`          | text                     | no       |
+| 11  | `requested_by`    | uuid                     | no       |
+| 12  | `approved_by`     | uuid                     | yes      |
+| 13  | `approved_at`     | timestamp with time zone | yes      |
+| 14  | `rejected_by`     | uuid                     | yes      |
+| 15  | `rejected_at`     | timestamp with time zone | yes      |
+| 16  | `idempotency_key` | text                     | yes      |
+| 17  | `correlation_id`  | uuid                     | yes      |
+| 18  | `record_version`  | integer                  | no       |
+| 19  | `created_at`      | timestamp with time zone | no       |
+| 20  | `created_by`      | uuid                     | no       |
+| 21  | `updated_at`      | timestamp with time zone | yes      |
+| 22  | `updated_by`      | uuid                     | yes      |
+
+### Item reorder levels (`inv`, Owner directive — operational stock alerts)
+
+Generated from the live catalog after `20260918090000_inv_item_reorder_levels.sql`. The quantity at or below which an item counts as low, optionally narrowed to a company, a branch and a stock location, with an optional preferred order quantity. One ACTIVE row per (tenant, item, company, branch, location) (`uq_item_reorder_levels_signature`, NULLS NOT DISTINCT, partial on `status = 'active'`), resolved most-specific-first by the low-stock read: branch over company over the whole organisation, with a row naming a location scoped to that location alone. Retirement keeps the row and frees the signature. No column is restricted and none is an amount: the table holds a threshold and a preferred order quantity, moves no stock, and is cited by no ledger row. Narrowing columns are frozen by `org.guard_immutable_columns`.
+
+#### inv.item_reorder_levels
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `item_id`             | uuid                     | no       |
+| 4   | `company_id`          | uuid                     | yes      |
+| 5   | `branch_id`           | uuid                     | yes      |
+| 6   | `location_id`         | uuid                     | yes      |
+| 7   | `reorder_level_qty`   | numeric                  | no       |
+| 8   | `preferred_order_qty` | numeric                  | yes      |
+| 9   | `status`              | text                     | no       |
+| 10  | `retired_at`          | timestamp with time zone | yes      |
+| 11  | `retired_by`          | uuid                     | yes      |
+| 12  | `record_version`      | integer                  | no       |
+| 13  | `created_at`          | timestamp with time zone | no       |
+| 14  | `created_by`          | uuid                     | no       |
+| 15  | `updated_at`          | timestamp with time zone | yes      |
+| 16  | `updated_by`          | uuid                     | yes      |
+
 ---
 
 # Phase 1-11 — SAL / WTY / RPT (Billing, Payment, Delivery, Warranty, Reporting)
@@ -4316,27 +5077,30 @@ Verified authorized receiver (WHOLE ROW gated by `sal.delivery.view`).
 
 Credit-note (invoice-linked, WHOLE ROW gated); dual control.
 
-| Column            | Type            | class      | Null? | Purpose                                                                                                |
-| ----------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------ |
-| `id`              | `uuid`          | internal   | no    | Primary key (UUID).                                                                                    |
-| `tenant_id`       | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                        |
-| `company_id`      | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                |
-| `branch_id`       | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                 |
-| `invoice_id`      | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT.                                                          |
-| `currency_code`   | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                |
-| `amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED credit amount (>0); credit <= invoice open receivable at approval (under the invoice lock). |
-| `reason`          | `text`          | internal   | no    | Free-text reason.                                                                                      |
-| `approval_state`  | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected'); immutable once approved.                                   |
-| `requested_by`    | `uuid`          | internal   | no    | Maker; server-stamped `iam.current_user_id()` (H-fin-6).                                               |
-| `approved_by`     | `uuid`          | internal   | yes   | Approver; server-stamped at approval; CHECK `approved_by <> requested_by`.                             |
-| `approved_at`     | `timestamptz`   | internal   | yes   | Approval time (set with approval).                                                                     |
-| `issued_at`       | `timestamptz`   | internal   | yes   | Issue time (set at approval).                                                                          |
-| `idempotency_key` | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                   |
-| `record_version`  | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                 |
-| `created_at`      | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                |
-| `created_by`      | `uuid`          | internal   | no    | Creating actor (user id).                                                                              |
-| `updated_at`      | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                       |
-| `updated_by`      | `uuid`          | internal   | yes   | Last-updating actor.                                                                                   |
+| Column            | Type            | class      | Null? | Purpose                                                                                                                                                                                                                          |
+| ----------------- | --------------- | ---------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                                                                              |
+| `tenant_id`       | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                                  |
+| `company_id`      | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                                                                          |
+| `branch_id`       | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                                                                                                                                           |
+| `invoice_id`      | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT.                                                                                                                                                                                    |
+| `currency_code`   | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                                                                          |
+| `amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED credit amount (>0); at approval (under the invoice lock) at most the issued invoice gross less the credits already approved (ADR-023 D2); an excess over the open receivable is recorded in `sal.refund_obligations`. |
+| `reason`          | `text`          | internal   | no    | Free-text reason.                                                                                                                                                                                                                |
+| `approval_state`  | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected','withdrawn'); every state but pending is final (ADR-023 D3).                                                                                                                           |
+| `requested_by`    | `uuid`          | internal   | no    | Maker; server-stamped `iam.current_user_id()` (H-fin-6).                                                                                                                                                                         |
+| `approved_by`     | `uuid`          | internal   | yes   | Approver; server-stamped at approval; CHECK `approved_by <> requested_by`.                                                                                                                                                       |
+| `approved_at`     | `timestamptz`   | internal   | yes   | Approval time (set with approval).                                                                                                                                                                                               |
+| `issued_at`       | `timestamptz`   | internal   | yes   | Issue time, stamped by the trigger at approval; frozen afterwards.                                                                                                                                                               |
+| `decided_by`      | `uuid`          | internal   | yes   | Who withdrew (the requester) or rejected (another person) the request; stamped by the trigger.                                                                                                                                   |
+| `decided_at`      | `timestamptz`   | internal   | yes   | When it was withdrawn or rejected; stamped by the trigger, frozen afterwards.                                                                                                                                                    |
+| `decision_reason` | `text`          | internal   | yes   | Why it was rejected; required, not blank, at most 2000 characters, on a rejection only.                                                                                                                                          |
+| `idempotency_key` | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                                                                             |
+| `record_version`  | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                                                                           |
+| `created_at`      | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                                                                                                                                          |
+| `created_by`      | `uuid`          | internal   | no    | Creating actor (user id).                                                                                                                                                                                                        |
+| `updated_at`      | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                                                                                 |
+| `updated_by`      | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                                                                             |
 
 ### `sal.delivery_checklist_results`
 
@@ -4403,31 +5167,43 @@ Tenant-configurable delivery checklist template.
 | `deleted_at`     | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                   |
 | `deleted_by`     | `uuid`        | internal | yes   | Soft-deleting actor.                                                   |
 
+### `sal.delivery_legacy_identity_review`
+
+One row per delivery whose pre-P-17 `delivering_employee_id` matched no same-tenant identity when `scripts/platform/backfill-delivering-employee-identity.mjs` ran (P1-31 P-17). Written by that operator command and by nothing else: the application holds SELECT only, tenant-scoped and RLS-forced, and its INSERT policy refuses every row. It exists so an unresolved handover identity is visible to the Owner instead of being replaced by a fabricated person or by the operator who ran the command.
+
+| Column         | Type          | class    | Null? | Purpose                                                                                      |
+| -------------- | ------------- | -------- | ----- | -------------------------------------------------------------------------------------------- |
+| `tenant_id`    | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT. Part of the primary key.                     |
+| `delivery_id`  | `uuid`        | internal | no    | The `sal.delivery_records` row under review. Deliberately not an FK (no such candidate key). |
+| `legacy_value` | `uuid`        | internal | no    | The unconstrained uuid the delivery recorded before P-17, preserved verbatim.                |
+| `recorded_at`  | `timestamptz` | internal | no    | When the operator command observed the value as unresolved. Not when the handover happened.  |
+
 ### `sal.delivery_records`
 
 Delivery record (branch-scoped) closing the reception custody chain.
 
-| Column                      | Type          | class    | Null? | Purpose                                                                                                                       |
-| --------------------------- | ------------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `id`                        | `uuid`        | internal | no    | Primary key (UUID).                                                                                                           |
-| `tenant_id`                 | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                               |
-| `company_id`                | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                       |
-| `branch_id`                 | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                        |
-| `work_order_id`             | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live delivery per WO (`uq_delivery_records_work_order_active`).           |
-| `reception_visit_id`        | `uuid`        | internal | no    | Composite FK -> `rec.reception_visits(...)` RESTRICT; must match the WO (M-dlv-1).                                            |
-| `vehicle_id`                | `uuid`        | internal | no    | Composite FK -> `veh.vehicles(tenant_id, id)` RESTRICT; must match the WO (M-dlv-1).                                          |
-| `delivering_employee_id`    | `uuid`        | internal | no    | Delivering employee (user id).                                                                                                |
-| `status`                    | `text`        | internal | no    | CHECK IN ('ready','receiver_verified','signed','delivered','exception'); delivered-shape CHECK binds delivered_at + odometer. |
-| `delivered_at`              | `timestamptz` | internal | yes   | Delivery time; set at completion.                                                                                             |
-| `final_odometer_reading_id` | `uuid`        | internal | yes   | Composite FK -> `veh.odometer_readings(tenant_id, vehicle_id, id)` RESTRICT (nullable until delivered).                       |
-| `idempotency_key`           | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                          |
-| `record_version`            | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                        |
-| `created_at`                | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                       |
-| `created_by`                | `uuid`        | internal | no    | Creating actor (user id).                                                                                                     |
-| `updated_at`                | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                              |
-| `updated_by`                | `uuid`        | internal | yes   | Last-updating actor.                                                                                                          |
-| `deleted_at`                | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                          |
-| `deleted_by`                | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                          |
+| Column                             | Type          | class    | Null? | Purpose                                                                                                                                                                                                                                               |
+| ---------------------------------- | ------------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                               | `uuid`        | internal | no    | Primary key (UUID).                                                                                                                                                                                                                                   |
+| `tenant_id`                        | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                                                       |
+| `company_id`                       | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                                                                                                                                               |
+| `branch_id`                        | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                                                                                                                                                |
+| `work_order_id`                    | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live delivery per WO (`uq_delivery_records_work_order_active`).                                                                                                                                   |
+| `reception_visit_id`               | `uuid`        | internal | no    | Composite FK -> `rec.reception_visits(...)` RESTRICT; must match the WO (M-dlv-1).                                                                                                                                                                    |
+| `vehicle_id`                       | `uuid`        | internal | no    | Composite FK -> `veh.vehicles(tenant_id, id)` RESTRICT; must match the WO (M-dlv-1).                                                                                                                                                                  |
+| `delivering_employee_id`           | `uuid`        | internal | no    | Composite FK -> `org.employees(tenant_id, id)` RESTRICT (P1-31 P-17); insert-time eligibility by trigger; home branch NOT compared.                                                                                                                   |
+| `delivering_employee_display_name` | `text`        | internal | yes   | Immutable name snapshot stamped by `sal.stamp_delivering_employee_identity`; survives a rename or retirement; NULL on a pre-P-17 row the operator backfill has not resolved; the unresolved ones are listed in `sal.delivery_legacy_identity_review`. |
+| `status`                           | `text`        | internal | no    | CHECK IN ('ready','receiver_verified','signed','delivered','exception'); delivered-shape CHECK binds delivered_at + odometer.                                                                                                                         |
+| `delivered_at`                     | `timestamptz` | internal | yes   | Delivery time; set at completion.                                                                                                                                                                                                                     |
+| `final_odometer_reading_id`        | `uuid`        | internal | yes   | Composite FK -> `veh.odometer_readings(tenant_id, vehicle_id, id)` RESTRICT (nullable until delivered).                                                                                                                                               |
+| `idempotency_key`                  | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                                                                                                  |
+| `record_version`                   | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                                                                                                |
+| `created_at`                       | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                                                                                                                                               |
+| `created_by`                       | `uuid`        | internal | no    | Creating actor (user id).                                                                                                                                                                                                                             |
+| `updated_at`                       | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                                                                                                                      |
+| `updated_by`                       | `uuid`        | internal | yes   | Last-updating actor.                                                                                                                                                                                                                                  |
+| `deleted_at`                       | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                                                                                                                  |
+| `deleted_by`                       | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                                                                                                                                                  |
 
 ### `sal.delivery_signatures`
 
@@ -4542,28 +5318,40 @@ RESTRICTED 1:1 invoice-line money + payer split (gated by `sal.finance.view`).
 
 Invoice line (structural); amounts + payer split in restricted `sal.invoice_line_amounts`.
 
-| Column                     | Type            | class    | Null? | Purpose                                                                                                 |
-| -------------------------- | --------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------- |
-| `id`                       | `uuid`          | internal | no    | Primary key (UUID).                                                                                     |
-| `tenant_id`                | `uuid`          | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                         |
-| `company_id`               | `uuid`          | internal | no    | Company scope (branch composite scope).                                                                 |
-| `branch_id`                | `uuid`          | internal | no    | Branch scope (branch composite scope).                                                                  |
-| `invoice_id`               | `uuid`          | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT; frozen once invoice issued (`guard_invoice_line_frozen`). |
-| `line_number`              | `integer`       | internal | no    | Line ordinal (>=1); `UNIQUE(...,invoice_id, line_number)`.                                              |
-| `line_type`                | `text`          | internal | no    | CHECK IN ('service','part','fee').                                                                      |
-| `quantity`                 | `numeric(12,3)` | internal | no    | Line quantity `NUMERIC(12,3)` (>0).                                                                     |
-| `tax_class_id`             | `uuid`          | internal | yes   | Composite FK -> `org.tax_classes(tenant_id, company_id, id)` RESTRICT (nullable).                       |
-| `currency_code`            | `text`          | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                 |
-| `source_service_line_id`   | `uuid`          | internal | yes   | Opaque source ref to a work-order service line (nullable).                                              |
-| `source_part_issue_id`     | `uuid`          | internal | yes   | Opaque source ref to an `inv` part issue (nullable).                                                    |
-| `source_quotation_item_id` | `uuid`          | internal | yes   | Opaque source ref to a `quo` quotation item (nullable).                                                 |
-| `record_version`           | `integer`       | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                  |
-| `created_at`               | `timestamptz`   | internal | no    | Row creation timestamp.                                                                                 |
-| `created_by`               | `uuid`          | internal | no    | Creating actor (user id).                                                                               |
-| `updated_at`               | `timestamptz`   | internal | yes   | Last-update timestamp (NULL until first update).                                                        |
-| `updated_by`               | `uuid`          | internal | yes   | Last-updating actor.                                                                                    |
-| `deleted_at`               | `timestamptz`   | internal | yes   | Soft-delete timestamp (NULL = live).                                                                    |
-| `deleted_by`               | `uuid`          | internal | yes   | Soft-deleting actor.                                                                                    |
+P1-32-PRE-OD-FD5 (ADR-023 D5/D15) adds no column. On a work-order invoice that names a quotation
+revision, every live line must name a line of that revision in `source_quotation_item_id`, of the
+same kind, that `sal.billable_quotation_lines` answers `billable`, with a quantity no greater than
+what remains approved and not yet invoiced for its lineage — the line kind with its service or
+catalogue item, pooled over the work order's live invoices under any revision of any of its quotations
+(`sal.guard_invoice_line_source`, BEFORE INSERT OR UPDATE, under the work order row lock). Its
+amounts may not exceed what remains of the approved line (`sal.guard_invoice_line_amount_source` on
+`sal.invoice_line_amounts`). An invoice voided before issue releases what its lines held; issued and
+credited invoices keep it. `ix_invoice_lines_source_quotation_item` covers the lookup.
+
+| Column                     | Type            | class    | Null? | Purpose                                                                                                                                                         |
+| -------------------------- | --------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | `uuid`          | internal | no    | Primary key (UUID).                                                                                                                                             |
+| `tenant_id`                | `uuid`          | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                 |
+| `company_id`               | `uuid`          | internal | no    | Company scope (branch composite scope).                                                                                                                         |
+| `branch_id`                | `uuid`          | internal | no    | Branch scope (branch composite scope).                                                                                                                          |
+| `invoice_id`               | `uuid`          | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT; frozen once invoice issued (`guard_invoice_line_frozen`).                                                         |
+| `line_number`              | `integer`       | internal | no    | Line ordinal (>=1); `UNIQUE(...,invoice_id, line_number)`.                                                                                                      |
+| `line_type`                | `text`          | internal | no    | CHECK IN ('service','part','fee').                                                                                                                              |
+| `quantity`                 | `numeric(12,3)` | internal | no    | Line quantity `NUMERIC(12,3)` (>0).                                                                                                                             |
+| `tax_class_id`             | `uuid`          | internal | yes   | Composite FK -> `org.tax_classes(tenant_id, company_id, id)` RESTRICT (nullable).                                                                               |
+| `currency_code`            | `text`          | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                         |
+| `source_service_line_id`   | `uuid`          | internal | yes   | Opaque source ref to a work-order service line (nullable).                                                                                                      |
+| `source_part_issue_id`     | `uuid`          | internal | yes   | Opaque source ref to an `inv` part issue (nullable).                                                                                                            |
+| `source_quotation_item_id` | `uuid`          | internal | yes   | Source `quo` quotation item (nullable); required, approved and within what remains on a sourced work-order invoice (FD5).                                       |
+| `item_id`                  | `uuid`          | internal | yes   | P1-32: the stock item a counter-sale line sells; composite FK -> `inv.item_master(tenant_id, id)` RESTRICT. NULL on a work-order invoice.                       |
+| `stock_location_id`        | `uuid`          | internal | yes   | P1-32: the cell the line is drawn from at issuance; composite FK -> `inv.stock_locations(...)` RESTRICT. Paired with `item_id` (`ck_invoice_lines_stock_pair`). |
+| `record_version`           | `integer`       | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                          |
+| `created_at`               | `timestamptz`   | internal | no    | Row creation timestamp.                                                                                                                                         |
+| `created_by`               | `uuid`          | internal | no    | Creating actor (user id).                                                                                                                                       |
+| `updated_at`               | `timestamptz`   | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                                |
+| `updated_by`               | `uuid`          | internal | yes   | Last-updating actor.                                                                                                                                            |
+| `deleted_at`               | `timestamptz`   | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                            |
+| `deleted_by`               | `uuid`          | internal | yes   | Soft-deleting actor.                                                                                                                                            |
 
 ### `sal.invoice_numbering_configs`
 
@@ -4608,48 +5396,58 @@ Append-only invoice status ledger (SELECT+INSERT).
 
 Invoice master (branch-scoped, structural). Money lives in restricted `sal.invoice_amounts`.
 
-| Column                  | Type          | class    | Null? | Purpose                                                                                                                |
-| ----------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------- |
-| `id`                    | `uuid`        | internal | no    | Primary key (UUID).                                                                                                    |
-| `tenant_id`             | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                        |
-| `company_id`            | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                |
-| `branch_id`             | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                 |
-| `work_order_id`         | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live invoice per WO (`uq_invoices_work_order_active`).             |
-| `quotation_revision_id` | `uuid`        | internal | yes   | Composite FK -> `quo.quotation_revisions(...)` RESTRICT; provenance only (nullable).                                   |
-| `payer_partner_id`      | `uuid`        | internal | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                |
-| `currency_code`         | `text`        | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                |
-| `status`                | `text`        | internal | no    | Lifecycle only; CHECK IN ('draft','issued','credited','void_before_issue'); paid/partially_paid are derived (M-fin-1). |
-| `invoice_number`        | `text`        | internal | yes   | Allocated at issue via `shared.next_display_number`; NULL until issued; CHECK number-iff-issued (H-fin-5).             |
-| `issued_at`             | `timestamptz` | internal | yes   | Issue timestamp; NULL until issued; frozen by `guard_invoice_freeze`.                                                  |
-| `idempotency_key`       | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                   |
-| `record_version`        | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                 |
-| `created_at`            | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                |
-| `created_by`            | `uuid`        | internal | no    | Creating actor (user id).                                                                                              |
-| `updated_at`            | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                       |
-| `updated_by`            | `uuid`        | internal | yes   | Last-updating actor.                                                                                                   |
-| `deleted_at`            | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                   |
-| `deleted_by`            | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                   |
+| Column                  | Type          | class    | Null? | Purpose                                                                                                                                                                                                                                               |
+| ----------------------- | ------------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | `uuid`        | internal | no    | Primary key (UUID).                                                                                                                                                                                                                                   |
+| `tenant_id`             | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                                                       |
+| `company_id`            | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                                                                                                                                               |
+| `branch_id`             | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                                                                                                                                                |
+| `work_order_id`         | `uuid`        | internal | yes   | Composite FK -> `wo.work_orders(...)` RESTRICT; one draft per WO (`uq_invoices_work_order_draft`) and one live unsourced invoice per WO (`uq_invoices_work_order_unsourced`) since P1-32-PRE-OD-FD5. NULL exactly when `sale_kind` is `counter_sale`. |
+| `sale_kind`             | `text`        | internal | no    | P1-32: CHECK IN ('work_order','counter_sale'); `ck_invoices_sale_kind_source` makes it a biconditional with `work_order_id`. Frozen by `tg_invoices_immutable`.                                                                                       |
+| `quotation_revision_id` | `uuid`        | internal | yes   | Composite FK -> `quo.quotation_revisions(...)` RESTRICT; the revision the invoice bills — when set, every line is judged against it and it is frozen (FD5).                                                                                           |
+| `payer_partner_id`      | `uuid`        | internal | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                                                                                                                                               |
+| `currency_code`         | `text`        | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                                                                                               |
+| `status`                | `text`        | internal | no    | Lifecycle only; CHECK IN ('draft','issued','credited','void_before_issue'); paid/partially_paid are derived (M-fin-1).                                                                                                                                |
+| `invoice_number`        | `text`        | internal | yes   | Allocated at issue via `shared.next_display_number`; NULL until issued; CHECK number-iff-issued (H-fin-5).                                                                                                                                            |
+| `issued_at`             | `timestamptz` | internal | yes   | Issue timestamp; NULL until issued; frozen by `guard_invoice_freeze`.                                                                                                                                                                                 |
+| `idempotency_key`       | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                                                                                                  |
+| `record_version`        | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                                                                                                |
+| `created_at`            | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                                                                                                                                               |
+| `created_by`            | `uuid`        | internal | no    | Creating actor (user id).                                                                                                                                                                                                                             |
+| `updated_at`            | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                                                                                                                      |
+| `updated_by`            | `uuid`        | internal | yes   | Last-updating actor.                                                                                                                                                                                                                                  |
+| `deleted_at`            | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                                                                                                                  |
+| `deleted_by`            | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                                                                                                                                                  |
 
 ### `sal.payment_allocations`
 
 Append-only receipt->invoice allocation (WHOLE ROW gated).
 
-| Column           | Type            | class      | Null? | Purpose                                                                                                            |
-| ---------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------ |
-| `id`             | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                |
-| `tenant_id`      | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                    |
-| `company_id`     | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                            |
-| `branch_id`      | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                             |
-| `receipt_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.receipts(...)` RESTRICT (same-branch, M-fin-5).                                               |
-| `invoice_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT (same-branch, M-fin-5).                                               |
-| `currency_code`  | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                            |
-| `amount`         | `numeric(18,4)` | restricted | no    | RESTRICTED allocated amount (>0); bounded by derived receipt-unallocated and invoice-open under fixed-order locks. |
-| `allocated_by`   | `uuid`          | internal   | no    | Allocating actor.                                                                                                  |
-| `allocated_at`   | `timestamptz`   | internal   | no    | Allocation time.                                                                                                   |
-| `correlation_id` | `uuid`          | internal   | yes   | Optional correlation id linking the row to its originating command.                                                |
-| `seq`            | `bigint`        | internal   | no    | Monotonic `bigint GENERATED ALWAYS AS IDENTITY` ordering key (append-only ledger).                                 |
-| `created_at`     | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                            |
-| `created_by`     | `uuid`          | internal   | no    | Creating actor (user id).                                                                                          |
+| Column                                | Type            | class      | Null? | Purpose                                                                                                                                                                                                                                  |
+| ------------------------------------- | --------------- | ---------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                  | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                                                                                      |
+| `tenant_id`                           | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                                          |
+| `company_id`                          | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                                                                                  |
+| `branch_id`                           | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                                                                                                                                                   |
+| `receipt_id`                          | `uuid`          | internal   | no    | Composite FK -> `sal.receipts(...)` RESTRICT (same-branch, M-fin-5).                                                                                                                                                                     |
+| `invoice_id`                          | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT (same-branch, M-fin-5).                                                                                                                                                                     |
+| `currency_code`                       | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                                                                                  |
+| `amount`                              | `numeric(18,4)` | restricted | no    | RESTRICTED allocated amount (>0); bounded by derived receipt-unallocated and invoice-open under fixed-order locks.                                                                                                                       |
+| `allocated_by`                        | `uuid`          | internal   | no    | Allocating actor.                                                                                                                                                                                                                        |
+| `allocated_at`                        | `timestamptz`   | internal   | no    | Allocation time.                                                                                                                                                                                                                         |
+| `correlation_id`                      | `uuid`          | internal   | yes   | Optional correlation id linking the row to its originating command.                                                                                                                                                                      |
+| `seq`                                 | `bigint`        | internal   | no    | Monotonic `bigint GENERATED ALWAYS AS IDENTITY` ordering key (append-only ledger).                                                                                                                                                       |
+| `created_at`                          | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                                                                                                                                                  |
+| `created_by`                          | `uuid`          | internal   | no    | Creating actor (user id).                                                                                                                                                                                                                |
+| `third_party_relationship`            | `text`          | internal   | yes   | ADR-023 D14: what the receipt's payer is to the invoice's customer on a third-party allocation — CHECK IN ('insurer','employer','other'); NULL when the payer is the invoice's own customer (`sal.guard_allocation_payer`).              |
+| `third_party_authorisation_reference` | `text`          | internal   | yes   | ADR-023 D14: the authorisation the third-party payment rests on (an insurer's claim or approval number); not blank, at most 100 characters; NULL exactly when the relationship is.                                                       |
+| `third_party_reason`                  | `text`          | internal   | yes   | ADR-023 D14: why this payer settles this customer's invoice; not blank, at most 2000 characters; for 'other' it says what the payer is to the customer; NULL exactly when the relationship is.                                           |
+| `third_party_authorised_by`           | `uuid`          | internal   | yes   | ADR-023 D14: who authorised the third-party allocation — stamped from the session by `sal.guard_allocation_payer` for a holder of `sal.payment.third_party` in the receipt scope, never supplied; NULL exactly when the relationship is. |
+
+A new allocation whose receipt payer is not the invoice's customer is refused unless it carries all
+four third-party values (`ck_payment_allocations_third_party_shape`); a raw insert is also held to
+the receipt's and the invoice's currency. Existing rows are not re-checked (the guard runs on
+INSERT, and the table takes no UPDATE).
 
 ### `sal.payment_methods`
 
@@ -4676,55 +5474,196 @@ Dual-scope payment-method reference (platform + tenant).
 
 Full-receipt reversal (WHOLE ROW gated); dual control.
 
-| Column                | Type            | class      | Null? | Purpose                                                                                              |
-| --------------------- | --------------- | ---------- | ----- | ---------------------------------------------------------------------------------------------------- |
-| `id`                  | `uuid`          | internal   | no    | Primary key (UUID).                                                                                  |
-| `tenant_id`           | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                      |
-| `company_id`          | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                              |
-| `branch_id`           | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                               |
-| `original_receipt_id` | `uuid`          | internal   | no    | Composite FK -> `sal.receipts(...)` RESTRICT; original retained; at most one reversal per receipt.   |
-| `currency_code`       | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                              |
-| `amount`              | `numeric(18,4)` | restricted | no    | RESTRICTED reversal amount (>0); CHECK `= original receipt amount` (full-receipt reversal, H-fin-1). |
-| `reason`              | `text`          | internal   | no    | Free-text reason.                                                                                    |
-| `approval_state`      | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected').                                                          |
-| `requested_by`        | `uuid`          | internal   | no    | Maker; server-stamped (H-fin-6).                                                                     |
-| `approved_by`         | `uuid`          | internal   | yes   | Approver; server-stamped; CHECK `approved_by <> requested_by`.                                       |
-| `approved_at`         | `timestamptz`   | internal   | yes   | Approval time.                                                                                       |
-| `reversed_at`         | `timestamptz`   | internal   | yes   | Reversal time (set at approval).                                                                     |
-| `idempotency_key`     | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                 |
-| `record_version`      | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                               |
-| `created_at`          | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                              |
-| `created_by`          | `uuid`          | internal   | no    | Creating actor (user id).                                                                            |
-| `updated_at`          | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                     |
-| `updated_by`          | `uuid`          | internal   | yes   | Last-updating actor.                                                                                 |
+| Column                | Type            | class      | Null? | Purpose                                                                                                                                                                         |
+| --------------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                             |
+| `tenant_id`           | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                 |
+| `company_id`          | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                         |
+| `branch_id`           | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                                                                                          |
+| `original_receipt_id` | `uuid`          | internal   | no    | Composite FK -> `sal.receipts(...)` RESTRICT; original retained; at most one LIVE (pending or approved) reversal per receipt (`uq_receipt_reversals_receipt_live`, ADR-023 D4). |
+| `currency_code`       | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                         |
+| `amount`              | `numeric(18,4)` | restricted | no    | RESTRICTED reversal amount (>0); CHECK `= original receipt amount` (full-receipt reversal, H-fin-1).                                                                            |
+| `reason`              | `text`          | internal   | no    | Free-text reason.                                                                                                                                                               |
+| `approval_state`      | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected','withdrawn'); born pending; every state but pending is final (ADR-023 D4).                                                            |
+| `requested_by`        | `uuid`          | internal   | no    | Maker; server-stamped (H-fin-6); holds `sal.payment.record` in the receipt scope (`sal.guard_receipt_reversal_request`).                                                        |
+| `approved_by`         | `uuid`          | internal   | yes   | Approver; server-stamped; holds `sal.reversal.approve` in the receipt scope; CHECK `approved_by <> requested_by`.                                                               |
+| `approved_at`         | `timestamptz`   | internal   | yes   | Approval time; stamped by the trigger, frozen afterwards.                                                                                                                       |
+| `reversed_at`         | `timestamptz`   | internal   | yes   | Reversal time, stamped by the trigger at approval; frozen afterwards.                                                                                                           |
+| `decided_by`          | `uuid`          | internal   | yes   | Who withdrew (the requester) or rejected (another holder of `sal.reversal.approve`) the request; stamped by the trigger.                                                        |
+| `decided_at`          | `timestamptz`   | internal   | yes   | When it was withdrawn or rejected; stamped by the trigger, frozen afterwards.                                                                                                   |
+| `decision_reason`     | `text`          | internal   | yes   | Why it was rejected; required, not blank, at most 2000 characters, on a rejection only.                                                                                         |
+| `idempotency_key`     | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                            |
+| `record_version`      | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                          |
+| `created_at`          | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                                                                                         |
+| `created_by`          | `uuid`          | internal   | no    | Creating actor (user id).                                                                                                                                                       |
+| `updated_at`          | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                                |
+| `updated_by`          | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                            |
 
 ### `sal.receipts`
 
 Receipt (branch-scoped, WHOLE ROW gated by `sal.finance.view`).
 
-| Column                         | Type            | class      | Null? | Purpose                                                                                                    |
-| ------------------------------ | --------------- | ---------- | ----- | ---------------------------------------------------------------------------------------------------------- |
-| `id`                           | `uuid`          | internal   | no    | Primary key (UUID).                                                                                        |
-| `tenant_id`                    | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                            |
-| `company_id`                   | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                    |
-| `branch_id`                    | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                     |
-| `receipt_number`               | `text`          | internal   | no    | Allocated via `shared.next_display_number`; `UNIQUE(...,receipt_number)`.                                  |
-| `payment_method_id`            | `uuid`          | internal   | no    | Composite FK -> `sal.payment_methods(tenant_id, id)` RESTRICT.                                             |
-| `payer_partner_id`             | `uuid`          | internal   | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                    |
-| `currency_code`                | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                    |
-| `amount`                       | `numeric(18,4)` | restricted | no    | RESTRICTED receipt amount (>0); frozen once recorded (`guard_receipt_freeze`, H-fin-4).                    |
-| `received_by`                  | `uuid`          | internal   | no    | Recording cashier (user id).                                                                               |
-| `received_at`                  | `timestamptz`   | internal   | no    | Receipt time; frozen once recorded.                                                                        |
-| `evidence_document_version_id` | `uuid`          | internal   | yes   | Composite FK -> `shared.document_versions(tenant_id, id)` RESTRICT (nullable).                             |
-| `status`                       | `text`          | internal   | no    | CHECK IN ('recorded','partially_allocated','allocated','reversed'); full reversal -> 'reversed' (H-fin-1). |
-| `idempotency_key`              | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                       |
-| `record_version`               | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                     |
-| `created_at`                   | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                    |
-| `created_by`                   | `uuid`          | internal   | no    | Creating actor (user id).                                                                                  |
-| `updated_at`                   | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                           |
-| `updated_by`                   | `uuid`          | internal   | yes   | Last-updating actor.                                                                                       |
-| `deleted_at`                   | `timestamptz`   | internal   | yes   | Soft-delete timestamp (NULL = live).                                                                       |
-| `deleted_by`                   | `uuid`          | internal   | yes   | Soft-deleting actor.                                                                                       |
+| Column                         | Type            | class      | Null? | Purpose                                                                                                                                                                                                                          |
+| ------------------------------ | --------------- | ---------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                           | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                                                                              |
+| `tenant_id`                    | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                                  |
+| `company_id`                   | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                                                                          |
+| `branch_id`                    | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                                                                                                                                           |
+| `receipt_number`               | `text`          | internal   | no    | Allocated via `shared.next_display_number`; `UNIQUE(...,receipt_number)`.                                                                                                                                                        |
+| `payment_method_id`            | `uuid`          | internal   | no    | Composite FK -> `sal.payment_methods(tenant_id, id)` RESTRICT.                                                                                                                                                                   |
+| `payer_partner_id`             | `uuid`          | internal   | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                                                                                                                          |
+| `currency_code`                | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                                                                          |
+| `amount`                       | `numeric(18,4)` | restricted | no    | RESTRICTED receipt amount (>0); frozen once recorded (`guard_receipt_freeze`, H-fin-4).                                                                                                                                          |
+| `received_by`                  | `uuid`          | internal   | no    | Recording cashier (user id).                                                                                                                                                                                                     |
+| `received_at`                  | `timestamptz`   | internal   | no    | Receipt time; frozen once recorded.                                                                                                                                                                                              |
+| `evidence_document_version_id` | `uuid`          | internal   | yes   | Composite FK -> `shared.document_versions(tenant_id, id)` RESTRICT (nullable).                                                                                                                                                   |
+| `status`                       | `text`          | internal   | no    | CHECK IN ('recorded','partially_allocated','allocated','reversed'); full reversal -> 'reversed' (H-fin-1).                                                                                                                       |
+| `idempotency_key`              | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                                                                             |
+| `replaces_receipt_id`          | `uuid`          | internal   | yes   | The reversed receipt this one replaces (ADR-023 D4); composite self-FK RESTRICT, same branch; only a receipt an approved reversal reversed; one replacement per reversed receipt (`uq_receipts_replaces`); frozen once recorded. |
+| `record_version`               | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                                                                           |
+| `created_at`                   | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                                                                                                                                          |
+| `created_by`                   | `uuid`          | internal   | no    | Creating actor (user id).                                                                                                                                                                                                        |
+| `updated_at`                   | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                                                                                 |
+| `updated_by`                   | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                                                                             |
+| `deleted_at`                   | `timestamptz`   | internal   | yes   | Soft-delete timestamp (NULL = live).                                                                                                                                                                                             |
+| `deleted_by`                   | `uuid`          | internal   | yes   | Soft-deleting actor.                                                                                                                                                                                                             |
+
+### `sal.refund_obligations`
+
+Money a customer is owed back because an approved credit note exceeded what its invoice still owed
+(P1-32-PRE-OD-FD2A, ADR-023 D2, migration 20261008121000). An operational record, not an
+accounting entry: no account, posting, cash or bank movement. WHOLE ROW gated by
+`sal.finance.view`; forced RLS. Created only by `sal.approve_credit_note`, for exactly the excess,
+one per credit note, with one `refund_obligation_recorded` financial event. Paid back through
+`sal.refund_requests` (FD2B): `open` until what has been paid out reaches its amount, then
+`settled`; no row is deleted.
+
+| Column           | Type            | class      | Null? | Purpose                                                                                                                                                                  |
+| ---------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`             | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                      |
+| `tenant_id`      | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                          |
+| `company_id`     | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                  |
+| `branch_id`      | `uuid`          | internal   | no    | Branch scope; composite FK -> `org.branches(tenant_id, company_id, id)` RESTRICT.                                                                                        |
+| `partner_id`     | `uuid`          | internal   | no    | The customer owed the money: the invoice's billed party (`sal.invoices.payer_partner_id`), bound by `sal.guard_refund_obligation_insert`; FK -> `crm.business_partners`. |
+| `invoice_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(tenant_id, company_id, branch_id, id)` RESTRICT; the credit note's invoice.                                                                |
+| `credit_note_id` | `uuid`          | internal   | no    | The APPROVED credit note whose excess created it; composite FK -> `sal.credit_notes(...)` RESTRICT; `UNIQUE` per credit note (`uq_refund_obligations_credit_note`).      |
+| `currency_code`  | `text`          | internal   | no    | The invoice's currency (bound by the guard); FK -> `shared.currencies(code)` RESTRICT.                                                                                   |
+| `amount`         | `numeric(18,4)` | restricted | no    | RESTRICTED amount owed (>0, within the currency's minor unit): the credit less the invoice's open receivable just before it, never below zero. Frozen.                   |
+| `source`         | `text`          | internal   | no    | CHECK IN ('credit_excess'). An explicit obligation raised by hand is not built (open Owner question).                                                                    |
+| `state`          | `text`          | internal   | no    | CHECK IN ('open','settled','cancelled'); born `open`; `settled` once its refund requests have paid out its whole amount (FD2B); every other change is refused.           |
+| `record_version` | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                   |
+| `created_at`     | `timestamptz`   | internal   | no    | Row creation timestamp; stamped for the request path.                                                                                                                    |
+| `created_by`     | `uuid`          | internal   | no    | The approver whose approval created it; stamped from the session for the request path.                                                                                   |
+| `updated_at`     | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                         |
+| `updated_by`     | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                     |
+
+### `sal.refund_requests`
+
+A request to pay back part or all of a refund obligation, decided by a second person and paid out
+once (P1-32-PRE-OD-FD2B, ADR-023 D2 part 2, migration 20261008140000). An operational record, not an
+accounting entry: no account, posting, cash or bank movement. WHOLE ROW gated by `sal.finance.view`;
+forced RLS. At most one live request (pending, or approved and not yet paid out) per obligation
+(`uq_refund_requests_obligation_live`). Requested by a holder of `sal.payment.record`; approved or
+rejected by a different holder of `sal.refund.approve`; withdrawn only by the requester; paid out once
+by a holder of `sal.payment.record`, with one `refund_executed` financial event. Every person and date
+is stamped by `sal.guard_refund_request_insert` and `sal.guard_refund_request_update`; no row is
+deleted.
+
+| Column                      | Type            | class      | Null? | Purpose                                                                                                                                                                        |
+| --------------------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                        | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                            |
+| `tenant_id`                 | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                |
+| `company_id`                | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                        |
+| `branch_id`                 | `uuid`          | internal   | no    | Branch scope; composite FK -> `org.branches(tenant_id, company_id, id)` RESTRICT.                                                                                              |
+| `obligation_id`             | `uuid`          | internal   | no    | The obligation paid back; composite FK -> `sal.refund_obligations(tenant_id, company_id, branch_id, id)` RESTRICT.                                                             |
+| `invoice_id`                | `uuid`          | internal   | no    | The obligation's invoice (bound by the insert guard); composite FK -> `sal.invoices(...)` RESTRICT.                                                                            |
+| `payee_partner_id`          | `uuid`          | internal   | no    | Who is paid: the obligation's customer (bound by the insert guard); FK -> `crm.business_partners`. A third-party payee is an open Owner question.                              |
+| `currency_code`             | `text`          | internal   | no    | The obligation's currency (bound by the insert guard); FK -> `shared.currencies(code)` RESTRICT.                                                                               |
+| `amount`                    | `numeric(18,4)` | restricted | no    | RESTRICTED amount to pay back (>0, within the currency's minor unit), at most the obligation less what has been paid out on it, under the obligation row lock. Frozen.         |
+| `payment_method_id`         | `uuid`          | internal   | no    | The tenant's payment method (cash, card terminal, bank transfer), active when requested; FK -> `sal.payment_methods(tenant_id, id)` RESTRICT. The payout uses the same method. |
+| `reason`                    | `text`          | internal   | no    | Why the refund is asked for; not blank, at most 2000 characters. Frozen.                                                                                                       |
+| `approval_state`            | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected','withdrawn'); born `pending`; every decision is terminal.                                                                            |
+| `requested_by`              | `uuid`          | internal   | no    | The requester, stamped from the session. Frozen.                                                                                                                               |
+| `requested_at`              | `timestamptz`   | internal   | no    | When requested, stamped with `now()`. Frozen.                                                                                                                                  |
+| `approved_by`               | `uuid`          | internal   | yes   | The approver — never the requester — stamped from the session; only on an approved request.                                                                                    |
+| `approved_at`               | `timestamptz`   | internal   | yes   | When approved, stamped; only on an approved request.                                                                                                                           |
+| `decided_by`                | `uuid`          | internal   | yes   | Who rejected (another person) or withdrew (the requester), stamped; NULL otherwise.                                                                                            |
+| `decided_at`                | `timestamptz`   | internal   | yes   | When rejected or withdrawn, stamped.                                                                                                                                           |
+| `decision_reason`           | `text`          | internal   | yes   | Why it was rejected; required for a rejection, absent otherwise; at most 2000 characters.                                                                                      |
+| `executed_by`               | `uuid`          | internal   | yes   | Who recorded the payout, stamped from the session; set once.                                                                                                                   |
+| `executed_at`               | `timestamptz`   | internal   | yes   | When the payout was recorded, stamped; set once, on an approved request only.                                                                                                  |
+| `payout_reference`          | `text`          | internal   | yes   | The payout's reference as made (a transfer reference, a cash slip number), not blank, at most 200 characters; not a payment credential. Written once.                          |
+| `payout_date`               | `date`          | internal   | yes   | The day the money was paid out, not in the future on the branch's own calendar. Written once.                                                                                  |
+| `idempotency_key`           | `text`          | internal   | yes   | The request's Idempotency-Key; partial `UNIQUE(tenant_id, idempotency_key)`.                                                                                                   |
+| `execution_idempotency_key` | `text`          | internal   | yes   | The payout's Idempotency-Key; partial `UNIQUE(tenant_id, execution_idempotency_key)`; only with a payout.                                                                      |
+| `record_version`            | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`; the `If-Match` of every decision and the payout.                                                        |
+| `created_at`                | `timestamptz`   | internal   | no    | Row creation timestamp; stamped for the request path.                                                                                                                          |
+| `created_by`                | `uuid`          | internal   | no    | Creating actor; stamped from the session for the request path.                                                                                                                 |
+| `updated_at`                | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                               |
+| `updated_by`                | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                           |
+
+### Refund requests and their payout (P1-32-PRE-OD-FD2B, migration 20261008140000)
+
+Owner decision D2 (ADR-023), part 2. No accounting.
+
+- `sal.request_refund(p_obligation_id, p_amount, p_payment_method_id, p_reason, p_idempotency_key)`
+  — locks the obligation and raises a pending request; a repeated key answers the request it raised.
+- `sal.approve_refund_request(p_request_id)`, `sal.reject_refund_request(p_request_id, p_reason)`,
+  `sal.withdraw_refund_request(p_request_id)` — lock the obligation, then the request; the decision
+  guard requires `sal.refund.approve` in scope and a person other than the requester for an approval
+  or a rejection, and the requester for a withdrawal.
+- `sal.execute_refund_request(p_request_id, p_payment_method_id, p_payout_reference, p_payout_date,
+p_idempotency_key, p_correlation_id)` — records the payout once, on an approved request, by its
+  approved method; writes the `refund_executed` financial event and settles the obligation when
+  what has been paid out reaches its amount.
+- `sal.refund_obligations.state` moves from `open` to `settled` only that way
+  (`sal.guard_refund_obligation_update`); `cancelled` stays unreachable (open Owner question).
+- `sal.financial_events.event_type` admits `refund_executed` and `source_type` admits
+  `refund_request`; the provenance guard binds the event to the request's amount and currency, and
+  the completeness trigger requires it at commit. No event is an accounting entry.
+
+### The D2 credit ceiling and the open receivable (P1-32-PRE-OD-FD2A, migration 20261008121000)
+
+Owner decision D2 (ADR-023), part 1.
+
+- `sal.approve_credit_note(p_credit_id uuid, p_correlation_id uuid)` — the ceiling is the issued
+  invoice's gross less the credits already APPROVED on it, read under the note and invoice locks
+  (`credit_note_exceeds_creditable`). An approved credit above the invoice's open receivable just
+  before it records the excess in `sal.refund_obligations` with its `refund_obligation_recorded`
+  event, in the same transaction.
+- `sal.invoice_open_receivable` and `sal.invoice_open_receivable_as_of` never answer below zero;
+  for a moment at or after the read the two still agree.
+- `sal.financial_events.event_type` admits `refund_obligation_recorded` and `source_type` admits
+  `refund_obligation`; the provenance guard binds the event to the obligation's amount and
+  currency, and the completeness trigger requires it at commit. No event is an accounting entry.
+- Interim rule (open policy point): `sal.guard_receipt_reversal_request` and
+  `sal.approve_receipt_reversal` refuse reversing a receipt that paid an invoice with an open
+  refund obligation (`receipt_reversal_refund_obligation_open`), after share-locking those
+  invoices.
+
+### As-of settlement reads and request-path instants (P1-32-PRE-OD-FD16A, migration 20261008090000)
+
+Owner decision D16 (end-of-period reporting, ADR-023), part 1.
+
+- `sal.invoice_open_receivable_as_of(p_invoice_id uuid, p_as_of timestamptz) returns numeric` —
+  `sal.invoice_open_receivable` as of `p_as_of`: 0 for a draft, a voided invoice and an invoice
+  issued after the moment; otherwise gross less the allocations with `allocated_at <= p_as_of` of
+  receipts not reversed by then (an approved reversal counts from its `reversed_at`) and less the
+  approved credit notes with `issued_at <= p_as_of`, rounded to 4. STABLE, SECURITY INVOKER, empty
+  `search_path`; EXECUTE for `app_runtime` and `app_readonly` only.
+- `sal.receipt_unallocated_as_of(p_receipt_id uuid, p_as_of timestamptz) returns numeric` —
+  `sal.receipt_unallocated` as of `p_as_of`: 0 for a receipt received after the moment or reversed
+  by then; otherwise its amount less the allocations with `allocated_at <= p_as_of`. Same posture.
+- For a moment at or after the read, each equals its live counterpart. A NULL moment is refused
+  (`null_value_not_allowed`).
+- `sal.receipts.received_at`, `sal.payment_allocations.allocated_at` and
+  `sal.financial_events.occurred_at` are stamped with `now()` on INSERT for `app_runtime` and its
+  login members, whatever the writer supplied (`sal.stamp_receipt_received_at`,
+  `sal.stamp_payment_allocation_allocated_at`, `sal.stamp_financial_event_occurred_at`; BEFORE
+  INSERT triggers `tg_receipts_received_at`, `tg_payment_allocations_allocated_at`,
+  `tg_financial_events_occurred_at`). Before this migration the runtime role could insert a past
+  value into each through its table-level INSERT grant. A role that bypasses row security is not
+  held to it. No stored row is changed.
 
 ## §WTY — warranty policies/effective-dated coverage/records/record items/status history.
 
@@ -4888,6 +5827,52 @@ Report configuration (tenant-scoped, versioned).
 | `deleted_at`             | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                            |
 | `deleted_by`             | `uuid`        | internal | yes   | Soft-deleting actor.                                                                            |
 
+### `rpt.report_snapshots`
+
+P1-32-PRE-OD-FD16B (Owner decision D16). A frozen copy of ONE run of a report — its period, zone,
+as-of moment, filters, columns and every row — written once and never changed: SELECT and INSERT
+only for `app_runtime`, SELECT for `app_readonly`, and `rpt.guard_report_snapshot` refuses every
+UPDATE. A restatement is a later snapshot of the same report, scope, period and filters that names
+the one it replaces (`restates_snapshot_id`), with a required non-blank `restatement_reason` and a
+`difference` summary; `uq_report_snapshots_original` admits one original per (tenant, company,
+branch, report, period, filters digest) and `uq_report_snapshots_restates` one restatement per
+snapshot, so the chain is linear. The guard stamps `generated_by`, `created_by`, `generated_at` and
+`created_at` from the session for `app_runtime` and its login members, `row_count` and the sha256
+digests (`rows_digest`, `parameters_digest`, over the canonical jsonb text) for every writer, and
+admits a restatement only of the same report, period and filters. `sel_report_snapshots_scope`
+admits a row only with `rpt.report.read` and every code in `required_permissions`, each in the
+row's own company and branch; `ins_report_snapshots_scope` also requires `rpt.report.configure` and
+pins `generated_by` to the signed-in user. It required `rpt.export` until migration
+`20261008110000_rpt_report_snapshot_save_gate.sql` (P1-32-PRE-OD-FD16C): a snapshot is an internal
+frozen record, not an export, and `rpt.export` is withheld from every tenant administrator (CC-04),
+so no tenant account could save one. Interim until the Owner decides on a dedicated snapshot code.
+
+| Column                 | Type          | class      | Null? | Purpose                                                                                                         |
+| ---------------------- | ------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------------------- |
+| `id`                   | `uuid`        | internal   | no    | Primary key (UUID).                                                                                             |
+| `tenant_id`            | `uuid`        | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                 |
+| `company_id`           | `uuid`        | internal   | no    | Company of the reported branch.                                                                                 |
+| `branch_id`            | `uuid`        | internal   | no    | Reported branch; composite FK -> `org.branches(tenant_id, company_id, id)` RESTRICT.                            |
+| `report_code`          | `text`        | internal   | no    | The registered dataset; `^[a-z][a-z0-9_]{1,62}$`.                                                               |
+| `period_from`          | `date`        | internal   | no    | First day included, in the branch's zone.                                                                       |
+| `period_to_exclusive`  | `date`        | internal   | no    | First day excluded; CHECK `period_from < period_to_exclusive`.                                                  |
+| `timezone_name`        | `text`        | internal   | no    | The IANA zone the period was resolved in (the branch's).                                                        |
+| `as_of`                | `timestamptz` | internal   | no    | The moment the stored amounts were computed as of.                                                              |
+| `parameters`           | `jsonb`       | internal   | no    | The filters the run used (company, branch, period), a JSON object.                                              |
+| `parameters_digest`    | `text`        | internal   | no    | sha256 (hex) of the canonical jsonb text of `parameters`; stamped.                                              |
+| `required_permissions` | `text[]`      | internal   | no    | The dataset's permission codes, frozen at creation; a reader needs every one (RLS).                             |
+| `columns`              | `jsonb`       | internal   | no    | The report's columns as published (key, kind, drill-through templates), a JSON array.                           |
+| `rows`                 | `jsonb`       | restricted | no    | Every row of the run as published (cells of key, label, value; amounts as decimal strings), a JSON array.       |
+| `row_count`            | `integer`     | internal   | no    | Number of rows; stamped; CHECK equals `jsonb_array_length(rows)`.                                               |
+| `rows_digest`          | `text`        | internal   | no    | sha256 (hex) of the canonical jsonb text of `rows`; stamped.                                                    |
+| `generated_at`         | `timestamptz` | internal   | no    | When it was saved; stamped from `now()` for the request path.                                                   |
+| `generated_by`         | `uuid`        | internal   | no    | Who saved it; stamped from `iam.current_user_id()` for the request path.                                        |
+| `restates_snapshot_id` | `uuid`        | internal   | yes   | The snapshot this one restates; composite FK -> `rpt.report_snapshots(tenant_id, company_id, branch_id, id)`.   |
+| `restatement_reason`   | `text`        | restricted | yes   | Why it was restated; required and non-blank exactly when `restates_snapshot_id` is set; at most 500 characters. |
+| `difference`           | `jsonb`       | restricted | yes   | For a restatement: rows added, removed and changed, and totals per currency before and after; NULL otherwise.   |
+| `created_at`           | `timestamptz` | internal   | no    | Row creation timestamp; stamped with `generated_at`.                                                            |
+| `created_by`           | `uuid`        | internal   | no    | Creating actor; stamped with `generated_by`.                                                                    |
+
 ### `rpt.saved_filters`
 
 User-owned saved filter (owner-only RLS).
@@ -4908,3 +5893,35 @@ User-owned saved filter (owner-only RLS).
 | `updated_by`              | `uuid`        | internal | yes   | Last-updating actor.                                                                                     |
 | `deleted_at`              | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                     |
 | `deleted_by`              | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                     |
+
+## §P1-32 — friendly search: text folding routines and search indexes
+
+No table and no column is added or changed. Two routines are added, four existing normalizers
+are re-issued over them, and seven indexes make the widened search surface index-eligible.
+Migrations `20260916094000_shared_text_folding.sql` and
+`20260916095000_search_expression_indexes.sql`.
+
+| Routine                         | Kind              | Security                   | Purpose                                                                                                                                                                  |
+| ------------------------------- | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shared.fold_digits(text)`      | function → `text` | INVOKER, IMMUTABLE, STRICT | Arabic-Indic (U+0660–U+0669) and Eastern Arabic-Indic (U+06F0–U+06F9) digits become ASCII `0`–`9`; nothing else changes; length preserved.                               |
+| `shared.fold_search_text(text)` | function → `text` | INVOKER, IMMUTABLE         | The NAME rule: strips tatweel and tashkeel, collapses the three hamza-seated alef forms onto bare alef, folds digits, lowercases, collapses whitespace; NULL on blank.   |
+| `crm.normalize_name(text)`      | function → `text` | INVOKER, IMMUTABLE         | Re-issued: now `shared.fold_search_text`.                                                                                                                                |
+| `crm.normalize_phone(text)`     | function → `text` | INVOKER, IMMUTABLE         | Re-issued: digits are folded BEFORE the non-digit strip, so an Arabic-Indic number no longer normalizes to NULL. `crm.contact_points.normalized_value` recomputed.       |
+| `veh.normalize_vin(text)`       | function → `text` | INVOKER, IMMUTABLE         | Re-issued: digits folded first; letters untouched. `veh.vehicles.vin_normalized` recomputed with `SET EXPRESSION` over the identical expression.                         |
+| `veh.normalize_plate(text)`     | function → `text` | INVOKER, IMMUTABLE         | Re-issued: digits folded first; letters, including non-Latin, untouched. `veh.plate_history.plate_normalized` recomputed with `SET EXPRESSION` over the same expression. |
+
+Letter folding is applied to names only, never to a VIN or a plate: those are identifiers.
+
+| Index                                   | Table                   | Definition                                                                        |
+| --------------------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
+| `ix_business_partners_name_folded_trgm` | `crm.business_partners` | GIN `crm.normalize_name(display_name)` trigram; partial `deleted_at IS NULL`.     |
+| `ix_contact_points_phone_tail`          | `crm.contact_points`    | btree `(tenant_id, right(normalized_value, 7))`; partial `deleted_at IS NULL`.    |
+| `ix_vehicles_vin_trgm`                  | `veh.vehicles`          | GIN `vin_normalized` trigram; partial `deleted_at IS NULL`.                       |
+| `ix_plate_history_normalized_trgm`      | `veh.plate_history`     | GIN `plate_normalized` trigram, over every interval (historical plates included). |
+| `ix_makes_name_folded_trgm`             | `veh.makes`             | GIN `shared.fold_search_text(name)` trigram; partial `deleted_at IS NULL`.        |
+| `ix_models_name_folded_trgm`            | `veh.models`            | GIN `shared.fold_search_text(name)` trigram; partial `deleted_at IS NULL`.        |
+| `ix_work_orders_display_number_trgm`    | `wo.work_orders`        | GIN `display_number` trigram; partial `deleted_at IS NULL`.                       |
+
+Classification: `wo.work_orders.display_number` is now `searchable` in
+`wo-tech-dia-qms-personal-data-classification.json` (still `internal`); every other column these
+indexes serve was already classified searchable.

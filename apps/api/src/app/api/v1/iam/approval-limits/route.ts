@@ -8,7 +8,8 @@
  * into an approximate one at the API edge would be silent and permanent.
  *
  * Escalation controls: exactly one subject (role **or** user, never both), no
- * limit for yourself, the company must be inside your own scope, and the two
+ * limit for yourself and none for a role you hold (each refused with its own
+ * named rule), the company must be inside your own scope, and the two
  * EXCLUDE constraints refuse an overlapping window for the same subject and
  * type — which is what stops "raise my ceiling by adding a second, higher,
  * overlapping limit".

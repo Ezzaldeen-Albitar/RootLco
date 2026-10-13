@@ -41,15 +41,19 @@ import { sessionAuthenticator } from '../context/principal';
 import { withTransaction, type DbHandle } from '../db/transaction';
 import {
   requirePermissions,
+  requireScopeClaimInTenant,
   requireScopeTargetInTenant,
   requireScopedPermissions,
+  resolveAuthorizedBranches,
   type AuthorizationTarget,
   type ScopeAuthorizer,
+  type BranchScopeResolver,
 } from '../auth/authorization';
 import { requireFeature } from '../auth/entitlement';
 import type { RegisteredOperation } from '../auth/operation-registry';
 import {
   IdempotencyRaceError,
+  raceIfKeyStored,
   requestFingerprint,
   requireIdempotencyKey,
   resolveRace,
@@ -60,6 +64,13 @@ import { RATE_LIMIT_POLICIES, enforceRateLimit, type RateLimitPolicy } from './r
 import { resolveClientAddress } from './trusted-proxy';
 import { backendConfig } from '../config/backend-config';
 import { recordSecurityEvent } from '../audit/security-events';
+import {
+  businessRefusalOf,
+  permissionRefusalOf,
+  recordBusinessRefusal,
+  recordPermissionRefusal,
+  recordsPermissionRefusals,
+} from '../audit/business-refusals';
 
 /** What a handler returns. `status` defaults to 200. */
 export interface HandlerResult<T> {
@@ -107,6 +118,57 @@ export interface HandlerInput {
    * operation's own declaration rather than restating it.
    */
   readonly authorizeScope: ScopeAuthorizer;
+  /**
+   * The branches of one company this caller may run this operation in (Owner
+   * directive, P1-32-PRE-OD-UX).
+   *
+   * What the branch-optional reads call when the caller names a company and no
+   * branch. `undefined` means "every branch of that company"; a list means
+   * exactly those; a caller with none is refused with the same document the
+   * other scope refusals carry. See `resolveAuthorizedBranches` for why a
+   * company-only target cannot answer this on its own.
+   *
+   * Bound to the operation for the same reason `authorizeScope` is: the
+   * permission codes stay in `defineOperation` and the refusal carries the
+   * operation's own declared codes.
+   */
+  readonly authorizedBranches: BranchScopeResolver;
+  /**
+   * Resolves the scope a BODY-SCOPED create claims, and refuses it when the
+   * caller cannot see it inside its own tenant (CC-56, applying CC-14 § 2).
+   *
+   * The counterpart of the probe the GET path runs above, for the requests that
+   * path cannot serve: a create names its company — or its company and branch —
+   * in a body this pipeline has deliberately not parsed, so the claim can only
+   * be resolved once the handler has validated it. `authorizeScope` is not
+   * enough on its own and never was: it asks whether the CALLER may write in the
+   * named scope, and a holder of an unrestricted grant satisfies that for any
+   * pair it cares to invent.
+   *
+   * Injected here, closing over the operation, for the same reason
+   * `authorizeScope` is: the permission codes stay in `defineOperation`, the
+   * refusal carries the operation's own declared codes, and a service never
+   * needs to reach for a declaration it cannot see without importing `app/**`.
+   *
+   * ORDER is the caller's to keep, and it is the same order the read path uses:
+   * `authorizeScope` first, this second. A caller missing the permission must be
+   * told that, not told the scope is invisible.
+   */
+  readonly requireScopeClaim: ScopeAuthorizer;
+  /**
+   * For a keyed (idempotent) operation: throws the idempotency-race signal when
+   * this request's key is ALREADY stored with this request's fingerprint, and
+   * returns normally otherwise — including for an operation that takes no key
+   * (P1-32-PRE-OD-FD16B).
+   *
+   * For a command that loses a race at its OWN unique index. The key is written
+   * after the command, so two copies of one request sent at once both execute, and
+   * the loser meets the winner's row before it ever reaches the key — and would
+   * refuse its own retry. Asked at that moment, on this transaction (READ COMMITTED,
+   * after a savepoint rollback), it sees the winner's committed key, and the route
+   * answers with the stored response exactly as for any other race.
+   */
+  readonly replayIfRetried: () => Promise<void>;
 }
 
 export type OperationHandler<T> = (input: HandlerInput) => Promise<HandlerResult<T>>;
@@ -420,6 +482,24 @@ export async function handleOperation<T>(
               // and reopen P1-18-A-01 through this very API.
               authorizeScope: (target: AuthorizationTarget) =>
                 requireScopedPermissions(db, operation, target),
+              // Bound to the same operation and the same handle, so it can
+              // never answer for a declaration other than this one's.
+              authorizedBranches: (companyId: string) =>
+                resolveAuthorizedBranches(db, operation, companyId),
+              // Bound to the same `operation` and the same handle, so the refusal
+              // it raises carries the declared codes and runs inside this
+              // transaction — a scope claim refused after a partial write would
+              // otherwise leave the write.
+              requireScopeClaim: (claim: AuthorizationTarget) =>
+                requireScopeClaimInTenant(db, operation, claim),
+              replayIfRetried: () =>
+                idempotencyKey && fingerprint
+                  ? raceIfKeyStored(db, {
+                      operationId: operation.id,
+                      key: idempotencyKey,
+                      fingerprint,
+                    })
+                  : Promise.resolve(),
             });
 
           if (!idempotencyKey || !fingerprint) return execute();
@@ -445,7 +525,16 @@ export async function handleOperation<T>(
     try {
       result = await run();
     } catch (error) {
-      if (!(error instanceof IdempotencyRaceError)) throw error;
+      if (!(error instanceof IdempotencyRaceError)) {
+        // The command's transaction has rolled back by now, and a refusal by
+        // business rule (ADR-023, D12) — or for want of a permission on one of
+        // the four financial approval decisions (D12 extension) — is recorded
+        // AFTER it, on a transaction of its own, so the record survives the
+        // refusal. At most one event per attempt, and never a change to what the
+        // caller is told.
+        await persistRefusal(operation, context as RequestContext, error);
+        throw error;
+      }
       // Another transaction won the key while this one executed. This
       // transaction rolled back, so nothing partial committed; re-read the
       // winner's stored response on a fresh transaction.
@@ -498,6 +587,24 @@ async function handlePublic<T>(
     authorizeScope: () => {
       throw new Error(`Operation ${operation.id} is public and cannot authorize a scope`);
     },
+    // Same argument once more, and the throw matters MORE here than above: the
+    // resolver's ordinary answer is a branch list, so a stub returning `[]`
+    // would look like a working narrowing and quietly empty every page, while
+    // one returning `undefined` would admit every branch in the tenant. Neither
+    // is a decision.
+    authorizedBranches: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot resolve a branch scope`);
+    },
+    // Same argument: a public operation has no tenant to resolve a claim inside,
+    // so asking is a coding error and answering "visible" would be the dangerous
+    // reading.
+    requireScopeClaim: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot resolve a scope claim`);
+    },
+    // A public operation has no tenant and no stored keys to consult.
+    replayIfRetried: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot replay a stored key`);
+    },
   });
   metrics().increment(METRICS.requestCount, { operation: operation.id, result: 'success' });
   return new Response(JSON.stringify(result.body), {
@@ -548,6 +655,63 @@ function respondWithFailure(
     status: failure.status,
     headers: problemHeaders(failure, correlationId),
   });
+}
+
+/**
+ * Records a refusal after its command rolled back (ADR-023, D12 and its
+ * extension).
+ *
+ * A failure carries at most ONE mark, so an attempt is recorded at most once and
+ * in one class:
+ *
+ *  - marked with `withBusinessRefusal` — a `business-rule.refused` event, for any
+ *    operation, exactly as before;
+ *  - marked with `withPermissionRefusal` — an `authorization.denied` event, for
+ *    the four operations in `PERMISSION_REFUSAL_OPERATIONS` ONLY. On any other
+ *    operation this mark is not written, and a permission refusal no service
+ *    marked as a business rule stays the log line `requirePermissions` wrote.
+ *
+ * Every other failure passes through untouched. The operation id is this
+ * pipeline's own registration, never anything the caller or the service
+ * supplied. The write runs on the operation's own connection, so a control-plane
+ * refusal is recorded by the platform role and a tenant refusal by the runtime
+ * role. It can never fail the request: a lost record is logged, and the caller
+ * still receives the refusal that was thrown — the refusal happened before the
+ * record was attempted, so a failure to record can never let the action through.
+ */
+async function persistRefusal(
+  operation: RegisteredOperation,
+  context: RequestContext,
+  error: unknown
+): Promise<void> {
+  const business = businessRefusalOf(error);
+  const permission = recordsPermissionRefusals(operation.id)
+    ? permissionRefusalOf(error)
+    : undefined;
+  const record =
+    business !== undefined
+      ? (db: DbHandle) => recordBusinessRefusal(db, { ...business, operationId: operation.id })
+      : permission !== undefined
+        ? (db: DbHandle) =>
+            recordPermissionRefusal(db, { ...permission, operationId: operation.id })
+        : undefined;
+  if (record === undefined) return;
+  try {
+    await withTransaction(
+      context,
+      record,
+      isControlPlane(operation) ? { connection: 'platform' as const } : {}
+    );
+  } catch (failure) {
+    log.error('Refusal could not be recorded', {
+      ...contextLogFields(context),
+      result: 'failure',
+      context: {
+        ...(business !== undefined ? { rule: business.rule } : { refusal: 'permission' }),
+        reason: failure instanceof Error ? failure.name : 'unknown',
+      },
+    });
+  }
 }
 
 /**

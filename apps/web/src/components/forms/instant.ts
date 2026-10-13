@@ -22,18 +22,56 @@
  * feature modules re-export it. Copying it would have made a second authority
  * for a value whose whole worth is that there is one of it.
  *
- * ## What "explicit offset" means and why it is capped
+ * ## What "explicit offset" means and why it is bounded
  *
- * `Z`, or `±HH:MM` with the displacement capped at ±15:59 — PostgreSQL's own
- * `timestamptz` limit. V8 parses `+16:00` happily, so without the cap the value
- * sails past every client and server guard and dies in the database as an
- * unmapped `22009`.
+ * `Z`, or `±HH:MM` inside -12:00…+14:00 — the range of civil offsets actually in
+ * use. Without a bound, `+16:00` sails past every client guard, satisfies
+ * `Date.parse`, and dies in the database as an unmapped `22009`; with the wider
+ * `timestamptz` bound of ±15:59 it is refused but the sentence cannot name a
+ * value anybody would write. The server states the identical rule in
+ * `apps/api/src/modules/reception/domain/appointment.ts`, and the three
+ * expressions below are duplicated there verbatim: this file is the browser-side
+ * pre-check for that rule, so a classification that drifts from it sends the
+ * operator to fix a value the server would have accepted, or lets one through
+ * that it would not.
+ *
+ * ## Three causes, not one
+ *
+ * A missing offset, a mistyped one (`…+9`, `…+09`) and an impossible one
+ * (`…+16:00`) used to be one answer, and the answer told the operator to supply
+ * an offset — wrong advice for the two entries that already carried one.
  */
 
-const EXPLICIT_OFFSET = /(?:Z|[+-](?:0\d|1[0-5]):[0-5]\d)$/;
+const ZULU = /Z$/;
+const OFFSET = /([+-])(\d{2}):(\d{2})$/;
+/**
+ * A tail that is an offset ATTEMPT rather than an offset. The sign must follow a
+ * clock time, which is what keeps the hyphens inside the date (`2026-08-30`)
+ * from reading as the start of a displacement.
+ */
+const OFFSET_ATTEMPT = /\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?[+-][^+-]*$/;
+
+const MIN_OFFSET_MINUTES = -12 * 60;
+const MAX_OFFSET_MINUTES = 14 * 60;
+
+/** What is wrong with the offset on one instant, `ok` when nothing is. */
+export type OffsetIssue = 'ok' | 'missing' | 'unreadable' | 'out_of_range';
+
+export function classifyUtcOffset(value: string): OffsetIssue {
+  if (ZULU.test(value)) return 'ok';
+  const parts = OFFSET.exec(value);
+  if (!parts) return OFFSET_ATTEMPT.test(value) ? 'unreadable' : 'missing';
+  const magnitude = Number.parseInt(parts[2] ?? '', 10) * 60 + Number.parseInt(parts[3] ?? '', 10);
+  const displacement = parts[1] === '-' ? -magnitude : magnitude;
+  // Stated as "inside the bound" so a displacement that failed to read as a
+  // number is refused rather than admitted.
+  return displacement >= MIN_OFFSET_MINUTES && displacement <= MAX_OFFSET_MINUTES
+    ? 'ok'
+    : 'out_of_range';
+}
 
 export function hasExplicitUtcOffset(value: string): boolean {
-  return EXPLICIT_OFFSET.test(value);
+  return classifyUtcOffset(value) === 'ok';
 }
 
 /**
@@ -41,7 +79,13 @@ export function hasExplicitUtcOffset(value: string): boolean {
  * not translation keys — a screen maps them to its own catalogue entries, and a
  * token that reached an operator raw would be a defect in the screen.
  */
-export type InstantIssue = 'empty' | 'too_long' | 'missing_offset' | 'unparseable';
+export type InstantIssue =
+  | 'empty'
+  | 'too_long'
+  | 'missing_offset'
+  | 'offset_unreadable'
+  | 'offset_out_of_range'
+  | 'unparseable';
 
 /** `z.string().min(1).max(64)` on both appointment window route schemas. */
 export const MAX_INSTANT_LENGTH = 64;
@@ -53,7 +97,10 @@ export function validateInstant(
   const trimmed = value.trim();
   if (trimmed.length === 0) return 'empty';
   if (trimmed.length > maxLength) return 'too_long';
-  if (!hasExplicitUtcOffset(trimmed)) return 'missing_offset';
+  const offset = classifyUtcOffset(trimmed);
+  if (offset === 'missing') return 'missing_offset';
+  if (offset === 'unreadable') return 'offset_unreadable';
+  if (offset === 'out_of_range') return 'offset_out_of_range';
   if (Number.isNaN(Date.parse(trimmed))) return 'unparseable';
   return 'ok';
 }

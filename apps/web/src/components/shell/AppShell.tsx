@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BrandMark } from '@/components/brand';
 import { brandIsProvisional } from '@/components/brand/theme';
 import { Icon } from '@/components/primitives/Icon';
-import { NAVIGATION } from '@/config/navigation';
+import { NAVIGATION, type NavigationGroup } from '@/config/navigation';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -71,6 +71,24 @@ export interface AppShellProps {
    * this architecture exists to avoid.
    */
   readonly account?: ReactNode;
+  /**
+   * The navigation model. Defaults to the workspace model; the Platform Owner
+   * Console passes its own, so the two audiences never share a sidebar
+   * (P1-32-PRE-062).
+   */
+  readonly navigation?: readonly NavigationGroup[];
+  /** A short label naming the surface, shown in the header beside the menu. */
+  readonly contextLabel?: string | undefined;
+  /**
+   * The working-context control, shown in the header after `contextLabel`.
+   *
+   * Passed in rather than rendered here, for the same reason `account` is: this
+   * shell serves two audiences, and only one of them has branches. The Platform
+   * Owner Console passes nothing and gets nothing — a console operator has no
+   * working branch, and a control offering one would be inviting them to choose
+   * something that does not apply to the surface they are on.
+   */
+  readonly workingContext?: ReactNode;
 }
 
 export function AppShell({
@@ -80,6 +98,9 @@ export function AppShell({
   children,
   secondaryPanel,
   account,
+  navigation = NAVIGATION,
+  contextLabel,
+  workingContext,
 }: AppShellProps) {
   const pathname = usePathname() ?? `/${locale}`;
   const [collapsed, setCollapsed] = usePersistedFlag(COLLAPSE_KEY, false);
@@ -159,7 +180,7 @@ export function AppShell({
   // never.
   useScrollRestoration('main');
 
-  const groups = visibleNavigation(NAVIGATION, capabilities);
+  const groups = visibleNavigation(navigation, capabilities);
 
   return (
     /*
@@ -175,8 +196,20 @@ export function AppShell({
      * `h-dvh` + `overflow-hidden` here is what makes every inner region's own
      * scrolling meaningful: the sidebar stays put, the header stays put, and the
      * main region scrolls inside its own box however many rows arrive.
+     *
+     * `data-app-shell` names each box of that viewport contract for the PRINT
+     * sheet (`styles/print/_index.scss`). Paper has no viewport, so on paper
+     * every one of them releases its fixed height and its clipping and the
+     * document flows over as many pages as it needs — without it a printout
+     * was the one screenful at the current scroll position (checkpoint browser
+     * QA, DEF-01). An attribute rather than the utility classes, because the
+     * print sheet must outrank those classes by specificity and must not
+     * depend on how a class list happens to be spelled.
      */
-    <div className="relative flex h-dvh overflow-hidden bg-app-background text-text-primary">
+    <div
+      data-app-shell="root"
+      className="relative flex h-dvh overflow-hidden bg-app-background text-text-primary"
+    >
       <Sidebar
         locale={locale}
         messages={messages}
@@ -249,7 +282,7 @@ export function AppShell({
         </div>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-app-shell="column" className="flex min-w-0 flex-1 flex-col">
         <AppHeader
           locale={locale}
           messages={messages}
@@ -258,8 +291,10 @@ export function AppShell({
           onOpenDrawer={() => setDrawerOpen(true)}
           drawerTriggerRef={drawerTriggerRef}
           account={account}
+          contextLabel={contextLabel}
+          workingContext={workingContext}
         />
-        <div className="flex min-h-0 flex-1">
+        <div data-app-shell="body" className="flex min-h-0 flex-1">
           {/*
             `tabIndex={-1}` is what makes the skip link work. Without it the
             browser moves the scroll position to #main but leaves focus in the
@@ -314,6 +349,7 @@ export function AppShell({
           {secondaryPanel ? (
             <aside
               aria-label={translate(messages, 'shell.secondaryPanel')}
+              data-print="hide"
               className="relative hidden w-80 shrink-0 overflow-y-auto overscroll-contain border-s border-border bg-surface xl:block"
             >
               {secondaryPanel}
@@ -333,6 +369,8 @@ function AppHeader({
   onOpenDrawer,
   drawerTriggerRef,
   account,
+  contextLabel,
+  workingContext,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -341,6 +379,8 @@ function AppHeader({
   readonly onOpenDrawer: () => void;
   readonly drawerTriggerRef: React.RefObject<HTMLButtonElement | null>;
   readonly account?: ReactNode;
+  readonly contextLabel?: string | undefined;
+  readonly workingContext?: ReactNode;
 }) {
   return (
     // NOT `sticky`. It used to be, from when the document scrolled — and since
@@ -352,7 +392,12 @@ function AppHeader({
     // person to "fix" a scrolling problem by adding `overflow` somewhere in the
     // chain, which is how the containing-block contract gets broken. `z-header`
     // stays — that is what keeps it above a table's `z-sticky` header.
-    <header className="z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs">
+    // `data-print="hide"`: the header is the screen's chrome — the working
+    // branch, the account, the toggles — and has no place on a printed document.
+    <header
+      data-print="hide"
+      className="z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs"
+    >
       <button
         ref={drawerTriggerRef}
         type="button"
@@ -383,7 +428,31 @@ function AppHeader({
         <Icon name="overview" size={18} />
       </button>
 
-      <div className="ms-auto flex items-center gap-2">
+      {contextLabel ? (
+        <span
+          data-testid="shell-context-label"
+          className="truncate text-supporting font-semibold text-text-primary"
+        >
+          {contextLabel}
+        </span>
+      ) : null}
+
+      {/*
+        After the context label, because the label names the SURFACE and this
+        names where the operator is working within it — general to specific,
+        reading order, in both scripts.
+      */}
+      {workingContext}
+
+      {/*
+        `shrink-0`: the language switcher and the account keep their own width
+        and never yield it. At 375 px the working-branch select used to overflow
+        its box and was drawn UNDER "العربية" / "English" (Browser QA part 7,
+        row 9.5); the select is the one that gives way now (`min-w-0` down its
+        chain in `BranchSelector`), so nothing overlaps and the page does not
+        scroll sideways.
+      */}
+      <div className="ms-auto flex shrink-0 items-center gap-2" data-header-end="">
         {/*
           Rendered only WHILE the brand is provisional. It was unconditional
           until this guard was added, which quietly falsified the phase's

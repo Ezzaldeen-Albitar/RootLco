@@ -55,6 +55,9 @@ export class IdentityDirectoryService extends ApplicationService {
    * alongside the name, so the change is additive. What the caller's SCREEN
    * shows is the frontend's decision; this service publishes an absence.
    *
+   * `listedOnly` narrows further, to the accounts the user list shows — see
+   * `IdentityRepository.findDisplayIdentities`.
+   *
    * ## It does not throw
    *
    * An id this caller cannot resolve is simply absent from the map. Failing a
@@ -63,10 +66,11 @@ export class IdentityDirectoryService extends ApplicationService {
    */
   async resolveDisplayIdentities(
     db: DbHandle,
-    userIds: readonly string[]
+    userIds: readonly string[],
+    options: { readonly listedOnly?: boolean | undefined } = {}
   ): Promise<ReadonlyMap<string, UserDisplayIdentity>> {
     if (userIds.length === 0) return new Map();
     if (!(await this.identities.mayReadUsers(db))) return new Map();
-    return this.identities.findDisplayIdentities(db, userIds);
+    return this.identities.findDisplayIdentities(db, userIds, options);
   }
 }

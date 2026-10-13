@@ -205,7 +205,7 @@ shown. Adversarial review: 61 raised, 40 confirmed — two invisible to the suit
 (the post-allocation balance rendered on a component the act unmounts; the record form's busy flag
 never clearing), both now carried by DOM cases proved to fail without them. `validate:theme`
 caught eight headings on a class emitting no CSS (a WEB-workspace gate the root run does not call).
-Proof: `p1-30-w7-payments.test.ts` (16), `payments-api.test.ts` (15), `payments.dom.test.tsx` (50).
+Proof: `p1-30-w7-payments.test.ts` (16), `payments-api.test.ts` (15), `payments.dom.test.tsx` (50; since split into `payments-branch-and-list.dom.test.tsx`, `payments-recording.dom.test.tsx`, `payments-allocation.dom.test.tsx` and `payments-print-and-reversal.dom.test.tsx`).
 Hosted: web from run 33984398779, unit 33985268076, final green with `verify:policies` 23 gates.
 
 ## TB — the tenant bootstrap corrective slice (#321, `6f6236c3`)

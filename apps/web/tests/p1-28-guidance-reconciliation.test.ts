@@ -247,13 +247,19 @@ describe('the check-in step enumeration is the registry, counted and in order', 
 });
 
 describe('the reception sentences', () => {
-  it('"you cannot search for a customer by telephone number" — and the screen says so', () => {
-    expect(OPERATOR).toContain('cannot search for a customer by telephone number');
-    expect(en['receptions.intake.phone.title']).toContain('phone number is not available');
-    // The statement is rendered, not merely translated.
+  it('"you can search for a customer by telephone number" — and the picker offers the box (P1-32)', () => {
+    expect(OPERATOR).toContain('can search for a customer by telephone number');
+    expect(OPERATOR).not.toContain('cannot search for a customer by telephone number');
+    expect(en['customerSelector.phone']).toContain('Phone number');
+    // The retired notice is gone from the catalogue and from the screen.
+    expect(Object.keys(en).filter((key) => key.startsWith('receptions.intake.phone.'))).toEqual([]);
     expect(
       read('features', 'receptions', 'intake', 'components', 'WalkInIntakeScreen.tsx')
-    ).toMatch(/receptions\.intake\.phone\./);
+    ).not.toMatch(/receptions\.intake\.phone\./);
+    // The box is rendered by the picker the walk-in desk uses.
+    expect(read('components', 'party', 'CustomerSelector.tsx')).toContain(
+      "'customerSelector.phone'"
+    );
   });
 
   it('"you can still resume a visit" — read-only really keeps the resume path', () => {

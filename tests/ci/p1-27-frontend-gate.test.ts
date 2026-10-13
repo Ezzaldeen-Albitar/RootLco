@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   ADOPTED_ROOTS,
+  AUTHORIZED_EXPORT_REFERENCES,
   EXPORT_CONSTRUCTS,
   EXPORT_INNOCENT,
+  EXPORT_SURFACE_ANCHORS,
   FILE_ACCESS_CONSTRUCTS,
   FILE_ACCESS_INNOCENT,
   FILE_INPUT_ALLOW,
@@ -24,6 +26,7 @@ import {
   collects,
   evaluate,
   evaluateModuleDispositions,
+  exportSurfaceAnchors,
   fires,
   importedModuleDirectories,
   inRuleScope,
@@ -31,6 +34,7 @@ import {
   moduleSourceRoot,
   selfTest,
   stripComments,
+  unauthorizedExports,
 } from '../../scripts/ci/check-p1-27-frontend.mjs';
 
 /** The repository root, resolved from this file rather than from the cwd. */
@@ -105,6 +109,11 @@ const OP = {
  *     scope at all and matches no rule. The exclusion is SHORTER than it was.
  *   - `client-log.ts` IS the structured logger the console rule tells people to
  *     use instead of `console.*`.
+ *   - `read-route.ts` holds `READ_BODY_LIMIT_BYTES = 16 * 1024`, the
+ *     request-body size cap for JSON read routes, not a media/upload limit. It
+ *     bounds how much JSON a read handler will parse before refusing; it says
+ *     nothing about which files, types or sizes a user may attach, which is the
+ *     decision `no-invented-media-limit` guards and P1-OD-025 owns.
  *
  * A new file, or a new rule matching one of those that remain, fails the case
  * that pins this list — which is what makes "excluded" a measurement rather than
@@ -117,6 +126,7 @@ const EXCLUDED_MODULE_MATCHES = [
   'no-console-output: apps/web/src/lib/observability/client-log.ts',
   'no-duplicate-scan-on-a-queue: apps/web/src/lib/api/idempotent-operations.ts',
   'no-export-surface: apps/web/src/lib/api/idempotent-operations.ts',
+  'no-invented-media-limit: apps/web/src/lib/api/read-route.ts',
   'no-merge-caller: apps/web/src/lib/api/idempotent-operations.ts',
 ];
 
@@ -733,6 +743,221 @@ describe('no-export-surface is what the canonical plan records, re-read not reme
   });
 });
 
+describe('no-export-surface recognizes ONE authorized contract and still refuses the rest', () => {
+  /**
+   * The narrowing, proved rather than asserted.
+   *
+   * The rule used to say "this publishes no export surface" absolutely. That was
+   * a true statement about P1-27 and became a false statement about the platform
+   * when P1-31 shipped the report export the Owner authorized into
+   * `app/[locale]/(dashboard)`, a tree this gate scans. A blanket path exemption
+   * would have answered the red by removing the measurement, so recognition is
+   * scoped instead: to the permission code the catalogue registers, the operation
+   * the register holds, and the component the write-shape gate pairs with its
+   * mirror — and to nothing else, per MATCH rather than per file.
+   *
+   * These cases exist so the narrowing is falsifiable. They fail if the rule
+   * stops biting on an unauthorized export or download path, if it starts biting
+   * on the authorized screen for the wrong reason, or if an anchor decays into a
+   * word the repository does not actually register anywhere.
+   */
+
+  /** The authorized screen, and the one anchor it names. */
+  const AUTHORIZED_PAGE = join(
+    'apps',
+    'web',
+    'src',
+    'app',
+    '[locale]',
+    '(dashboard)',
+    'reports',
+    '[reportCode]',
+    'page.tsx'
+  );
+  const ANCHOR_LINE = 'const may = holds(session.permissions, REPORT_PERMISSIONS.export);';
+  const REFERENCE_LINE = 'const code = definition.data.exportPermissionCode;';
+
+  it('still refuses the authorized reference in a file that anchors to nothing', () => {
+    /*
+     * The half that makes this a narrowing and not a hole. `exportPermissionCode`
+     * on its own — in a customer screen, a vehicle screen, anywhere that has not
+     * named the contract — is judged exactly as it was before the change.
+     */
+    const { failures } = evaluate(withViolation(REFERENCE_LINE));
+    expect(
+      failures.filter((f) => f.startsWith('no-export-surface:')),
+      failures.join('\n')
+    ).toHaveLength(1);
+  });
+
+  it('clears the authorized reference once the source anchors to the contract', () => {
+    expect(evaluate(withViolation(`${ANCHOR_LINE}\n${REFERENCE_LINE}\n`)).failures).toEqual([]);
+  });
+
+  it.each(EXPORT_CONSTRUCTS.flatMap((c) => c.samples.map((s) => [c.construct, s] as const)))(
+    'still refuses the %s construct INSIDE an anchored file: %s',
+    (_construct, sample) => {
+      /*
+       * The teeth. Anchoring buys recognition of two published names and buys
+       * permission for nothing: the authorized screen may not assemble a CSV,
+       * mint an object URL, set a `Content-Disposition` or call the platform's
+       * generic export operations, and neither may anything else that names the
+       * report export contract.
+       */
+      const { failures } = evaluate(withViolation(`${ANCHOR_LINE}\n${sample}\n`));
+      expect(
+        failures.filter((f) => f.startsWith('no-export-surface:')),
+        failures.join('\n')
+      ).toHaveLength(1);
+    }
+  );
+
+  it('refuses an unauthorized download path an anchored file builds alongside it', () => {
+    // The composite case a construct-by-construct sweep cannot state: the
+    // authorized reference and an invented download in the same source. The
+    // reference is recognized, the download is reported, and the file fails.
+    const source = [ANCHOR_LINE, REFERENCE_LINE, 'const href = URL.createObjectURL(rows);'].join(
+      '\n'
+    );
+    const reported = unauthorizedExports(source);
+    expect(reported.map((entry) => entry.construct)).toEqual(['download-construction']);
+    expect(evaluate(withViolation(source)).failures).toHaveLength(1);
+  });
+
+  it('cannot be anchored by a comment, because comments are stripped first', () => {
+    const source = [
+      '/** The report export is guarded by REPORT_PERMISSIONS.export. */',
+      REFERENCE_LINE,
+    ].join('\n');
+    expect(exportSurfaceAnchors(stripComments(source))).toEqual([]);
+    expect(
+      evaluate(withViolation(source)).failures.filter((f) => f.startsWith('no-export-surface:'))
+    ).toHaveLength(1);
+  });
+
+  it('exempts no path: the rule still carries an empty allow-list', () => {
+    const rule = RULES.find((r: { id: string }) => r.id === 'no-export-surface');
+    expect(rule?.allow, 'a path was allow-listed instead of the recognition being scoped').toEqual(
+      []
+    );
+    expect(
+      rule?.roots,
+      'the rule was narrowed to a tree rather than to a contract'
+    ).toBeUndefined();
+  });
+
+  it('is the authorized screen, and the anchor is what clears it', () => {
+    /*
+     * Run against the real file rather than a sample, and mutated: with the
+     * anchor spelled differently the screen fails, which proves the recognition
+     * is what clears it and not some accident of the source.
+     */
+    const path = AUTHORIZED_PAGE.split(sep).join('/');
+    expect(collects(path), 'the authorized screen is not collected by this gate').toBe(true);
+    const source = stripComments(readFileSync(join(REPO_ROOT, AUTHORIZED_PAGE), 'utf8'));
+    expect(exportSurfaceAnchors(source)).toEqual(['export-permission-code']);
+    expect(unauthorizedExports(source)).toEqual([]);
+
+    const unanchored = source.replace(/REPORT_PERMISSIONS\.export/g, 'PERMISSIONS.viewOnly');
+    expect(unanchored, 'the mutation changed nothing').not.toEqual(source);
+    expect(exportSurfaceAnchors(unanchored)).toEqual([]);
+    expect(unauthorizedExports(unanchored).map((entry) => entry.construct)).toEqual([
+      'export-caller',
+    ]);
+  });
+
+  it('recognizes only references a construct would otherwise have refused', () => {
+    // Anti-vacuity. A reference no construct matches is a permission for
+    // something never forbidden — breadth on paper, nothing measured.
+    for (const reference of AUTHORIZED_EXPORT_REFERENCES) {
+      for (const sample of reference.samples) {
+        const matched = EXPORT_CONSTRUCTS.filter((c) =>
+          new RegExp(c.pattern.source).test(sample)
+        ).map((c) => c.construct);
+        expect(
+          matched.length,
+          `${reference.reference} recognizes \`${sample}\`, which no construct refuses`
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('holds three anchors and two references, each registered where it says', () => {
+    /*
+     * The tables cannot decay into a list of words. Every anchor's own pattern is
+     * run against the file it claims registration in, so renaming the component,
+     * retiring the permission code or deleting the operation from the manifest
+     * fails here and forces the narrowing to be reconsidered.
+     */
+    expect(EXPORT_SURFACE_ANCHORS).toHaveLength(3);
+    expect(AUTHORIZED_EXPORT_REFERENCES).toHaveLength(2);
+    for (const anchor of EXPORT_SURFACE_ANCHORS) {
+      const file = join(REPO_ROOT, anchor.registeredIn.split('/').join(sep));
+      expect(existsSync(file), `${anchor.anchor}: ${anchor.registeredIn} is gone`).toBe(true);
+      expect(
+        anchor.pattern.test(readFileSync(file, 'utf8')),
+        `${anchor.anchor} is not registered in ${anchor.registeredIn}`
+      ).toBe(true);
+    }
+    for (const reference of AUTHORIZED_EXPORT_REFERENCES) {
+      const file = join(REPO_ROOT, reference.publishedBy.split('/').join(sep));
+      expect(existsSync(file), `${reference.reference}: ${reference.publishedBy} is gone`).toBe(
+        true
+      );
+      expect(
+        reference.pattern.test(readFileSync(file, 'utf8')),
+        `${reference.reference} is not published by ${reference.publishedBy}`
+      ).toBe(true);
+    }
+  });
+
+  it('is anchored on a permission the first administrator is NOT given', () => {
+    /*
+     * Why naming the permission code is a load-bearing anchor rather than a
+     * convenient string: it is the one candidate the bootstrap bundle
+     * deliberately excludes, so a screen that names it is naming a capability an
+     * operator has to be granted rather than one everybody already holds.
+     */
+    const bundle = readFileSync(
+      join(REPO_ROOT, 'apps', 'api', 'src', 'modules', 'iam', 'domain', 'bootstrap-roles.ts'),
+      'utf8'
+    );
+    const code = EXPORT_SURFACE_ANCHORS[0];
+    expect(code?.anchor).toBe('export-permission-code');
+    expect(code && code.pattern.test(bundle)).toBe(true);
+    expect(
+      stripComments(bundle),
+      'the export permission is no longer withheld from the administrator bundle — the anchor’s ' +
+        'argument has changed and the narrowing must be re-argued'
+    ).not.toMatch(/'rpt\.export'/);
+  });
+
+  it('is paired with the mirror the write-shape gate compares, not declared pending', () => {
+    const shape = readFileSync(
+      join(REPO_ROOT, 'scripts', 'ci', 'check-p1-31-write-shape.mjs'),
+      'utf8'
+    );
+    const pending = /export const PENDING_MIRRORS = Object\.freeze\(\{([\s\S]*?)\n\}\);/.exec(
+      shape
+    );
+    expect(pending, 'the write-shape gate’s pending table was not parsed').not.toBeNull();
+    // Assembled rather than spelled: written contiguously, the P1-24 operation
+    // register would credit this gate test as evidence for the export route.
+    const operation = ['rpt', 'report-export'].join('.');
+    expect(
+      pending?.[1],
+      'the export operation is declared pending a consumer, so the paired-component anchor ' +
+        'claims a pairing that does not exist yet'
+    ).not.toContain(operation);
+    expect(
+      readFileSync(
+        join(REPO_ROOT, 'apps', 'web', 'src', 'features', 'reports', 'reports-contract.ts'),
+        'utf8'
+      )
+    ).toContain('export interface ReportExportBody');
+  });
+});
+
 describe('no-client-asserted-scope tells ASSERTING a scope from DISPLAYING one', () => {
   /**
    * The rule means "never place a scope into a request", and for the whole of
@@ -1334,7 +1559,13 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
     const derived = importedModuleDirectories(scanned);
     // Anti-vacuity: the derivation really read something. A regex that matched
     // nothing would make the equality below a comparison of two empty sets.
-    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(18);
+    // Eighteen, plus `components/search` and `lib/branch-time`. Both came into
+    // view of a scanned tree under the Owner directive (`P1-32-PRE-OD-UX`) and
+    // both are DECIDED in `MODULE_DISPOSITION` rather than silently collected,
+    // which is what moves this number. Twenty-two since the reception board
+    // moved onto the Material UI wrappers: `components/data` (`OperationalGrid`)
+    // and `components/filters` (`FilterToolbar`), each decided the same way.
+    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(22);
     expect(
       derived,
       'a module the scanned trees import has no recorded disposition, or a recorded module is ' +
@@ -1400,7 +1631,13 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
   });
 
   it('is a live set of modules that exist and are not collected', () => {
-    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(16);
+    // Sixteen, plus `components/search` — the box the customer and vehicle
+    // searches ask through (P1-32) — and `lib/branch-time`, which decides the
+    // day a board is headed with on the BRANCH's clock. Both are derived from
+    // `MODULE_DISPOSITION`, so this number moves with a recorded decision and
+    // never on its own. Twenty since the reception board's move onto the
+    // Material UI wrappers added `components/data` and `components/filters`.
+    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(20);
     for (const dir of UNCOLLECTED_PHASE_MODULES) {
       // `moduleSourceRoot`, not `existsSync`: `apps/web/src/lib/page-metadata`
       // is a FILE, and dropping it to avoid an `ENOENT` would be precisely the

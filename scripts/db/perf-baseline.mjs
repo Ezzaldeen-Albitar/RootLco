@@ -10,13 +10,16 @@
 // The generated rows are deleted at the end (ephemeral; never committed).
 //
 // Usage: node scripts/db/perf-baseline.mjs [--scale 20000] [--json out.json]
+// Env: PGPORT or DB_PORT is required (resolved by scripts/lib/db-target.mjs).
 // ============================================================================
 import { writeFileSync } from 'node:fs';
 import pg from 'pg';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
+const target = resolveDatabaseTargetOrExit({ consumer: 'perf-baseline' });
 const cfg = {
-  host: process.env.PGHOST ?? '127.0.0.1',
-  port: Number(process.env.PGPORT ?? 54322),
+  host: target.host,
+  port: target.port,
   user: process.env.PGUSER ?? 'postgres',
   password: process.env.PGPASSWORD ?? 'postgres',
   database: process.env.PGDATABASE ?? 'postgres',

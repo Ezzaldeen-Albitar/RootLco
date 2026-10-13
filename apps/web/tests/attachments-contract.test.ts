@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ACCEPTED_VERSION_STATUS,
   DOCUMENT_VERSION_STATUSES,
@@ -254,5 +254,156 @@ describe('the attachments contract is DERIVED from what governs it', () => {
     expect(isTerminalVersion(undefined)).toBe(false);
     expect(isTerminalVersion('')).toBe(false);
     expect(isTerminalVersion(ACCEPTED_VERSION_STATUS)).toBe(false);
+  });
+});
+
+/**
+ * The three refusals about the FILE, and where their sentences land.
+ *
+ * `content_type_not_allowed`, `size_out_of_range` and `expired` — all from
+ * `shared-services/application/attachment-service.ts` — are published against
+ * `body.contentType`, `body.byteSize` and `body.uploadToken`. None of the three
+ * is a control: every capture surface offers one file picker, and this module's
+ * own refusals are already filed under `file`. So each sentence reached a field
+ * error keyed to nothing on screen and the operator was shown the general
+ * failure over a file the workshop simply cannot take.
+ *
+ * Exercised through `captureDocument` with only the HTTP client replaced, so the
+ * whole path is real: the service's `{ path, rule }` pair, the client's
+ * translation of the token into a catalogue key, and the re-filing under the
+ * control an operator can act on.
+ *
+ * The fourth case is the boundary of that re-filing. `body.uploadToken` also
+ * carries refusals that are about the authorization rather than the file, and
+ * those must not borrow a sentence written for something the reader typed.
+ *
+ * Folded into this file rather than given one of its own: the P1-27 evidence
+ * seal digests a count of web test FILES, and this is the attachments suite.
+ */
+
+const attachmentSend = vi.fn();
+vi.mock('@/lib/api/server-client', () => ({
+  authorizedClient: async () => ({ send: attachmentSend, get: vi.fn() }),
+}));
+
+const attachmentsApi = await import('@/features/attachments/api');
+
+const CAPTURE = {
+  categoryCode: 'reception_condition_photo',
+  entityType: 'rec.reception_visits',
+  entityId: '11111111-1111-4111-8111-111111111111',
+  fileName: 'front-bumper.jpg',
+  contentType: 'image/jpeg',
+  bytes: new Uint8Array([1, 2, 3, 4]),
+} as const;
+
+const fileRefusal = (path: string, rule: string) => ({
+  ok: false as const,
+  kind: 'validation' as const,
+  status: 422,
+  problem: { violations: [{ path, rule }] },
+  correlationId: 'corr-file',
+});
+
+describe('a refusal about the chosen file reaches the control the operator has', () => {
+  beforeEach(() => {
+    attachmentSend.mockReset();
+  });
+
+  it.each([
+    ['body.contentType', 'content_type_not_allowed'],
+    ['body.byteSize', 'size_out_of_range'],
+  ])('files %s (%s) under the file control and says it in the banner', async (path, rule) => {
+    attachmentSend.mockResolvedValue(fileRefusal(path, rule));
+
+    const state = await attachmentsApi.captureDocument(CAPTURE);
+
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors?.file).toBe(`form.violation.${rule}`);
+    expect(state.messageKey).toBe(`form.violation.${rule}`);
+  });
+
+  it('does the same for an authorization that has run out, at the registration step', async () => {
+    const stored = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    attachmentSend
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          documentId: '22222222-2222-4222-8222-222222222222',
+          uploadToken: 'authorization-issued-by-the-service',
+          uploadUrl: 'https://store.invalid/put',
+          method: 'PUT',
+          contentType: CAPTURE.contentType,
+          maxBytes: 1_000_000,
+          expiresAt: '2026-09-21T00:00:00.000Z',
+        },
+        correlationId: 'corr-authorized',
+      })
+      .mockResolvedValueOnce(fileRefusal('body.uploadToken', 'expired'));
+
+    const state = await attachmentsApi.captureDocument(CAPTURE);
+
+    expect(state.fieldErrors?.file).toBe('form.violation.expired');
+    expect(state.messageKey).toBe('form.violation.expired');
+    stored.mockRestore();
+  });
+
+  it('never tells the operator an authorization they never typed is the wrong length', async () => {
+    // `invalid_length` on `body.uploadToken` comes from
+    // `shared-services/domain/attachment-policy.ts`: the authorization itself
+    // could not be read. Its catalogue sentence is written for a value the
+    // reader entered — "too short or too long" — and this is a value the
+    // operator never sees, let alone types. The sentence they get instead is
+    // true of every unreadable authorization and names the one step open to
+    // them.
+    //
+    // The entry under the service's own name has to GO, not merely be joined by
+    // the one under `file`: the delivery panels render
+    // `Object.values(fieldErrors)[0]` beside their file control, so an entry
+    // left behind is an entry shown.
+    const stored = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    attachmentSend
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          documentId: '33333333-3333-4333-8333-333333333333',
+          uploadToken: 'authorization-issued-by-the-service',
+          uploadUrl: 'https://store.invalid/put',
+          method: 'PUT',
+          contentType: CAPTURE.contentType,
+          maxBytes: 1_000_000,
+          expiresAt: '2026-09-21T00:00:00.000Z',
+        },
+        correlationId: 'corr-authorized',
+      })
+      .mockResolvedValueOnce(fileRefusal('body.uploadToken', 'invalid_length'));
+
+    const state = await attachmentsApi.captureDocument(CAPTURE);
+
+    expect(state.fieldErrors?.file).toBe('attachments.capture.uploadNotConfirmed');
+    expect(state.messageKey).toBe('attachments.capture.uploadNotConfirmed');
+    expect(state.fieldErrors?.file).not.toBe('form.violation.invalid_length');
+    expect(state.fieldErrors).not.toHaveProperty('uploadToken');
+    expect(Object.values(state.fieldErrors ?? {})).toEqual([
+      'attachments.capture.uploadNotConfirmed',
+    ]);
+    stored.mockRestore();
+  });
+
+  it('leaves a refusal the catalogue cannot name where it was', async () => {
+    // The direction that matters. `form.violation.invalid` says less than the
+    // banner the failure kind already earns, so raising it would replace a
+    // sentence with a vaguer one — and it is not about the file in particular.
+    attachmentSend.mockResolvedValue(fileRefusal('body.contentType', 'a_token_with_no_sentence'));
+
+    const state = await attachmentsApi.captureDocument(CAPTURE);
+
+    expect(state.fieldErrors?.contentType).toBe('form.violation.invalid');
+    expect(state.fieldErrors?.file).toBeUndefined();
+    expect(state.messageKey).not.toBe('form.violation.invalid');
   });
 });

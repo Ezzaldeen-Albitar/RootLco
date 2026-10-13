@@ -54,6 +54,7 @@ export default async function RolesPage({
       <PageBody fill>
         <RolesScreen
           messages={messages}
+          locale={locale}
           canManage={holds(session.permissions, PERMISSIONS.roleManage)}
         />
       </PageBody>

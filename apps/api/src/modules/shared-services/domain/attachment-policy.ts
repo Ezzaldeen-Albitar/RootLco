@@ -66,6 +66,52 @@ export function isLinkableEntityType(value: string): boolean {
   return LINKABLE_ENTITY_TYPES.includes(value);
 }
 
+/** A relation an allow-listed entity type names, split for a qualified reference. */
+export interface LinkedEntityRelation {
+  readonly schema: string;
+  readonly table: string;
+}
+
+/**
+ * Lower-case SQL identifier. Every schema and table in this repository is written
+ * this way, and anything else is refused rather than quoted around.
+ */
+const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
+
+/**
+ * The relation an entity type names, or `null` when it names none.
+ *
+ * ## Why this is derived and not a second table
+ *
+ * Each {@link LINKABLE_ENTITY_TYPES} entry already *is* `schema.table`, and
+ * `tests/db/p1-15-attachments.test.ts` asserts against `information_schema` that
+ * every entry names a base table that exists. A hand-written map from token to
+ * relation would be a second list that could disagree with the first; deriving
+ * the relation from the token cannot.
+ *
+ * ## Why it fails closed
+ *
+ * The result is used to build a qualified relation reference, so the allow-list
+ * membership test is the whole of the safety argument and the identifier shape is
+ * re-checked on top of it. A token that is not allow-listed, or whose halves are
+ * not plain lower-case identifiers, returns `null`, and a caller that cannot name
+ * a relation must treat the entity as unreachable rather than as reachable.
+ *
+ * `veh.vehicles` is the only token the link write accepts for a vehicle. The
+ * vehicle module's own read passes `veh.vehicle` (recorded as `RMC-04`); that
+ * token is not in the allow-list, so no link can ever carry it, and this function
+ * does not add it. Which tokens a link may be created with is unchanged here.
+ */
+export function linkedEntityRelation(entityType: string): LinkedEntityRelation | null {
+  if (!isLinkableEntityType(entityType)) return null;
+  const separator = entityType.indexOf('.');
+  if (separator <= 0) return null;
+  const schema = entityType.slice(0, separator);
+  const table = entityType.slice(separator + 1);
+  if (!SAFE_IDENTIFIER.test(schema) || !SAFE_IDENTIFIER.test(table)) return null;
+  return { schema, table };
+}
+
 export function isLinkPurpose(value: string): boolean {
   return LINK_PURPOSES.includes(value);
 }

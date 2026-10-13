@@ -73,6 +73,7 @@ import {
 import {
   SERVICE_A,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   WO_APPROVER_NO_QUOTATION_READ,
   WO_APPROVER_WITH_QUOTATION_READ,
   TAX_CLASS_A,
@@ -128,7 +129,9 @@ interface Quotation {
 
 /** Publishes a price for SERVICE_A and assigns it at a fresh priority. */
 async function publishPrice(amount: string): Promise<void> {
-  authAs(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAs(SVC_PRICE_SETTER);
   const list = (await (
     await CREATE_LIST(
       jsonPost('http://localhost/api/v1/price-lists', {
@@ -170,6 +173,7 @@ async function publishPrice(amount: string): Promise<void> {
     customerClass: null,
     priority: assignmentPriority,
   });
+  authAs(SVC_FULL);
 }
 
 /** A quotation on a given work order, with one line. */

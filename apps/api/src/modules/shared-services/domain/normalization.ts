@@ -12,11 +12,18 @@
  *  - **normalize exactly like SQL.** `normalizeVin`, `normalizePhoneDigits` and
  *    `normalizeEmail` reproduce `veh.normalize_vin`, `crm.normalize_phone` and
  *    `crm.normalize_email` character for character, including the edge cases that
- *    look like bugs (a lone `'+'` survives; Arabic-Indic digits normalize away to
- *    `null`). `tests/db/p1-15-normalization-parity.test.ts` proves the mirrors
+ *    look like bugs (a lone `'+'` survives).
+ *    `tests/db/p1-15-normalization-parity.test.ts` proves the mirrors
  *    agree with the live functions over a shared corpus — a database suite, not
  *    a unit one, because the only honest way to prove parity is to run both
  *    implementations over the same corpus and compare.
+ *
+ *    The VIN and phone character rules are NOT written here. They live once, in
+ *    `@/shared/text/normalization`, which is also the file `apps/web` copies byte
+ *    for byte so a browser can fold a query fragment without importing the API.
+ *    This module re-exports the phone mirror unchanged and wraps the VIN mirror
+ *    with its plausibility report; a second implementation of either rule would
+ *    be precisely the divergence this file exists to prevent.
  *  - **never silently repair.** Validation is reported *alongside* the normalized
  *    value, never applied to it. A VIN containing `I`, `O` or `Q` normalizes
  *    unchanged and is reported as implausible; the caller decides. Silent repair
@@ -26,6 +33,9 @@
  * locale-neutral, and produces a value for *matching* only — the display value is
  * always preserved separately by the caller.
  */
+import { normalizePhoneDigits, normalizeVin as foldVin } from '@/shared/text/normalization';
+
+export { normalizePhoneDigits };
 
 /** Longest input any normalizer will consider. Longer input is rejected, never truncated. */
 export const MAX_NORMALIZATION_INPUT = 512;
@@ -53,26 +63,28 @@ function tooLong(value: string): boolean {
 }
 
 /**
- * Mirrors `veh.normalize_vin(text)`:
+ * The VIN mirror plus its plausibility report.
+ *
+ * The character rule itself is `@/shared/text/normalization`'s `normalizeVin`,
+ * which mirrors `veh.normalize_vin(text)`:
  *
  * ```sql
- * NULLIF(regexp_replace(upper(btrim(COALESCE(p_value,''))), '[^A-Z0-9]', '', 'g'), '')
+ * NULLIF(regexp_replace(upper(btrim(shared.fold_digits(COALESCE(p_value,'')))),
+ *                       '[^A-Z0-9]', '', 'g'), '')
  * ```
  *
  * `I`, `O` and `Q` are **preserved**. The frozen function performs no length
  * check, no character rejection, and no check-digit validation, so neither does
- * this. Plausibility is reported separately.
+ * this. Plausibility is reported separately. Since P1-32 an Arabic-Indic digit is
+ * FOLDED into the VIN rather than stripped out of it, so a VIN typed on an Arabic
+ * keyboard no longer normalizes to a shorter, different VIN.
  */
 export function normalizeVin(input: string | null | undefined): NormalizationResult {
   const original = input ?? '';
   if (tooLong(original)) {
     return { original, normalized: null, plausible: false, reasons: ['input-too-long'] };
   }
-  const stripped = original
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
-  const normalized = stripped === '' ? null : stripped;
+  const normalized = foldVin(original);
 
   const reasons: string[] = [];
   if (normalized === null) {
@@ -84,32 +96,6 @@ export function normalizeVin(input: string | null | undefined): NormalizationRes
     if (/[IOQ]/.test(normalized)) reasons.push('contains-i-o-q');
   }
   return { original, normalized, plausible: reasons.length === 0, reasons };
-}
-
-/**
- * Mirrors `crm.normalize_phone(text)`:
- *
- * ```sql
- * NULLIF((CASE WHEN btrim(coalesce(p,'')) LIKE '+%' THEN '+' ELSE '' END)
- *        || regexp_replace(coalesce(p,''), '[^0-9]', '', 'g'), '')
- * ```
- *
- * Two frozen behaviours are reproduced deliberately, because the database and the
- * generated lookup keys depend on them:
- *
- *  - a lone `'+'` normalizes to `'+'`, **not** `null`;
- *  - only ASCII `[0-9]` counts as a digit, so Arabic-Indic numerals are stripped
- *    entirely and a wholly Arabic-Indic number normalizes to `null`.
- *
- * The `+` test reads the *trimmed* input while digits are taken from the
- * *untrimmed* input, exactly as the SQL does.
- */
-export function normalizePhoneDigits(input: string | null | undefined): string | null {
-  const raw = input ?? '';
-  const plus = raw.trim().startsWith('+') ? '+' : '';
-  const digits = raw.replace(/[^0-9]/g, '');
-  const joined = `${plus}${digits}`;
-  return joined === '' ? null : joined;
 }
 
 /** Mirrors `crm.normalize_email(text)` — trim + lowercase only. Dots and `+tags` survive. */
