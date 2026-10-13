@@ -130,8 +130,34 @@ vi.mock('@/lib/api/server-client', async () => {
 const actualBillingApi =
   await vi.importActual<typeof import('@/features/billing/api')>('@/features/billing/api');
 
+/*
+ * What each operational grid of the screen was handed, by its test id. The real
+ * grid is drawn untouched: this only keeps the column definitions, because the
+ * width a column ASKS for is the one thing about widths a DOM test can see
+ * (jsdom lays nothing out — see `operational-grid-actions-width.dom.test.tsx`).
+ */
+const handedColumns = new Map<string, readonly { id: string; minChars?: number }[]>();
+vi.mock('@/components/data/OperationalGrid', async (original) => {
+  const real = await original<typeof import('@/components/data/OperationalGrid')>();
+  const Real = real.OperationalGrid as unknown as (props: Record<string, unknown>) => ReactElement;
+  return {
+    ...real,
+    OperationalGrid: (props: Record<string, unknown>) => {
+      if (typeof props['testId'] === 'string') {
+        handedColumns.set(
+          props['testId'],
+          props['columns'] as readonly { id: string; minChars?: number }[]
+        );
+      }
+      return <Real {...props} />;
+    },
+  };
+});
+
 const { RefundsPanel } = await import('@/features/billing/components/RefundsPanel');
 const { RefundsScreen } = await import('@/features/billing/components/RefundsScreen');
+const { REASON_COLUMN_CHARS } = await import('@/features/billing/components/shared');
+const { columnMinWidth } = await import('@/components/data/OperationalGrid');
 
 const INVOICE_ID = '99999999-9999-4999-8999-999999999999';
 const OBLIGATION_ID = 'aaaa0000-0000-4000-8000-000000000001';
@@ -579,6 +605,69 @@ describe('the refunds list', () => {
     await within(grid).findByText('TRF-55');
     // The state, and under it the payout reference, which the row used to cut off.
     expectBothLinesFit(within(grid).getByText(EN['refunds.state.executed'] as string), 'TRF-55');
+  });
+
+  /*
+   * P1-32-PRE-OD-UXQ, Q-2. At 1440 px the reason of every refund of the retest
+   * was longer than its column and was cut at the cell's edge with nothing to
+   * show for it; in Arabic a reason in Latin letters lost its beginning. What a
+   * DOM test can hold: the line is cut at the side with an ellipsis, is laid
+   * out in its own direction, and says its whole text as its title.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: a reason longer than its column keeps its beginning and is whole in its title`, async () => {
+      const latin =
+        'FQA-1015 ar: refund q2 of the 4.000 owed, for the branch-midnight payout check (QA)';
+      const arabic = 'أعاد المشتري شفرة مساحة تالفة بعد أسبوع من الشراء وطلب استرداد ثمنها كاملا';
+      listRefundRequests.mockResolvedValue(
+        page([
+          refundRequest({ reason: latin }),
+          refundRequest({ id: 'aaaa1111-0000-4000-8000-000000000002', reason: arabic }),
+        ])
+      );
+      list(locale);
+      const grid = await screen.findByTestId('refunds-grid');
+      for (const [reason, direction] of [
+        [latin, 'ltr'],
+        [arabic, 'rtl'],
+      ] as const) {
+        const line = (await within(grid).findByText(reason)).closest(
+          '[data-grid-line="primary"]'
+        ) as HTMLElement;
+        expect(line, 'the reason is not the first line of a two-line cell').not.toBeNull();
+        expect(line).toHaveClass('overflow-x-clip', 'text-ellipsis', 'whitespace-nowrap');
+        // Its own direction in both interfaces: what is cut is its end.
+        expect(line).toHaveAttribute('dir', direction);
+        expect(line).toHaveAttribute('title', reason);
+        expect(line.textContent).toBe(reason);
+        // The moment under it still fits: it has its own line height.
+        expectBothLinesFit(within(grid).getByText(reason), /2026/);
+      }
+    });
+  }
+
+  it('asks for a reason column an ordinary reason fits in, and leaves the other columns theirs', async () => {
+    listRefundRequests.mockResolvedValue(page([refundRequest()]));
+    list();
+    await within(await screen.findByTestId('refunds-grid')).findByText('Paid twice');
+    const columns = handedColumns.get('refunds-grid') ?? [];
+    expect(columns.map((column) => column.id)).toEqual([
+      'reason',
+      'invoice',
+      'amount',
+      'method',
+      'state',
+    ]);
+    const reason = columns.find((column) => column.id === 'reason');
+    expect(reason?.minChars).toBe(REASON_COLUMN_CHARS);
+    // 380 px: wider than the 297 to 301 px the column was drawn at when every
+    // reason of the retest was cut, and room for a sentence of fifty-five
+    // characters as they are drawn (about six and a third pixels each).
+    expect(columnMinWidth(reason?.minChars ?? 0)).toBe(380);
+    expect(columnMinWidth(reason?.minChars ?? 0)).toBeGreaterThan(55 * 6.34 + 20);
+    for (const column of columns.filter((entry) => entry.id !== 'reason')) {
+      expect(column.minChars, column.id).toBeUndefined();
+    }
   });
 
   it('lists the branch requests with the server figures and narrows by state through the server', async () => {

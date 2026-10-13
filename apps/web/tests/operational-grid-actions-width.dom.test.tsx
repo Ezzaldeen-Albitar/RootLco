@@ -45,8 +45,14 @@ vi.mock('@mui/x-data-grid', async (original) => ({
   },
 }));
 
-const { OperationalGrid, ROW_ACTIONS_FIELD, TwoLineCell, columnMinWidth, rowActionsMinWidth } =
-  await import('@/components/data/OperationalGrid');
+const {
+  OperationalGrid,
+  ROW_ACTIONS_FIELD,
+  TwoLineCell,
+  columnMinWidth,
+  lineText,
+  rowActionsMinWidth,
+} = await import('@/components/data/OperationalGrid');
 
 interface Visit {
   readonly id: string;
@@ -199,7 +205,7 @@ describe('a cell of two lines gives each line a line height of its own', () => {
     expect(second).toHaveClass('text-caption', 'text-text-muted');
     expect(second).toHaveAttribute('data-grid-line', 'secondary');
     expect(second.textContent).toBe('8 Oct 2026, 12:00');
-    // No title of its own: both lines are there to be read.
+    // No title on the cell: each line carries its own (see below).
     expect(cell).not.toHaveAttribute('title');
   });
 
@@ -221,5 +227,195 @@ describe('a cell of two lines gives each line a line height of its own', () => {
     const cell = screen.getByTestId('cell');
     expect(cell.querySelector('[data-grid-line="primary"] bdi')?.textContent).toBe('سبب');
     expect(cell.querySelector('[data-grid-line="secondary"] code')?.textContent).toBe('pr-1');
+  });
+});
+
+/**
+ * A line longer than its column (P1-32-PRE-OD-UXQ, Q-2). A row holds two lines
+ * and no more, so a line is never wrapped; one longer than its column was cut
+ * at the cell's edge with nothing to show for it, and in the Arabic interface a
+ * reason written in Latin letters lost its BEGINNING.
+ *
+ * What is held here is what a DOM test can see: the utilities that cut a line
+ * at the side and draw the ellipsis, the direction each line is laid out in,
+ * and the whole text as the line's title. That a line is in fact cut, and
+ * where, is laid out by a browser and is seen only there.
+ */
+describe('a line of a two-line cell that is longer than its column', () => {
+  const CUT_AT_THE_SIDE = ['min-w-0', 'overflow-x-clip', 'text-ellipsis', 'whitespace-nowrap'];
+  const LATIN =
+    'FQA-1015 ar: refund q2 of the 4.000 owed, for the branch-midnight payout check (QA)';
+  const ARABIC = 'أعاد المشتري شفرة مساحة تالفة بعد أسبوع من الشراء وطلب استرداد ثمنها كاملا';
+  const linesOf = (testId: string) => [...screen.getByTestId(testId).children] as HTMLElement[];
+  const BOTH = [
+    ['en', renderLtr],
+    ['ar', renderRtl],
+  ] as const;
+
+  it.each(BOTH)(
+    'in %s: each line is cut at the side with an ellipsis, and never above or below',
+    (_locale, render) => {
+      render(
+        <>
+          <TwoLineCell testId="two" primary={LATIN} secondary={ARABIC} />
+          <TwoLineCell testId="one" primary={LATIN} />
+        </>
+      );
+      // The cell may be narrower than its text: without this it could not be.
+      expect(screen.getByTestId('two')).toHaveClass('min-w-0');
+      const lines = [...linesOf('two'), ...linesOf('one')];
+      expect(lines).toHaveLength(3);
+      for (const line of lines) {
+        expect(line).toHaveClass(...CUT_AT_THE_SIDE);
+        // `overflow: hidden` clips above and below the line box as well, which
+        // at the caption's line height shaves the marks under a letter.
+        expect(line).not.toHaveClass('truncate');
+        expect(line).not.toHaveClass('overflow-hidden');
+      }
+      // Each still has the line height of its own that makes two fit in a row.
+      expect(linesOf('two')[0]).toHaveClass('text-table-cell');
+      expect(linesOf('two')[1]).toHaveClass('text-caption', 'text-text-muted');
+    }
+  );
+
+  it.each(BOTH)(
+    'in %s: a line is laid out in the direction of its own text, so it keeps its beginning',
+    (_locale, render) => {
+      render(
+        <>
+          <TwoLineCell testId="plain" primary={LATIN} secondary={ARABIC} />
+          <TwoLineCell
+            testId="wrapped"
+            primary={<bdi>{ARABIC}</bdi>}
+            secondary={
+              <code className="font-mono" dir="ltr">
+                {LATIN}
+              </code>
+            }
+          />
+          <TwoLineCell testId="figures" primary="000028" secondary="12.345 · 2026" />
+        </>
+      );
+      const [latin, arabic] = linesOf('plain') as [HTMLElement, HTMLElement];
+      expect(latin).toHaveAttribute('dir', 'ltr');
+      expect(arabic).toHaveAttribute('dir', 'rtl');
+      // Read through the element the caller wrapped the text in: `dir="auto"`
+      // does not look inside a `<bdi>`, and would lay an Arabic line out left
+      // to right.
+      const [wrappedArabic, wrappedLatin] = linesOf('wrapped') as [HTMLElement, HTMLElement];
+      expect(wrappedArabic).toHaveAttribute('dir', 'rtl');
+      expect(wrappedLatin).toHaveAttribute('dir', 'ltr');
+      for (const line of [...linesOf('plain'), ...linesOf('wrapped')]) {
+        expect(line).not.toHaveAttribute('dir', 'auto');
+      }
+      // Figures and punctuation have no direction of their own: the page's.
+      for (const line of linesOf('figures')) expect(line).not.toHaveAttribute('dir');
+    }
+  );
+
+  it('carries its whole text as its title, and keeps all of it in the document', () => {
+    renderLtr(
+      <TwoLineCell
+        testId="cell"
+        primary={<bdi>{LATIN}</bdi>}
+        secondary={
+          <>
+            {'Raised by you'}
+            {' · '}
+            <code dir="ltr">pr-1</code>
+          </>
+        }
+      />
+    );
+    const [first, second] = linesOf('cell') as [HTMLElement, HTMLElement];
+    expect(first).toHaveAttribute('title', LATIN);
+    expect(second).toHaveAttribute('title', 'Raised by you · pr-1');
+    // The ellipsis is drawn; nothing is taken out of the text.
+    expect(first.textContent).toBe(LATIN);
+    expect(second.textContent).toBe('Raised by you · pr-1');
+  });
+
+  it('a line built from a component has no title and follows the page, unless the caller says its text', () => {
+    function Moment() {
+      return <time dateTime="2026-10-08T09:00:00Z">8 Oct 2026, 12:00</time>;
+    }
+    const { rerender } = renderLtr(
+      <TwoLineCell
+        testId="cell"
+        primary={<Moment />}
+        secondary={
+          <>
+            <Moment />
+            {' · by you'}
+          </>
+        }
+      />
+    );
+    for (const line of linesOf('cell')) {
+      expect(line).not.toHaveAttribute('title');
+      expect(line).not.toHaveAttribute('dir');
+      // Still cut at the side with an ellipsis: that needs no text.
+      expect(line).toHaveClass(...CUT_AT_THE_SIDE);
+    }
+    rerender(
+      <TwoLineCell
+        testId="cell"
+        primary={<Moment />}
+        primaryTitle="8 Oct 2026, 12:00"
+        secondary={<Moment />}
+        secondaryTitle={ARABIC}
+      />
+    );
+    const [first, second] = linesOf('cell') as [HTMLElement, HTMLElement];
+    expect(first).toHaveAttribute('title', '8 Oct 2026, 12:00');
+    expect(first).toHaveAttribute('dir', 'ltr');
+    expect(second).toHaveAttribute('title', ARABIC);
+    expect(second).toHaveAttribute('dir', 'rtl');
+  });
+
+  it('a line with nothing in it has no title', () => {
+    renderLtr(<TwoLineCell testId="cell" primary="" secondary="  " />);
+    for (const line of linesOf('cell')) expect(line).not.toHaveAttribute('title');
+  });
+});
+
+describe('the text a line draws is read off what was passed', () => {
+  function Component() {
+    return <span>drawn later</span>;
+  }
+
+  it('reads text, numbers and what plain elements and fragments hold', () => {
+    expect(lineText('Paid twice')).toBe('Paid twice');
+    expect(lineText(12)).toBe('12');
+    expect(lineText(<bdi>سبب</bdi>)).toBe('سبب');
+    expect(
+      lineText(
+        <>
+          {'a'}
+          {[' · ', <code key="c">b</code>]}
+          {3}
+        </>
+      )
+    ).toBe('a · b3');
+  });
+
+  it('reads nothing where nothing is drawn', () => {
+    for (const nothing of [null, undefined, false, true] as const) {
+      expect(lineText(nothing)).toBe('');
+    }
+    expect(lineText(<span />)).toBe('');
+  });
+
+  it('does not guess at what a component will draw, alone or among text', () => {
+    expect(lineText(<Component />)).toBeNull();
+    expect(
+      lineText(
+        <>
+          {'by you · '}
+          <Component />
+        </>
+      )
+    ).toBeNull();
+    expect(lineText(<bdi>{[<Component key="c" />]}</bdi>)).toBeNull();
   });
 });

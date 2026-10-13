@@ -53,6 +53,7 @@ import {
 } from '../billing-contract';
 import { InvoicePicker } from './InvoicePicker';
 import { RefundMoment, useBranchClock } from './RefundsPanel';
+import { REASON_COLUMN_CHARS } from './shared';
 
 /** The branch a refund list reads, as the working context names it. */
 interface RefundTarget {
@@ -192,6 +193,9 @@ function BranchRefunds({
         id: 'reason',
         headerKey: 'refunds.column.reason',
         flex: 2,
+        // Wide enough for an ordinary reason; a longer one ends in an ellipsis
+        // and is whole in the line's title (`TwoLineCell`).
+        minChars: REASON_COLUMN_CHARS,
         cell: (row) => (
           <TwoLineCell
             primary={<bdi>{row.reason}</bdi>}

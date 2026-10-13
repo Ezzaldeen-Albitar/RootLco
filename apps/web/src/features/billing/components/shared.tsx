@@ -31,6 +31,24 @@ import type { PayerName } from './InvoiceDocument';
 export const UUID = regexes.uuid();
 
 /**
+ * The narrowest a list lays out its reason column, in characters (the grid's
+ * `minChars`; P1-32-PRE-OD-UXQ, Q-2).
+ *
+ * A reason is a sentence somebody typed, up to two thousand characters, so no
+ * width shows every one whole: a longer reason ends in an ellipsis and its
+ * whole text is the line's title. What the column is sized for is the ordinary
+ * one — a single short sentence such as "Customer was charged twice for the
+ * same brake service", about fifty-five Latin characters. The grid estimates a
+ * character wider than it is drawn (eight pixels against about six and a
+ * third, measured on the refunds list at 1440 px), so forty-five of its
+ * characters — 380 px — hold that sentence. At 1440 px the refunds list gave
+ * this column about 300 px and cut every reason of the retest; the other
+ * columns of that list keep room for an invoice number, an amount and a
+ * payout reference.
+ */
+export const REASON_COLUMN_CHARS = 45;
+
+/**
  * A moment, in the reader's language AND the reader's direction.
  *
  * The Arabic date format carries right-to-left marks between its parts, so a

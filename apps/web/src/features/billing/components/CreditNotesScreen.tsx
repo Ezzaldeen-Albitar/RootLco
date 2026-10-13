@@ -134,7 +134,7 @@ import {
 } from '../billing-contract';
 import { CreditNotePrintPanel } from './CreditNotePrint';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
-import { OutcomeNote, When } from './shared';
+import { OutcomeNote, REASON_COLUMN_CHARS, When } from './shared';
 
 /** `''` is every state — the toolbar's own "All" choice. */
 type ListFilter = CreditNoteState | '';
@@ -331,6 +331,9 @@ function BranchCreditNotes({
         id: 'reason',
         headerKey: 'creditNotes.column.reason',
         flex: 2,
+        // Wide enough for an ordinary reason; a longer one ends in an ellipsis
+        // and is whole in the line's title (`TwoLineCell`).
+        minChars: REASON_COLUMN_CHARS,
         cell: (note) => (
           <TwoLineCell
             primary={<bdi>{note.reason}</bdi>}

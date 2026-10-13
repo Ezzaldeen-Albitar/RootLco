@@ -196,8 +196,34 @@ vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: (...args: unknown[]) => notifyActionResult(...args),
 }));
 
+/*
+ * What each operational grid of the screen was handed, by its test id. The real
+ * grid is drawn untouched: this only keeps the column definitions, because the
+ * width a column ASKS for is the one thing about widths a DOM test can see
+ * (jsdom lays nothing out — see `operational-grid-actions-width.dom.test.tsx`).
+ */
+const handedColumns = new Map<string, readonly { id: string; minChars?: number }[]>();
+vi.mock('@/components/data/OperationalGrid', async (original) => {
+  const real = await original<typeof import('@/components/data/OperationalGrid')>();
+  const Real = real.OperationalGrid as unknown as (props: Record<string, unknown>) => ReactElement;
+  return {
+    ...real,
+    OperationalGrid: (props: Record<string, unknown>) => {
+      if (typeof props['testId'] === 'string') {
+        handedColumns.set(
+          props['testId'],
+          props['columns'] as readonly { id: string; minChars?: number }[]
+        );
+      }
+      return <Real {...props} />;
+    },
+  };
+});
+
 const { InvoiceScreen } = await import('@/features/billing/components/InvoiceScreen');
 const { CreditNotesScreen } = await import('@/features/billing/components/CreditNotesScreen');
+const { REASON_COLUMN_CHARS } = await import('@/features/billing/components/shared');
+const { columnMinWidth } = await import('@/components/data/OperationalGrid');
 const { WorkOrderPicker } = await import('@/features/work-orders/components/WorkOrderPicker');
 const CreditNotesPage = (await import('@/app/[locale]/(dashboard)/credit-notes/page'))
   .default as unknown as RoutePage;
@@ -2303,6 +2329,57 @@ describe('credit notes are reachable', () => {
       canSearchInvoices
     />
   );
+
+  /*
+   * P1-32-PRE-OD-UXQ, Q-2. A reason longer than its column was cut at the
+   * cell's edge with nothing to show for it. What a DOM test can hold: the line
+   * is cut at the side with an ellipsis, is laid out in its own direction, and
+   * says its whole text as its title; and the column asks for a width an
+   * ordinary reason fits in.
+   */
+  it('a reason longer than its column keeps its beginning and is whole in its title', async () => {
+    const latin =
+      'FQA-1015 ar: refund q2 of the 4.000 owed, for the branch-midnight payout check (QA)';
+    const arabic = 'أعاد المشتري شفرة مساحة تالفة بعد أسبوع من الشراء وطلب استرداد ثمنها كاملا';
+    listCreditNotes.mockResolvedValue({
+      status: 'ok',
+      data: {
+        items: [
+          note({ reason: latin }),
+          note({ id: '33333333-3333-4333-8333-333333333334', reason: arabic }),
+        ],
+        nextCursor: null,
+        hasMore: false,
+      },
+      correlationId: 'corr',
+    });
+    renderLtr(creditNotesScreen());
+    const grid = await screen.findByRole('grid', {
+      name: EN['creditNotes.list.caption'] as string,
+    });
+    for (const [reason, direction] of [
+      [latin, 'ltr'],
+      [arabic, 'rtl'],
+    ] as const) {
+      const line = (await within(grid).findByText(reason)).closest(
+        '[data-grid-line="primary"]'
+      ) as HTMLElement;
+      expect(line, 'the reason is not the first line of a two-line cell').not.toBeNull();
+      expect(line).toHaveClass('text-table-cell');
+      expect(line).toHaveClass('overflow-x-clip', 'text-ellipsis', 'whitespace-nowrap');
+      expect(line).toHaveAttribute('dir', direction);
+      expect(line).toHaveAttribute('title', reason);
+      expect(line.textContent).toBe(reason);
+    }
+    const columns = handedColumns.get('credit-notes-grid') ?? [];
+    expect(columns.map((column) => column.id)).toEqual(['reason', 'amount', 'state']);
+    const reason = columns.find((column) => column.id === 'reason');
+    expect(reason?.minChars).toBe(REASON_COLUMN_CHARS);
+    expect(columnMinWidth(reason?.minChars ?? 0)).toBe(380);
+    for (const column of columns.filter((entry) => entry.id !== 'reason')) {
+      expect(column.minChars, column.id).toBeUndefined();
+    }
+  });
 
   it('lists the working branch notes with the server amount and the state in words', async () => {
     /*

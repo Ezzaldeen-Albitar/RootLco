@@ -7,6 +7,7 @@ import Select from '@mui/material/Select';
 import Typography from '@mui/material/Typography';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { writingDirectionOf } from '@/lib/text/writing-direction';
 import {
   ALL_BRANCHES,
   type WorkingContextBranch,
@@ -279,21 +280,4 @@ export function BranchSelector({
       ) : null}
     </div>
   );
-}
-
-/** A letter of a right-to-left script: Hebrew, Arabic and their presentation forms. */
-const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/u;
-/** A letter of a left-to-right script. */
-const LTR_LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/u;
-
-/**
- * The direction a name is written in, from its first letter that has one, or
- * `undefined` for a name with none (digits and punctuation follow the page).
- */
-function writingDirectionOf(text: string): 'rtl' | 'ltr' | undefined {
-  for (const character of text) {
-    if (RTL_LETTER.test(character)) return 'rtl';
-    if (LTR_LETTER.test(character)) return 'ltr';
-  }
-  return undefined;
 }
