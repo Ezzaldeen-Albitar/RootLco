@@ -5411,7 +5411,13 @@ operation, permission code, API contract, branch scope or migration changed.
     questions, two reads, and with the form open exactly two. The table's is made once for the
     reservations the listed issues name: not when none names one, not again when the screen is
     drawn again or the issues are read again and name the same ones, and again when they name
-    another or the last read did not answer.
+    another or the last read did not answer — once, the next time the issues are read, never in a
+    loop. A read that fails forgets what had been answered, so going back to a page whose
+    reservations were answered before the failure asks for them again.
+  - _One work order._ The panel is keyed on the work order as well as on the last write, so a
+    screen handed another work order while it stays mounted starts a table and a read of its own
+    and draws nothing of the first: not its rows, not its words, not its answer if that arrives
+    late.
   - _Its branch_ comes from the issue rows, which carry it, and not from the work-order header: a
     holder of `inv.stock.read` who may not read work orders has no header and would otherwise never
     see more than the fallback. Rows that did not share a branch would not be guessed at; nothing
@@ -5425,8 +5431,41 @@ operation, permission code, API contract, branch scope or migration changed.
     can now say how long its longest line is (`minChars` on `OperationalGrid`, 8 px a character
     plus the cell's padding), and the two columns of this table that draw a moment ask for the
     longest moment on the page, about 204 px in English; the grid scrolls sideways before it cuts
-    one off. The whole text is also the cell's `title`. What a browser draws can only be shown by
-    the runtime retest.
+    one off.
+  - _Height._ A row of the grid is 48 px, and a cell gives its text a line as tall as the row. The
+    first line of the reservation cell inherited that line, so the moment under it lay outside the
+    row and was cut off. Both lines now carry a line height of their own (`TwoLineCell`, below):
+    20 px and 16 px in a 48 px row.
+  - _No title._ The cell had a `title` whose text was not the cell's (" · " between the two
+    parts). With both lines drawn in a column that asks for the width of the longer one, the title
+    only repeated them, so it is removed, from "Issued at" as well.
+  - _Not observed._ The width and height a browser draws, and whether the grid scrolls sideways as
+    it should when its columns ask for more than the screen has, are seen by no DOM test; they stay
+    with the runtime retest.
+- **Two-line cells of the grid (`TwoLineCell` in `OperationalGrid.tsx`).** One small presentational
+  helper: a first line at the table size (`text-table-cell`, 20 px), an optional second at the
+  caption size (`text-caption text-text-muted`, 16 px), centred in the row
+  (`flex h-full flex-col justify-center`). The same cut-off second line was already on merged
+  screens, where it hid real information, and is fixed with it. Each cell was
+  `<span class="flex flex-col">` with a first line that had no class of its own and a second with
+  `text-caption text-text-muted`; each is now a `TwoLineCell`:
+  - `RefundsScreen.tsx`, the reason and under it when the refund was asked for (the date was not
+    on the screen at all), and the state with the payout reference under it;
+  - `CreditNotesScreen.tsx`, the reason with its issue line, and the state with "Raised by you"
+    under it. A pending note of one's own has a third line ("Waiting for another approver"); three
+    lines are 52 px in a 48 px row, so that one may still be cut by a few pixels;
+  - `DeliveryReadinessScreen.tsx`, the customer and the part they play;
+  - `MovementsScreen.tsx`, the kind of a movement's source document and its reference.
+
+  Other cells of the same shape, found by looking for a stacked `flex flex-col` in every screen
+  that draws the grid and not changed here (line numbers at this commit): `AppointmentCalendarScreen.tsx:636`,
+  `DeliveryReadinessScreen.tsx:201` and `:280`, `CounterSalesScreen.tsx:628`,
+  `DiscountApprovalsPanel.tsx:203`, `CheckInStartScreen.tsx:1373`, `ReceptionQueueScreen.tsx:510`,
+  `ReadingsStep.tsx:173`, `SummaryStep.tsx:377`, `IntakeVehicleStep.tsx:286`,
+  `ReportSnapshotsPanel.tsx:242`, `TechnicianProfileSections.tsx:1063`,
+  `TechnicianWorkspaceScreen.tsx:224`, `WorkOrderQueueScreen.tsx:641` and `:666`. Each has a line
+  with no line height of its own; none was opened in a browser for this change.
+
 - **The material a draw opened (the same screen).** After a governed reservation or issue, the
   section "The material this draw opened" ended its sentence "Reference:" and the material
   request's identifier. Both are gone from the screen and from the two catalogues.
@@ -5450,8 +5489,10 @@ operation, permission code, API contract, branch scope or migration changed.
   reservation ended "Reservation recorded:" and the reservation's identifier; it now says how much
   was reserved, which the answer carries. The reservations table drew a work order's identifier as
   the text of its link; the row carries the identifier and not the work order's number, so the
-  link reads "Open work order" / "فتح أمر العمل" and is named with the stock code for a screen
-  reader. The item grid had a column headed "Identifier" holding each item's identifier; an item
+  link reads "Open work order" / "فتح أمر العمل". For a screen reader each link is named with what
+  tells its reservation from the next on the screen — the stock code, the location, how much it
+  holds and when it was made — since two reservations of one item may belong to two work orders;
+  the words on the screen are the same on every row. The item grid had a column headed "Identifier" holding each item's identifier; an item
   is known by its stock code, nothing on the screen asks for the identifier, and the column and
   its heading are removed.
 - **And on the opening stock screen (`OpeningStockScreen.tsx`).** A batch's identifier stood under
@@ -5462,15 +5503,18 @@ Every other place in `apps/web/src/features/inventory` that draws an identifier 
 for, and is left as it is, each for its own reason:
 
 - `MovementsScreen.tsx`, the "Reference" of a movement: the kind of the source document in words
-  and, under it, that document's identifier. It is the only pointer from a movement to the document
-  that caused it, and whether such a reference is shown, grouped or named is the question the audit
-  record raised; not changed without that decision.
+  and, under it, that document's identifier. The row publishes the reference as a kind and an
+  identifier and nothing else (`{ kind, id }`), so there is nothing to name the document by; it is
+  the only pointer from a movement to the document that caused it. A gap in what the service
+  publishes, and an Owner decision — the same question the audit record raised.
 - `PartsScreen.tsx`, the work-order link when the work order cannot be read: its text is the
-  identifier, and the sentence beside it says so ("only the identifier is shown").
+  identifier, and the sentence beside it says so ("only the identifier is shown"). It is shown to
+  a stock-only role who arrived with that identifier, and is acceptable as it is; an Owner
+  decision.
 - An identifier drawn only when the screen's own list does not hold the record it has just used —
   a location in `MovementsScreen.tsx`, `StockCountsScreen.tsx`, `GoodsReceiptsScreen.tsx` and
   `SetupScreen.tsx` (a parent location), a stock code and a location in the opening stock line
-  echo, an item in `UnitConversionsScreen.tsx`.
+  echo, an item in `UnitConversionsScreen.tsx`. A follow-up: each should fall back to words.
 - The support reference after a failed read or a refusal (`shared.tsx`, `MovementsScreen.tsx`):
   the Owner's decision on the Reference identifier.
 - Boxes in which an operator types an identifier because a list may not be read (a branch pair, a
@@ -5482,20 +5526,26 @@ New catalogue keys, English and Arabic: `inventory.parts.issues.fromReservation`
 trailing "Reference:" and "Reservation:" removed). Removed from both: `inventory.items.column.id`
 and `inventory.opening.batch.id`.
 
-Tests, in the existing DOM files (en and ar where a sentence is drawn). `inventory-parts.dom`, 17
-cases: the two lines of a listed reservation and the whole of them in the cell's title; the moment
-an issue was made, likewise; the width the two moment columns ask for; a refused read, a read that
-fails in transit (no rejection left unhandled, no notice, no console error), an answer that arrives
-after the screen is gone, and another work order opened while the first is still unanswered; the
-branch taken from the rows without the work-order read; rows that do not share a branch; no read
-when no issue names a reservation; no second read when the screen is drawn again; exactly two
-reads with the issue form open; and the material request's identifier no longer drawn.
-`operational-grid-actions-width.dom`: the estimate, and the width the grid is handed for a column
-that asks. `inventory-categories.dom` and `inventory-setup.dom`: every row of the picker is a name;
+Tests, in the existing DOM files (en and ar where a sentence is drawn). `inventory-parts.dom`, 18
+cases: the two lines of a listed reservation, each carrying the class that gives it a line height
+of its own, and no title; the moment an issue was made, on one line; the width the two moment
+columns ask for; a refused read, a read that fails in transit (no rejection left unhandled, no
+notice, no console error), an answer that arrives after the screen is gone; another work order
+handed to the mounted screen (its rows, its own read, no trace of the first; two reads in all);
+the first page answered, the second page's read failed, and the first page asked for again on
+return (three reads, and no fourth); the branch taken from the rows without the work-order read;
+rows that do not share a branch; no read when no issue names a reservation; no second read when
+the screen is drawn again; exactly two reads with the issue form open; and the material request's
+identifier no longer drawn. `operational-grid-actions-width.dom`: the estimate, the width the grid
+is handed for a column that asks, and the two-line cell — its two classes, its first line alone
+when there is no second, elements kept inside each line. `refunds.dom`, `invoices.dom` (the credit
+notes), `delivery.dom` and `inventory-movements.dom`: on each screen, both lines of the cell carry
+their class. `inventory-categories.dom` and `inventory-setup.dom`: every row of the picker is a name;
 the code only where two of one name share a parent, names an operator cannot tell apart counted as
 the same, in Latin and in Arabic; neither tree of the setup screen draws a code and the categories
 table still does. `inventory.dom` and `inventory-opening-stock.dom`: the three places of the stock
-screen and the batch, each case the one that used to assert the identifier was there.
+screen and the batch, each case the one that used to assert the identifier was there; and two
+reservations of one item on two work orders, whose links are named apart and read alike.
 
 Measured by mutation, every file restored byte for byte. With the parts screen put back to
 `4928486a`, 5 cases of `inventory-parts.dom` failed and 69 passed, and with the picker put back,
@@ -5506,7 +5556,11 @@ read on every draw, 5 fail, the two that count the reads among them; with the gr
 the stock screen and the opening screen as they were at `82c1c411`, 8 of the 180 cases of their
 four files fail. Four cases hold what was already so and fail under none of these: a refused read
 left in words (en and ar), no read when no issue names a reservation, and an answer after the
-screen is gone, which a browser drops without a sign.
+screen is gone, which a browser drops without a sign. After the second review: with the first
+line of a two-line cell left to inherit the cell's line height, 11 cases fail across the six files
+that draw one; with the four merged screens as they were before, the 5 cases of their four files
+fail; and with a failed read remembered as answered, the panel keyed on the last write alone and
+the link named by the stock code alone, the 4 cases that guard them fail.
 
 Gaps in what the service publishes, recorded and not changed:
 
@@ -5532,6 +5586,7 @@ Owner decisions:
   so it needs the path or the code; left for a follow-up.
 - The reference of a stock movement, and the work-order identifier where the work order cannot be
   read, as listed above.
+- A third line in a grid cell (a pending credit note of one's own): a 48 px row holds two.
 
 Also corrected, document only: the manual's audit-log chapter said a detail with no value reads
 "—"; that is so for the value after a change only, and the sentence now says what is drawn before
