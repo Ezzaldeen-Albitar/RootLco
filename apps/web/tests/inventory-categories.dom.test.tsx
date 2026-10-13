@@ -156,6 +156,28 @@ const WIDE = Array.from({ length: 10 }, (_, r) => [
   ),
 ]).flat();
 
+/**
+ * The same rows, counting how often one is drawn. A row's label reads its
+ * `name` once each time it is rendered, and once the tree is built nothing
+ * else reads a name unless a search is typed or a row is chosen — so the count
+ * moves by one for every row React renders again.
+ */
+function watched(rows: readonly CategoryRow[]) {
+  let read = 0;
+  return {
+    rows: rows.map(
+      (row) =>
+        new Proxy(row, {
+          get(target, key, receiver) {
+            if (key === 'name') read += 1;
+            return Reflect.get(target, key, receiver) as unknown;
+          },
+        })
+    ),
+    labelsDrawn: () => read,
+  };
+}
+
 /** Seven levels, each the only child of the one above. */
 const DEEP = Array.from({ length: 7 }, (_, level) =>
   category(3000 + level, `level_${level}`, `Level ${level}`, level === 0 ? null : 3000 + level - 1)
@@ -219,19 +241,28 @@ describe.each(['en', 'ar'] as const)('the category tree (%s)', (locale) => {
   });
 
   it('reads every cursor page of a wide catalogue and draws all of it', async () => {
-    serve(WIDE);
+    const catalogue = watched(WIDE);
+    serve(catalogue.rows);
     await openPage(locale);
     await treeReady();
     expect(listItemCategoryPage.mock.calls.map((call) => call[0])).toEqual([null, 'p2', 'p3']);
     // Ten roots drawn closed; opening everything draws all 260 rows.
     expect(rows()).toHaveLength(10);
+    const closed = catalogue.labelsDrawn();
     await user().click(screen.getByRole('button', { name: t('inventory.categories.expandAll') }));
     await waitFor(() => expect(rows()).toHaveLength(260));
+    // Each of the 250 children is drawn once, and no root a second time.
+    expect(catalogue.labelsDrawn() - closed).toBe(250);
     // A row that arrived on the THIRD page is in the tree under its parent.
     expect(node('group_9').contains(node('group_9_part_24'))).toBe(true);
     expect(screen.queryByText(t('inventory.categories.truncated'))).toBeNull();
+    // Closing every branch draws no row again: the rows on screen are closed
+    // as they stand. Each used to be rendered again on every such click, and
+    // the tree view looks a rendered row's children up in the whole tree.
+    const open = catalogue.labelsDrawn();
     await user().click(screen.getByRole('button', { name: t('inventory.categories.collapseAll') }));
     await waitFor(() => expect(node('group_0').getAttribute('aria-expanded')).toBe('false'));
+    expect(catalogue.labelsDrawn() - open).toBe(0);
   });
 
   it('stops on a repeated cursor and says the list may be incomplete', async () => {
