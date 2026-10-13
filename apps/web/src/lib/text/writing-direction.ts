@@ -16,9 +16,9 @@
  *
  * The attribute asks the browser the same question, but it does not look
  * inside a `<bdi>` or inside an element that carries a `dir` of its own, and
- * that is how most callers hand a name over. A line holding only
- * `<bdi>الاسم</bdi>` has, to `auto`, no letter at all, and falls back to left to
- * right — in the Arabic interface that would cut the beginning off an Arabic
+ * that is how most callers hand a name over. A line holding only an Arabic
+ * name inside a `<bdi>` has, to `auto`, no letter at all, and falls back to
+ * left to right — in the Arabic interface that would cut the beginning off a
  * name that is whole today. Reading the text here has no such blind spot, and
  * gives the same answer on the server and in the browser.
  *
@@ -26,10 +26,16 @@
  * were moved here when a second caller needed them, rather than copied.
  */
 
-/** A letter of a right-to-left script: Hebrew, Arabic and their presentation forms. */
-const RTL_LETTER = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/u;
+/**
+ * A letter of a right-to-left script: Hebrew, Arabic and their presentation
+ * forms. Written as escapes, so that this file holds no right-to-left
+ * character and reads the same in every editor. The first range is the whole
+ * Arabic block, so the Arabic-Indic digits in it count as right-to-left too,
+ * which ASCII digits do not.
+ */
+const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/u;
 /** A letter of a left-to-right script. */
-const LTR_LETTER = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ]/u;
+const LTR_LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/u;
 
 /**
  * The direction a text is written in, from its first letter that has one, or
