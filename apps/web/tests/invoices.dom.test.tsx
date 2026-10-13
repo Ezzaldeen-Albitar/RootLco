@@ -3183,13 +3183,105 @@ describe('raising and approving a credit note', () => {
     }
   });
 
+  /*
+   * P1-32-PRE-OD-UXQ, Q-3. A pending note of one's own said three things on
+   * three lines, and a row holds two: the cell stood over the row's edges and
+   * the last line's letters were cut at the bottom. The two facts about one's
+   * own request now share the second line. jsdom lays nothing out, so what is
+   * held is the count of lines, that nothing inside a line stacks, and that
+   * all three facts are still in the cell's text.
+   */
+  const stateCellOf = (grid: HTMLElement, state: string) =>
+    within(grid)
+      .getByText(EN[`creditNotes.state.${state}`] as string)
+      .closest('[data-grid-cell="two-line"]') as HTMLElement;
+  const expectAtMostTwoLines = (cell: HTMLElement) => {
+    expect(cell).not.toBeNull();
+    expect(cell.children.length).toBeLessThanOrEqual(2);
+    // Every element of the cell is one of its lines: nothing nested in a line
+    // that could stack as a line of its own.
+    expect(cell.querySelectorAll('*')).toHaveLength(cell.children.length);
+    for (const line of cell.children) {
+      expect(line).toHaveAttribute('data-grid-line');
+      expect(line).toHaveClass('whitespace-nowrap');
+    }
+  };
+
+  it.each([
+    ['en', EN, renderLtr],
+    ['ar', AR, renderRtl],
+  ] as const)(
+    "%s: a pending note of one's own says its three facts on two lines",
+    async (locale, T, render) => {
+      render(
+        <CreditNotesScreen
+          locale={locale}
+          messages={locale === 'ar' ? ar : en}
+          initialCreditNoteId={null}
+          currentUserId={RAISED_BY}
+          canDecide
+          canSearchInvoices
+        />
+      );
+      const grid = await screen.findByRole('grid');
+      const pending = T['creditNotes.state.pending'] as string;
+      const byYou = T['creditNotes.byYou'] as string;
+      const waiting = T['creditNotes.ownRequest'] as string;
+      const cell = (await within(grid).findByText(pending)).closest(
+        '[data-grid-cell="two-line"]'
+      ) as HTMLElement;
+      expectAtMostTwoLines(cell);
+      const [first, second] = [...cell.children] as [HTMLElement, HTMLElement];
+      expect(cell.children).toHaveLength(2);
+      expect(first).toHaveClass('text-table-cell');
+      expect(first.textContent).toBe(pending);
+      expect(second).toHaveClass('text-caption');
+      // Both facts about one's own request, set apart by a middle dot.
+      expect(second.textContent).toBe(`${byYou} · ${waiting}`);
+      // Whole in the title too, for a column too narrow to draw all of it.
+      expect(second).toHaveAttribute('title', `${byYou} · ${waiting}`);
+      // Nothing was lost: the cell still says all three.
+      for (const fact of [pending, byYou, waiting]) expect(cell).toHaveTextContent(fact);
+    }
+  );
+
+  it("a decided note of one's own says who raised it and nothing about waiting", async () => {
+    listCreditNotes.mockResolvedValue({
+      status: 'ok',
+      data: {
+        items: [{ ...approvedNote, approvedBy: 'u2', requestedBy: RAISED_BY }],
+        nextCursor: null,
+        hasMore: false,
+      },
+      correlationId: 'corr',
+    });
+    renderLtr(notesScreen(RAISED_BY));
+    const grid = await screen.findByRole('grid');
+    await within(grid).findByText(EN['creditNotes.state.approved'] as string);
+    const cell = stateCellOf(grid, 'approved');
+    expectAtMostTwoLines(cell);
+    expect(cell.children).toHaveLength(2);
+    expect(cell.children[1]?.textContent).toBe(EN['creditNotes.byYou']);
+    expect(cell).not.toHaveTextContent(EN['creditNotes.ownRequest'] as string);
+  });
+
+  it('a note somebody else raised says its state alone', async () => {
+    renderLtr(notesScreen(SIGNED_IN));
+    const grid = await screen.findByRole('grid');
+    await within(grid).findByText(EN['creditNotes.state.pending'] as string);
+    const cell = stateCellOf(grid, 'pending');
+    expectAtMostTwoLines(cell);
+    expect(cell.children).toHaveLength(1);
+    expect(cell.textContent).toBe(EN['creditNotes.state.pending']);
+  });
+
   it('shows a note the caller raised as waiting for another approver, and offers them no approval', async () => {
     renderLtr(notesScreen(RAISED_BY, NOTE_ID));
     const grid = await screen.findByRole('grid');
+    // On the list both facts share the state's second line (Q-3, above).
     expect(
-      await within(grid).findByText(EN['creditNotes.ownRequest'] as string)
+      await within(grid).findByText(`${EN['creditNotes.byYou']} · ${EN['creditNotes.ownRequest']}`)
     ).toBeInTheDocument();
-    expect(within(grid).getByText(EN['creditNotes.byYou'] as string)).toBeInTheDocument();
     const detail = await screen.findByRole('region', {
       name: EN['creditNotes.detail.heading'] as string,
     });
