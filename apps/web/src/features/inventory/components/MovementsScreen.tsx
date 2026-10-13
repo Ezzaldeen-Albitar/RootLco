@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Button from '@mui/material/Button';
 
-import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import type { MomentProblem } from '@/components/forms/mui/DateField';
@@ -697,14 +701,14 @@ function LedgerResults({
         id: 'reference',
         headerKey: 'inventory.movements.column.reference',
         cell: (row) => (
-          <span className="flex flex-col">
-            <span>
-              {translateDynamic(messages, `inventory.referenceKind.${row.reference.kind}`)}
-            </span>
-            <code className="font-mono text-caption" dir="ltr">
-              {row.reference.id}
-            </code>
-          </span>
+          <TwoLineCell
+            primary={translateDynamic(messages, `inventory.referenceKind.${row.reference.kind}`)}
+            secondary={
+              <code className="font-mono" dir="ltr">
+                {row.reference.id}
+              </code>
+            }
+          />
         ),
       },
     ],

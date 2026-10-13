@@ -366,6 +366,21 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
     expect(
       within(table).getByText(EN['inventory.referenceKind.part_return'] as string)
     ).toBeVisible();
+    /*
+     * P1-32-PRE-OD-INVH: the kind of the source document and, under it, that
+     * document's reference. A grid row has one fixed height, and the second
+     * line of a cell is cut off unless each line has a compact line height of
+     * its own; both carry the utility that sets one. That they then fit is seen
+     * only in a browser.
+     */
+    const reference = within(table)
+      .getByText(EN['inventory.referenceKind.part_return'] as string)
+      .closest('[data-grid-cell="two-line"]') as HTMLElement;
+    expect(reference).not.toBeNull();
+    expect(reference.children).toHaveLength(2);
+    expect(reference.children[0]).toHaveClass('text-table-cell');
+    expect(reference.children[1]).toHaveClass('text-caption');
+    expect(reference.children[1]?.textContent).toBe('pr-1');
     await waitFor(() => expect(within(table).getAllByText('Main warehouse')).toHaveLength(2));
     expect(within(table).getAllByText('WH-1')).toHaveLength(2);
     expect(within(table).queryByText(LOCATION_ID)).toBeNull();
