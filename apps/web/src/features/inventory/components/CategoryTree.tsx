@@ -265,44 +265,52 @@ export function CategoryTreeView({
   const expanded = search ? searchOpen : browsing;
   const setExpanded = search ? setSearchOpen : setBrowsing;
 
-  const visible = search?.visible ?? null;
-  const shown = (id: string) => visible === null || visible.has(id);
+  // The rows are built once for a tree, a search and a choice, and handed to
+  // the tree view unchanged until one of those changes. Opening or closing a
+  // row changes none of them. Built on every render instead, every drawn row
+  // was drawn again whenever one row was opened or closed, and the tree view
+  // looks a row's children up in the document each time that row is drawn —
+  // so one click on a tree opened wide searched the whole tree once per row.
+  const rows = useMemo(() => {
+    const visible = search?.visible ?? null;
+    const shown = (id: string) => visible === null || visible.has(id);
 
-  const onItemKeyDown = (id: string) => (event: KeyboardEvent<HTMLLIElement>) => {
-    // Enter on a row with children opens it (the tree view's own rule); it
-    // chooses the row as well. The event bubbles through every ancestor row,
-    // so only the row that holds the focus answers.
-    if (event.key !== 'Enter' || event.target !== event.currentTarget) return;
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    if (id !== selected) onSelect(id);
-  };
+    const onItemKeyDown = (id: string) => (event: KeyboardEvent<HTMLLIElement>) => {
+      // Enter on a row with children opens it (the tree view's own rule); it
+      // chooses the row as well. The event bubbles through every ancestor row,
+      // so only the row that holds the focus answers.
+      if (event.key !== 'Enter' || event.target !== event.currentTarget) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (id !== selected) onSelect(id);
+    };
 
-  const render = (id: string): ReactNode => {
-    const category = forest.byId.get(id);
-    if (!category || !shown(id)) return null;
-    const children = (forest.children.get(id) ?? []).filter(shown);
-    return (
-      <TreeItem
-        key={id}
-        itemId={id}
-        label={
-          <CategoryLabel
-            messages={messages}
-            category={category}
-            misplaced={forest.misplaced.has(id)}
-            match={search?.matches.has(id) ?? false}
-          />
-        }
-        onKeyDown={onItemKeyDown(id)}
-        data-testid={`${testId}-item`}
-        data-category-code={category.code}
-      >
-        {children.map(render)}
-      </TreeItem>
-    );
-  };
+    const render = (id: string): ReactNode => {
+      const category = forest.byId.get(id);
+      if (!category || !shown(id)) return null;
+      const children = (forest.children.get(id) ?? []).filter(shown);
+      return (
+        <TreeItem
+          key={id}
+          itemId={id}
+          label={
+            <CategoryLabel
+              messages={messages}
+              category={category}
+              misplaced={forest.misplaced.has(id)}
+              match={search?.matches.has(id) ?? false}
+            />
+          }
+          onKeyDown={onItemKeyDown(id)}
+          data-testid={`${testId}-item`}
+          data-category-code={category.code}
+        >
+          {children.map(render)}
+        </TreeItem>
+      );
+    };
 
-  const roots = forest.roots.filter(shown);
+    return forest.roots.filter(shown).map(render);
+  }, [forest, messages, onSelect, search, selected, testId]);
   const allOpen = search ? [...search.visible].filter((id) => forest.children.has(id)) : null;
 
   return (
@@ -330,7 +338,7 @@ export function CategoryTreeView({
           {translate(messages, 'inventory.categories.collapseAll')}
         </Button>
       </div>
-      {searching && roots.length === 0 ? (
+      {searching && rows.length === 0 ? (
         <p role="status" className="text-body text-text-secondary" data-testid={`${testId}-none`}>
           {translate(messages, 'inventory.categories.search.none')}
         </p>
@@ -345,7 +353,7 @@ export function CategoryTreeView({
           expandedItems={[...expanded]}
           onExpandedItemsChange={(_event, next) => setExpanded(next)}
         >
-          {roots.map(render)}
+          {rows}
         </SimpleTreeView>
       )}
     </div>
