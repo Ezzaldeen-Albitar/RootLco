@@ -1,6 +1,6 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { hydrateRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
@@ -10,6 +10,7 @@ import {
   useUnsavedGuard,
   useWorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
 import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
 import {
   ALL_BRANCHES,
@@ -141,8 +142,8 @@ function Probe() {
 }
 
 /** What a person does: the select takes the option, and says so. */
-function choose(branchId: string): void {
-  const select = document.querySelector(SELECT) as HTMLSelectElement;
+function choose(branchId: string, selector: string = SELECT): void {
+  const select = document.querySelector(selector) as HTMLSelectElement;
   select.value = branchId;
   select.dispatchEvent(new Event('change', { bubbles: true }));
 }
@@ -199,9 +200,12 @@ interface Page {
 let open: { root: Root | null; container: HTMLElement } | null = null;
 
 /** The server's HTML for the page, in the document, not yet hydrated. */
-function serverPage(): Page {
+function serverPage(
+  build: (moment?: Moment) => ReactElement = tree,
+  selector: string = SELECT
+): Page {
   const container = document.createElement('div');
-  container.innerHTML = renderToString(tree());
+  container.innerHTML = renderToString(build());
   document.body.appendChild(container);
   const recoverable = vi.fn<(error: unknown) => void>();
   open = { root: null, container };
@@ -209,13 +213,13 @@ function serverPage(): Page {
     container.querySelector(`[data-testid="${id}"]`)?.textContent ?? null;
   return {
     container,
-    select: () => container.querySelector(SELECT) as HTMLSelectElement,
+    select: () => container.querySelector(selector) as HTMLSelectElement,
     selection: () => text('probe-selection'),
     version: () => text('probe-version'),
     recoverable,
     hydrate: async (moment) => {
       await act(async () => {
-        (open as { root: Root | null }).root = hydrateRoot(container, tree(moment), {
+        (open as { root: Root | null }).root = hydrateRoot(container, build(moment), {
           onRecoverableError: recoverable,
         });
       });
@@ -626,5 +630,130 @@ describe('a branch chosen later is kept, as before', () => {
     expect(page.selection()).toBe(TEST_BRANCH.id);
     expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
     expect(seen).toEqual(['0:', '1:all', `2:${TEST_BRANCH.id}`]);
+  });
+});
+
+/**
+ * The chooser a screen offers beside its branch ask (`ConcreteBranchChooser`).
+ *
+ * It is a second select that writes the working context, and it is in the
+ * server's HTML wherever a screen is drawn before a branch is known — the
+ * boards that read every branch, for an operator with several. It takes an
+ * early choice through the same hook as the header's select, so the cases
+ * mirror the header's: adopted on a fresh navigation, not on a reload or a
+ * move through history, and never a value it was not given to offer.
+ */
+describe("the chooser beside a screen's branch ask keeps an early choice the same way", () => {
+  const CHOOSER = '[data-testid="concrete-branch-chooser"]';
+  const screenTree = () => (
+    <WorkingContextProvider snapshot={TWO} messages={messages}>
+      <main>
+        <WorkingBranchField messages={messages} />
+      </main>
+      <Probe />
+    </WorkingContextProvider>
+  );
+  const screenPage = () => serverPage(screenTree, CHOOSER);
+
+  it("is in the server's HTML, enabled, with nothing selected and the branches by name", () => {
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const page = screenPage();
+    expect(page.select().disabled).toBe(false);
+    expect([...page.select().options].map((option) => option.value)).toEqual([
+      '',
+      TEST_BRANCH.id,
+      OTHER_BRANCH.id,
+    ]);
+  });
+
+  it.each([
+    ['"All my branches"', ALL_BRANCHES],
+    ['another branch', OTHER_BRANCH.id],
+    ['nothing', null],
+  ] as const)(
+    'on a fresh navigation, with %s remembered: the choice is kept',
+    async (_name, remembered) => {
+      if (remembered !== null) window.localStorage.setItem(KEY, remembered);
+      const page = screenPage();
+      choose(TEST_BRANCH.id, CHOOSER);
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.selection()).toBe(TEST_BRANCH.id);
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+      // The screen has its branch, so it no longer asks.
+      expect(page.select()).toBeNull();
+    }
+  );
+
+  it('chosen while React is taking the page over: heard once, not twice', async () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = screenPage();
+    const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
+    const before = environment.IS_REACT_ACT_ENVIRONMENT;
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      (open as { root: Root | null }).root = hydrateRoot(page.container, screenTree(), {
+        onRecoverableError: page.recoverable,
+      });
+      choose(TEST_BRANCH.id, CHOOSER);
+      await waitFor(() => expect(page.selection()).toBe(TEST_BRANCH.id));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      environment.IS_REACT_ACT_ENVIRONMENT = before;
+    }
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.version()).toBe('1');
+    expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+  });
+
+  it.each(['reload', 'back_forward', 'prerender', null] as const)(
+    'reached by %s: the remembered branch stands',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+      const page = screenPage();
+      // Put back by the browser: a value, and no event.
+      page.select().value = TEST_BRANCH.id;
+      await page.hydrate();
+      expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+      expect(page.selection()).toBe(OTHER_BRANCH.id);
+      expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+    }
+  );
+
+  it.each(['reload', 'back_forward'] as const)(
+    'reached by %s with nothing remembered: nothing is chosen, and the chooser says so',
+    async (arrival) => {
+      arriveBy(arrival);
+      const page = screenPage();
+      page.select().value = TEST_BRANCH.id;
+      await page.hydrate();
+      expect(window.localStorage.getItem(KEY)).toBeNull();
+      expect(page.selection()).toBe('');
+      expect(seen).toEqual(['0:']);
+      // Not left naming a branch that is not in force.
+      expect(page.select().value).toBe('');
+    }
+  );
+
+  it('a value it was never given to offer is not a choice', async () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = screenPage();
+    const option = [...page.select().options].find(
+      (candidate) => candidate.value === TEST_BRANCH.id
+    ) as HTMLOptionElement;
+    option.value = '99999999-9999-4999-8999-999999999999';
+    page.select().value = option.value;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await page.hydrate();
+    } finally {
+      errors.mockRestore();
+    }
+    expect(window.localStorage.getItem(KEY)).toBe(ALL_BRANCHES);
+    expect(page.selection()).toBe('all');
+    expect(seen).toEqual(['0:', '1:all']);
   });
 });

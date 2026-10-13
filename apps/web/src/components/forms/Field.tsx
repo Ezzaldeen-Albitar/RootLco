@@ -5,6 +5,7 @@ import {
   useState,
   type InputHTMLAttributes,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
@@ -407,6 +408,8 @@ export function SelectField({
     /** Rendered after `options`, each as an `<optgroup>`. */
     readonly groups?: readonly SelectOptionGroup[];
     readonly placeholder?: string | undefined;
+    /** The select itself, for a caller that has to read what it holds. */
+    readonly ref?: Ref<HTMLSelectElement> | undefined;
   }) {
   return (
     <FieldFrame

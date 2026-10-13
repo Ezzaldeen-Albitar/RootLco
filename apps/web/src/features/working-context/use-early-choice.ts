@@ -25,8 +25,11 @@ import { useLayoutEffect, type RefObject } from 'react';
  *   - it is handed to `adopt` exactly as if it had just been chosen — the
  *     provider's guarded switch, so it is remembered, it moves the version
  *     once, and unsaved work is asked about first; or
- *   - nothing is adopted, the remembered selection stands, and the render
- *     that restores it writes it back into the select, as it always did.
+ *   - nothing is adopted and the select is put back to the value it was drawn
+ *     with, so the remembered selection stands and the select does not go on
+ *     naming a branch that is not in force. (The header's select was put back
+ *     by its next render anyway; the chooser beside a screen's branch ask,
+ *     with nothing remembered, was not.)
  *
  * It is the adoption the sign-in form makes for a box filled before hydration
  * (`usePrefilledValue`), with one difference that matters: there, whatever the
@@ -77,8 +80,11 @@ export function useEarlyChoice(
     const held = select.value;
     if (held === value) return;
     if (!Array.from(select.options).some((option) => option.value === value)) return;
-    if (!offered.includes(held)) return;
-    if (arrivedByFreshNavigation()) adopt(held);
+    if (offered.includes(held) && arrivedByFreshNavigation()) {
+      adopt(held);
+      return;
+    }
+    select.value = value;
   }, [selectRef, value, offered, adopt]);
 }
 
