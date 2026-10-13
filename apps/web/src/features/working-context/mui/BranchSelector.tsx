@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useLayoutEffect, useMemo, useRef } from 'react';
+import { useId, useMemo, useRef } from 'react';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
@@ -14,6 +14,7 @@ import {
   type WorkingContextCompany,
   type WorkingContextStatus,
 } from '../working-context-contract';
+import { useEarlyChoice } from '../use-early-choice';
 
 /**
  * The working-branch control, drawn on Material UI — ADR-022 PR1.
@@ -47,26 +48,19 @@ import {
  * ## A branch chosen before the page is ready is kept (P1-32-PRE-OD-UXQ, Q-1)
  *
  * The header is in the server's HTML, so this select is drawn — enabled, with
- * every branch in it — before React has attached to the page. A branch chosen
- * in that moment changes the select and is heard by nobody: React leaves the
- * select as it finds it while it hydrates, and the next render writes the
- * provider's value back over the choice. With "All my branches" remembered the
- * select read "Choose your branch" again and the choice was gone.
+ * every branch in it — before React has attached to the page, and a branch
+ * chosen in that moment used to be lost. `useEarlyChoice` reads the select in
+ * the commit that hydrates it and hands a branch chosen there to `onSelect`,
+ * the provider's guarded switch — on a fresh navigation only, because on a
+ * reload or a move through history the browser may have put an earlier value
+ * back into the select, and that is nobody's choice. The rule and its reasons
+ * are stated there.
  *
- * So the select is read in the commit that mounts it — hydration included,
- * before the browser paints and before any other update can render — and when
- * it holds a branch other than the one it was drawn with, that branch is
- * handed to `onSelect` exactly as if it had just been chosen. It goes
- * through the provider's guarded path like any other choice, so it is
- * remembered, it moves the version once, and the selection that was remembered
- * before it never comes into force. It is the same adoption the sign-in form
- * makes for a box filled before hydration (`usePrefilledValue`).
- *
- * It only ever moves the provider TO what the select shows: a select React
- * rendered itself already agrees with its value, and nothing is adopted.
- * `autocomplete="off"` keeps a browser from putting an earlier page's value
- * into the select on a reload, which would otherwise be read here as a choice
- * nobody made.
+ * `autocomplete="off"` asks the browser not to restore the select at all. It
+ * is kept because it does no harm and, where a browser honours it, the select
+ * does not show a stale branch for the moment before React arrives. Nothing
+ * relies on it: whether a browser honours it on a select outside a form was
+ * not established.
  */
 export interface BranchSelectorProps {
   readonly messages: Messages;
@@ -102,25 +96,9 @@ export function BranchSelector({
   const base = useId();
   const selectId = `${base}-select`;
 
-  /*
-   * The look at what the select holds that React was never told about — see "A
-   * branch chosen before the page is ready is kept" above. After React has
-   * rendered the select the two agree, so this finds something only in the
-   * commit that hydrates it.
-   *
-   * A value this select does not offer proves nothing: the browser then shows
-   * the first option, which nobody chose, and adopting it would pick a branch
-   * on the operator's behalf.
-   */
+  // A branch chosen before React hydrated the select — see above.
   const selectRef = useRef<HTMLSelectElement | null>(null);
-  useLayoutEffect(() => {
-    const select = selectRef.current;
-    if (select === null) return;
-    const chosen = select.value;
-    if (chosen.length === 0 || chosen === value) return;
-    if (!Array.from(select.options).some((option) => option.value === value)) return;
-    onSelect(chosen);
-  }, [value, onSelect]);
+  useEarlyChoice(selectRef, value, onSelect);
 
   const grouped = useMemo(() => {
     const byCompany = new Map<string, WorkingContextBranch[]>();
@@ -232,7 +210,7 @@ export function BranchSelector({
           inputProps={{
             id: selectId,
             'data-testid': 'working-context-select',
-            // No value of an earlier page restored by the browser — see above.
+            // Asked of the browser, not relied on — see above.
             autoComplete: 'off',
             className: 'truncate',
             title: shown.length > 0 ? shown : undefined,

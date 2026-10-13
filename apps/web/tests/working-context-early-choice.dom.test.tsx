@@ -59,6 +59,17 @@ import { OTHER_BRANCH, TEST_BRANCH, TEST_COMPANY, branchSnapshot, renderLtr } fr
  * takes a request for the selection already remembered and in force as nothing
  * to do, so the version moves once.
  *
+ * ## Only on a fresh navigation
+ *
+ * A browser puts a select back the way it was when it re-opens a document from
+ * its history, so a select that differs from what the server drew is a choice
+ * only when the document was reached by a fresh navigation. On a reload, a move
+ * through history or a prerender, and when the browser does not say, nothing
+ * is adopted: the remembered selection stands and the select is put back to
+ * it. jsdom has no navigation entry of its own, so each case states how the
+ * page was reached (`arriveBy`) and the stub is taken away afterwards. What a
+ * real browser restores, and when, is not something this file can see.
+ *
  * ## The moments, in order
  *
  *   1. before React hydrates the page (the defect);
@@ -88,6 +99,28 @@ vi.mock('next/navigation', () => ({
 const TWO = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
 const KEY = preferenceKeyFor(TWO.tenantId as string, TWO.accountId as string);
 const SELECT = '[data-testid="working-context-select"]';
+
+/** How the browser says the document was reached; `null` when it has no entry to give. */
+type Arrival = 'navigate' | 'reload' | 'back_forward' | 'prerender' | null;
+
+const ownNavigationEntries = Object.getOwnPropertyDescriptor(performance, 'getEntriesByType');
+
+function stubNavigationEntries(read: (kind: string) => readonly unknown[]): void {
+  Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: read });
+}
+
+/** States how the page under test was reached, as `PerformanceNavigationTiming.type` would. */
+function arriveBy(type: Arrival): void {
+  stubNavigationEntries((kind) => (kind === 'navigation' && type !== null ? [{ type }] : []));
+}
+
+function restoreNavigationEntries(): void {
+  if (ownNavigationEntries !== undefined) {
+    Object.defineProperty(performance, 'getEntriesByType', ownNavigationEntries);
+  } else {
+    delete (performance as { getEntriesByType?: unknown }).getEntriesByType;
+  }
+}
 
 /** Every selection the provider put in force, with the version it carried. */
 const seen: string[] = [];
@@ -194,9 +227,12 @@ beforeEach(() => {
   window.localStorage.clear();
   nav.pathname = '/en/inventory/parts';
   seen.length = 0;
+  // A link, a typed address, a bookmark: the arrival on which a choice is read.
+  arriveBy('navigate');
 });
 
 afterEach(() => {
+  restoreNavigationEntries();
   if (open !== null) {
     const { root, container } = open;
     act(() => root?.unmount());
@@ -211,8 +247,8 @@ describe('the server draws the select before anything is remembered', () => {
     const page = serverPage();
     expect(page.select().disabled).toBe(false);
     expect(page.select().value).toBe('');
-    // A browser must not put an earlier page's value back into it on a reload:
-    // it would be read at hydration as a choice nobody made.
+    // The browser is asked not to put an earlier page's value back into it.
+    // Nothing relies on the answer: see the arrivals below.
     expect(page.select()).toHaveAttribute('autocomplete', 'off');
     expect([...page.select().options].map((option) => option.value)).toEqual([
       '',
@@ -292,6 +328,82 @@ describe('a branch chosen before React hydrates the page is kept (the defect)', 
     await page.hydrate();
     expect(page.selection()).toBe(OTHER_BRANCH.id);
     expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+  });
+});
+
+describe('a select the browser may have put back is not read as a choice', () => {
+  /** What a browser does when it re-opens a document: the select holds a value, and no event says so. */
+  function restoredByTheBrowser(page: Page, branchId: string): void {
+    page.select().value = branchId;
+    expect(page.select().value).toBe(branchId);
+  }
+
+  it.each(['reload', 'back_forward', 'prerender'] as const)(
+    'reached by %s: the remembered branch stands and the select goes back to it',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+      const page = serverPage();
+      restoredByTheBrowser(page, TEST_BRANCH.id);
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      // Storage is untouched, so no other tab is moved either.
+      expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+      expect(page.selection()).toBe(OTHER_BRANCH.id);
+      expect(page.select().value).toBe(OTHER_BRANCH.id);
+      // The version moved for the restore alone.
+      expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+    }
+  );
+
+  it.each(['reload', 'back_forward'] as const)(
+    'reached by %s with nothing remembered: the select goes back to the ask',
+    async (arrival) => {
+      arriveBy(arrival);
+      const page = serverPage();
+      restoredByTheBrowser(page, TEST_BRANCH.id);
+      await page.hydrate();
+      expect(window.localStorage.getItem(KEY)).toBeNull();
+      expect(page.selection()).toBe('');
+      // Not left showing a branch that is not in force.
+      expect(page.select().value).toBe('');
+      expect(seen).toEqual(['0:']);
+    }
+  );
+
+  it('the browser has no navigation entry to give: nothing is adopted', async () => {
+    arriveBy(null);
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const page = serverPage();
+    restoredByTheBrowser(page, TEST_BRANCH.id);
+    await page.hydrate();
+    expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+    expect(page.select().value).toBe(OTHER_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+  });
+
+  it('the browser cannot be asked at all: nothing is adopted', async () => {
+    stubNavigationEntries(() => {
+      throw new Error('not supported here');
+    });
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const page = serverPage();
+    restoredByTheBrowser(page, TEST_BRANCH.id);
+    await page.hydrate();
+    expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+    expect(page.select().value).toBe(OTHER_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+  });
+
+  it('a fresh navigation is the one arrival on which the same select is a choice', async () => {
+    arriveBy('navigate');
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const page = serverPage();
+    restoredByTheBrowser(page, TEST_BRANCH.id);
+    await page.hydrate();
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
   });
 });
 
