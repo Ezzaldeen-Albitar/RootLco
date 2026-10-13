@@ -143,18 +143,33 @@ const BRAKES = [
   category(6, 'tools', 'Tools', null),
 ];
 
+/** Ten roots of so many children each, every root followed by its own. */
+const grouped = (children: number) =>
+  Array.from({ length: 10 }, (_, r) => [
+    category(1000 + r, `group_${r}`, `Group ${r}`, null),
+    ...Array.from({ length: children }, (_, k) =>
+      category(
+        2000 + r * 100 + k,
+        `group_${r}_part_${String(k).padStart(2, '0')}`,
+        `Part ${r}-${k}`,
+        1000 + r
+      )
+    ),
+  ]).flat();
+
 /** Ten roots of twenty-five children each: 260 rows over three pages. */
-const WIDE = Array.from({ length: 10 }, (_, r) => [
-  category(1000 + r, `group_${r}`, `Group ${r}`, null),
-  ...Array.from({ length: 25 }, (_, k) =>
-    category(
-      2000 + r * 100 + k,
-      `group_${r}_part_${String(k).padStart(2, '0')}`,
-      `Part ${r}-${k}`,
-      1000 + r
-    )
-  ),
-]).flat();
+const WIDE = grouped(25);
+
+/**
+ * Ten roots of twenty children each: 210 rows, so two full pages and a third
+ * of ten — the last ten children of a root that arrived on the second page.
+ *
+ * It is this wide and no wider on purpose. The tree view looks every row it
+ * draws up in the whole tree, so drawing a catalogue open costs the square of
+ * its rows under jsdom; ten equal groups reach a third page at twenty children
+ * each, and a third page of ten rows says more than a third page of one.
+ */
+const THREE_PAGES = grouped(20);
 
 /**
  * The same rows, counting how often one is drawn. A row's label reads its
@@ -241,20 +256,44 @@ describe.each(['en', 'ar'] as const)('the category tree (%s)', (locale) => {
   });
 
   it('reads every cursor page of a wide catalogue and draws all of it', async () => {
-    const catalogue = watched(WIDE);
+    const catalogue = watched(THREE_PAGES);
     serve(catalogue.rows);
     await openPage(locale);
     await treeReady();
     expect(listItemCategoryPage.mock.calls.map((call) => call[0])).toEqual([null, 'p2', 'p3']);
-    // Ten roots drawn closed; opening everything draws all 260 rows.
+    // Two full pages and a part of a third, each asked for with the cursor before it.
+    const served = await Promise.all(
+      listItemCategoryPage.mock.results.map((result) => result.value as ReturnType<typeof page>)
+    );
+    expect(served.map((answer) => answer.data.items.length)).toEqual([100, 100, 10]);
+    // Ten roots drawn closed; opening everything draws all 210 rows.
     expect(rows()).toHaveLength(10);
     const closed = catalogue.labelsDrawn();
     await user().click(screen.getByRole('button', { name: t('inventory.categories.expandAll') }));
-    await waitFor(() => expect(rows()).toHaveLength(260));
-    // Each of the 250 children is drawn once, and no root a second time.
-    expect(catalogue.labelsDrawn() - closed).toBe(250);
-    // A row that arrived on the THIRD page is in the tree under its parent.
-    expect(node('group_9').contains(node('group_9_part_24'))).toBe(true);
+    await waitFor(() => expect(rows()).toHaveLength(210));
+    // Each of the 200 children is drawn once, and no root a second time.
+    expect(catalogue.labelsDrawn() - closed).toBe(200);
+    // Every category of every page is on screen once, in the order the pages
+    // gave them, and each sits inside the row of its own parent.
+    const drawn = [...document.querySelectorAll<HTMLElement>('[data-category-code]')];
+    expect(drawn.map((row) => row.dataset.categoryCode)).toEqual(
+      THREE_PAGES.map((row) => row.code)
+    );
+    const codeOf = new Map(THREE_PAGES.map((row) => [row.id, row.code]));
+    expect(
+      drawn.map(
+        (row) =>
+          row.parentElement?.closest<HTMLElement>('[data-category-code]')?.dataset.categoryCode ??
+          null
+      )
+    ).toEqual(
+      THREE_PAGES.map((row) =>
+        row.parentCategoryId === null ? null : codeOf.get(row.parentCategoryId)
+      )
+    );
+    // A row that arrived on the THIRD page is in the tree under its parent —
+    // which arrived on the second.
+    expect(node('group_9').contains(node('group_9_part_19'))).toBe(true);
     expect(screen.queryByText(t('inventory.categories.truncated'))).toBeNull();
     // Closing every branch draws no row again: the rows on screen are closed
     // as they stand. Each used to be rendered again on every such click, and
