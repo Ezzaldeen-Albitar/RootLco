@@ -2375,7 +2375,10 @@ describe('credit notes are reachable', () => {
     expect(columns.map((column) => column.id)).toEqual(['reason', 'amount', 'state']);
     const reason = columns.find((column) => column.id === 'reason');
     expect(reason?.minChars).toBe(REASON_COLUMN_CHARS);
-    expect(columnMinWidth(reason?.minChars ?? 0)).toBe(380);
+    expect(columnMinWidth(reason?.minChars ?? 0)).toBe(340);
+    // Two columns at the 96 px floor and a 96 px action beside it: 628 px, well
+    // inside the 925 px the grid has of a 1280 px window (see `refunds.dom`).
+    expect(columnMinWidth(reason?.minChars ?? 0) + 3 * 96).toBeLessThanOrEqual(925);
     for (const column of columns.filter((entry) => entry.id !== 'reason')) {
       expect(column.minChars, column.id).toBeUndefined();
     }

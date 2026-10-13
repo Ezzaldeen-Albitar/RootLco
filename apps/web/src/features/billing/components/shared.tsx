@@ -36,17 +36,35 @@ export const UUID = regexes.uuid();
  *
  * A reason is a sentence somebody typed, up to two thousand characters, so no
  * width shows every one whole: a longer reason ends in an ellipsis and its
- * whole text is the line's title. What the column is sized for is the ordinary
- * one — a single short sentence such as "Customer was charged twice for the
- * same brake service", about fifty-five Latin characters. The grid estimates a
- * character wider than it is drawn (eight pixels against about six and a
- * half, measured on the refunds list at 1440 px), so forty-five of its
- * characters — 380 px — hold that sentence. At 1440 px the refunds list gave
- * this column about 300 px and cut every reason of the retest; the other
- * columns of that list keep room for an invoice number, an amount and a
- * payout reference.
+ * whole text is the line's title. So the width is not chosen to show more of a
+ * long reason. It is the widest the column can ask for without making the
+ * refunds grid scroll sideways on a 1280 px window with the sidebar open — a
+ * sideways scrollbar on a common laptop is a worse trade than a shorter line
+ * with its whole text one hover away.
+ *
+ * The arithmetic, in the grid's own minimum widths (`columnMinWidth`,
+ * `rowActionsMinWidth`):
+ *
+ *   - the grid's share of a window: the retest measured 1085 px of a 1440 px
+ *     window, so 355 px go to the sidebar, the page's padding and the panel's;
+ *     of 1280 px that leaves 925;
+ *   - the refunds grid's other columns: four at the 96 px floor (invoice,
+ *     amount, method, state) and the row action, 164 px for "Open the invoice"
+ *     — 548 px;
+ *   - the reason: 8 px a character and 20 px of padding. Forty characters are
+ *     340 px, 888 in all: 37 px to spare at 1280 px, and no sideways scroll
+ *     down to a window of about 1245 px. Forty-five (380 px) made 928, three
+ *     more than the grid has. Forty-four would fit by five, which is the
+ *     slack every grid's scroller was measured to be out by already.
+ *
+ * The credit-notes grid has two floor columns and a 96 px action beside the
+ * reason: 628 px, never the tighter of the two.
+ *
+ * What 340 px holds is about fifty Latin characters as they are drawn (about
+ * six and a half pixels each on the refunds list). At 1440 px the refunds
+ * list gave this column about 300 px.
  */
-export const REASON_COLUMN_CHARS = 45;
+export const REASON_COLUMN_CHARS = 40;
 
 /**
  * A moment, in the reader's language AND the reader's direction.

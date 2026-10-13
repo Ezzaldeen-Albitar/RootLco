@@ -157,7 +157,7 @@ vi.mock('@/components/data/OperationalGrid', async (original) => {
 const { RefundsPanel } = await import('@/features/billing/components/RefundsPanel');
 const { RefundsScreen } = await import('@/features/billing/components/RefundsScreen');
 const { REASON_COLUMN_CHARS } = await import('@/features/billing/components/shared');
-const { columnMinWidth } = await import('@/components/data/OperationalGrid');
+const { columnMinWidth, rowActionsMinWidth } = await import('@/components/data/OperationalGrid');
 
 const INVOICE_ID = '99999999-9999-4999-8999-999999999999';
 const OBLIGATION_ID = 'aaaa0000-0000-4000-8000-000000000001';
@@ -646,7 +646,7 @@ describe('the refunds list', () => {
     });
   }
 
-  it('asks for a reason column an ordinary reason fits in, and leaves the other columns theirs', async () => {
+  it('asks for the widest reason column that needs no sideways scroll at 1280 px, and leaves the others theirs', async () => {
     listRefundRequests.mockResolvedValue(page([refundRequest()]));
     list();
     await within(await screen.findByTestId('refunds-grid')).findByText('Paid twice');
@@ -660,14 +660,36 @@ describe('the refunds list', () => {
     ]);
     const reason = columns.find((column) => column.id === 'reason');
     expect(reason?.minChars).toBe(REASON_COLUMN_CHARS);
-    // 380 px: wider than the 297 to 301 px the column was drawn at when every
-    // reason of the retest was cut, and room for a sentence of fifty-five
-    // characters as they are drawn (about six and a half pixels each).
-    expect(columnMinWidth(reason?.minChars ?? 0)).toBe(380);
-    expect(columnMinWidth(reason?.minChars ?? 0)).toBeGreaterThan(55 * 6.5 + 20);
-    for (const column of columns.filter((entry) => entry.id !== 'reason')) {
-      expect(column.minChars, column.id).toBeUndefined();
-    }
+    // 340 px: wider than the 297 to 301 px the column was drawn at when every
+    // reason of the retest was cut, and room for about fifty characters as
+    // they are drawn (about six and a half pixels each).
+    const reasonWidth = columnMinWidth(reason?.minChars ?? 0);
+    expect(reasonWidth).toBe(340);
+    expect(reasonWidth).toBeGreaterThan(301);
+    expect(reasonWidth).toBeGreaterThan(49 * 6.5 + 20);
+    const others = columns.filter((entry) => entry.id !== 'reason');
+    for (const column of others) expect(column.minChars, column.id).toBeUndefined();
+    /*
+     * No sideways scroll on a 1280 px window with the sidebar open. A grid
+     * scrolls sideways when its columns' minimum widths add up to more than it
+     * has. What it has is not something jsdom lays out: the retest measured
+     * 1085 px for the grid in a 1440 px window, so 355 px go to the sidebar and
+     * the paddings, and of 1280 px that leaves 925. The other columns keep the
+     * 96 px floor and the action is as wide as its longer label, the English.
+     */
+    const GRID_SHARE_OF_1280 = 1280 - (1440 - 1085);
+    const FLOOR = 96;
+    const action = Math.max(
+      rowActionsMinWidth([[EN['refunds.openInvoice'] as string]]),
+      rowActionsMinWidth([[AR['refunds.openInvoice'] as string]])
+    );
+    expect(action).toBe(164);
+    const needed = reasonWidth + others.length * FLOOR + action;
+    expect(needed).toBe(888);
+    expect(needed).toBeLessThanOrEqual(GRID_SHARE_OF_1280);
+    // And not by so little that the slack every grid's scroller already has
+    // (about 5 px, measured) would bring the scrollbar back.
+    expect(GRID_SHARE_OF_1280 - needed).toBeGreaterThan(5);
   });
 
   it('lists the branch requests with the server figures and narrows by state through the server', async () => {
