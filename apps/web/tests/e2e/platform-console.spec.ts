@@ -65,11 +65,13 @@ test.describe('Platform Owner Console', () => {
 
     await page.goto('/en/platform/organizations');
     await expect(page.getByRole('heading', { level: 1, name: 'Organisations' })).toBeVisible();
-    const table = page.getByRole('table', { name: 'Organisations' });
-    await expect(table).toBeVisible();
+    // The list is the operational grid, named by the page's own title; the only
+    // links inside it are the organisations' names.
+    const grid = page.getByRole('grid', { name: 'Organisations' });
+    await expect(grid).toBeVisible();
 
-    const first = table.getByRole('link').first();
-    const count = await table.getByRole('link').count();
+    const first = grid.getByRole('link').first();
+    const count = await grid.getByRole('link').count();
     // test-honesty-allow: TH-002 -- the environment holds no organisation to open; nothing is created to fill it
     test.skip(count === 0, 'The environment holds no organisation, so there is no detail to open.');
 

@@ -1,10 +1,15 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { formatDate, formatDateTime, formatInteger, intlLocale } from '@/lib/format';
+import { formatMoney } from '@/lib/money';
+import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
 
 /**
  * The Platform Owner Console screens (P1-32-PRE-069).
@@ -31,6 +36,12 @@ import { renderLtr, renderRtl } from './render';
  *     version the operator was looking at;
  *   - the activity search opens on the window it was given and applies its
  *     criteria together.
+ *   - the three list screens on Material UI — the organisations, the plan
+ *     catalogue and the activity search — draw the rows the read returned, in
+ *     English and in Arabic, with no code or reference cut without a sign; say
+ *     an empty answer, a refusal and a failure each as itself; page by the
+ *     server's cursor; and the activity search opens one entry whole, every
+ *     field in words where there are words and as recorded beside them.
  *   - account and security validates each password field before it asks the
  *     server, reveals each field on its own, states what the server reported
  *     about the operator's other devices, and tells the two server refusals
@@ -143,6 +154,54 @@ const { AccountSecurityScreen } =
 const { getMessages } = await import('@/i18n/get-messages');
 
 const messages = getMessages('en');
+
+/**
+ * Under the Material foundation, as the locale layout mounts it: the grid's and
+ * the pickers' own texts come from the catalogue through it. It reads no
+ * working context, so the refusal above still stands over everything rendered.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+
+const escapeText = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** A control whose label starts with these words (a required mark may follow). */
+const labelledBy = (words: string) => new RegExp(`^${escapeText(words)}`);
+
+/**
+ * Types a day into a day picker, part by part: day, month, year, the order
+ * both languages write one. The picker is a group of parts named by its label.
+ *
+ * Whatever the picker held is cleared first — every part selected, then
+ * Backspace — so the digits are typed into blank parts. Typed straight over a
+ * day already held, a first digit other than zero did not take in this
+ * environment (`15` over a held day came out as `01`); cleared first, every
+ * day does.
+ */
+async function typeDay(scope: HTMLElement, label: string, digits: string) {
+  const user = userEvent.setup();
+  const group = within(scope).getByRole('group', { name: labelledBy(label) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard('{Control>}a{/Control}');
+  await user.keyboard('{Backspace}');
+  await user.keyboard(digits);
+  return group;
+}
+
+/** Text with every run of white space as one space, so a formatted moment compares. */
+const flat = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim();
+
+/** The data rows of a grid: every row but the header's. */
+function dataRows(grid: HTMLElement): HTMLElement[] {
+  return within(grid)
+    .getAllByRole('row')
+    .filter((candidate) => candidate.hasAttribute('data-id'));
+}
+
 const TENANT = '11111111-1111-4111-8111-111111111111';
 /** Two more organisations, for the expiry window cases on the overview. */
 const OTHER_TENANT = '11111111-1111-4111-8111-111111111112';
@@ -261,6 +320,53 @@ const NONE = {
   canReadAudit: false,
 };
 
+/**
+ * What a list read can answer besides rows, and the state each is drawn as.
+ * `retry` is whether trying again can change the answer.
+ */
+const READ_OUTCOMES = [
+  {
+    name: 'an empty answer',
+    answer: {
+      ok: true as const,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c-empty',
+    },
+    testId: 'state-empty',
+    title: 'state.empty.title',
+    retry: false,
+  },
+  {
+    name: 'a refusal',
+    answer: { ok: false as const, kind: 'forbidden', correlationId: 'c-refused' },
+    testId: 'state-refused',
+    title: 'state.denied.title',
+    retry: false,
+  },
+  {
+    name: 'a failure',
+    answer: { ok: false as const, kind: 'server', correlationId: 'c-failed' },
+    testId: 'state-error',
+    title: 'state.error.title',
+    retry: true,
+  },
+  {
+    name: 'an outage',
+    answer: { ok: false as const, kind: 'unavailable', correlationId: 'c-outage' },
+    testId: 'state-unavailable',
+    title: 'state.unavailable.title',
+    retry: true,
+  },
+];
+
+/** Every outcome, in both languages. */
+const ORGANIZATION_READ_OUTCOMES = BOTH_DIRECTIONS.flatMap(([locale, paint]) =>
+  READ_OUTCOMES.map((outcome) => ({ locale, paint, ...outcome }))
+);
+
+/** The outcomes that are failures, in both languages. */
+const ACTIVITY_READ_FAILURES = ORGANIZATION_READ_OUTCOMES.filter((outcome) => !outcome.answer.ok);
+
 beforeEach(() => {
   mockPathname = '/en/platform';
   apiGet.mockReset();
@@ -293,7 +399,9 @@ describe('the organisation list', () => {
       data: { items: [row], nextCursor: null, hasMore: false },
       correlationId: 'c',
     });
-    renderLtr(<OrganizationsScreen locale="en" messages={messages} canProvision={false} />);
+    renderLtr(
+      withMui(<OrganizationsScreen locale="en" messages={messages} canProvision={false} />)
+    );
     await screen.findByText('Test Organisation One');
     expect(String(apiGet.mock.calls[0]?.[0])).not.toContain('q=');
 
@@ -329,7 +437,7 @@ describe('the organisation list', () => {
         },
         correlationId: 'c',
       });
-    renderLtr(<OrganizationsScreen locale="en" messages={messages} canProvision />);
+    renderLtr(withMui(<OrganizationsScreen locale="en" messages={messages} canProvision />));
     await screen.findByText('Test Organisation One');
     expect(screen.getByRole('link', { name: L('platform.organizations.new') })).toHaveAttribute(
       'href',
@@ -340,6 +448,184 @@ describe('the organisation list', () => {
     await screen.findByText('Test Organisation Two');
     const path = String(apiGet.mock.calls[1]?.[0]);
     expect(new URLSearchParams(path.split('?')[1]).get('cursor')).toBe('cursor-two');
+  });
+
+  /*
+   * On Material UI. The rows are the page the read returned and nothing else:
+   * one page is asked for, from the start, and every value of a row is on
+   * screen in the reader's language. A code longer than its column is cut by
+   * the cell's own ellipsis and keeps its whole text behind it.
+   */
+  it.each(BOTH_DIRECTIONS)(
+    '%s: draws each organisation of the page it read, with its code and its plan code whole',
+    async (locale, paint) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      const longCode = `test_org_${'x'.repeat(50)}`;
+      const second = {
+        ...row,
+        id: OTHER_TENANT,
+        tenantCode: longCode,
+        displayName: 'Test Organisation Two',
+        status: 'suspended',
+        activePlanCode: null,
+        activePlanEffectiveTo: null,
+        activeCompanyCount: 4,
+        activeBranchCount: 5,
+        activeUserCount: 1234,
+      };
+      apiGet.mockResolvedValue({
+        ok: true,
+        data: { items: [row, second], nextCursor: null, hasMore: false },
+        correlationId: 'c',
+      });
+      paint(
+        withMui(
+          <OrganizationsScreen locale={locale} messages={catalogue} canProvision={false} />,
+          locale
+        )
+      );
+
+      const grid = await screen.findByRole('grid', {
+        name: words['platform.organizations.title'] as string,
+      });
+      await within(grid).findByText('Test Organisation One');
+      expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+
+      const asked = new URLSearchParams(String(apiGet.mock.calls[0]?.[0]).split('?')[1]);
+      expect(asked.get('limit')).toBe('25');
+      expect(asked.get('cursor')).toBeNull();
+      expect(apiGet).toHaveBeenCalledTimes(1);
+
+      for (const column of [
+        'name',
+        'code',
+        'status',
+        'plan',
+        'ends',
+        'companies',
+        'branches',
+        'users',
+      ]) {
+        expect(
+          within(grid).getByRole('columnheader', {
+            name: words[`platform.organizations.column.${column}`] as string,
+          })
+        ).toBeInTheDocument();
+      }
+
+      const rows = dataRows(grid);
+      expect(rows).toHaveLength(2);
+      const [first, other] = rows as [HTMLElement, HTMLElement];
+      expect(within(first).getByRole('link', { name: 'Test Organisation One' })).toHaveAttribute(
+        'href',
+        `/${locale}/platform/organizations/${TENANT}`
+      );
+      expect(within(first).getByText('test_org_one')).toBeInTheDocument();
+      expect(
+        within(first).getByText(words['platform.status.active'] as string)
+      ).toBeInTheDocument();
+      expect(within(first).getByText('test_plan')).toBeInTheDocument();
+      expect(within(first).getByText(formatDate('2027-08-31', locale))).toBeInTheDocument();
+
+      // The long code is in the document whole, and the line that may cut it
+      // on screen carries the whole of it.
+      const code = within(other).getByText(longCode);
+      expect(code.closest('[data-grid-line]')).toHaveAttribute('title', longCode);
+      expect(
+        within(other).getByText(words['platform.status.suspended'] as string)
+      ).toBeInTheDocument();
+      expect(
+        within(other).getByText(words['platform.organizations.noPlan'] as string)
+      ).toBeInTheDocument();
+      expect(within(other).getByText(formatInteger(1234, locale))).toBeInTheDocument();
+    }
+  );
+
+  /*
+   * One state is never drawn as another: an empty answer, a refusal, a failure
+   * and an outage each say what they are, in both languages. A refusal draws no
+   * grid at all, and a retry is offered only where trying again can change the
+   * answer.
+   */
+  it.each(ORGANIZATION_READ_OUTCOMES)(
+    '$locale: says $name as itself when the organisations are read',
+    async ({ locale, paint, answer, testId, title, retry }) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      apiGet.mockResolvedValue(answer);
+      paint(
+        withMui(
+          <OrganizationsScreen locale={locale} messages={catalogue} canProvision={false} />,
+          locale
+        )
+      );
+
+      const state = await screen.findByTestId(testId);
+      expect(within(state).getByRole('heading')).toHaveTextContent(words[title] as string);
+      for (const outcome of READ_OUTCOMES) {
+        if (outcome.testId !== testId) expect(screen.queryByTestId(outcome.testId)).toBeNull();
+      }
+      expect(screen.queryByRole('link', { name: 'Test Organisation One' })).toBeNull();
+      if (!answer.ok) {
+        expect(screen.queryByRole('grid')).toBeNull();
+        expect(within(state).getByText(answer.correlationId)).toBeInTheDocument();
+      }
+
+      const again = within(state).queryByRole('button', { name: words['state.retry'] as string });
+      if (!retry) {
+        expect(again).toBeNull();
+        return;
+      }
+      await userEvent.click(again as HTMLElement);
+      await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    }
+  );
+
+  it('asks for a chosen status from the first page, says when none matches, and clears it', async () => {
+    const page = (items: readonly unknown[]) => ({
+      ok: true,
+      data: { items, nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    apiGet
+      .mockResolvedValueOnce(page([row]))
+      .mockResolvedValueOnce(page([]))
+      .mockResolvedValue(page([row]));
+    renderLtr(
+      withMui(<OrganizationsScreen locale="en" messages={messages} canProvision={false} />)
+    );
+    await screen.findByText('Test Organisation One');
+
+    await userEvent.selectOptions(
+      within(screen.getByRole('search')).getByLabelText(
+        labelledBy(L('platform.organizations.column.status'))
+      ),
+      'suspended'
+    );
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    const narrowed = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
+    expect(narrowed.get('status')).toBe('suspended');
+    expect(narrowed.get('cursor')).toBeNull();
+
+    // The filter is named in words, and a narrowed read that matched nothing
+    // is "no matches", never "nothing here yet".
+    expect(
+      await screen.findByText(
+        new RegExp(
+          `${L('platform.organizations.column.status')}: ${L('platform.status.suspended')}`
+        )
+      )
+    ).toBeInTheDocument();
+    const none = await screen.findByTestId('state-no-results');
+    expect(within(none).getByRole('heading')).toHaveTextContent(L('state.noResults.title'));
+    expect(screen.queryByTestId('state-empty')).toBeNull();
+
+    await userEvent.click(within(none).getByRole('button', { name: L('table.clearFilters') }));
+    await screen.findByText('Test Organisation One');
+    const cleared = new URLSearchParams(String(apiGet.mock.calls[2]?.[0]).split('?')[1]);
+    expect(cleared.get('status')).toBeNull();
+    expect(cleared.get('q')).toBeNull();
   });
 });
 
@@ -1865,8 +2151,9 @@ describe('the plan catalogue', () => {
   };
 
   it('shows the price, the term and an absent limit as unlimited', () => {
-    renderLtr(<PlansScreen locale="en" messages={messages} plans={[plan, unlimited]} />);
-    const rows = screen.getAllByTestId('platform-plan');
+    renderLtr(withMui(<PlansScreen locale="en" messages={messages} plans={[plan, unlimited]} />));
+    const rows = dataRows(screen.getByTestId('platform-plans-grid'));
+    expect(rows).toHaveLength(2);
     expect(within(rows[0] as HTMLElement).getByText('1,200.00 SAR')).toBeInTheDocument();
     expect(within(rows[0] as HTMLElement).getByText(/12 months/)).toBeInTheDocument();
     expect(
@@ -1883,7 +2170,7 @@ describe('the plan catalogue', () => {
       messageKey: 'platform.plans.created',
       attempt: 1,
     });
-    renderLtr(<PlansScreen locale="en" messages={messages} plans={[plan]} />);
+    renderLtr(withMui(<PlansScreen locale="en" messages={messages} plans={[plan]} />));
     await userEvent.click(screen.getByRole('button', { name: L('platform.plans.new') }));
     const dialog = await screen.findByRole('dialog');
 
@@ -1906,9 +2193,7 @@ describe('the plan catalogue', () => {
       within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.termMonths')}`)),
       '24'
     );
-    fireEvent.change(within(dialog).getByLabelText(new RegExp(`^${L('platform.plans.from')}`)), {
-      target: { value: '2027-01-01' },
-    });
+    await typeDay(dialog, L('platform.plans.from'), '01012027');
     await userEvent.type(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.capacity.companies')}`)),
       '5'
@@ -1930,6 +2215,19 @@ describe('the plan catalogue', () => {
     });
     expect(Object.keys(input.capacityLimits as object)).toEqual(['companies']);
     expect(typeof input.termMonths).toBe('number');
+    // The whole document, and nothing beside it: what the form sent before it
+    // moved onto Material UI, key for key.
+    expect(input).toEqual({
+      planCode: 'test_plan_two',
+      displayName: 'Test Plan Two',
+      listPrice: '2400.0000',
+      currencyCode: 'SAR',
+      termMonths: 24,
+      capacityLimits: { companies: 5 },
+      entitlementDocument: {},
+      status: 'draft',
+      effectiveFrom: '2027-01-01',
+    });
   });
 
   /*
@@ -1946,7 +2244,7 @@ describe('the plan catalogue', () => {
       correlationId: 'c-plan',
       attempt: 1,
     });
-    renderLtr(<PlansScreen locale="en" messages={messages} plans={[plan]} />);
+    renderLtr(withMui(<PlansScreen locale="en" messages={messages} plans={[plan]} />));
     await userEvent.click(screen.getByRole('button', { name: L('platform.plans.new') }));
     const dialog = await screen.findByRole('dialog');
 
@@ -1956,9 +2254,7 @@ describe('the plan catalogue', () => {
       within(dialog).getByLabelText(new RegExp(`^${L('platform.plans.name')}`)),
       'Test Plan Three'
     );
-    fireEvent.change(within(dialog).getByLabelText(new RegExp(`^${L('platform.plans.from')}`)), {
-      target: { value: '2027-01-01' },
-    });
+    await typeDay(dialog, L('platform.plans.from'), '01012027');
     await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
 
     expect(await within(dialog).findByText(L('form.violation.plan_document'))).toBeVisible();
@@ -1971,8 +2267,12 @@ describe('the plan catalogue', () => {
       messageKey: 'platform.plans.updated',
       attempt: 1,
     });
-    renderLtr(<PlansScreen locale="en" messages={messages} plans={[plan]} />);
-    await userEvent.click(screen.getAllByRole('button', { name: L('platform.plans.edit') })[0]!);
+    renderLtr(withMui(<PlansScreen locale="en" messages={messages} plans={[plan]} />));
+    // The row's action is named for its plan as well, so ten rows of "Edit" are
+    // ten different controls: the name starts with the word and goes on.
+    await userEvent.click(
+      screen.getAllByRole('button', { name: labelledBy(L('platform.plans.edit')) })[0]!
+    );
     const dialog = await screen.findByRole('dialog');
     expect(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.plans.code')}`))
@@ -1992,7 +2292,214 @@ describe('the plan catalogue', () => {
     expect(planId).toBe(PLAN);
     expect(version).toBe(1);
     expect(input).toMatchObject({ planCode: 'test_plan', displayName: 'Test Plan Renamed' });
+    // The whole document the edit carries, as it did before the move.
+    expect(input).toEqual({
+      planCode: 'test_plan',
+      displayName: 'Test Plan Renamed',
+      listPrice: '1200.0000',
+      currencyCode: 'SAR',
+      termMonths: 12,
+      capacityLimits: { companies: 1, users: 10 },
+      entitlementDocument: {},
+      status: 'active',
+      effectiveFrom: '2026-01-01',
+    });
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  /*
+   * `platform.plan-list` answers the whole catalogue in one reply: no limit, no
+   * cursor. So the grid draws every plan it was handed and no pager — a
+   * catalogue longer than a table page must not lose its tail, and a control
+   * that pages nothing must not be offered.
+   */
+  it.each(BOTH_DIRECTIONS)(
+    '%s: lists every plan of a catalogue longer than one page, with no pager',
+    async (locale, paint) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      const many = Array.from({ length: 30 }, (_, index) => ({
+        ...plan,
+        id: `55555555-5555-4555-8555-${String(index).padStart(12, '0')}`,
+        planCode: `test_plan_${index}`,
+        name: `Test Plan ${index}`,
+        displayName: `Test Plan ${index}`,
+      }));
+      paint(withMui(<PlansScreen locale={locale} messages={catalogue} plans={many} />, locale));
+
+      const grid = await screen.findByRole('grid', {
+        name: words['platform.plans.title'] as string,
+      });
+      await within(grid).findByText('test_plan_0');
+      expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+      const rows = dataRows(grid);
+      expect(rows).toHaveLength(30);
+      expect(within(rows[29] as HTMLElement).getByText('test_plan_29')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('navigation', { name: words['table.pagination'] as string })
+      ).toBeNull();
+      expect(screen.queryByRole('button', { name: words['table.nextPage'] as string })).toBeNull();
+      expect(screen.queryByTestId('platform-plans-empty')).toBeNull();
+
+      // Each limit under a heading of its own, and a row's values in the
+      // reader's language.
+      for (const kind of ['companies', 'branches', 'users']) {
+        expect(
+          within(grid).getByRole('columnheader', {
+            name: words[`platform.plans.limit.${kind}`] as string,
+          })
+        ).toBeInTheDocument();
+      }
+      const first = rows[0] as HTMLElement;
+      expect(within(first).getByText('Test Plan 0')).toBeInTheDocument();
+      expect(
+        within(first).getByText(words['platform.status.active'] as string)
+      ).toBeInTheDocument();
+      expect(flat(first.textContent)).toContain(
+        flat(formatMoney({ amount: '1200.0000', currency: 'SAR' }, intlLocale(locale)))
+      );
+      expect(flat(first.textContent)).toContain(
+        flat(`${formatInteger(12, locale)} ${words['platform.subscription.months']}`)
+      );
+      expect(
+        within(first).getByText(words['platform.usage.unlimited'] as string)
+      ).toBeInTheDocument();
+      expect(
+        within(first).getByRole('button', {
+          name: `${words['platform.plans.edit']} Test Plan 0, ${formatDate('2026-01-01', locale)}`,
+        })
+      ).toBeInTheDocument();
+    }
+  );
+
+  it.each(BOTH_DIRECTIONS)(
+    '%s: says in its own sentence that no plan exists yet',
+    (locale, paint) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      paint(withMui(<PlansScreen locale={locale} messages={catalogue} plans={[]} />, locale));
+
+      const empty = screen.getByTestId('platform-plans-empty');
+      expect(empty).toHaveAttribute('role', 'status');
+      expect(empty).toHaveTextContent(words['platform.plans.none'] as string);
+      expect(dataRows(screen.getByTestId('platform-plans-grid'))).toHaveLength(0);
+      expect(
+        screen.getByRole('button', { name: words['platform.plans.new'] as string })
+      ).toBeEnabled();
+    }
+  );
+
+  it('ar: sends the same plan document from the Arabic form, right to left', async () => {
+    const arabic = getMessages('ar');
+    const A = (key: string) => AR[key] as string;
+    createPlanAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.plans.created',
+      attempt: 1,
+    });
+    renderRtl(withMui(<PlansScreen locale="ar" messages={arabic} plans={[plan]} />, 'ar'));
+    expect(document.documentElement.dir).toBe('rtl');
+    await userEvent.click(screen.getByRole('button', { name: A('platform.plans.new') }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(A('platform.plans.newTitle'));
+
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(A('platform.plans.code'))),
+      'test_plan_two'
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(A('platform.plans.name'))),
+      'Test Plan Two'
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(A('platform.billing.currency'))),
+      'sar'
+    );
+    const price = within(dialog).getByLabelText(labelledBy(A('platform.plans.price')));
+    await userEvent.type(price, '2400');
+    fireEvent.blur(price);
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(A('platform.subscription.termMonths'))),
+      '24'
+    );
+    await typeDay(dialog, A('platform.plans.from'), '01012027');
+    await typeDay(dialog, A('platform.plans.to'), '31122027');
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(A('platform.plans.descriptionLabel'))),
+      'Test description'
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(A('platform.capacity.companies'))),
+      '5'
+    );
+    // A module no plan names yet is added by its code, and arrives ticked.
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(A('platform.plans.addModule'))),
+      'test_module'
+    );
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: A('platform.plans.addModuleSubmit') })
+    );
+    expect(within(dialog).getByRole('checkbox', { name: 'test_module' })).toBeChecked();
+    await userEvent.click(within(dialog).getByRole('button', { name: A('platform.save') }));
+
+    await waitFor(() => expect(createPlanAction).toHaveBeenCalledTimes(1));
+    expect(createPlanAction.mock.calls[0]?.[0]).toEqual({
+      planCode: 'test_plan_two',
+      displayName: 'Test Plan Two',
+      description: 'Test description',
+      listPrice: '2400.0000',
+      currencyCode: 'SAR',
+      termMonths: 24,
+      capacityLimits: { companies: 5 },
+      entitlementDocument: { test_module: true },
+      status: 'draft',
+      effectiveFrom: '2027-01-01',
+      effectiveTo: '2027-12-31',
+    });
+  });
+
+  /*
+   * A day only partly typed holds no day, and the picker hands back the same
+   * empty value as a box nobody touched. Sent as it stood, the plan would be
+   * saved with no end day at all while the box showed most of one.
+   */
+  it('refuses an end day only partly typed on its own box, and sends nothing until it is finished', async () => {
+    const user = userEvent.setup();
+    createPlanAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.plans.created',
+      attempt: 1,
+    });
+    renderLtr(withMui(<PlansScreen locale="en" messages={messages} plans={[plan]} />));
+    await user.click(screen.getByRole('button', { name: L('platform.plans.new') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText(labelledBy(L('platform.plans.code'))),
+      'test_plan_four'
+    );
+    await user.type(
+      within(dialog).getByLabelText(labelledBy(L('platform.plans.name'))),
+      'Test Plan Four'
+    );
+    await typeDay(dialog, L('platform.plans.from'), '01012027');
+    // The day and the month, and no year.
+    const until = await typeDay(dialog, L('platform.plans.to'), '3112');
+    await user.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+
+    expect(await within(dialog).findByText(L('platform.error.date'))).toBeVisible();
+    expect(until).toHaveAttribute('aria-invalid', 'true');
+    expect(createPlanAction).not.toHaveBeenCalled();
+
+    await user.click(within(until).getAllByRole('spinbutton')[2] as HTMLElement);
+    await user.keyboard('2027');
+    await waitFor(() => expect(within(dialog).queryByText(L('platform.error.date'))).toBeNull());
+    await user.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+    await waitFor(() => expect(createPlanAction).toHaveBeenCalledTimes(1));
+    expect(createPlanAction.mock.calls[0]?.[0]).toMatchObject({
+      effectiveFrom: '2027-01-01',
+      effectiveTo: '2027-12-31',
+    });
   });
 });
 
@@ -2011,16 +2518,26 @@ describe('the activity search', () => {
 
   function renderScreen() {
     renderLtr(
-      <PlatformAuditScreen
-        locale="en"
-        messages={messages}
-        initialFrom="2026-08-17"
-        initialTo="2026-09-16"
-        initialOrganizationId=""
-        organizations={[row]}
-      />
+      withMui(
+        <PlatformAuditScreen
+          locale="en"
+          messages={messages}
+          initialFrom="2026-08-17"
+          initialTo="2026-09-16"
+          initialOrganizationId=""
+          organizations={[row]}
+        />
+      )
     );
   }
+
+  /** The criteria form: the two days, the two choices and the button. */
+  const criteria = () => screen.getByTestId('platform-audit-criteria');
+  const page = (items: readonly unknown[], nextCursor: string | null = null) => ({
+    ok: true,
+    data: { items, nextCursor, hasMore: nextCursor !== null },
+    correlationId: 'c',
+  });
 
   it('opens on the window it was given and names the change and the organisation', async () => {
     apiGet.mockResolvedValue({
@@ -2036,7 +2553,7 @@ describe('the activity search', () => {
     expect(first.get('to')).toBe('2026-09-16T23:59:59.999Z');
     expect(first.get('action')).toBeNull();
     expect(first.get('targetTenantId')).toBeNull();
-    const table = screen.getByRole('table');
+    const table = screen.getByRole('grid', { name: L('platform.audit.title') });
     expect(within(table).getByText('Test Organisation One')).toBeInTheDocument();
     expect(within(table).getByText(L('platform.audit.actor.user'))).toBeInTheDocument();
   });
@@ -2050,17 +2567,17 @@ describe('the activity search', () => {
     renderScreen();
     await screen.findByText(L('platform.audit.action.0'));
 
+    // The grid's headings carry the same words, so the controls are looked for
+    // in the criteria form they belong to.
     await userEvent.selectOptions(
-      screen.getByLabelText(new RegExp(`^${L('platform.audit.column.action')}`)),
+      within(criteria()).getByLabelText(labelledBy(L('platform.audit.column.action'))),
       'org.subscription_charge.recorded'
     );
     await userEvent.selectOptions(
-      screen.getByLabelText(new RegExp(`^${L('platform.audit.column.organization')}`)),
+      within(criteria()).getByLabelText(labelledBy(L('platform.audit.column.organization'))),
       TENANT
     );
-    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.from')}`)), {
-      target: { value: '2026-09-01' },
-    });
+    await typeDay(criteria(), L('platform.audit.from'), '01092026');
     expect(apiGet).toHaveBeenCalledTimes(1);
 
     await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
@@ -2086,9 +2603,7 @@ describe('the activity search', () => {
     renderScreen();
     await screen.findByText(L('platform.audit.action.0'));
 
-    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.from')}`)), {
-      target: { value: '2026-01-01' },
-    });
+    await typeDay(criteria(), L('platform.audit.from'), '01012026');
     await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
 
     expect(await screen.findByText('Choose a range of 92 days or fewer.')).toBeInTheDocument();
@@ -2104,16 +2619,14 @@ describe('the activity search', () => {
     renderScreen();
     await screen.findByText(L('platform.audit.action.0'));
 
-    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.to')}`)), {
-      target: { value: '2026-08-01' },
-    });
+    const until = await typeDay(criteria(), L('platform.audit.to'), '01082026');
     await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
     expect(await screen.findByText(L('platform.audit.error.range'))).toBeInTheDocument();
+    // The complaint is the end day's own: its box is the one marked.
+    expect(until).toHaveAttribute('aria-invalid', 'true');
     expect(apiGet).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.to')}`)), {
-      target: { value: '2026-09-15' },
-    });
+    await typeDay(criteria(), L('platform.audit.to'), '15092026');
     await waitFor(() => expect(screen.queryByText(L('platform.audit.error.range'))).toBeNull());
 
     await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
@@ -2162,14 +2675,17 @@ describe('the activity search', () => {
       correlationId: 'c',
     });
     renderRtl(
-      <PlatformAuditScreen
-        locale="ar"
-        messages={arabic}
-        initialFrom="2026-08-17"
-        initialTo="2026-09-16"
-        initialOrganizationId=""
-        organizations={[row]}
-      />
+      withMui(
+        <PlatformAuditScreen
+          locale="ar"
+          messages={arabic}
+          initialFrom="2026-08-17"
+          initialTo="2026-09-16"
+          initialOrganizationId=""
+          organizations={[row]}
+        />,
+        'ar'
+      )
     );
 
     expect(document.documentElement.dir).toBe('rtl');
@@ -2178,9 +2694,7 @@ describe('the activity search', () => {
     // Real Arabic, not an English string sitting in the Arabic catalogue.
     expect(AR['platform.audit.noMatches']).not.toBe(EN['platform.audit.noMatches']);
 
-    fireEvent.change(screen.getByLabelText(new RegExp(`^${AR['platform.audit.from'] as string}`)), {
-      target: { value: '2026-01-01' },
-    });
+    await typeDay(criteria(), AR['platform.audit.from'] as string, '01012026');
     await userEvent.click(
       screen.getByRole('button', { name: AR['platform.audit.apply'] as string })
     );
@@ -2199,14 +2713,263 @@ describe('the activity search', () => {
     renderScreen();
     await screen.findByText(L('platform.audit.action.0'));
 
-    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.from')}`)), {
-      target: { value: '2026-09-01' },
-    });
+    await typeDay(criteria(), L('platform.audit.from'), '01092026');
     const apply = screen.getByRole('button', { name: L('platform.audit.apply') });
     apply.focus();
     expect(apply).toHaveFocus();
     await userEvent.keyboard('{Enter}');
 
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    const applied = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
+    expect(applied.get('from')).toBe('2026-09-01T00:00:00.000Z');
+  });
+
+  /*
+   * One entry, whole. The search read already carries every field of an entry,
+   * so opening one reads nothing; and nothing is left out or rewritten: where
+   * the screen has words for a value the words are shown AND the value as it
+   * was recorded, and a reference with no words is shown under a label that
+   * says what it is. The fields are taken from the entry itself, so a field
+   * added to the read with no row in the drawer fails here.
+   */
+  it.each(BOTH_DIRECTIONS)(
+    '%s: opens one entry and shows every field it holds, in words and as recorded',
+    async (locale, paint) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      const whole = { ...event, correlationId: 'corr-test-0001' };
+      apiGet.mockResolvedValue(page([whole]));
+      paint(
+        withMui(
+          <PlatformAuditScreen
+            locale={locale}
+            messages={catalogue}
+            initialFrom="2026-08-17"
+            initialTo="2026-09-16"
+            initialOrganizationId=""
+            organizations={[row]}
+          />,
+          locale
+        )
+      );
+
+      const grid = await screen.findByRole('grid', {
+        name: words['platform.audit.title'] as string,
+      });
+      await within(grid).findByText(words['platform.audit.action.0'] as string);
+      expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+      // In the grid the account is its whole reference, never the start of it.
+      const account = within(within(grid).getByTestId('platform-audit-actor')).getByText(
+        whole.actorId
+      );
+      expect(account.closest('[data-grid-line]')).toHaveAttribute('title', whole.actorId);
+
+      await userEvent.click(
+        within(grid).getByRole('button', {
+          name: labelledBy(words['platform.audit.detail.open'] as string),
+        })
+      );
+      const drawer = await screen.findByTestId('platform-audit-detail');
+      expect(drawer).toHaveAttribute('role', 'dialog');
+      expect(within(drawer).getByRole('heading')).toHaveTextContent(
+        words['platform.audit.detail.title'] as string
+      );
+      // Opening an entry asked the server for nothing.
+      expect(apiGet).toHaveBeenCalledTimes(1);
+
+      const fields = within(drawer).getAllByTestId('platform-audit-field');
+      const field = (name: string) =>
+        fields.find((candidate) => candidate.getAttribute('data-field') === name) as HTMLElement;
+      expect(fields.map((candidate) => candidate.getAttribute('data-field')).sort()).toEqual(
+        Object.keys(whole).sort()
+      );
+      for (const [name, value] of Object.entries(whole)) {
+        const recorded = field(name).querySelectorAll('[data-audit-verbatim]');
+        expect(recorded, name).toHaveLength(1);
+        expect(recorded[0]?.textContent, name).toBe(value);
+        expect(recorded[0], name).toHaveAttribute('dir', 'ltr');
+      }
+
+      // The words beside each value that has them, and the label of each that
+      // has none.
+      expect(field('action')).toHaveTextContent(words['platform.audit.action.0'] as string);
+      expect(flat(field('occurredAt').textContent)).toContain(
+        flat(formatDateTime(whole.occurredAt, locale))
+      );
+      expect(field('actorKind')).toHaveTextContent(words['platform.audit.actor.user'] as string);
+      expect(field('targetTenantId')).toHaveTextContent('Test Organisation One');
+      expect(field('entityType')).toHaveTextContent(
+        words['platform.audit.entity.organization'] as string
+      );
+      for (const [name, label] of [
+        ['action', 'platform.audit.column.action'],
+        ['occurredAt', 'platform.audit.column.time'],
+        ['actorKind', 'platform.audit.column.actor'],
+        ['actorId', 'platform.audit.detail.accountReference'],
+        ['targetTenantId', 'platform.audit.column.organization'],
+        ['entityType', 'platform.audit.column.summary'],
+        ['entityId', 'platform.audit.detail.recordReference'],
+        ['correlationId', 'platform.audit.detail.supportReference'],
+        ['id', 'platform.audit.detail.entryReference'],
+      ] as const) {
+        expect(within(field(name)).getByRole('term')).toHaveTextContent(words[label] as string);
+      }
+
+      await userEvent.click(
+        within(drawer).getByRole('button', { name: words['overlay.close'] as string })
+      );
+      await waitFor(() => expect(screen.queryByTestId('platform-audit-detail')).toBeNull());
+    }
+  );
+
+  it('shows an entry it has no words for by its codes, and a field the entry does not hold as not recorded', async () => {
+    const bare = {
+      id: '77777777-7777-4777-8777-777777777777',
+      action: 'test.area.something_done',
+      entityType: 'test.area_record',
+      entityId: null,
+      actorId: null,
+      actorKind: 'system',
+      correlationId: null,
+      // Not among the organisations the page read for its choices.
+      targetTenantId: THIRD_TENANT,
+      occurredAt: '2026-09-15T22:30:00.000Z',
+    };
+    apiGet.mockResolvedValue(page([bare]));
+    renderScreen();
+
+    const grid = await screen.findByRole('grid', { name: L('platform.audit.title') });
+    await within(grid).findByText(L('platform.audit.action.other'));
+    const line = dataRows(grid)[0] as HTMLElement;
+    // The neutral words, and the code or reference beneath each.
+    expect(within(line).getByText('test.area.something_done')).toBeInTheDocument();
+    expect(within(line).getByText(L('platform.audit.entity.other'))).toBeInTheDocument();
+    expect(within(line).getByText('test.area_record')).toBeInTheDocument();
+    expect(within(line).getByText(L('platform.audit.unknownOrganization'))).toBeInTheDocument();
+    expect(within(line).getByText(THIRD_TENANT)).toBeInTheDocument();
+    expect(within(line).getByText(L('platform.audit.actor.system'))).toBeInTheDocument();
+
+    await userEvent.click(
+      within(line).getByRole('button', { name: labelledBy(L('platform.audit.detail.open')) })
+    );
+    const drawer = await screen.findByTestId('platform-audit-detail');
+    const field = (name: string) =>
+      within(drawer)
+        .getAllByTestId('platform-audit-field')
+        .find((candidate) => candidate.getAttribute('data-field') === name) as HTMLElement;
+    for (const name of ['actorId', 'entityId', 'correlationId']) {
+      expect(field(name), name).toHaveTextContent(L('platform.audit.detail.notRecorded'));
+      expect(field(name).querySelector('[data-audit-verbatim]'), name).toBeNull();
+    }
+    expect(field('action')).toHaveTextContent(L('platform.audit.action.other'));
+    expect(field('action').querySelector('[data-audit-verbatim]')?.textContent).toBe(
+      'test.area.something_done'
+    );
+    expect(field('entityType').querySelector('[data-audit-verbatim]')?.textContent).toBe(
+      'test.area_record'
+    );
+    expect(field('targetTenantId')).toHaveTextContent(L('platform.audit.unknownOrganization'));
+    expect(field('targetTenantId').querySelector('[data-audit-verbatim]')?.textContent).toBe(
+      THIRD_TENANT
+    );
+    expect(field('actorKind').querySelector('[data-audit-verbatim]')?.textContent).toBe('system');
+  });
+
+  /*
+   * A refusal, a failure and an outage are not a search that matched nothing:
+   * each is said as itself, in both languages, and the screen's own "no change
+   * matches" sentence stays away.
+   */
+  it.each(ACTIVITY_READ_FAILURES)(
+    '$locale: says $name as itself when the activity is read, not as a search with no match',
+    async ({ locale, paint, answer, testId, title }) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      apiGet.mockResolvedValue(answer);
+      paint(
+        withMui(
+          <PlatformAuditScreen
+            locale={locale}
+            messages={catalogue}
+            initialFrom="2026-08-17"
+            initialTo="2026-09-16"
+            initialOrganizationId=""
+            organizations={[row]}
+          />,
+          locale
+        )
+      );
+
+      const state = await screen.findByTestId(testId);
+      expect(within(state).getByRole('heading')).toHaveTextContent(words[title] as string);
+      expect(within(state).getByText(answer.correlationId)).toBeInTheDocument();
+      expect(screen.queryByTestId('platform-audit-empty')).toBeNull();
+      expect(screen.queryByRole('grid')).toBeNull();
+      // The criteria stay, so the window can still be changed.
+      expect(
+        screen.getByRole('button', { name: words['platform.audit.apply'] as string })
+      ).toBeEnabled();
+    }
+  );
+
+  it('pages the trail by the cursor the server returned, under the window it was opened on', async () => {
+    apiGet.mockResolvedValueOnce(page([event], 'cursor-two')).mockResolvedValueOnce(
+      page([
+        {
+          ...event,
+          id: '66666666-6666-4666-8666-666666666667',
+          action: 'org.subscription_plan.created',
+        },
+      ])
+    );
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+    const first = new URLSearchParams(String(apiGet.mock.calls[0]?.[0]).split('?')[1]);
+    expect(first.get('limit')).toBe('25');
+    expect(first.get('cursor')).toBeNull();
+    const label = screen.getByTestId('platform-audit-grid-page');
+    expect(label).toHaveTextContent(L('mui.pagination.page').replace('{page}', '1'));
+
+    const grid = screen.getByRole('grid', { name: L('platform.audit.title') });
+    await userEvent.click(screen.getByRole('button', { name: L('table.nextPage') }));
+    await within(grid).findByText(L('platform.audit.action.2'));
+    const second = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
+    expect(second.get('cursor')).toBe('cursor-two');
+    expect(second.get('from')).toBe('2026-08-17T00:00:00.000Z');
+    expect(second.get('to')).toBe('2026-09-16T23:59:59.999Z');
+    expect(label).toHaveTextContent(L('mui.pagination.page').replace('{page}', '2'));
+    // The page in hand says nothing follows it, so nothing more is offered.
+    expect(screen.getByRole('button', { name: L('table.nextPage') })).toBeDisabled();
+    expect(within(grid).queryByText(L('platform.audit.action.0'))).toBeNull();
+  });
+
+  /*
+   * A day with a part missing holds no day, and a request built from no day is
+   * refused by the server as the general error state. It is said on the box
+   * that is not finished, and nothing is asked.
+   */
+  it('refuses a day left unfinished on its own box, and asks for nothing', async () => {
+    const user = userEvent.setup();
+    apiGet.mockResolvedValue(page([event]));
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+
+    const since = within(criteria()).getByRole('group', {
+      name: labelledBy(L('platform.audit.from')),
+    });
+    await user.click(within(since).getAllByRole('spinbutton')[2] as HTMLElement);
+    await user.keyboard('{Backspace}');
+    await user.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
+
+    expect(await within(criteria()).findByText(L('platform.error.date'))).toBeVisible();
+    expect(since).toHaveAttribute('aria-invalid', 'true');
+    expect(apiGet).toHaveBeenCalledTimes(1);
+
+    await typeDay(criteria(), L('platform.audit.from'), '01092026');
+    await waitFor(() =>
+      expect(within(criteria()).queryByText(L('platform.error.date'))).toBeNull()
+    );
+    await user.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
     await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
     const applied = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
     expect(applied.get('from')).toBe('2026-09-01T00:00:00.000Z');

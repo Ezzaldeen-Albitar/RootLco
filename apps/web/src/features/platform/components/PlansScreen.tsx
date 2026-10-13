@@ -1,18 +1,33 @@
 'use client';
 
-import { useState } from 'react';
-import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
-import { MoneyField } from '@/components/forms/MoneyField';
-import { Dialog } from '@/components/overlays/Overlays';
-import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { useCallback, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import type { ServerTable } from '@/components/data-table/use-server-table';
+import { ZonedDateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { MuiEmptyState } from '@/components/states/MuiStates';
+import { FormDialog } from '@/features/administration/shared/components/FormDialog';
+import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
 import { formatDate, formatInteger, intlLocale } from '@/lib/format';
+import type { ActionState } from '@/lib/forms/action-result';
 import { formatMoney } from '@/lib/money';
 import { createPlanAction, updatePlanAction, type PlanInput } from '../actions';
 import { PLAN_STATUSES, TERM_PRESETS, type SubscriptionPlan } from '../types';
-import { Cell, PRIMARY_BUTTON, SECONDARY_BUTTON, SimpleTable, StatusBadge } from './ui';
+import { StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
@@ -24,10 +39,34 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * the feature codes the catalogue already uses, rendered as checkboxes; a code
  * not yet used by any plan can be added by name, and the server refuses one
  * that is not registered.
+ *
+ * ## On Material UI (ADR-022)
+ *
+ * The catalogue is the operational grid over the plans the page read. That read
+ * (`platform.plan-list`) answers the WHOLE catalogue in one reply — it takes no
+ * limit and returns no cursor — so the grid is told it is not paged and draws
+ * no pager: there is no second page to offer. Each of the three limits has a
+ * column of its own, because a row of the grid holds two lines and three limits
+ * stacked in one cell would lose the third.
+ *
+ * The form is the shared form dialog with the Material fields. What it sends is
+ * unchanged: the same document, built the same way, from the same values.
+ *
+ * The plan's two days are calendar days with no clock of their own; the pickers
+ * are drawn on UTC, the clock the console's other days are read on, and the
+ * console has no working branch to take another from.
+ *
+ * A day only partly typed holds no day, and the picker hands back the same
+ * empty value as a box nobody touched. Sent as it stood, an end day half typed
+ * would have saved the plan with no end at all. So the form refuses a day that
+ * is not finished, on its own box, before anything is sent.
  */
 
 const LIMIT_KINDS = ['companies', 'branches', 'users'] as const;
 const FLAG_CODE = /^[a-z][a-z0-9_]{1,62}$/;
+
+/** The clock the plan's day pickers are drawn on. See the note above. */
+const PLAN_DAY_ZONE = 'UTC';
 
 /** Every feature code any plan in the catalogue names, sorted. */
 export function knownFeatureCodes(plans: readonly SubscriptionPlan[]): readonly string[] {
@@ -44,6 +83,12 @@ function limitText(value: unknown): string {
   return typeof value === 'number' && Number.isInteger(value) ? String(value) : '';
 }
 
+function planName(plan: SubscriptionPlan): string {
+  return plan.displayName ?? plan.name;
+}
+
+const NOTHING = () => undefined;
+
 export function PlansScreen({
   locale,
   messages,
@@ -53,75 +98,145 @@ export function PlansScreen({
   readonly messages: Messages;
   readonly plans: readonly SubscriptionPlan[];
 }) {
-  const t = (key: string) => translateDynamic(messages, key);
+  const t = useCallback((key: string) => translateDynamic(messages, key), [messages]);
   const [editing, setEditing] = useState<SubscriptionPlan | 'new' | null>(null);
   const features = knownFeatureCodes(plans);
 
+  /*
+   * The page read the catalogue on the server and handed it over whole; the grid
+   * renders it and asks for nothing. So the table it is given is a settled one
+   * holding every plan, with no request to change: neither a page size nor a
+   * sort would reach any read.
+   */
+  const table = useMemo<ServerTable<SubscriptionPlan>>(
+    () => ({
+      request: INITIAL_REQUEST,
+      setRequest: NOTHING,
+      response: {
+        rows: plans,
+        total: plans.length,
+        page: 1,
+        pageSize: INITIAL_REQUEST.pageSize,
+        hasMore: false,
+      },
+      status: 'idle',
+      correlationId: undefined,
+      refresh: NOTHING,
+      honours: { pageSize: false, sort: false },
+    }),
+    [plans]
+  );
+
+  const columns = useMemo<readonly OperationalColumn<SubscriptionPlan>[]>(
+    () => [
+      {
+        id: 'code',
+        headerKey: 'platform.plans.code',
+        cell: (plan) => (
+          <TwoLineCell
+            primary={
+              <code dir="ltr" className="font-mono">
+                {plan.planCode}
+              </code>
+            }
+            testId="platform-plan-code"
+          />
+        ),
+      },
+      {
+        id: 'name',
+        headerKey: 'platform.plans.name',
+        flex: 2,
+        cell: (plan) => <TwoLineCell primary={<bdi>{planName(plan)}</bdi>} />,
+      },
+      {
+        id: 'status',
+        headerKey: 'platform.plans.status',
+        cell: (plan) => <StatusBadge status={plan.status} messages={messages} />,
+      },
+      {
+        id: 'price',
+        headerKey: 'platform.plans.price',
+        numeric: true,
+        minChars: 14,
+        cell: (plan) =>
+          plan.listPrice && plan.currencyCode
+            ? formatMoney(
+                { amount: plan.listPrice, currency: plan.currencyCode },
+                intlLocale(locale)
+              )
+            : t('platform.plans.noPrice'),
+      },
+      {
+        id: 'term',
+        headerKey: 'platform.plans.term',
+        cell: (plan) =>
+          plan.termMonths === null
+            ? '—'
+            : `${formatInteger(plan.termMonths, locale)} ${t('platform.subscription.months')}`,
+      },
+      ...LIMIT_KINDS.map((kind): OperationalColumn<SubscriptionPlan> => ({
+        id: `limit-${kind}`,
+        headerKey: `platform.plans.limit.${kind}`,
+        numeric: true,
+        cell: (plan) => {
+          const value = limitText(plan.capacityLimits?.[kind]);
+          return value === '' ? t('platform.usage.unlimited') : value;
+        },
+      })),
+      {
+        id: 'from',
+        headerKey: 'platform.plans.from',
+        minChars: 14,
+        cell: (plan) => formatDate(plan.effectiveFrom, locale),
+      },
+    ],
+    [locale, messages, t]
+  );
+
+  const rowActions = useCallback(
+    (plan: SubscriptionPlan): readonly RowAction[] => [
+      {
+        kind: 'button',
+        label: t('platform.plans.edit'),
+        // Two versions of one plan share a code and a name; the day each
+        // starts is what tells them apart.
+        about: `${planName(plan)}, ${formatDate(plan.effectiveFrom, locale)}`,
+        onClick: () => setEditing(plan),
+      },
+    ],
+    [locale, t]
+  );
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className="flex justify-end">
-        <button type="button" className={PRIMARY_BUTTON} onClick={() => setEditing('new')}>
+        <Button type="button" variant="contained" onClick={() => setEditing('new')}>
           {t('platform.plans.new')}
-        </button>
+        </Button>
       </div>
-      <div className="rounded-xl border border-border-subtle bg-surface p-4">
-        <SimpleTable
-          caption={t('platform.plans.title')}
-          headers={[
-            t('platform.plans.code'),
-            t('platform.plans.name'),
-            t('platform.plans.status'),
-            t('platform.plans.price'),
-            t('platform.plans.term'),
-            t('platform.plans.limits'),
-            t('platform.plans.from'),
-            t('platform.actions'),
-          ]}
-          empty={plans.length === 0 ? t('platform.plans.none') : null}
-        >
-          {plans.map((plan) => (
-            <tr key={plan.id} data-testid="platform-plan" className="border-t border-border-subtle">
-              <Cell>
-                <span dir="ltr">{plan.planCode}</span>
-              </Cell>
-              <Cell>{plan.displayName ?? plan.name}</Cell>
-              <Cell>
-                <StatusBadge status={plan.status} messages={messages} />
-              </Cell>
-              <Cell end>
-                {plan.listPrice && plan.currencyCode
-                  ? formatMoney(
-                      { amount: plan.listPrice, currency: plan.currencyCode },
-                      intlLocale(locale)
-                    )
-                  : t('platform.plans.noPrice')}
-              </Cell>
-              <Cell>
-                {plan.termMonths === null
-                  ? '—'
-                  : `${formatInteger(plan.termMonths, locale)} ${t('platform.subscription.months')}`}
-              </Cell>
-              <Cell>
-                {LIMIT_KINDS.map((kind) => {
-                  const value = limitText(plan.capacityLimits?.[kind]);
-                  return (
-                    <span key={kind} className="block text-caption text-text-secondary">
-                      {t(`platform.capacity.${kind}`)}:{' '}
-                      {value === '' ? t('platform.usage.unlimited') : value}
-                    </span>
-                  );
-                })}
-              </Cell>
-              <Cell>{formatDate(plan.effectiveFrom, locale)}</Cell>
-              <Cell>
-                <button type="button" className={SECONDARY_BUTTON} onClick={() => setEditing(plan)}>
-                  {t('platform.plans.edit')}
-                </button>
-              </Cell>
-            </tr>
-          ))}
-        </SimpleTable>
-      </div>
+
+      <OperationalGrid<SubscriptionPlan>
+        messages={messages}
+        locale={locale}
+        label={t('platform.plans.title')}
+        columns={columns}
+        rowId={(plan) => plan.id}
+        table={table}
+        rowActions={rowActions}
+        // The catalogue's own sentence when it is empty, below.
+        suppressEmptyState
+        // The whole catalogue, one answer: no pager to offer.
+        unpaged
+        testId="platform-plans-grid"
+      />
+      {plans.length === 0 ? (
+        <MuiEmptyState
+          messages={messages}
+          descriptionKey="platform.plans.none"
+          testId="platform-plans-empty"
+        />
+      ) : null}
 
       {editing ? (
         <PlanDialog
@@ -172,9 +287,25 @@ function PlanDialog({
   const [status, setStatus] = useState(plan?.status ?? 'draft');
   const [effectiveFrom, setEffectiveFrom] = useState(plan?.effectiveFrom.slice(0, 10) ?? '');
   const [effectiveTo, setEffectiveTo] = useState(plan?.effectiveTo?.slice(0, 10) ?? '');
+  // What each day picker finds wrong with its own entry: `'incomplete'` while
+  // a day is only partly typed, the picker's own finding for a day that cannot
+  // be one, and nothing once the entry is whole or blank.
+  const [fromProblem, setFromProblem] = useState<DayProblem>(null);
+  const [toProblem, setToProblem] = useState<DayProblem>(null);
+  // The days this form refused itself, before anything was sent.
+  const [unfinished, setUnfinished] = useState<{
+    readonly errors: Readonly<Record<string, string>>;
+    readonly attempts: number;
+  }>({ errors: {}, attempts: 0 });
+  const attempt = (action.state.attempt ?? 0) + unfinished.attempts;
+  const refusal: ActionState =
+    Object.keys(unfinished.errors).length > 0
+      ? { status: 'invalid', fieldErrors: unfinished.errors, attempt }
+      : { ...action.state, attempt };
   // Question f: the cursor goes to the first refused field, and a complaint
-  // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  // goes once its field changes (route sweep B3). A day box changes when its
+  // day does or when what the picker finds wrong with it does.
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(refusal, {
     planCode,
     displayName,
     description,
@@ -183,8 +314,8 @@ function PlanDialog({
     term,
     extraFeature,
     status,
-    effectiveFrom,
-    effectiveTo,
+    effectiveFrom: `${effectiveFrom}#${fromProblem ?? ''}`,
+    effectiveTo: `${effectiveTo}#${toProblem ?? ''}`,
   });
   const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
@@ -194,6 +325,15 @@ function PlanDialog({
     /^\d{1,7}$/.test(text.trim()) ? Number.parseInt(text.trim(), 10) : undefined;
 
   const submit = () => {
+    const notFinished: Record<string, string> = {};
+    if (fromProblem !== null) notFinished.effectiveFrom = 'platform.error.date';
+    if (toProblem !== null) notFinished.effectiveTo = 'platform.error.date';
+    const refused = Object.keys(notFinished).length > 0;
+    setUnfinished((previous) => ({
+      errors: notFinished,
+      attempts: previous.attempts + (refused ? 1 : 0),
+    }));
+    if (refused) return;
     const capacityLimits: Record<string, number> = {};
     for (const kind of LIMIT_KINDS) {
       const text = (limits[kind] ?? '').trim();
@@ -221,187 +361,181 @@ function PlanDialog({
   };
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
-      width="lg"
       title={t(plan ? 'platform.plans.editTitle' : 'platform.plans.newTitle')}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={submit}
+      formRef={refusalFormRef}
+      testId="platform-plan-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <TextField
-            name="planCode"
-            label={t('platform.plans.code')}
-            description={t('platform.plans.codeHint')}
-            required
-            dir="ltr"
-            readOnly={plan !== null}
-            value={planCode}
-            onChange={(event) => setPlanCode(event.target.value)}
-            error={error('planCode')}
-          />
-          <TextField
-            name="displayName"
-            label={t('platform.plans.name')}
-            required
-            value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
-            error={error('displayName')}
-          />
-          <TextField
-            name="currencyCode"
-            label={t('platform.billing.currency')}
-            maxLength={3}
-            dir="ltr"
-            value={currencyCode}
-            onChange={(event) => setCurrencyCode(event.target.value)}
-            error={error('currencyCode')}
-          />
-          <MoneyField
-            name="listPrice"
-            messages={messages}
-            label={t('platform.plans.price')}
-            currency={currencyCode.trim().toUpperCase()}
-            value={listPrice}
-            onChange={(value) => setListPrice(value)}
-            error={error('listPrice')}
-          />
-          <TextField
-            name="termMonths"
-            inputMode="numeric"
-            label={t('platform.subscription.termMonths')}
-            description={TERM_PRESETS.join(' · ')}
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            error={error('termMonths')}
-          />
-          <SelectField
-            name="status"
-            label={t('platform.plans.status')}
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            options={PLAN_STATUSES.map((entry) => ({
-              value: entry,
-              label: t(`platform.status.${entry}`),
-            }))}
-            error={error('status')}
-          />
-          <TextField
-            name="effectiveFrom"
-            type="date"
-            label={t('platform.plans.from')}
-            required
-            readOnly={plan !== null}
-            value={effectiveFrom}
-            onChange={(event) => setEffectiveFrom(event.target.value)}
-            error={error('effectiveFrom')}
-          />
-          <TextField
-            name="effectiveTo"
-            type="date"
-            label={t('platform.plans.to')}
-            value={effectiveTo}
-            onChange={(event) => setEffectiveTo(event.target.value)}
-            error={error('effectiveTo')}
-          />
-        </div>
-        <TextAreaField
-          name="description"
-          label={t('platform.plans.descriptionLabel')}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          error={error('description')}
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <FormTextField
+          name="planCode"
+          label={t('platform.plans.code')}
+          description={t('platform.plans.codeHint')}
+          required
+          dir="ltr"
+          spellCheck={false}
+          autoFocus={plan === null}
+          readOnly={plan !== null}
+          value={planCode}
+          onChange={setPlanCode}
+          error={error('planCode')}
         />
+        <FormTextField
+          name="displayName"
+          label={t('platform.plans.name')}
+          required
+          autoFocus={plan !== null}
+          value={displayName}
+          onChange={setDisplayName}
+          error={error('displayName')}
+        />
+        <FormTextField
+          name="currencyCode"
+          label={t('platform.billing.currency')}
+          maxLength={3}
+          dir="ltr"
+          spellCheck={false}
+          value={currencyCode}
+          onChange={setCurrencyCode}
+          error={error('currencyCode')}
+        />
+        <FormMoneyField
+          name="listPrice"
+          messages={messages}
+          label={t('platform.plans.price')}
+          currency={currencyCode.trim().toUpperCase()}
+          value={listPrice}
+          onChange={(value) => setListPrice(value)}
+          error={error('listPrice')}
+        />
+        <FormNumberField
+          name="termMonths"
+          integer
+          label={t('platform.subscription.termMonths')}
+          description={TERM_PRESETS.join(' · ')}
+          value={term}
+          onChange={setTerm}
+          error={error('termMonths')}
+        />
+        <FormSelectField
+          name="status"
+          label={t('platform.plans.status')}
+          value={status}
+          onChange={setStatus}
+          options={PLAN_STATUSES.map((entry) => ({
+            value: entry,
+            label: t(`platform.status.${entry}`),
+          }))}
+          error={error('status')}
+        />
+        <ZonedDateField
+          name="effectiveFrom"
+          timezone={PLAN_DAY_ZONE}
+          label={t('platform.plans.from')}
+          required
+          readOnly={plan !== null}
+          value={effectiveFrom}
+          onChange={setEffectiveFrom}
+          onProblem={setFromProblem}
+          error={error('effectiveFrom')}
+          testId="platform-plan-from"
+        />
+        <ZonedDateField
+          name="effectiveTo"
+          timezone={PLAN_DAY_ZONE}
+          label={t('platform.plans.to')}
+          value={effectiveTo}
+          onChange={setEffectiveTo}
+          onProblem={setToProblem}
+          error={error('effectiveTo')}
+          testId="platform-plan-to"
+        />
+      </div>
+      <FormTextField
+        name="description"
+        multiline
+        rows={3}
+        label={t('platform.plans.descriptionLabel')}
+        value={description}
+        onChange={setDescription}
+        error={error('description')}
+      />
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="text-label font-semibold text-text-primary">
-            {t('platform.plans.limits')}
-          </legend>
-          <p className="text-supporting text-text-muted">{t('platform.plans.limitsHint')}</p>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {LIMIT_KINDS.map((kind) => (
-              <TextField
-                key={kind}
-                name={`limit-${kind}`}
-                inputMode="numeric"
-                label={t(`platform.capacity.${kind}`)}
-                value={limits[kind] ?? ''}
-                onChange={(event) =>
-                  setLimits((current) => ({ ...current, [kind]: event.target.value }))
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-semibold text-text-primary">
+          {t('platform.plans.limits')}
+        </legend>
+        <p className="text-supporting text-text-muted">{t('platform.plans.limitsHint')}</p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {LIMIT_KINDS.map((kind) => (
+            <FormNumberField
+              key={kind}
+              name={`limit-${kind}`}
+              integer
+              label={t(`platform.capacity.${kind}`)}
+              value={limits[kind] ?? ''}
+              onChange={(value) => setLimits((current) => ({ ...current, [kind]: value }))}
+              error={error(`capacityLimits.${kind}`)}
+            />
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-semibold text-text-primary">
+          {t('platform.plans.modules')}
+        </legend>
+        {featureList.length === 0 ? (
+          <p className="text-supporting text-text-muted">{t('platform.plans.noModules')}</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-x-2 md:grid-cols-2">
+            {featureList.map((code) => (
+              <FormCheckboxField
+                key={code}
+                name={`feature-${code}`}
+                label={code}
+                checked={entitlements[code] === true}
+                onChange={(checked) =>
+                  setEntitlements((current) => ({ ...current, [code]: checked }))
                 }
-                error={error(`capacityLimits.${kind}`)}
               />
             ))}
           </div>
-        </fieldset>
-
-        <fieldset className="flex flex-col gap-2">
-          <legend className="text-label font-semibold text-text-primary">
-            {t('platform.plans.modules')}
-          </legend>
-          {featureList.length === 0 ? (
-            <p className="text-supporting text-text-muted">{t('platform.plans.noModules')}</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {featureList.map((code) => (
-                <CheckboxField
-                  key={code}
-                  name={`feature-${code}`}
-                  label={code}
-                  checked={entitlements[code] === true}
-                  onChange={(event) =>
-                    setEntitlements((current) => ({ ...current, [code]: event.target.checked }))
-                  }
-                />
-              ))}
-            </div>
-          )}
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="w-full max-w-xs">
-              <TextField
-                name="extraFeature"
-                label={t('platform.plans.addModule')}
-                dir="ltr"
-                value={extraFeature}
-                onChange={(event) => setExtraFeature(event.target.value)}
-              />
-            </div>
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              disabled={!FLAG_CODE.test(extraFeature.trim())}
-              onClick={() => {
-                const code = extraFeature.trim();
-                setEntitlements((current) => ({ ...current, [code]: true }));
-                setExtraFeature('');
-              }}
-            >
-              {t('platform.plans.addModuleSubmit')}
-            </button>
+        )}
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="w-full max-w-xs">
+            <FormTextField
+              name="extraFeature"
+              label={t('platform.plans.addModule')}
+              dir="ltr"
+              spellCheck={false}
+              value={extraFeature}
+              onChange={setExtraFeature}
+            />
           </div>
-        </fieldset>
-
-        <div className="flex justify-end gap-2">
-          <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
-            {t('overlay.cancel')}
-          </button>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={action.pending}>
-            {action.pending ? t('overlay.working') : t('platform.save')}
-          </button>
+          <Button
+            type="button"
+            variant="outlined"
+            disabled={!FLAG_CODE.test(extraFeature.trim())}
+            onClick={() => {
+              const code = extraFeature.trim();
+              setEntitlements((current) => ({ ...current, [code]: true }));
+              setExtraFeature('');
+            }}
+          >
+            {t('platform.plans.addModuleSubmit')}
+          </Button>
         </div>
-      </form>
-    </Dialog>
+      </fieldset>
+    </FormDialog>
   );
 }

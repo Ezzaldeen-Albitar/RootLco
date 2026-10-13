@@ -748,10 +748,31 @@ function unnamedNoDay(picker: Dayjs | null, partsBlank: boolean): boolean {
 }
 
 export function DateField(props: DateFieldProps) {
-  const { label, value, onChange, min, max, timezone, onProblem, onEdit, disabled, readOnly } =
-    props;
   const context = useWorkingContext();
-  const zone = timezone ?? workingZone(context);
+  return <DayField {...props} zone={props.timezone ?? workingZone(context)} />;
+}
+
+export interface ZonedDateFieldProps extends DateFieldProps {
+  /** The IANA zone the picker is drawn on. Required. */
+  readonly timezone: string;
+}
+
+/**
+ * `DateField` on a clock the caller NAMES, and nothing else: it reads no
+ * working context, as `ZonedDateTimeField` does for a moment. For a screen that
+ * has no working branch at all — the Platform Owner Console, whose days are UTC
+ * days — and so must not reach for one. Everything else is `DateField`'s: the
+ * calendar day as `YYYY-MM-DD`, a day half typed reported as `'incomplete'`,
+ * the `FieldFrame` wiring and the cursor on the first unfinished part after a
+ * refusal.
+ */
+export function ZonedDateField(props: ZonedDateFieldProps) {
+  return <DayField {...props} zone={props.timezone} />;
+}
+
+/** The day picker both fields draw, on the zone its caller settled. */
+function DayField(props: DateFieldProps & { readonly zone: string | undefined }) {
+  const { label, value, onChange, min, max, zone, onProblem, onEdit, disabled, readOnly } = props;
   const clock = pickerZone(zone);
   const wiring = useFieldWiring(props.description, props.error, props.describedBy);
   const minDay = min === undefined ? null : dayToPicker(min, zone);
