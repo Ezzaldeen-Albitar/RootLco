@@ -407,6 +407,70 @@ describe('a select the browser may have put back is not read as a choice', () =>
   });
 });
 
+describe('a value the select was never given to offer is not read as a choice', () => {
+  const NOT_PUBLISHED = '99999999-9999-4999-8999-999999999999';
+
+  /** An option edited in the document to name a branch the server did not publish, and chosen. */
+  function tampered(page: Page): void {
+    const option = [...page.select().options].find(
+      (candidate) => candidate.value === TEST_BRANCH.id
+    ) as HTMLOptionElement;
+    option.value = NOT_PUBLISHED;
+    page.select().value = NOT_PUBLISHED;
+    expect(page.select().value).toBe(NOT_PUBLISHED);
+  }
+
+  it('with a branch remembered: nothing is written and the version moves for the restore alone', async () => {
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const page = serverPage();
+    tampered(page);
+    // React reports the edited option when it hydrates; that is the tampering.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await page.hydrate();
+    } finally {
+      errors.mockRestore();
+    }
+    // The remembered selection was never replaced, not even for a moment.
+    expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+    expect(page.selection()).toBe(OTHER_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+  });
+
+  it('with nothing remembered: nothing is written and the version does not move', async () => {
+    const page = serverPage();
+    tampered(page);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await page.hydrate();
+    } finally {
+      errors.mockRestore();
+    }
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+    expect(page.selection()).toBe('');
+    expect(seen).toEqual(['0:']);
+  });
+
+  it('"All my branches" is not adopted on a screen that does not offer it', async () => {
+    // This screen needs one branch, so the select was not given the option.
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const page = serverPage();
+    const option = [...page.select().options].find(
+      (candidate) => candidate.value === TEST_BRANCH.id
+    ) as HTMLOptionElement;
+    option.value = ALL_BRANCHES;
+    page.select().value = ALL_BRANCHES;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await page.hydrate();
+    } finally {
+      errors.mockRestore();
+    }
+    expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+  });
+});
+
 describe('a branch chosen while React is taking the page over is kept', () => {
   it('after hydration is asked for and before it has rendered: heard once, not twice', async () => {
     window.localStorage.setItem(KEY, ALL_BRANCHES);

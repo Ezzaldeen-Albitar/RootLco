@@ -48,6 +48,16 @@ import { useLayoutEffect, type RefObject } from 'react';
  * wins, as it did before this hook existed. The cost is the early choice on
  * those navigations, which is lost as it always was.
  *
+ * ## Only a value the select was given to offer
+ *
+ * What the select holds is read from the document, and the document is not
+ * the authority for which branches exist: an option can be edited there.
+ * `offered` is the list the component drew its options from — the branches
+ * the server published to this operator, and "All my branches" where the
+ * screen offers it — and a held value outside it is not adopted. The provider
+ * would refuse such a value too, but only after it had replaced the
+ * remembered selection in storage; here nothing is written at all.
+ *
  * ## What it never does
  *
  * It never adopts the empty ask, and it never acts when the value the select
@@ -58,6 +68,7 @@ import { useLayoutEffect, type RefObject } from 'react';
 export function useEarlyChoice(
   selectRef: RefObject<HTMLSelectElement | null>,
   value: string,
+  offered: readonly string[],
   adopt: (chosen: string) => void
 ): void {
   useLayoutEffect(() => {
@@ -66,8 +77,9 @@ export function useEarlyChoice(
     const held = select.value;
     if (held === value) return;
     if (!Array.from(select.options).some((option) => option.value === value)) return;
-    if (held.length > 0 && arrivedByFreshNavigation()) adopt(held);
-  }, [selectRef, value, adopt]);
+    if (!offered.includes(held)) return;
+    if (arrivedByFreshNavigation()) adopt(held);
+  }, [selectRef, value, offered, adopt]);
 }
 
 /**

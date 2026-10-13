@@ -96,9 +96,15 @@ export function BranchSelector({
   const base = useId();
   const selectId = `${base}-select`;
 
-  // A branch chosen before React hydrated the select — see above.
+  // A branch chosen before React hydrated the select — see above. What may be
+  // adopted is what this select was given to offer, never what the document
+  // says it offers.
   const selectRef = useRef<HTMLSelectElement | null>(null);
-  useEarlyChoice(selectRef, value, onSelect);
+  const offered = useMemo(
+    () => [...(offerAllBranches ? [ALL_BRANCHES] : []), ...branches.map((branch) => branch.id)],
+    [branches, offerAllBranches]
+  );
+  useEarlyChoice(selectRef, value, offered, onSelect);
 
   const grouped = useMemo(() => {
     const byCompany = new Map<string, WorkingContextBranch[]>();
