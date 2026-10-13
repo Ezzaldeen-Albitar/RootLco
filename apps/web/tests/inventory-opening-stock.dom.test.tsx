@@ -424,7 +424,11 @@ describe('the chain, in order', () => {
     });
     expect(screen.getByText('OPEN-2026')).toBeVisible();
     expect(screen.getByText(EN['inventory.opening.status.draft'] as string)).toBeVisible();
-    expect(screen.getByText(BATCH_ID)).toBeVisible();
+    // The batch is known by the code just typed. Its identifier was drawn
+    // beside it under "Batch id" and no longer is (INV-H).
+    expect(screen.queryByText(BATCH_ID)).toBeNull();
+    expect(document.body.textContent).not.toContain(BATCH_ID);
+    expect(screen.queryByText('Batch id')).toBeNull();
     // The batch form is gone; the line form has taken its place.
     expect(
       screen.queryByRole('form', { name: EN['inventory.opening.batch.new'] as string })

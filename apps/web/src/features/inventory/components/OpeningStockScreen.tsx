@@ -387,14 +387,6 @@ export function OpeningStockScreen({
               </dt>
               <dd>{translateDynamic(messages, `inventory.opening.status.${batch.status}`)}</dd>
             </div>
-            <div>
-              <dt className="text-caption text-text-muted">
-                {translate(messages, 'inventory.opening.batch.id')}
-              </dt>
-              <dd dir="ltr" className="text-start">
-                {batch.id}
-              </dd>
-            </div>
           </dl>
           <p className="text-caption text-text-muted">
             {translate(messages, 'inventory.opening.batch.serverNote')}

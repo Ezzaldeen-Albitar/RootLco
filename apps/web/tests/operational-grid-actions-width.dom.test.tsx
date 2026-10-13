@@ -45,7 +45,7 @@ vi.mock('@mui/x-data-grid', async (original) => ({
   },
 }));
 
-const { OperationalGrid, ROW_ACTIONS_FIELD, rowActionsMinWidth } =
+const { OperationalGrid, ROW_ACTIONS_FIELD, TwoLineCell, columnMinWidth, rowActionsMinWidth } =
   await import('@/components/data/OperationalGrid');
 
 interface Visit {
@@ -126,5 +126,100 @@ describe('the row-actions column is handed a width its labels fit in', () => {
     expect(handed.find((column) => column.field === ROW_ACTIONS_FIELD)?.minWidth).toBe(
       SPACE_PX['24']
     );
+  });
+});
+
+/**
+ * A column that must be read whole says how long its longest line is
+ * (`minChars`), and is handed a width that line fits in by the same estimate
+ * the row-actions column uses (P1-32-PRE-OD-INVH: a moment in a 96 px column
+ * was cut off after its first words). As above, what is proved is the width the
+ * grid is HANDED; the width a browser draws is not something jsdom can show.
+ */
+describe('a column is handed a width its longest line fits in', () => {
+  it('estimates a line at space-2 a character plus the cell padding, never below the floor', () => {
+    expect(columnMinWidth(0)).toBe(SPACE_PX['24']);
+    expect(columnMinWidth(5)).toBe(SPACE_PX['24']);
+    expect(columnMinWidth(23)).toBe(23 * SPACE_PX['2'] + SPACE_PX['5']);
+    expect(columnMinWidth(30.2)).toBe(31 * SPACE_PX['2'] + SPACE_PX['5']);
+    // A longer line is never handed a narrower column.
+    for (let characters = 1; characters < 60; characters += 1) {
+      expect(columnMinWidth(characters + 1)).toBeGreaterThanOrEqual(columnMinWidth(characters));
+      expect(columnMinWidth(characters)).toBeGreaterThanOrEqual(characters * SPACE_PX['2']);
+    }
+  });
+
+  it('hands the column that asks for one its own floor, and leaves the others theirs', () => {
+    const moment = '9 Oct 2026, 19:20 GMT+3';
+    renderLtr(
+      <OperationalGrid<Visit>
+        messages={getMessages('en')}
+        label="Visits"
+        columns={[
+          { id: 'reference', headerKey: 'column.reference', cell: (row) => row.reference },
+          {
+            id: 'when',
+            headerKey: 'column.reference',
+            minChars: moment.length,
+            cell: () => moment,
+          },
+        ]}
+        rowId={(row) => row.id}
+        table={table(ROWS)}
+      />
+    );
+    const when = handed.find((column) => column.field === 'when');
+    expect(when?.minWidth).toBe(columnMinWidth(moment.length));
+    expect(when?.minWidth ?? 0).toBeGreaterThan(moment.length * SPACE_PX['2']);
+    expect(when?.minWidth ?? 0).toBeGreaterThan(SPACE_PX['24']);
+    // It still shares the remaining width as before.
+    expect(when?.flex).toBe(1);
+    expect(handed.find((column) => column.field === 'reference')?.minWidth).toBe(SPACE_PX['24']);
+  });
+});
+
+/**
+ * A cell of two stacked lines (P1-32-PRE-OD-INVH). A row has one fixed height
+ * and a cell gives its text a line as tall as the row, so the second of two
+ * lines is cut off unless EACH carries a compact line height of its own. What
+ * is held is that both lines carry the utility that sets one; that they then
+ * fit in the row is something only a browser can show.
+ */
+describe('a cell of two lines gives each line a line height of its own', () => {
+  it('draws the first line at the table size and the second at the caption size, centred in the row', () => {
+    renderLtr(<TwoLineCell testId="cell" primary="Paid twice" secondary="8 Oct 2026, 12:00" />);
+    const cell = screen.getByTestId('cell');
+    expect(cell).toHaveAttribute('data-grid-cell', 'two-line');
+    expect(cell).toHaveClass('flex', 'h-full', 'flex-col', 'justify-center');
+    const [first, second] = [...cell.children] as [HTMLElement, HTMLElement];
+    expect(cell.children).toHaveLength(2);
+    expect(first).toHaveClass('text-table-cell');
+    expect(first).toHaveAttribute('data-grid-line', 'primary');
+    expect(first.textContent).toBe('Paid twice');
+    expect(second).toHaveClass('text-caption', 'text-text-muted');
+    expect(second).toHaveAttribute('data-grid-line', 'secondary');
+    expect(second.textContent).toBe('8 Oct 2026, 12:00');
+    // No title of its own: both lines are there to be read.
+    expect(cell).not.toHaveAttribute('title');
+  });
+
+  it.each([null, undefined, false] as const)(
+    'with no second line (%s) it is its first line alone, at the same size',
+    (secondary) => {
+      renderLtr(<TwoLineCell testId="cell" primary="Pending" secondary={secondary} />);
+      const cell = screen.getByTestId('cell');
+      expect(cell.children).toHaveLength(1);
+      expect(cell.children[0]).toHaveClass('text-table-cell');
+      expect(cell.textContent).toBe('Pending');
+    }
+  );
+
+  it('keeps what it is given inside each line: elements, not only text', () => {
+    renderLtr(
+      <TwoLineCell testId="cell" primary={<bdi>سبب</bdi>} secondary={<code dir="ltr">pr-1</code>} />
+    );
+    const cell = screen.getByTestId('cell');
+    expect(cell.querySelector('[data-grid-line="primary"] bdi')?.textContent).toBe('سبب');
+    expect(cell.querySelector('[data-grid-line="secondary"] code')?.textContent).toBe('pr-1');
   });
 });

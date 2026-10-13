@@ -28,6 +28,7 @@ import Button from '@mui/material/Button';
 
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -192,15 +193,17 @@ function BranchRefunds({
         headerKey: 'refunds.column.reason',
         flex: 2,
         cell: (row) => (
-          <span className="flex flex-col">
-            <bdi>{row.reason}</bdi>
-            <span className="text-caption text-text-muted">
-              <RefundMoment value={row.requestedAt} locale={locale} zone={zone} />
-              {row.requestedBy === currentUserId
-                ? ` · ${translate(messages, 'refunds.history.byYou')}`
-                : ''}
-            </span>
-          </span>
+          <TwoLineCell
+            primary={<bdi>{row.reason}</bdi>}
+            secondary={
+              <>
+                <RefundMoment value={row.requestedAt} locale={locale} zone={zone} />
+                {row.requestedBy === currentUserId
+                  ? ` · ${translate(messages, 'refunds.history.byYou')}`
+                  : ''}
+              </>
+            }
+          />
         ),
       },
       {
@@ -238,12 +241,10 @@ function BranchRefunds({
         headerKey: 'refunds.column.state',
         flex: 1.2,
         cell: (row) => (
-          <span className="flex flex-col">
-            <span>{translateDynamic(messages, `refunds.state.${row.state}`)}</span>
-            {row.payoutReference !== null ? (
-              <bdi className="text-caption text-text-muted">{row.payoutReference}</bdi>
-            ) : null}
-          </span>
+          <TwoLineCell
+            primary={translateDynamic(messages, `refunds.state.${row.state}`)}
+            secondary={row.payoutReference !== null ? <bdi>{row.payoutReference}</bdi> : null}
+          />
         ),
       },
     ],

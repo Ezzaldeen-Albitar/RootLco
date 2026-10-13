@@ -384,6 +384,13 @@ describe('FE-008 — the item search', () => {
     expect(within(table).getByText(EN['inventory.lifecycle.active'] as string)).toBeVisible();
     expect(within(table).queryByText(/cost|price/i)).toBeNull();
     expect(screen.getByText(EN['inventory.items.noCostNote'] as string)).toBeVisible();
+    // An item is known by its stock code. The grid had a column headed
+    // "Identifier" that drew the item's identifier, and no longer has (INV-H).
+    expect(within(table).queryByRole('columnheader', { name: 'Identifier' })).toBeNull();
+    expect(table.textContent).not.toContain(ITEM_ID);
+    expect(table.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i);
+    expect(EN['inventory.items.column.id']).toBeUndefined();
+    expect(AR['inventory.items.column.id']).toBeUndefined();
     // CC-16: the category list is read once per mount, and the sentence saying
     // categories cannot be listed from this screen is gone.
     expect(listItemCategories).toHaveBeenCalledTimes(1);
@@ -767,8 +774,66 @@ describe('FE-010 — reservations', () => {
     renderScreen({ canReadStock: true, canReadBranches: true });
     await chooseBranch();
     const table = await within(region('inventory.reservations.heading')).findByRole('grid');
-    const link = within(table).getByRole('link', { name: WORK_ORDER_ID });
+    // The link says what it does. The row carries the work order's identifier
+    // and not its number, and the identifier was the link's text (INV-H).
+    // Named, for a screen reader, with what tells this reservation from the next.
+    const link = within(table).getByRole('link', {
+      name: new RegExp(
+        `^${EN['inventory.reservations.openWorkOrder'] as string}: BRK-001, WH-1, 2\\.000, .*2026`
+      ),
+    });
     expect(link).toHaveAttribute('href', `/en/work-orders/${WORK_ORDER_ID}`);
+    expect(link.textContent).toBe(EN['inventory.reservations.openWorkOrder']);
+    expect(table.textContent).not.toContain(WORK_ORDER_ID);
+    expect(table.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i);
+    // The link's words exist in Arabic too, in Arabic.
+    expect(AR['inventory.reservations.openWorkOrder']).toBeTruthy();
+    expect(AR['inventory.reservations.openWorkOrder']).not.toMatch(/[A-Za-z]/);
+  });
+
+  /*
+   * Two reservations of one item, on two work orders. "Open work order: BRK-001"
+   * named both links alike, so a screen reader could not tell which it was on.
+   * Each is named with what tells its row from the other on this screen — how
+   * much it holds and when it was made — and both still READ "Open work order".
+   */
+  it('names the links of two reservations of one item apart, and shows the same words on both', async () => {
+    const OTHER_WORK_ORDER = '88888888-8888-4888-8888-888888888888';
+    listReservations.mockResolvedValue(
+      page([
+        reservation({ id: 'res-1', workOrderId: WORK_ORDER_ID, quantity: '2.000' }),
+        reservation({
+          id: 'res-2',
+          workOrderId: OTHER_WORK_ORDER,
+          quantity: '0.500',
+          createdAt: '2026-09-03T10:15:00Z',
+        }),
+      ])
+    );
+    renderScreen({ canReadStock: true, canReadBranches: true });
+    await chooseBranch();
+    const table = await within(region('inventory.reservations.heading')).findByRole('grid');
+    const links = within(table).getAllByRole('link');
+    expect(links).toHaveLength(2);
+    const names = links.map((link) => link.getAttribute('aria-label') ?? '');
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) {
+      expect(
+        name.startsWith(`${EN['inventory.reservations.openWorkOrder'] as string}: BRK-001, `)
+      ).toBe(true);
+    }
+    expect(names[0]).toContain('2.000');
+    expect(names[1]).toContain('0.500');
+    // The words on the screen are the same on both, and no identifier is in either name.
+    expect(links.map((link) => link.textContent)).toEqual([
+      EN['inventory.reservations.openWorkOrder'],
+      EN['inventory.reservations.openWorkOrder'],
+    ]);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      `/en/work-orders/${WORK_ORDER_ID}`,
+      `/en/work-orders/${OTHER_WORK_ORDER}`,
+    ]);
+    for (const name of names) expect(name).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
   });
 
   it('without the job read, keeps the address\u2019s job in its labelled box and filters by it', async () => {
@@ -1037,7 +1102,16 @@ describe('FE-010 — reservations', () => {
     );
     const note = await screen.findByRole('status');
     expect(note).toHaveTextContent(EN['inventory.reserve.replayed'] as string);
-    expect(note).toHaveTextContent('same-res');
+    // What the answer carries that an operator can use: how much. The
+    // reservation's identifier stood after the sentence and no longer does (INV-H).
+    expect(within(note).getByTestId('reservation-notice-quantity')).toHaveTextContent(
+      `${EN['inventory.reserve.figure.quantity'] as string} 1.000`
+    );
+    expect(note.textContent).not.toContain('same-res');
+    for (const catalogue of [EN, AR]) {
+      expect(catalogue['inventory.reserve.replayed']).not.toMatch(/Reservation:$|الحجز:$/);
+      expect(catalogue['inventory.reserve.booked']).not.toMatch(/:$/);
+    }
   });
 
   it('a refused reservation is a refusal inside the form, with its reference', async () => {

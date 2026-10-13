@@ -534,6 +534,24 @@ describe('the invoice refunds panel — deciding and paying out', () => {
   });
 });
 
+/**
+ * A grid row has one fixed height, and a cell gives its text a line as tall as
+ * the row. Two stacked lines fit only when each has a compact line height of
+ * its own; a first line left to inherit the cell's hides the second below it
+ * (P1-32-PRE-OD-INVH). jsdom lays nothing out, so this holds the classes that
+ * carry the two line heights — the fit itself is seen only in a browser.
+ */
+function expectBothLinesFit(inCell: HTMLElement, second: string | RegExp): void {
+  const cell = inCell.closest('[data-grid-cell="two-line"]');
+  expect(cell, 'not a two-line cell').not.toBeNull();
+  const lines = [...(cell as HTMLElement).children];
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toHaveClass('text-table-cell');
+  expect(lines[0]).toContainElement(inCell.closest('[data-grid-line="primary"]') as HTMLElement);
+  expect(lines[1]).toHaveClass('text-caption');
+  expect(lines[1]).toHaveTextContent(second);
+}
+
 describe('the refunds list', () => {
   const list = (locale: 'en' | 'ar' = 'en') => {
     const ui = withMui(
@@ -552,6 +570,17 @@ describe('the refunds list', () => {
     return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
   };
 
+  it('draws a paid request with its state and, under it, the payout reference', async () => {
+    listRefundRequests.mockResolvedValue(
+      page([refundRequest({ state: 'executed', payoutReference: 'TRF-55' })])
+    );
+    list();
+    const grid = await screen.findByTestId('refunds-grid');
+    await within(grid).findByText('TRF-55');
+    // The state, and under it the payout reference, which the row used to cut off.
+    expectBothLinesFit(within(grid).getByText(EN['refunds.state.executed'] as string), 'TRF-55');
+  });
+
   it('lists the branch requests with the server figures and narrows by state through the server', async () => {
     const user = userEvent.setup();
     listRefundRequests.mockResolvedValue(page([refundRequest()]));
@@ -559,6 +588,9 @@ describe('the refunds list', () => {
     const grid = await screen.findByTestId('refunds-grid');
     expect(await within(grid).findByText('Paid twice')).toBeVisible();
     expect(within(grid).getByText(money('15.0000'))).toBeVisible();
+    // The reason and, under it, when it was asked for: the second line was cut
+    // off by the row, so the date was not on the screen at all.
+    expectBothLinesFit(within(grid).getByText('Paid twice'), /2026/);
     expect(listRefundRequests.mock.calls.at(-1)?.[0]).toEqual({
       companyId: TEST_COMPANY.id,
       branchId: TEST_BRANCH.id,

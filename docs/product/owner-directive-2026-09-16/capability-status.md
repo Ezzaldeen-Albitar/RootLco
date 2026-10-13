@@ -622,6 +622,17 @@ open.
      comparing the two sorted lists of moments), and the sign-in cases E-02, E-05 and E-08, en
      and ar, taken from a second pass paced under the product's sign-in rate limit.
 
+**Note, 2026-10-13 (P1-32-PRE-OD-INVH; no ledger row, register row or result changed).** The
+runtime retest of CP-20261012-2 found two more raw identifiers on the inventory screens: the
+reservation's identifier in the "Reservation" column of "Parts issued" on `/inventory/parts`, and
+a category's code in brackets after its name in the category trees of `/inventory/setup`. Branch
+`feature/owner-directive-residual-fixes-inv-h`, cut from `develop` at
+`4928486af50b274a8bf174c4b4c1fbe45770598c`, carries a fix for each, and for the same kind of
+identifier on the stock screen and the opening stock screen — implemented, not yet
+runtime-retested; the runtime row LANG-identifiers stays FAIL until retested and until the Owner
+decides the Reference identifier on refusals. The detail is in `route-checklist.md`, section
+`P1-32-PRE-OD-INVH`.
+
 ### Features delivered or planned under this directive
 
 The delivery matrix above owns verification state; ADR-023 owns the implementation state of each D-item; the architecture assessment owns what each FC change is. This table owns the design fields that directive section 12 asks for. The `state:` pointers in the first column cite ADR-023's mapping table at develop `d5ce97b7` (`:751-773`, re-anchored 2026-10-08); the other ADR-023 line numbers in this table are not re-anchored here.

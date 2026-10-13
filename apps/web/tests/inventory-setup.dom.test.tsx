@@ -382,8 +382,8 @@ describe('items', () => {
     renderScreen({ canManage: true });
     await screen.findByText('brakes');
     const panel = form('inventory.setup.item.new');
-    // Chosen from the category tree by name and code, never typed or picked by id.
-    await user.click(await within(itemCategoryTree(panel)).findByText('Brakes (brakes)'));
+    // Chosen from the category tree by its name, never typed or picked by id.
+    await user.click(await within(itemCategoryTree(panel)).findByText('Brakes'));
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-001');
     await user.type(
       within(panel).getByLabelText(labelled('inventory.setup.item.name')),
@@ -1227,8 +1227,8 @@ describe.each(['en', 'ar'] as const)('the categories on Material UI (%s)', (loca
 
     const panel = panelOf('inventory.setup.item.new');
     const tree = within(panel).getByRole('tree', { name: said('inventory.setup.item.category') });
-    await user.click(within(tree).getByText('Brakes (brakes)'));
-    await user.click(await within(tree).findByText('Pads (pads)'));
+    await user.click(within(tree).getByText('Brakes'));
+    await user.click(await within(tree).findByText('Pads'));
     // The chosen category is said by its whole path under the tree.
     await waitFor(() => expect(within(panel).getByText(/Brakes \/ Pads/)).toBeTruthy());
     await user.type(within(panel).getByLabelText(named('inventory.setup.item.sku')), 'PAD-9');
@@ -1279,7 +1279,7 @@ describe.each(['en', 'ar'] as const)('the categories on Material UI (%s)', (loca
     const tree = within(panel).getByRole('tree', { name: said('inventory.setup.category.parent') });
     // The "no parent" row is offered first, in the screen's words.
     expect(within(tree).getByText(said('inventory.setup.category.noParent'))).toBeTruthy();
-    await user.click(within(tree).getByText('Brakes (brakes)'));
+    await user.click(within(tree).getByText('Brakes'));
     await user.type(within(panel).getByLabelText(named('inventory.setup.category.code')), 'discs');
     await user.type(within(panel).getByLabelText(named('inventory.setup.category.name')), 'Discs');
     await user.click(
@@ -1301,8 +1301,8 @@ describe.each(['en', 'ar'] as const)('the categories on Material UI (%s)', (loca
     const itemTree = within(panelOf('inventory.setup.item.new')).getByRole('tree', {
       name: said('inventory.setup.item.category'),
     });
-    await user.click(within(itemTree).getByText('Brakes (brakes)'));
-    expect(await within(itemTree).findByText('Discs (discs)')).toBeTruthy();
+    await user.click(within(itemTree).getByText('Brakes'));
+    expect(await within(itemTree).findByText('Discs')).toBeTruthy();
     // Only one walk of the pages: the echo was added, not read again.
     expect(listItemCategoryPage).toHaveBeenCalledTimes(1);
   });
@@ -1405,7 +1405,7 @@ describe('one write per press, held by the screen while it is answered', () => {
     renderScreen({ canManage: true });
     await screen.findByText('brakes');
     const panel = form('inventory.setup.item.new');
-    await user.click(within(itemCategoryTree(panel)).getByText('Brakes (brakes)'));
+    await user.click(within(itemCategoryTree(panel)).getByText('Brakes'));
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-002');
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.name')), 'Pad');
     await user.selectOptions(
@@ -1591,7 +1591,7 @@ describe('half-typed catalogue work and a branch switch', () => {
     const user = userEvent.setup();
     await openTwo(user);
     await user.click(
-      within(itemCategoryTree(form('inventory.setup.item.new'))).getByText('Brakes (brakes)')
+      within(itemCategoryTree(form('inventory.setup.item.new'))).getByText('Brakes')
     );
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
@@ -1609,7 +1609,7 @@ describe('half-typed catalogue work and a branch switch', () => {
     );
     await openTwo(user);
     const panel = form('inventory.setup.item.new');
-    await user.click(within(itemCategoryTree(panel)).getByText('Brakes (brakes)'));
+    await user.click(within(itemCategoryTree(panel)).getByText('Brakes'));
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-009');
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.name')), 'Pad');
     const unitBox = within(panel).getByLabelText(
@@ -1818,7 +1818,7 @@ describe('P1-32-PRE-OD-INVF: unit names and duplicate refusals', () => {
     renderScreen({ canManage: true });
     await screen.findByText('brakes');
     const panel = form('inventory.setup.item.new');
-    await user.click(await within(itemCategoryTree(panel)).findByText('Brakes (brakes)'));
+    await user.click(await within(itemCategoryTree(panel)).findByText('Brakes'));
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-001');
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.name')), 'Pads');
     await user.selectOptions(
@@ -1948,7 +1948,7 @@ describe('P1-32-PRE-OD-INVG: a created item names its unit, never the unit code'
     const tree = within(panel).getByRole('tree', {
       name: T['inventory.setup.item.category'] as string,
     });
-    await user.click(await within(tree).findByText('Brakes (brakes)'));
+    await user.click(await within(tree).findByText('Brakes'));
     await user.type(within(panel).getByLabelText(named('inventory.setup.item.sku')), 'OIL-001');
     await user.type(within(panel).getByLabelText(named('inventory.setup.item.name')), 'Engine oil');
     await user.selectOptions(
@@ -2071,4 +2071,74 @@ describe('P1-32-PRE-OD-INVG: the units table words each dimension in the page la
       expect(AR[key]).not.toBe(EN[key]);
     }
   });
+});
+
+/**
+ * P1-32-PRE-OD-INVH — the runtime retest of CP-20261012-2: the parent-category
+ * tree and the item form's category tree drew each category's code in brackets
+ * after its name ("odqa spare parts (odqa_parts)").
+ *
+ * The code is typed on this screen, in the "Code" box of the new-category form,
+ * and the categories table lists it in a column of its own: that is where the
+ * code is the thing being managed, and it stays. A tree in which a category is
+ * CHOSEN names it, and nothing else.
+ */
+describe('P1-32-PRE-OD-INVH: the category trees name a category; the table keeps its code', () => {
+  const PADS_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const rows = [
+    category,
+    { ...category, id: PADS_ID, code: 'rear_pads', name: 'Pads', parentCategoryId: CATEGORY_ID },
+  ];
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: neither tree draws a code; the categories table still lists each one`, async () => {
+      const T = locale === 'en' ? EN : AR;
+      listItemCategories.mockResolvedValue(cursor(rows));
+      listItemCategoryPage.mockResolvedValue(cursor(rows));
+      const user = userEvent.setup();
+      if (locale === 'en') {
+        renderScreen({ canManage: true });
+      } else {
+        renderRtl(
+          <SetupScreen
+            locale="ar"
+            messages={ar}
+            canManage={true}
+            canReadStock={false}
+            canReadBranches={false}
+          />
+        );
+      }
+      await screen.findByText('rear_pads');
+
+      const trees = [
+        within(
+          screen.getByRole('form', { name: T['inventory.setup.category.new'] as string })
+        ).getByRole('tree', { name: T['inventory.setup.category.parent'] as string }),
+        within(
+          screen.getByRole('form', { name: T['inventory.setup.item.new'] as string })
+        ).getByRole('tree', { name: T['inventory.setup.item.category'] as string }),
+      ];
+      for (const tree of trees) {
+        await user.click(await within(tree).findByText('Brakes'));
+        expect(await within(tree).findByText('Pads')).toBeTruthy();
+        const text = tree.textContent ?? '';
+        expect(text).not.toContain('brakes');
+        expect(text).not.toContain('rear_pads');
+        expect(text).not.toMatch(/\([a-z][a-z0-9_]*\)/);
+      }
+
+      // Where the code is the thing being managed, it is still there, in its own column.
+      const table = screen.getByRole('table', {
+        name: T['inventory.setup.categories.caption'] as string,
+      });
+      expect(
+        within(table).getByRole('columnheader', {
+          name: T['inventory.setup.categories.column.code'] as string,
+        })
+      ).toBeVisible();
+      expect(within(table).getByText('brakes')).toBeVisible();
+      expect(within(table).getByText('rear_pads')).toBeVisible();
+    });
+  }
 });

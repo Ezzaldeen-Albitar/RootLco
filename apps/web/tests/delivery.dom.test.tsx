@@ -3354,6 +3354,19 @@ describe('the queue renders the verdict it was given and derives none of it', ()
     const row = (await within(container).findByText('W-000123')).closest(
       '[role="row"]'
     ) as HTMLElement;
+    /*
+     * P1-32-PRE-OD-INVH: the customer and, under the name, the part they play.
+     * A grid row has one fixed height, and the second line of a cell is cut off
+     * unless each line has a compact line height of its own; both carry the
+     * utility that sets one. That they then fit is seen only in a browser.
+     */
+    const customer = row.querySelector('[data-grid-cell="two-line"]') as HTMLElement;
+    expect(customer).not.toBeNull();
+    expect(customer.children).toHaveLength(2);
+    expect(customer.children[0]).toHaveClass('text-table-cell');
+    expect(customer.children[0]?.textContent).toBe(readyRow.workOrder.customer?.displayName);
+    expect(customer.children[1]).toHaveClass('text-caption');
+    expect(customer.children[1]?.textContent).not.toBe('');
     expect(within(row).getByText(EN['delivery.queue.ready'] as string)).toBeVisible();
     expect(within(row).queryByText(EN['delivery.queue.notReady'] as string)).toBeNull();
     expect(

@@ -470,8 +470,8 @@ describe.each(['en', 'ar'] as const)('on Material UI (%s)', (locale) => {
     expect(
       within(tree).getByText(said('inventory.specifications.create.anyCategory'))
     ).toBeTruthy();
-    await user.click(within(tree).getByText('Fluids (fluids)'));
-    await user.click(await within(tree).findByText('Engine oil (engine_oil)'));
+    await user.click(within(tree).getByText('Fluids'));
+    await user.click(await within(tree).findByText('Engine oil'));
     await waitFor(() => expect(within(form).getByText(/Fluids \/ Engine oil/)).toBeTruthy());
     // And a way to the tree itself.
     expect(

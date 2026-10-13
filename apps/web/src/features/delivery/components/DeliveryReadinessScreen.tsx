@@ -2,7 +2,11 @@
 
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import {
@@ -221,23 +225,25 @@ function ReadinessResults({
               {translate(messages, 'delivery.queue.column.noCustomer')}
             </span>
           ) : (
-            <span className="flex flex-col">
-              <bdi>{row.workOrder.customer.displayName}</bdi>
-              <span className="text-caption text-text-muted">
-                {/*
-                 * `receptions.partyRole.*`, the same frozen vocabulary the
-                 * reception and work-order screens render. A second set of
-                 * translations for the same codes would be free to drift.
-                 */}
-                {translateDynamic(
-                  messages,
-                  `receptions.partyRole.${row.workOrder.customer.relationshipRole}`
-                )}
-                {row.workOrder.customer.hasAdditionalParties
-                  ? ` · ${translate(messages, 'delivery.queue.column.moreParties')}`
-                  : ''}
-              </span>
-            </span>
+            <TwoLineCell
+              primary={<bdi>{row.workOrder.customer.displayName}</bdi>}
+              secondary={
+                <>
+                  {/*
+                   * `receptions.partyRole.*`, the same frozen vocabulary the
+                   * reception and work-order screens render. A second set of
+                   * translations for the same codes would be free to drift.
+                   */}
+                  {translateDynamic(
+                    messages,
+                    `receptions.partyRole.${row.workOrder.customer.relationshipRole}`
+                  )}
+                  {row.workOrder.customer.hasAdditionalParties
+                    ? ` · ${translate(messages, 'delivery.queue.column.moreParties')}`
+                    : ''}
+                </>
+              }
+            />
           ),
       },
       {

@@ -2321,6 +2321,26 @@ describe('credit notes are reachable', () => {
     const grid = screen.getByRole('grid', { name: EN['creditNotes.list.caption'] as string });
     expect(within(grid).getByText(money('40.0000'))).toBeTruthy();
     expect(within(grid).getByText(EN['creditNotes.state.pending'] as string)).toBeTruthy();
+    /*
+     * P1-32-PRE-OD-INVH: a grid row has one fixed height, and the second line
+     * of a cell is cut off unless each line has a compact line height of its
+     * own. The reason and the issue line under it, and the state, each carry
+     * the utility that sets one; that they then fit is seen only in a browser.
+     */
+    const reason = within(grid)
+      .getByText('A part was billed twice on the same job')
+      .closest('[data-grid-cell="two-line"]') as HTMLElement;
+    expect(reason).not.toBeNull();
+    expect(reason.children).toHaveLength(2);
+    expect(reason.children[0]).toHaveClass('text-table-cell');
+    expect(reason.children[1]).toHaveClass('text-caption');
+    expect(reason.children[1]?.textContent).not.toBe('');
+    const state = within(grid)
+      .getByText(EN['creditNotes.state.pending'] as string)
+      .closest('[data-grid-cell="two-line"]') as HTMLElement;
+    expect(state).not.toBeNull();
+    expect(state.children[0]).toHaveClass('text-table-cell');
+    for (const line of [...state.children].slice(1)) expect(line).toHaveClass('text-caption');
     // And the read itself is addressed to that branch: both halves travel, and
     // they are the header's, not a pair the screen made up. It opens on the
     // notes waiting for approval, which is the work the screen is for, and it

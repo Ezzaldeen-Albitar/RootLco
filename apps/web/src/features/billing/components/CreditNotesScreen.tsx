@@ -95,6 +95,7 @@ import Button from '@mui/material/Button';
 
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -331,16 +332,16 @@ function BranchCreditNotes({
         headerKey: 'creditNotes.column.reason',
         flex: 2,
         cell: (note) => (
-          <span className="flex flex-col">
-            <bdi>{note.reason}</bdi>
-            <span className="text-caption text-text-muted">
-              {note.issuedAt === null ? (
+          <TwoLineCell
+            primary={<bdi>{note.reason}</bdi>}
+            secondary={
+              note.issuedAt === null ? (
                 translate(messages, 'creditNotes.notIssued')
               ) : (
                 <When value={note.issuedAt} locale={locale} />
-              )}
-            </span>
-          </span>
+              )
+            }
+          />
         ),
       },
       {
@@ -360,19 +361,22 @@ function BranchCreditNotes({
         cell: (note) => {
           const own = note.requestedBy === currentUserId;
           return (
-            <span className="flex flex-col">
-              <span>{translateDynamic(messages, `creditNotes.state.${note.approvalState}`)}</span>
-              {own ? (
-                <span className="text-caption text-text-muted">
-                  {translate(messages, 'creditNotes.byYou')}
-                </span>
-              ) : null}
-              {own && note.approvalState === 'pending' ? (
-                <span className="text-caption text-text-muted">
-                  {translate(messages, 'creditNotes.ownRequest')}
-                </span>
-              ) : null}
-            </span>
+            // The state, then what applies to a request of one's own. A pending
+            // request of one's own has two such lines, and three lines are more
+            // than a row holds: the last may still be cut short.
+            <TwoLineCell
+              primary={translateDynamic(messages, `creditNotes.state.${note.approvalState}`)}
+              secondary={
+                own ? (
+                  <>
+                    <span className="block">{translate(messages, 'creditNotes.byYou')}</span>
+                    {note.approvalState === 'pending' ? (
+                      <span className="block">{translate(messages, 'creditNotes.ownRequest')}</span>
+                    ) : null}
+                  </>
+                ) : null
+              }
+            />
           );
         },
       },

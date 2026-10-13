@@ -13,11 +13,12 @@ import TableRow from '@mui/material/TableRow';
 
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
+import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
@@ -39,6 +40,7 @@ import {
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { settleRead } from '@/lib/api/use-search-request';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { unitNameByCode, type NamedUnit } from '@/lib/unit-name';
@@ -83,6 +85,7 @@ import { useItemNames, type NameAnswer } from './requirement-names';
 import { useUnitList } from './unit-list';
 import {
   StockMoment,
+  momentText,
   refusalState,
   useFocusOnOpen,
   useReturnFocus,
@@ -479,8 +482,13 @@ export function PartsScreen({
         />
       ) : null}
 
+      {/*
+       * Keyed on the work order as well as on the last write: the table and the
+       * reservations it names belong to ONE work order, and a screen handed
+       * another must never draw the first one's rows or words under it.
+       */}
       <PartIssuesPanel
-        key={`issues-${epoch}`}
+        key={`issues-${workOrderId}-${epoch}`}
         locale={locale}
         messages={messages}
         workOrderId={workOrderId}
@@ -1775,11 +1783,14 @@ function MaterialRequestActions({
       <h2 id="parts-request-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'inventory.parts.request.heading')}
       </h2>
+      {/*
+       * The request is the one this draw just opened, which the heading says.
+       * Its identifier was drawn after the sentence as a "reference"
+       * (P1-32-PRE-OD-INVH): a request has no number of its own, and an
+       * identifier is nothing an operator can read out or look up.
+       */}
       <p className="text-caption text-text-muted">
-        {translate(messages, 'inventory.parts.request.explain')}{' '}
-        <code className="font-mono" dir="ltr">
-          {requestId}
-        </code>
+        {translate(messages, 'inventory.parts.request.explain')}
       </p>
       <FormTextField
         label={translate(messages, 'inventory.parts.request.reason')}
@@ -1859,6 +1870,99 @@ function PartIssuesPanel({
   const table = useServerTable<PartIssue>(load, { initial: INITIAL_REQUEST });
   const [returning, setReturning] = useState<PartIssue | null>(null);
   const zone = useStockDisplayZone(target);
+  /*
+   * Which reservation an issue was drawn from (P1-32-PRE-OD-INVH).
+   *
+   * An issue's row carries the reservation's identifier and nothing else about
+   * it, and the column drew that identifier. A reservation has no number of its
+   * own; what an operator can use is how much it held and when it was made,
+   * which the reservation list publishes (`inv.stock-reservation-list`, here
+   * for the work order in every state, since a reservation an issue consumed is
+   * no longer active — which is why this is not the issue form's read, of the
+   * active ones only).
+   *
+   * The branch comes from the issue rows themselves, which carry it: a holder
+   * of the stock read who may not read work orders has no work-order header to
+   * take it from. The rows of one work order share a branch; were they ever not
+   * to, nothing is read and the rows say so in words.
+   *
+   * It is read once for the reservations the listed issues name: not when none
+   * names one, not again on a re-render or when the issues are read again and
+   * name the same ones, and again when they name another or the last read did
+   * not answer — once, the next time the issues are read, never in a loop. Every
+   * outcome settles (`settleRead`): a refusal, a failed or
+   * unanswered read and an abandoned one all leave the rows saying, in words,
+   * that the issue was drawn from a reservation — never the identifier, and
+   * with no notice of its own, since nothing the operator does depends on it.
+   */
+  const [reservations, setReservations] = useState<ReadonlyMap<string, StockReservation> | null>(
+    null
+  );
+  const issues = table.response?.rows ?? null;
+  const wanted = useMemo(() => {
+    const first = issues?.[0];
+    if (!issues || first === undefined) return null;
+    const ids = new Set<string>();
+    for (const row of issues) {
+      if (row.companyId !== first.companyId || row.branchId !== first.branchId) return null;
+      if (row.reservationId !== null) ids.add(row.reservationId);
+    }
+    if (ids.size === 0) return null;
+    return {
+      companyId: first.companyId,
+      branchId: first.branchId,
+      key: `${workOrderId}#${first.companyId}|${first.branchId}#${[...ids].sort().join(',')}`,
+    };
+  }, [issues, workOrderId]);
+  /** The reservations last answered for, so the same ones are not read twice. */
+  const answered = useRef('');
+  useEffect(() => {
+    if (wanted === null || answered.current === wanted.key) return;
+    const controller = new AbortController();
+    let live = true;
+    void settleRead<ServerPage<StockReservation>>(
+      () =>
+        listReservations(
+          { companyId: wanted.companyId, branchId: wanted.branchId },
+          { workOrderId },
+          { ...INITIAL_REQUEST, pageSize: 100 },
+          null
+        ),
+      { status: 'unavailable', rows: [], nextCursor: null, hasMore: false, correlationId: null },
+      { signal: controller.signal }
+    ).then((page) => {
+      if (!live) return;
+      if (page.status === 'ok') {
+        answered.current = wanted.key;
+        setReservations(new Map(page.rows.map((row) => [row.id, row])));
+      } else {
+        // Nothing is remembered as answered, so the reservations are asked for
+        // again the next time the issues are read — also when that next read
+        // names the ones that HAD been answered before this one failed.
+        answered.current = '';
+        setReservations(null);
+      }
+    });
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [wanted, workOrderId]);
+  /*
+   * A moment has to be read whole, so the two columns that draw one are never
+   * laid out narrower than the longest moment on the page (`minChars`, the
+   * grid's own estimate); the grid scrolls sideways rather than cut it off.
+   * Both take the issues' moments as the measure — a moment of the same
+   * language and clock has the same shape — so the widths are settled with the
+   * first rows and do not move when the reservations answer.
+   */
+  const momentChars = useMemo(() => {
+    let longest = 0;
+    for (const row of issues ?? []) {
+      longest = Math.max(longest, momentText(row.issuedAt, locale, zone).length);
+    }
+    return longest;
+  }, [issues, locale, zone]);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   /*
    * The return form opens from a row of the grid, whose buttons the grid owns;
@@ -1910,24 +2014,59 @@ function PartIssuesPanel({
       {
         id: 'reservation',
         headerKey: 'inventory.parts.issues.column.reservation',
-        cell: (row) =>
-          row.reservationId ? (
-            <code className="font-mono text-caption" dir="ltr">
-              {row.reservationId}
-            </code>
-          ) : (
-            <span className="text-text-muted">
-              {translate(messages, 'inventory.parts.issues.noReservation')}
-            </span>
-          ),
+        ...(momentChars > 0
+          ? {
+              minChars: Math.max(
+                momentChars,
+                translate(messages, 'inventory.parts.issues.fromReservation').length,
+                translate(messages, 'inventory.parts.issues.noReservation').length
+              ),
+            }
+          : {}),
+        cell: (row) => {
+          if (!row.reservationId) {
+            return (
+              <span className="text-text-muted">
+                {translate(messages, 'inventory.parts.issues.noReservation')}
+              </span>
+            );
+          }
+          const reserved = reservations?.get(row.reservationId);
+          if (reserved === undefined) {
+            return (
+              <span data-testid="issue-reservation">
+                {translate(messages, 'inventory.parts.issues.fromReservation')}
+              </span>
+            );
+          }
+          // Two lines, each with a line height of its own so that both fit in
+          // the row (`TwoLineCell`): how much the reservation held, then when it
+          // was made. No `title`: both lines are drawn, in a column that asks
+          // for the width the longer one needs, so a title would only say the
+          // same thing a second time.
+          return (
+            <TwoLineCell
+              testId="issue-reservation"
+              primary={translateWithValues(messages, 'inventory.parts.issues.reserved', {
+                quantity: reserved.quantity,
+              })}
+              secondary={<StockMoment value={reserved.createdAt} locale={locale} zone={zone} />}
+            />
+          );
+        },
       },
       {
         id: 'issuedAt',
         headerKey: 'inventory.parts.issues.column.issuedAt',
-        cell: (row) => <StockMoment value={row.issuedAt} locale={locale} zone={zone} />,
+        ...(momentChars > 0 ? { minChars: momentChars } : {}),
+        cell: (row) => (
+          <span data-testid="issue-issued-at">
+            <StockMoment value={row.issuedAt} locale={locale} zone={zone} />
+          </span>
+        ),
       },
     ],
-    [locale, messages, zone]
+    [locale, messages, zone, reservations, momentChars]
   );
 
   /*

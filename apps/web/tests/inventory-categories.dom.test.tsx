@@ -523,16 +523,14 @@ describe.each(['en', 'ar'] as const)('the category picker (%s)', (locale) => {
     const user = userEvent.setup();
 
     // A row from the last page is offered too.
-    expect(within(tree).getByText('Group 9 (group_9)')).toBeTruthy();
+    expect(within(tree).getByText('Group 9')).toBeTruthy();
     expect(
-      within(tree).getByText(
-        `Retired tools (retired_tools) — ${t('inventory.setup.status.inactive')}`
-      )
+      within(tree).getByText(`Retired tools — ${t('inventory.setup.status.inactive')}`)
     ).toBeTruthy();
 
-    await user.click(within(tree).getByText('Rear brakes (rear_brakes)'));
+    await user.click(within(tree).getByText('Rear brakes'));
     expect(onChange).toHaveBeenLastCalledWith(idOf(3));
-    await user.click(await within(tree).findByText('Pads (rear_pads)'));
+    await user.click(await within(tree).findByText('Pads'));
     expect(onChange).toHaveBeenLastCalledWith(idOf(4));
     await waitFor(() => expect(tree.getAttribute('aria-describedby')).toBeTruthy());
     const described = document.getElementById(
@@ -603,6 +601,113 @@ describe.each(['en', 'ar'] as const)('the category picker as a form field (%s)',
     expect(described).toContain(t('inventory.categories.none'));
   });
 
+  /*
+   * P1-32-PRE-OD-INVH — the picker drew `name (code)` on every row. The code is
+   * typed when a category is created and has its own column where categories
+   * are managed; in a picker it was noise after each name. A row is the name.
+   */
+  it('names each category and draws no code: two of one name under different parents read alike, apart by place', async () => {
+    serve(BRAKES);
+    RENDER[locale](<PickerHarness locale={locale} onChange={vi.fn()} />);
+    const tree = await screen.findByRole('tree', { name: 'Category' });
+    const user = userEvent.setup();
+    await user.click(within(tree).getByText('Front brakes'));
+    await user.click(within(tree).getByText('Rear brakes'));
+    await waitFor(() => expect(within(tree).getAllByText('Pads')).toHaveLength(2));
+    const text = tree.textContent ?? '';
+    // (`tools` is also a word of the name "Retired tools": the codes that are
+    // not a word of any name are looked for as they are, the rest in brackets.)
+    for (const row of BRAKES) {
+      expect(text, row.code).not.toContain(row.code.includes('_') ? row.code : `(${row.code})`);
+    }
+    expect(text).not.toMatch(/\([a-z][a-z0-9_]*\)/);
+    // An inactive category still says so, after its name.
+    expect(
+      within(tree).getByText(`Retired tools — ${t('inventory.setup.status.inactive')}`)
+    ).toBeTruthy();
+    // And each "Pads" sits under its own parent.
+    const parents = within(tree)
+      .getAllByText('Pads')
+      .map((row) => row.closest('[role="group"]')?.closest('[role="treeitem"]')?.textContent ?? '');
+    expect(parents[0]).toContain('Front brakes');
+    expect(parents[1]).toContain('Rear brakes');
+  });
+
+  it('adds the code only where two categories of one name share a parent', async () => {
+    serve([
+      category(1, 'front_brakes', 'Front brakes', null),
+      category(2, 'pads_oem', 'Pads', 1),
+      category(3, 'pads_aftermarket', 'Pads', 1),
+      category(4, 'discs', 'Discs', 1),
+      category(5, 'tools', 'Tools', null),
+      category(6, 'tools_old', 'Tools', null, 'inactive'),
+    ]);
+    RENDER[locale](<PickerHarness locale={locale} onChange={vi.fn()} />);
+    const tree = await screen.findByRole('tree', { name: 'Category' });
+    const user = userEvent.setup();
+    await user.click(within(tree).getByText('Front brakes'));
+    // Nothing else on the row tells the two apart, so their codes do.
+    expect(await within(tree).findByText('Pads (pads_oem)')).toBeTruthy();
+    expect(within(tree).getByText('Pads (pads_aftermarket)')).toBeTruthy();
+    expect(within(tree).getByText('Tools (tools)')).toBeTruthy();
+    expect(
+      within(tree).getByText(`Tools (tools_old) — ${t('inventory.setup.status.inactive')}`)
+    ).toBeTruthy();
+    // A name that is alone under its parent has none.
+    expect(within(tree).getByText('Discs')).toBeTruthy();
+    expect(within(tree).getByText('Front brakes')).toBeTruthy();
+    expect(tree.textContent).not.toContain('front_brakes');
+    expect(tree.textContent).not.toContain('(discs)');
+  });
+
+  /*
+   * "The same name" is what an operator would read as the same. Names that
+   * differ only in case, in spaces, or in tatweel and Arabic vowel marks cannot
+   * be told apart on a row, so they get their codes too. The comparison alone is
+   * folded: each name is drawn exactly as it is stored.
+   */
+  it('counts names an operator cannot tell apart as the same, and draws each as stored', async () => {
+    serve([
+      category(1, 'root', 'Parts', null),
+      // Latin: a trailing space, upper case, a doubled inner space.
+      category(2, 'pads_a', 'Brake pads', 1),
+      category(3, 'pads_b', 'Brake pads ', 1),
+      category(4, 'pads_c', 'BRAKE PADS', 1),
+      category(5, 'pads_d', 'Brake  pads', 1),
+      // Arabic: plain, with tatweel, with vowel marks.
+      category(6, 'filters_a', 'فلاتر', 1),
+      category(7, 'filters_b', 'فلاتـر', 1),
+      category(8, 'filters_c', 'فَلاتِر', 1),
+      // Really different names keep to themselves.
+      category(9, 'discs', 'Brake discs', 1),
+      category(10, 'oils', 'زيوت', 1),
+    ]);
+    RENDER[locale](<PickerHarness locale={locale} onChange={vi.fn()} />);
+    const tree = await screen.findByRole('tree', { name: 'Category' });
+    const user = userEvent.setup();
+    await user.click(within(tree).getByText('Parts'));
+    await within(tree).findByText('Brake discs');
+    const labels = within(tree)
+      .getAllByRole('treeitem')
+      .map((row) => row.querySelector('.MuiTreeItem-label')?.textContent ?? '');
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'Brake pads (pads_a)',
+        'Brake pads  (pads_b)',
+        'BRAKE PADS (pads_c)',
+        'Brake  pads (pads_d)',
+        'فلاتر (filters_a)',
+        'فلاتـر (filters_b)',
+        'فَلاتِر (filters_c)',
+        'Brake discs',
+        'زيوت',
+      ])
+    );
+    expect(tree.textContent).not.toContain('(discs)');
+    expect(tree.textContent).not.toContain('(oils)');
+    expect(tree.textContent).not.toContain('(root)');
+  });
+
   it('chooses with the keyboard: Down and Enter open a parent and choose a leaf, Space chooses', async () => {
     const onChange = vi.fn();
     RENDER[locale](<FieldHarness locale={locale} onChange={onChange} />);
@@ -613,7 +718,7 @@ describe.each(['en', 'ar'] as const)('the category picker as a form field (%s)',
     await keys.keyboard('{ArrowDown}');
     // Enter on a row with children opens it rather than choosing it.
     await keys.keyboard('{Enter}');
-    await within(tree).findByText('Pads (front_pads)');
+    await within(tree).findByText('Pads');
     await keys.keyboard('{ArrowDown}');
     await keys.keyboard('{Enter}');
     expect(onChange).toHaveBeenLastCalledWith(idOf(2));
