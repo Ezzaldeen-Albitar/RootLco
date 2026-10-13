@@ -71,6 +71,7 @@ import {
   LINK,
   StockMoment,
   StockMomentField,
+  momentText,
   useStockDisplayZone,
   useStockTargetZone,
 } from './stock-operations';
@@ -1037,12 +1038,20 @@ function ReservationResults({
         cell: (row) =>
           row.workOrderId ? (
             // The row carries the work order's identifier and not its number, so
-            // the link says what it does; the stock code tells one row's link from
-            // the next for a screen reader.
+            // the link says what it does. For a screen reader each row's link is
+            // named with what tells that reservation from the next on this
+            // screen — the stock code, the location, how much it holds and when
+            // it was made — since two reservations of one item may belong to
+            // two work orders.
             <Link
               href={`/${locale}/work-orders/${row.workOrderId}`}
               className="text-caption text-primary underline-offset-2 hover:underline"
-              aria-label={`${translate(messages, 'inventory.reservations.openWorkOrder')}: ${row.sku}`}
+              aria-label={`${translate(messages, 'inventory.reservations.openWorkOrder')}: ${[
+                row.sku,
+                row.locationCode,
+                row.quantity,
+                momentText(row.createdAt, locale, zone),
+              ].join(', ')}`}
             >
               {translate(messages, 'inventory.reservations.openWorkOrder')}
             </Link>
