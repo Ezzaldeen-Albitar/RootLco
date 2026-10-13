@@ -614,7 +614,33 @@ export function WorkingContextProvider({
     [apply, guards]
   );
 
-  const select = useCallback((next: string) => requestSwitch(next), [requestSwitch]);
+  /*
+   * The header's path, and the inline chooser's. A request for the selection
+   * that is already remembered and in force changes nothing, so it moves
+   * nothing: no question is asked, the version stays where it is and no read in
+   * flight is aborted.
+   *
+   * It is not only tidiness. A branch chosen while React is taking the page
+   * over can reach here TWICE: once when the select is read in the commit that
+   * hydrates it (`BranchSelector`), and again when React, having hydrated
+   * because of that very choice, delivers the event to the select's own
+   * handler. That is one choice, and the version must move once for it
+   * (P1-32-PRE-OD-UXQ, Q-1).
+   *
+   * What is remembered is read from storage rather than from this render's
+   * `stored`, because the second request can arrive before a render has seen
+   * the first one's write. A held change from another tab is the exception:
+   * storage then names the OTHER tab's branch while this tab stays on its own,
+   * so choosing that branch here is a real switch and goes through.
+   */
+  const holding = heldNow !== null;
+  const select = useCallback(
+    (next: string) => {
+      if (usable && !holding && readPreference(preferenceKey) === next) return;
+      requestSwitch(next);
+    },
+    [requestSwitch, usable, holding, preferenceKey]
+  );
 
   /*
    * The notice for a held change: shown while another tab's value differs from

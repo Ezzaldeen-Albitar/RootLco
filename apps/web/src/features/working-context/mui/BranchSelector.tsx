@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useMemo } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef } from 'react';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
@@ -42,6 +42,30 @@ import {
  * headings, the platform's own picker on a phone and its own keyboard model.
  * Material's menu select would render a button and a listbox that have to
  * re-earn all three.
+ *
+ * ## A branch chosen before the page is ready is kept (P1-32-PRE-OD-UXQ, Q-1)
+ *
+ * The header is in the server's HTML, so this select is drawn — enabled, with
+ * every branch in it — before React has attached to the page. A branch chosen
+ * in that moment changes the select and is heard by nobody: React leaves the
+ * select as it finds it while it hydrates, and the next render writes the
+ * provider's value back over the choice. With "All my branches" remembered the
+ * select read "Choose your branch" again and the choice was gone.
+ *
+ * So the select is read in the commit that mounts it — hydration included,
+ * before the browser paints and before any other update can render — and when
+ * it holds a branch other than the one it was drawn with, that branch is
+ * handed to `onSelect` exactly as if it had just been chosen. It goes
+ * through the provider's guarded path like any other choice, so it is
+ * remembered, it moves the version once, and the selection that was remembered
+ * before it never comes into force. It is the same adoption the sign-in form
+ * makes for a box filled before hydration (`usePrefilledValue`).
+ *
+ * It only ever moves the provider TO what the select shows: a select React
+ * rendered itself already agrees with its value, and nothing is adopted.
+ * `autocomplete="off"` keeps a browser from putting an earlier page's value
+ * into the select on a reload, which would otherwise be read here as a choice
+ * nobody made.
  */
 export interface BranchSelectorProps {
   readonly messages: Messages;
@@ -76,6 +100,26 @@ export function BranchSelector({
 }: BranchSelectorProps) {
   const base = useId();
   const selectId = `${base}-select`;
+
+  /*
+   * The look at what the select holds that React was never told about — see "A
+   * branch chosen before the page is ready is kept" above. After React has
+   * rendered the select the two agree, so this finds something only in the
+   * commit that hydrates it.
+   *
+   * A value this select does not offer proves nothing: the browser then shows
+   * the first option, which nobody chose, and adopting it would pick a branch
+   * on the operator's behalf.
+   */
+  const selectRef = useRef<HTMLSelectElement | null>(null);
+  useLayoutEffect(() => {
+    const select = selectRef.current;
+    if (select === null) return;
+    const chosen = select.value;
+    if (chosen.length === 0 || chosen === value) return;
+    if (!Array.from(select.options).some((option) => option.value === value)) return;
+    onSelect(chosen);
+  }, [value, onSelect]);
 
   const grouped = useMemo(() => {
     const byCompany = new Map<string, WorkingContextBranch[]>();
@@ -177,6 +221,7 @@ export function BranchSelector({
         <Select
           native
           className="min-w-0"
+          inputRef={selectRef}
           value={value}
           onChange={(event) => {
             const next = String(event.target.value);
@@ -186,6 +231,8 @@ export function BranchSelector({
           inputProps={{
             id: selectId,
             'data-testid': 'working-context-select',
+            // No value of an earlier page restored by the browser — see above.
+            autoComplete: 'off',
             className: 'truncate',
             title: shown.length > 0 ? shown : undefined,
             dir: shownDirection,
