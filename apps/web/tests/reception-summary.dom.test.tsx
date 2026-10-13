@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { inBranch, renderLtr, renderRtl } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail, ReceptionStatus } from '@/features/receptions/receptions-contract';
 import {
@@ -283,9 +284,17 @@ describe('a customer’s concern stays distinguishable from a technical fact', (
     // to render — and the screen says that instead of paraphrasing.
     listConditionEvidence.mockResolvedValue(page([COMPLAINT]));
     renderLtr(<SummaryStep {...stepProps()} />);
-    expect(
-      await screen.findByText(EN['receptions.summary.complaintWordsRestricted'] as string)
-    ).toBeVisible();
+    const restricted = await screen.findByText(
+      EN['receptions.summary.complaintWordsRestricted'] as string
+    );
+    expect(restricted).toBeVisible();
+    // Whose report it is and, under it, where its wording is kept: each line
+    // has a line height of its own, so the row does not cut the second off.
+    const source = expectTwoLinesOnTheirOwnLineHeight(
+      restricted.closest('[role="grid"]') as HTMLElement,
+      EN['receptions.summary.complaintWordsRestricted'] as string
+    );
+    expect(source.children[0]?.textContent).toBe(EN['receptions.summary.customerReported']);
   });
 
   it('reports media as registered and pending, and never renders the reference', async () => {

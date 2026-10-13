@@ -19,6 +19,7 @@ import {
   WorkingBranchProbe,
   branchSnapshot,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import {
   discardAndSwitch,
   forgetRememberedBranch,
@@ -1176,6 +1177,10 @@ describe('finance checkpoint fixes B', () => {
     renderLtr(screenAt());
     const grid = await screen.findByTestId('counter-issued-grid');
     expect((await within(grid).findAllByText('CS-0007')).length).toBeGreaterThan(0);
+    // The sale's number and, under it, when it was issued: each line has a
+    // line height of its own, so the row does not cut the moment off.
+    const sale = expectTwoLinesOnTheirOwnLineHeight(grid, 'CS-0007');
+    expect(sale.children[1]?.textContent).toMatch(/2026/);
     expect(within(grid).getAllByText('Another garage').length).toBeGreaterThan(0);
     expect(within(grid).getAllByText('7.500 JOD').length).toBeGreaterThan(0);
     // Issued counter sales of the working branch, asked of the server.

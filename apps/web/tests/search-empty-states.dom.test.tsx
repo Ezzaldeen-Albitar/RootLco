@@ -14,6 +14,7 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import type { CatalogueResult } from '@/features/vehicles/catalogue-api';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
@@ -701,6 +702,14 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(names[0]).toContain('ABC-1234');
     expect(names[1]).toContain('XYZ-9876');
     expect(names[1]).toContain('Walk-in customer');
+    // The customer with the part they play, and the plate with the make and
+    // model under it: each line has a line height of its own, so the row
+    // does not cut the second off (P1-32-PRE-OD-UXQ).
+    const grid = screen.getByRole('grid');
+    const customer = expectTwoLinesOnTheirOwnLineHeight(grid, 'Walk-in customer');
+    expect(customer.children[1]?.textContent).toBe(en['receptions.partyRole.service_requester']);
+    const vehicle = expectTwoLinesOnTheirOwnLineHeight(grid, 'XYZ-9876');
+    expect(vehicle.children[1]?.textContent).toBe('Van');
     for (const name of names) {
       expect(name).not.toContain('draft-');
       expect(name).not.toContain(ROW.vehicleId);

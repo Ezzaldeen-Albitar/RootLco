@@ -14,6 +14,7 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
@@ -710,6 +711,12 @@ describe('a branch changed in the header re-targets the calendar', () => {
     // Each time names its clock, because several branches have no single one.
     expect(within(grid).getByTestId('appointment-window-clock')).toHaveTextContent(
       zoneLabelAt(ROW.requestedFrom, 'en-GB', OTHER_BRANCH.timezone)
+    );
+    // When the window opens and, under it, when it closes: each line has a
+    // line height of its own, so the row does not cut the second off.
+    expectTwoLinesOnTheirOwnLineHeight(
+      grid,
+      formatInZone(ROW.requestedFrom, 'en-GB', OTHER_BRANCH.timezone)
     );
     // And the summary names the clock the day was counted on.
     expect(summary()).toHaveTextContent(TEST_BRANCH.name);

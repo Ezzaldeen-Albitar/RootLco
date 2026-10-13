@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -638,24 +639,26 @@ export function WorkOrderQueueScreen({
               {translate(messages, 'workOrders.queue.column.noCustomer')}
             </span>
           ) : (
-            <span className="flex flex-col">
-              <bdi>{row.customer.displayName}</bdi>
-              <span className="text-caption text-text-muted">
-                {/*
-                 * `receptions.partyRole.*`, not a `workOrders.*` copy of it.
-                 * The role IS the reception party role — the same frozen
-                 * seven-value vocabulary — surfaced on the work order that
-                 * visit produced.
-                 */}
-                {translateDynamic(
-                  messages,
-                  `receptions.partyRole.${row.customer.relationshipRole}`
-                )}
-                {row.customer.hasAdditionalParties
-                  ? ` · ${translate(messages, 'workOrders.queue.column.moreParties')}`
-                  : ''}
-              </span>
-            </span>
+            <TwoLineCell
+              primary={<bdi>{row.customer.displayName}</bdi>}
+              secondary={
+                <>
+                  {/*
+                   * `receptions.partyRole.*`, not a `workOrders.*` copy of it.
+                   * The role IS the reception party role — the same frozen
+                   * seven-value vocabulary — surfaced on the work order that
+                   * visit produced.
+                   */}
+                  {translateDynamic(
+                    messages,
+                    `receptions.partyRole.${row.customer.relationshipRole}`
+                  )}
+                  {row.customer.hasAdditionalParties
+                    ? ` · ${translate(messages, 'workOrders.queue.column.moreParties')}`
+                    : ''}
+                </>
+              }
+            />
           ),
       },
       {
@@ -663,14 +666,24 @@ export function WorkOrderQueueScreen({
         headerKey: 'workOrders.queue.column.vehicle',
         cell: (row) =>
           row.vehicle.registrationPlate || row.vehicle.makeModel ? (
-            <span className="flex flex-col">
-              {row.vehicle.registrationPlate ? (
-                <code className="font-mono text-caption" dir="ltr">
-                  {row.vehicle.registrationPlate}
-                </code>
-              ) : null}
-              {row.vehicle.makeModel ? <bdi>{row.vehicle.makeModel}</bdi> : null}
-            </span>
+            // The plate, then the make and model under it; either alone is the
+            // cell's one line (`TwoLineCell`).
+            <TwoLineCell
+              primary={
+                row.vehicle.registrationPlate ? (
+                  <code className="font-mono text-caption" dir="ltr">
+                    {row.vehicle.registrationPlate}
+                  </code>
+                ) : (
+                  <bdi>{row.vehicle.makeModel}</bdi>
+                )
+              }
+              secondary={
+                row.vehicle.registrationPlate && row.vehicle.makeModel ? (
+                  <bdi>{row.vehicle.makeModel}</bdi>
+                ) : null
+              }
+            />
           ) : (
             <span className="text-text-muted">
               {translate(messages, 'workOrders.queue.column.noVehicleDetail')}

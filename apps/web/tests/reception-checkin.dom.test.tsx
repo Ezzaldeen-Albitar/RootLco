@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { BranchSwitch, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import {
   discardAndSwitch,
   forgetRememberedBranch,
@@ -1037,6 +1038,24 @@ describe('the start screen — the walk-in handoff', () => {
     expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
       EN['receptions.checkIn.handoffApplied']!
     );
+  });
+
+  it('says under the role that a vehicle link has ended, each on a line of its own height', async () => {
+    listCustomerVehicles.mockResolvedValue(
+      page([HANDED_OVER_VEHICLE, { ...OTHER_VEHICLE, active: false, validTo: '2026-08-10' }])
+    );
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
+    const ended = EN['receptions.checkIn.vehicleLinkEnded']!;
+    const role = expectTwoLinesOnTheirOwnLineHeight(
+      (await screen.findByText(ended)).closest('[role="grid"]') as HTMLElement,
+      ended
+    );
+    expect(role.children[0]?.textContent).toBe(EN['vehicles.role.owner']);
+    expect(role.children[1]?.textContent).toBe(ended);
   });
 
   it('submits the handed-over pair without the operator touching either control', async () => {

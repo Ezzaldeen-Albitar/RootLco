@@ -15,6 +15,7 @@ import {
   WorkingBranchProbe,
   branchSnapshot,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import {
   discardAndSwitch,
   forgetRememberedBranch,
@@ -1065,6 +1066,13 @@ describe('the discounts waiting for approval, decided on the working branch', ()
     expect(screen.getByText(EN['quotations.approvals.waitingForAnother'] as string)).toBeVisible();
     // The money is the server's string, rendered, never recomputed.
     expect(screen.getByText('Omar Saleh')).toBeVisible();
+    // Who asked and, under the name, when: each line has a line height of
+    // its own, so the row does not cut the moment off.
+    const asked = expectTwoLinesOnTheirOwnLineHeight(
+      screen.getByText('Omar Saleh').closest('[role="grid"]') as HTMLElement,
+      'Omar Saleh'
+    );
+    expect(asked.children[1]?.textContent).toMatch(/2026/);
   });
 
   it('approves somebody else’s request and reads the list again', async () => {

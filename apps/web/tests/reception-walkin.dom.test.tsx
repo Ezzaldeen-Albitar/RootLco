@@ -12,6 +12,7 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 
 /**
  * Walk-in customer and vehicle intake (`P1-28-FE-006`, `TC-P1-28-XD-001`).
@@ -517,6 +518,9 @@ describe('the customer-first vehicle pick (crm.customer-vehicle-list)', () => {
 
     const list = screen.getByTestId('customer-vehicle-list');
     await within(list).findByText(en['receptions.intake.vehicle.noLiveVehicle']);
+    // The link's state and, under it, that the vehicle record is gone: each
+    // line has a line height of its own, so the row does not cut it off.
+    expectTwoLinesOnTheirOwnLineHeight(list, en['receptions.intake.vehicle.noLiveVehicle']);
     // Exactly ONE choose control: the live row. The dead row offers none.
     expect(
       within(list).getAllByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })

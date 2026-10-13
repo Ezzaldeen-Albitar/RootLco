@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import Button from '@mui/material/Button';
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -221,18 +222,18 @@ function Queue({
         id: 'workOrder',
         headerKey: 'technicians.workspace.workOrder',
         cell: (row) => (
-          <span className="flex flex-col">
-            {row.displayNumber ? (
-              <code className="font-mono text-caption" dir="ltr">
-                {row.displayNumber}
-              </code>
-            ) : (
-              <span className="text-text-muted">{workOrderNumberText(messages, row)}</span>
-            )}
-            <span className="text-caption text-text-muted">
-              {workOrderStateLabel(row.workOrderState, [], t)}
-            </span>
-          </span>
+          <TwoLineCell
+            primary={
+              row.displayNumber ? (
+                <code className="font-mono text-caption" dir="ltr">
+                  {row.displayNumber}
+                </code>
+              ) : (
+                <span className="text-text-muted">{workOrderNumberText(messages, row)}</span>
+              )
+            }
+            secondary={workOrderStateLabel(row.workOrderState, [], t)}
+          />
         ),
       },
       {

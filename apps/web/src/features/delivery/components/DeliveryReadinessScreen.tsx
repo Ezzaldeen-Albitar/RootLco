@@ -198,16 +198,24 @@ function ReadinessResults({
         headerKey: 'delivery.queue.column.vehicle',
         cell: (row) =>
           row.workOrder.vehicle.registrationPlate || row.workOrder.vehicle.makeModel ? (
-            <span className="flex flex-col">
-              {row.workOrder.vehicle.registrationPlate ? (
-                <code className="font-mono text-caption" dir="ltr">
-                  {row.workOrder.vehicle.registrationPlate}
-                </code>
-              ) : null}
-              {row.workOrder.vehicle.makeModel ? (
-                <bdi>{row.workOrder.vehicle.makeModel}</bdi>
-              ) : null}
-            </span>
+            // The plate, then the make and model under it; either alone is the
+            // cell's one line (`TwoLineCell`).
+            <TwoLineCell
+              primary={
+                row.workOrder.vehicle.registrationPlate ? (
+                  <code className="font-mono text-caption" dir="ltr">
+                    {row.workOrder.vehicle.registrationPlate}
+                  </code>
+                ) : (
+                  <bdi>{row.workOrder.vehicle.makeModel}</bdi>
+                )
+              }
+              secondary={
+                row.workOrder.vehicle.registrationPlate && row.workOrder.vehicle.makeModel ? (
+                  <bdi>{row.workOrder.vehicle.makeModel}</bdi>
+                ) : null
+              }
+            />
           ) : (
             <span className="text-text-muted">
               {translate(messages, 'delivery.queue.column.noVehicleDetail')}
@@ -277,17 +285,17 @@ function ReadinessResults({
               {translate(messages, 'delivery.queue.noHandover')}
             </span>
           ) : (
-            <span className="flex flex-col">
-              <span>
-                <StatusLabel messages={messages} status={row.delivery.status} />
-              </span>
-              <Link
-                href={`/${locale}/delivery/${row.delivery.id}`}
-                className="text-caption text-primary underline-offset-2 hover:underline"
-              >
-                {translate(messages, 'delivery.queue.openHandover')}
-              </Link>
-            </span>
+            <TwoLineCell
+              primary={<StatusLabel messages={messages} status={row.delivery.status} />}
+              secondary={
+                <Link
+                  href={`/${locale}/delivery/${row.delivery.id}`}
+                  className="text-caption text-primary underline-offset-2 hover:underline"
+                >
+                  {translate(messages, 'delivery.queue.openHandover')}
+                </Link>
+              }
+            />
           ),
       },
     ],

@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react';
 import Chip from '@mui/material/Chip';
-import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { ZonedDateTimeField } from '@/components/forms/mui/DateField';
@@ -170,14 +174,14 @@ function OdometerPanel({
         cell: (row) => {
           const display = odometerDisplay(row);
           return (
-            <span className="flex flex-col">
-              <span dir="ltr">{display.primary}</span>
-              {display.canonical !== null && row.unit !== 'km' ? (
-                <span className="text-caption text-text-muted" dir="ltr">
-                  {display.canonical}
-                </span>
-              ) : null}
-            </span>
+            <TwoLineCell
+              primary={<span dir="ltr">{display.primary}</span>}
+              secondary={
+                display.canonical !== null && row.unit !== 'km' ? (
+                  <span dir="ltr">{display.canonical}</span>
+                ) : null
+              }
+            />
           );
         },
       },

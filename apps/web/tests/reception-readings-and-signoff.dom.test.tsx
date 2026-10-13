@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { TEST_COMPANY, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
@@ -294,6 +295,19 @@ describe('the readings step — odometer (FE-013)', () => {
     expect(listOdometerReadings.mock.calls.at(-1)![0]).toBe('veh-9');
     expect(await screen.findByText('120000 km')).toBeInTheDocument();
     expect(screen.getByText(EN['receptions.odometer.vehicleScopeNote']!)).toBeInTheDocument();
+  });
+
+  it('draws a reading in miles with its kilometres under it, each on a line of its own height', async () => {
+    listOdometerReadings.mockResolvedValue(
+      page([{ ...READING, id: 'od-2', value: '74565', unit: 'mi' }])
+    );
+    renderLtr(<ReadingsStep {...stepProps()} />);
+    const reading = expectTwoLinesOnTheirOwnLineHeight(
+      (await screen.findByText('74565 mi')).closest('[role="grid"]') as HTMLElement,
+      '74565 mi'
+    );
+    // The kilometres the server holds, beside what was read, never instead.
+    expect(reading.children[1]?.textContent).toBe('120000 km');
   });
 
   it('states the visit reference as not recorded when the visit carries none', async () => {

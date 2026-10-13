@@ -12,6 +12,7 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import { forgetRememberedBranch } from './support/branch-switch';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
@@ -2524,6 +2525,13 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     expect(items[0]).toHaveTextContent(EN['reports.snapshots.nameHidden'] as string);
     expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.original'] as string);
     expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.restated'] as string);
+    // What the snapshot is and, under it, that it has been restated: each
+    // line has a line height of its own, so the row does not cut it off.
+    const kind = expectTwoLinesOnTheirOwnLineHeight(
+      items[1] as HTMLElement,
+      EN['reports.snapshots.kind.restated'] as string
+    );
+    expect(kind.children[0]?.textContent).toBe(EN['reports.snapshots.kind.original']);
     expect(items[1]).toHaveTextContent('Rana Haddad');
     expect(list.textContent).not.toContain(SAVER_ID);
     // The grid, named; "View" names the moment it opens and is a choice (G12).

@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useId, useMemo, useState } from 'react';
 import Button from '@mui/material/Button';
-import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
 import type { TableStatus } from '@/components/data-table/DataTable';
 import {
   membershipVerdict,
@@ -1370,14 +1374,12 @@ function VehicleChoice({
         id: 'role',
         headerKey: 'receptions.parties.role',
         cell: (row) => (
-          <span className="flex flex-col">
-            <span>{translateDynamic(messages, `vehicles.role.${row.relationshipRole}`)}</span>
-            {!row.active ? (
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'receptions.checkIn.vehicleLinkEnded')}
-              </span>
-            ) : null}
-          </span>
+          <TwoLineCell
+            primary={translateDynamic(messages, `vehicles.role.${row.relationshipRole}`)}
+            secondary={
+              !row.active ? translate(messages, 'receptions.checkIn.vehicleLinkEnded') : null
+            }
+          />
         ),
       },
       {
