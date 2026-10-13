@@ -662,9 +662,9 @@ describe('the refunds list', () => {
     expect(reason?.minChars).toBe(REASON_COLUMN_CHARS);
     // 380 px: wider than the 297 to 301 px the column was drawn at when every
     // reason of the retest was cut, and room for a sentence of fifty-five
-    // characters as they are drawn (about six and a third pixels each).
+    // characters as they are drawn (about six and a half pixels each).
     expect(columnMinWidth(reason?.minChars ?? 0)).toBe(380);
-    expect(columnMinWidth(reason?.minChars ?? 0)).toBeGreaterThan(55 * 6.34 + 20);
+    expect(columnMinWidth(reason?.minChars ?? 0)).toBeGreaterThan(55 * 6.5 + 20);
     for (const column of columns.filter((entry) => entry.id !== 'reason')) {
       expect(column.minChars, column.id).toBeUndefined();
     }

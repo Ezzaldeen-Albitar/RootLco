@@ -40,7 +40,7 @@ export const UUID = regexes.uuid();
  * one — a single short sentence such as "Customer was charged twice for the
  * same brake service", about fifty-five Latin characters. The grid estimates a
  * character wider than it is drawn (eight pixels against about six and a
- * third, measured on the refunds list at 1440 px), so forty-five of its
+ * half, measured on the refunds list at 1440 px), so forty-five of its
  * characters — 380 px — hold that sentence. At 1440 px the refunds list gave
  * this column about 300 px and cut every reason of the retest; the other
  * columns of that list keep room for an invoice number, an amount and a

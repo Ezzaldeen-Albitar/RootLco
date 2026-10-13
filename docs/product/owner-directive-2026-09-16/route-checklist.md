@@ -5592,6 +5592,123 @@ Also corrected, document only: the manual's audit-log chapter said a detail with
 "—"; that is so for the value after a change only, and the sentence now says what is drawn before
 it.
 
+### UX-Q: an early branch choice, grid text cut short, and two-line cells (`P1-32-PRE-OD-UXQ`)
+
+The runtime retest of CP-20261013-1 (run on the local acceptance site at `cb393773`; its evidence is
+kept outside the repository) left three product defects open, numbered Q-1 to Q-3 there. All three
+are addressed on branch `feature/owner-directive-residual-fixes-ux-q`, cut from `develop` at
+`cb393773`. **Implemented, not yet runtime-retested.** Web source, tests and documents only: no
+route, operation, permission code, API contract, branch scope or migration changed, and no text was
+added to either catalogue.
+
+- **Q-1. A branch chosen in the header before the page is ready (case S6, defect F-1).** With "All
+  my branches" remembered, `/inventory/parts` was opened and a branch was chosen in the header's
+  select 19 ms after it was drawn: the select read "Choose your branch" again and the remembered
+  selection stayed "All my branches". The same choice made about 0.9 s later was kept.
+  - _The cause, reproduced in a DOM test_ (`working-context-early-choice.dom.test.tsx`: the header
+    is rendered as the server renders it, then hydrated, and the choice is made at six named
+    moments). The header is in the server's HTML, so the select is drawn, enabled, before React has
+    hydrated it. A choice made then is lost in one of two ways. Before React is on the page nobody
+    hears the change; React leaves the select as it finds it while it hydrates, and the first render
+    after that writes the provider's value back over it. Once React is on the page but has not
+    hydrated, the choice itself makes React hydrate at once, and the render that restores the
+    remembered selection — forced straight after hydration by the provider's two stored-value reads
+    (`WorkingContextProvider.tsx`, `usePersistedPreference` and the `inBrowser` read) — puts the
+    select back before the select's own handler is called, so the handler reads a select that holds
+    no choice. No effect of the provider overwrites a choice React was told about: made in the
+    commit that hydrates, among the first effects with the restore still pending, between the
+    restore and the effects after it, or later, the choice was kept before the correction too.
+  - _The correction._ `BranchSelector.tsx` reads the select in the commit that hydrates it, and a
+    branch it holds other than the one it was drawn with is handed to the provider's guarded switch
+    exactly as a choice is — the adoption the sign-in form already makes for a box filled before
+    hydration (`usePrefilledValue`). The choice is remembered, the version moves once, and the
+    selection remembered before it never comes into force. A value the select does not offer is not
+    read as a choice (the browser then shows the first option, which nobody chose). The select
+    carries `autocomplete="off"`, so that a browser does not put an earlier page's value back into
+    it on a reload, where it would be read as a choice.
+  - _One choice, one version._ In the second way above the same choice arrives twice: read at
+    hydration, and delivered as the event. The provider's `select` now takes a request for the
+    selection already remembered and in force as nothing to do, so the version moves exactly once
+    for each selection that comes into force. A change held from another tab is the exception:
+    storage then names the other tab's branch while this tab stays on its own, so choosing that
+    branch in the header is a real switch and asks first.
+  - _The other controls that write the working context._ There are two besides the header's select.
+    The chooser a screen offers beside its branch ask (`ConcreteBranchChooser` in
+    `WorkingBranchField.tsx`) is a select with the same exposure wherever the server renders it — a
+    screen that is not behind the page-body gate, for an operator with several branches, before
+    hydration. On a screen that needs one branch the gate draws a placeholder on the server and the
+    chooser only afterwards, so it is not exposed there. That is read from the code and was not
+    reproduced in a test, and the chooser is **not changed here**. The notice for
+    another tab's change and the discard question are buttons drawn only after hydration, and are
+    not exposed. No screen holds a company or branch switcher of its own: the company pickers on the
+    settings and approval-limit screens choose a value for a form and do not write the working
+    context.
+  - _Not observed._ Whether the live site's 19 ms choice fell in the first way or the second is not
+    known; both are reproduced and both are closed by the same reading of the select. What a
+    browser restores into a select on a reload, and that `autocomplete="off"` prevents it, is not
+    something a DOM test sees.
+- **Q-2. A line of a two-line grid cell longer than its column (case S5).** The reason was cut at
+  the cell's edge in 16 of 16 cells of the refunds list (by 25 to 255 px) and in 2 of 9 of the
+  credit-notes list, with no ellipsis seen; in English the END of the reason was lost and in Arabic
+  the BEGINNING of a reason written in Latin letters. The cell is `TwoLineCell` in
+  `OperationalGrid.tsx`, and the correction is in it, so every use has it:
+  - each line is cut at the side only (`overflow-x: clip`, never wrapped) and ends in an ellipsis.
+    Not `truncate`: `overflow: hidden` also clips above and below the line box, and a line cut at the
+    bottom is what this cell exists to prevent;
+  - each line is laid out in the direction of its own text, so what is cut is its end whatever the
+    page's direction. The direction is read off what the caller passed (`lineText`), through a
+    `<bdi>` or `<code>` around it, by the rule the header's branch select already used, which moved
+    to `lib/text/writing-direction.ts` so that there is one of it. The literal `dir="auto"` was not
+    used: it does not look inside a `<bdi>` or an element with a `dir` of its own, which is how most
+    callers pass a name, and would have laid an Arabic name out left to right and cut its beginning
+    in the Arabic interface;
+  - each line carries its whole text as its `title` — what the grid's own cells do for a value they
+    draw themselves, and what the header's branch select does. The whole text also stays in the
+    document: the ellipsis is drawn, nothing is removed. A line built from a component (a formatted
+    moment) has no text to read: it still ends in an ellipsis, follows the page's direction and has
+    no title unless the caller supplies its text (`primaryTitle`, `secondaryTitle`);
+  - _the reason columns_ of the refunds and credit-notes lists ask for 45 of the grid's characters
+    (`minChars`, 380 px). "Typical" was taken as one short sentence of about fifty-five Latin
+    characters: the grid estimates a character at 8 px, and the retest's measurements put one at 6.4
+    to 6.5 px as the refunds list draws it. At 1440 px the refunds list gave the column 297 to
+    301 px. A reason may be two thousand characters long, so a longer one still ends in an
+    ellipsis: of the sixteen reasons the retest measured on the refunds list, four are no wider
+    than the new column holds and twelve are. By the grid's own arithmetic the refunds grid now
+    scrolls sideways below a window of about 1285 px, where before it did so below about 1000 px.
+    Both figures are arithmetic, not observation.
+  - _Not observed._ The ellipsis, the side a line is cut at, the widths and the sideways scroll are
+    laid out by a browser. The DOM tests hold the utilities, the direction, the title and the width
+    a column asks for, and nothing about what is drawn.
+- **Q-3. A third line in a two-line cell (case S5).** On the credit-notes list a pending note of
+  one's own drew three lines in a 48 px row: 1.5 px over the top, 2.5 px under the bottom, the
+  letters of the last line cut. "Raised by you" and "Waiting for another approver" now share the
+  second line, set apart by a middle dot as inline facts are on the other lists; nothing is dropped,
+  and where the column is too narrow the line ends in an ellipsis and is whole in its title. The
+  screen has no state chip that could carry the marker instead. The DOM cases hold, in English and
+  Arabic, that the cell has at most two lines with nothing nested in a line that could stack, and
+  that all three facts are in its text.
+- **Fifteen more two-line cells.** The fifteen cells the section above lists as found and not
+  changed were each opened: every one is a cell of the fixed-row grid, and every one is now a
+  `TwoLineCell` — `AppointmentCalendarScreen.tsx` (the requested and confirmed window, both drawn by
+  `WindowCell`), `DeliveryReadinessScreen.tsx` (vehicle; handover), `CounterSalesScreen.tsx` (sale
+  number and when issued), `DiscountApprovalsPanel.tsx` (who asked and when),
+  `CheckInStartScreen.tsx` (role and a link that ended), `ReceptionQueueScreen.tsx` (plate and
+  vehicle reference), `ReadingsStep.tsx` (reading and its kilometres), `SummaryStep.tsx` (whose
+  report and where its wording is kept), `IntakeVehicleStep.tsx` (link state and a vehicle record
+  that is gone), `ReportSnapshotsPanel.tsx` (kind and restated), `TechnicianProfileSections.tsx` and
+  `TechnicianWorkspaceScreen.tsx` (work order and its state), `WorkOrderQueueScreen.tsx` (customer
+  and the part they play; vehicle). What each line says is unchanged. A second line is now the
+  caption size and colour, which on the two vehicle cells makes the make and model smaller than the
+  plate above it; a vehicle with only one of the two is one line. None was left as it was: none of
+  the fifteen is a card, a list or a form. Each screen's DOM test holds that both lines carry the
+  line-height utilities.
+- **Left open, and not changed here.** The second line of the Reference cell on
+  `/inventory/movements` is still the source document's identifier (an Owner decision and an API
+  gap: the row publishes nothing else about the document); it is now cut with an ellipsis like any
+  other line and is otherwise as it was. The identifier after "Reference:" on refusals. The search
+  box that draws a deleted term's row again for about 230 to 310 ms. The inline branch chooser's
+  exposure under Q-1.
+
 ### Departments and employees on Material UI (`P1-32-PRE-OD-ADM2`)
 
 `/administration/departments` and `/administration/employees` moved onto the shared wrappers, and

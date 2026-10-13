@@ -758,6 +758,20 @@ open.
    which merged as `4928486a`. Its State stays as written, like every State in the register. Its
    local QA cell is worded once and will not be rewritten.
 
+**Note, 2026-10-13 (P1-32-PRE-OD-UXQ; no ledger row, register row or result changed).** The runtime
+retest of CP-20261013-1 at `cb393773` left three product defects open: a branch chosen in the
+header's select in the first instant after it is drawn is discarded (Q-1); a line of a two-line grid
+cell longer than its column is cut with nothing to show for it, and in Arabic a reason in Latin
+letters loses its beginning (Q-2); and a pending credit note of one's own draws three lines in a row
+that holds two (Q-3). Branch `feature/owner-directive-residual-fixes-ux-q`, cut from `develop` at
+`cb3937734c1530f6d06d3c17a5d16b1e5877c894`, carries a correction for each, and gives the fifteen
+two-line cells the note above lists as not fixed the same two line heights — implemented, not yet
+runtime-retested. Left open and not changed: the source document's identifier as the second line of
+a stock movement's reference, the identifier after "Reference:" on refusals, the search box that
+draws a deleted term's row again for a moment, and the inline branch chooser, which is read as
+exposed to the same early choice as the header's select where the server renders it. The detail is
+in `route-checklist.md`, section `P1-32-PRE-OD-UXQ`.
+
 ### Features delivered or planned under this directive
 
 The delivery matrix above owns verification state; ADR-023 owns the implementation state of each D-item; the architecture assessment owns what each FC change is. This table owns the design fields that directive section 12 asks for. The `state:` pointers in the first column cite ADR-023's mapping table at develop `d5ce97b7` (`:751-773`, re-anchored 2026-10-08); the other ADR-023 line numbers in this table are not re-anchored here.
