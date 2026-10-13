@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { Fragment, isValidElement, useEffect, useMemo, type ReactNode } from 'react';
 import Link from 'next/link';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -43,6 +43,7 @@ import { pageLabel } from '@/components/ui-foundation/mui-locale';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { writingDirectionOf } from '@/lib/text/writing-direction';
 import { LAYOUT_PX, SPACE_PX } from '@/styles/tokens/generated/tokens';
 
 /**
@@ -278,6 +279,68 @@ export function columnMinWidth(characters: number): number {
 }
 
 /**
+ * The text a line draws, when it can be read off what the caller passed: a
+ * string or a number, and whatever sits inside plain elements around them
+ * (`<bdi>`, `<code>`, a fragment). `null` when part of the line is a component,
+ * whose text is not known until it renders — a formatted moment, a chip.
+ * Exported so the rule is tested on the function as well as on the render.
+ */
+export function lineText(node: ReactNode): string | null {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number' || typeof node === 'bigint') return String(node);
+  if (Array.isArray(node)) {
+    let text = '';
+    for (const child of node as readonly ReactNode[]) {
+      const part = lineText(child);
+      if (part === null) return null;
+      text += part;
+    }
+    return text;
+  }
+  if (!isValidElement(node)) return null;
+  if (typeof node.type !== 'string' && node.type !== Fragment) return null;
+  return lineText((node.props as { readonly children?: ReactNode }).children);
+}
+
+/*
+ * One line, never wrapped and never taller than its own line height.
+ *
+ * Cut at the SIDE only (`overflow-x-clip`), with an ellipsis where it is cut.
+ * `truncate` would do the same with `overflow: hidden`, which also clips above
+ * and below the line box: at the caption's compact line height that can shave
+ * the marks under an Arabic letter, and a line cut at the bottom is the defect
+ * this cell exists to prevent.
+ */
+const LINE_CLASS = 'min-w-0 overflow-x-clip text-ellipsis whitespace-nowrap';
+
+function GridLine({
+  line,
+  className,
+  title,
+  children,
+}: {
+  readonly line: 'primary' | 'secondary';
+  readonly className: string;
+  readonly title: string | undefined;
+  readonly children: ReactNode;
+}) {
+  const whole = (title ?? lineText(children))?.trim() ?? '';
+  return (
+    <span
+      className={`${LINE_CLASS} ${className}`}
+      data-grid-line={line}
+      // The line's own direction, so that a cut line keeps its beginning. A
+      // line whose text is not known here follows the page, as before.
+      dir={writingDirectionOf(whole)}
+      title={whole.length > 0 ? whole : undefined}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
  * A cell of two stacked lines that both fit in a row.
  *
  * A row of this grid has one fixed height, and a cell gives its text a line as
@@ -290,30 +353,59 @@ export function columnMinWidth(characters: number): number {
  *
  * `secondary` may be absent (`null`, `undefined`, `false`): the cell is then
  * its first line alone, at the same size.
+ *
+ * ## A line longer than its column says so (P1-32-PRE-OD-UXQ, Q-2)
+ *
+ * A row holds two lines and no more, so a line is never wrapped. One longer
+ * than its column used to be cut at the cell's edge with nothing to show for
+ * it, and in the Arabic interface a reason written in Latin letters lost its
+ * BEGINNING. Each line now:
+ *
+ *   - ends in an ellipsis where it is cut;
+ *   - is laid out in the direction of its OWN text (`writingDirectionOf`), so
+ *     what is cut is its end, whatever the page's direction;
+ *   - carries its whole text as its `title` — what the grid's own cells do for
+ *     a value they draw themselves, and what the header's branch select does.
+ *     The whole text is also still in the document for assistive technology:
+ *     the ellipsis is drawn, nothing is removed.
+ *
+ * The text is read off what was passed (`lineText`). A line built from a
+ * component — a formatted moment — has no text to read here: it still ends in
+ * an ellipsis, follows the page's direction and has no title unless the caller
+ * supplies one (`primaryTitle`, `secondaryTitle`).
+ *
+ * That a line is in fact cut, and where, is laid out by the browser: a DOM test
+ * holds the classes, the direction and the title, and nothing about widths.
  */
 export function TwoLineCell({
   primary,
   secondary,
+  primaryTitle,
+  secondaryTitle,
   testId,
 }: {
   readonly primary: ReactNode;
   readonly secondary?: ReactNode;
+  /** The first line's whole text, when it cannot be read off `primary`. */
+  readonly primaryTitle?: string | undefined;
+  /** The second line's whole text, when it cannot be read off `secondary`. */
+  readonly secondaryTitle?: string | undefined;
   readonly testId?: string | undefined;
 }) {
   const second = secondary === null || secondary === undefined || secondary === false;
   return (
     <span
-      className="flex h-full flex-col justify-center"
+      className="flex h-full min-w-0 flex-col justify-center"
       data-grid-cell="two-line"
       data-testid={testId}
     >
-      <span className="text-table-cell" data-grid-line="primary">
+      <GridLine line="primary" className="text-table-cell" title={primaryTitle}>
         {primary}
-      </span>
+      </GridLine>
       {second ? null : (
-        <span className="text-caption text-text-muted" data-grid-line="secondary">
+        <GridLine line="secondary" className="text-caption text-text-muted" title={secondaryTitle}>
           {secondary}
-        </span>
+        </GridLine>
       )}
     </span>
   );

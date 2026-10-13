@@ -16,6 +16,7 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import { forgetRememberedBranch } from './support/branch-switch';
 
 /**
@@ -562,6 +563,10 @@ describe('a technician profile', () => {
     const queue = await screen.findByTestId('technician-profile-queue');
     expect(await within(queue).findByText('Replace front pads')).toBeVisible();
     expect(within(queue).getByText(EN('technicians.workspace.since'))).toBeInTheDocument();
+    // The work order's number and, under it, its state in words: each line
+    // has a line height of its own, so the row does not cut the state off.
+    const workOrder = expectTwoLinesOnTheirOwnLineHeight(queue, 'WO-0042');
+    expect(workOrder.children[1]?.textContent).toBe(EN('workOrders.state.in_progress'));
   });
 
   it('names a window of a kind this screen does not know in words, never by its code', async () => {

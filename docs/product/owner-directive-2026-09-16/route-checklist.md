@@ -5592,6 +5592,164 @@ Also corrected, document only: the manual's audit-log chapter said a detail with
 "—"; that is so for the value after a change only, and the sentence now says what is drawn before
 it.
 
+### UX-Q: an early branch choice, grid text cut short, and two-line cells (`P1-32-PRE-OD-UXQ`)
+
+The runtime retest of CP-20261013-1 (run on the local acceptance site at `cb393773`; its evidence is
+kept outside the repository) left three product defects open, numbered Q-1 to Q-3 there. All three
+are addressed on branch `feature/owner-directive-residual-fixes-ux-q`, cut from `develop` at
+`cb393773`. **Implemented, not yet runtime-retested.** Web source, tests and documents only: no
+route, operation, permission code, API contract, branch scope or migration changed, and no text was
+added to either catalogue.
+
+- **Q-1. A branch chosen in the header before the page is ready (case S6, defect F-1).** With "All
+  my branches" remembered, `/inventory/parts` was opened and a branch was chosen in the header's
+  select 19 ms after it was drawn: the select read "Choose your branch" again and the remembered
+  selection stayed "All my branches". The same choice made about 0.9 s later was kept.
+  - _The cause, reproduced in a DOM test_ (`working-context-early-choice.dom.test.tsx`: the header
+    is rendered as the server renders it, then hydrated, and the choice is made at six named
+    moments). The header is in the server's HTML, so the select is drawn, enabled, before React has
+    hydrated it. A choice made then is lost in one of two ways. Before React is on the page nobody
+    hears the change; React leaves the select as it finds it while it hydrates, and the first render
+    after that writes the provider's value back over it. Once React is on the page but has not
+    hydrated, the choice itself makes React hydrate at once, and the render that restores the
+    remembered selection — forced straight after hydration by the provider's two stored-value reads
+    (`WorkingContextProvider.tsx`, `usePersistedPreference` and the `inBrowser` read) — puts the
+    select back before the select's own handler is called, so the handler reads a select that holds
+    no choice. No effect of the provider overwrites a choice React was told about: made in the
+    commit that hydrates, among the first effects with the restore still pending, between the
+    restore and the effects after it, or later, the choice was kept before the correction too.
+  - _The correction._ A hook, `useEarlyChoice` (`features/working-context/use-early-choice.ts`),
+    reads a branch select in the commit that hydrates it. A branch the select holds other than the
+    one it was drawn with is handed to the provider's guarded switch exactly as a choice is — the
+    adoption the sign-in form already makes for a box filled before hydration (`usePrefilledValue`)
+    — under three conditions, all of which must hold:
+    1. _the document was reached by a fresh navigation_
+       (`performance.getEntriesByType('navigation')[0].type === 'navigate'`). A browser puts form
+       controls back the way they were when it re-opens a document from its history: going Back to
+       a page that showed branch A after switching to B elsewhere, or reloading it, can leave the
+       select holding A before React arrives, chosen by nobody. Adopted, that would write A to
+       storage and move this tab and the others, where the remembered B was restored before. So on
+       a reload, a move through history or a prerender, when the browser has no navigation entry
+       to give, and when it cannot be asked, nothing is adopted;
+    2. _the value is one the select was given to offer_ — the branches the server published to
+       this operator, and "All my branches" where the screen offers it. The select is read from
+       the document, where an option can be edited; the provider would refuse an unpublished
+       branch too, but only after it had replaced the remembered selection in storage;
+    3. _it goes through the guarded switch_, so it is remembered, unsaved work is asked about
+       first, and the version moves once.
+
+    Where nothing is adopted the select is put back to the value it was drawn with and the
+    remembered selection stands, as it did before this change. The early choice on a reload or a
+    move through history is therefore still lost, as it always was. The header's select keeps
+    `autocomplete="off"`: it does no harm, nothing relies on it, and whether a browser honours it
+    on a select outside a form was not established.
+
+  - _One choice, one version._ In the second way above the same choice arrives twice: read at
+    hydration, and delivered as the event. The provider's `select` now takes a request for the
+    selection already remembered and in force as nothing to do, so the version moves exactly once
+    for each selection that comes into force. A change held from another tab is the exception:
+    storage then names the other tab's branch while this tab stays on its own, so choosing that
+    branch in the header is a real switch and asks first.
+  - _The other controls that write the working context._ There are two besides the header's select.
+    The chooser a screen offers beside its branch ask (`ConcreteBranchChooser` in
+    `WorkingBranchField.tsx`) is a select with the same exposure wherever the server renders it — a
+    screen drawn before a branch is known, such as the boards that read every branch, for an
+    operator with several. It now takes an early choice through the same hook, under the same
+    three conditions, and its DOM cases mirror the header's. With nothing remembered it also used
+    to go on naming a branch the browser had put back, which was not in force; it is now put back
+    to its empty ask. On a screen that needs one branch the page-body gate draws a placeholder on
+    the server and the chooser only afterwards, so it was not exposed there. The notice for
+    another tab's change and the discard question are buttons drawn only after hydration, and are
+    not exposed. No screen holds a company or branch switcher of its own: the company pickers on the
+    settings and approval-limit screens choose a value for a form and do not write the working
+    context.
+  - _Not observed, and for the runtime retest._ Whether the live site's 19 ms choice fell in the
+    first way or the second is not known; both are reproduced and both are closed by the same
+    reading of the select. **What a browser does on Back and on a reload was reasoned, not run**:
+    that it restores a select's value before React hydrates, that it reports the arrival as
+    `back_forward` or `reload`, and what it reports for a restored or duplicated tab. The DOM
+    cases state the arrival through a stub. The retest should therefore cover, on both selects:
+    a choice made in the first instant of a fresh navigation is kept; after switching to another
+    branch elsewhere, **Back to an earlier page keeps the newer branch**; a reload keeps the
+    remembered branch; and no other tab is moved by either.
+- **Q-2. A line of a two-line grid cell longer than its column (case S5).** The reason was cut at
+  the cell's edge in 16 of 16 cells of the refunds list (by 25 to 255 px) and in 2 of 9 of the
+  credit-notes list, with no ellipsis seen; in English the END of the reason was lost and in Arabic
+  the BEGINNING of a reason written in Latin letters. The cell is `TwoLineCell` in
+  `OperationalGrid.tsx`, and the correction is in it, so every use has it:
+  - each line is cut at the side only (`overflow-x: clip`, never wrapped) and ends in an ellipsis.
+    Not `truncate`: `overflow: hidden` also clips above and below the line box, and a line cut at the
+    bottom is what this cell exists to prevent;
+  - each line is laid out in the direction of its own text, so what is cut is its end whatever the
+    page's direction. The direction is read off what the caller passed (`lineText`), through a
+    `<bdi>` or `<code>` around it, by the rule the header's branch select already used, which moved
+    to `lib/text/writing-direction.ts` so that there is one of it. The literal `dir="auto"` was not
+    used: it does not look inside a `<bdi>` or an element with a `dir` of its own, which is how most
+    callers pass a name, and would have laid an Arabic name out left to right and cut its beginning
+    in the Arabic interface;
+  - each line carries its whole text as its `title` — what the grid's own cells do for a value they
+    draw themselves, and what the header's branch select does. The whole text also stays in the
+    document: the ellipsis is drawn, nothing is removed. A line built from a component (a formatted
+    moment) has no text to read: it still ends in an ellipsis, follows the page's direction and has
+    no title unless the caller supplies its text (`primaryTitle`, `secondaryTitle`);
+  - _the reason columns_ of the refunds and credit-notes lists ask for 40 of the grid's characters
+    (`minChars`, 340 px; `REASON_COLUMN_CHARS`). The value is the widest that needs no sideways
+    scroll on a 1280 px window with the sidebar open — a sideways scrollbar on a common laptop is a
+    worse trade than a shorter line. The arithmetic, in the grid's own minimum widths: the retest
+    measured 1085 px for the grid in a 1440 px window, so 355 px go to the sidebar and the
+    paddings and 925 are left of 1280; the refunds grid's other columns are four at the 96 px
+    floor and a 164 px row action ("Open the invoice"), 548 px; the reason is 8 px a character
+    plus 20 px, 340 px at forty; 888 px in all, 37 px to spare, and no sideways scroll down to a
+    window of about 1245 px. Forty-five (380 px), as first written, made 928 px and a scrollbar
+    below about 1283 px. The credit-notes grid needs 628 px and is never the tighter one; at
+    1440 px its reason column is 402 px by its share and does not change. What 340 px holds is
+    about fifty Latin characters as drawn (the retest's measurements put one at 6.4 to 6.5 px);
+    at 1440 px the refunds column was 297 to 301 px. Of the sixteen reasons the retest measured
+    on the refunds list, two are no wider than the new column holds and fourteen still end in an
+    ellipsis. All of this is arithmetic, not observation.
+  - _A point for the Owner._ A reason longer than its column is read through the line's title (a
+    pointer held over it) or on the record itself. A sighted person using the keyboard alone
+    cannot reach the part that is cut: the grid has no other way to show it, on these columns or
+    on any other, and none was added here.
+  - _Not observed._ The ellipsis, the side a line is cut at, the widths and the sideways scroll are
+    laid out by a browser. The DOM tests hold the utilities, the direction, the title and the width
+    a column asks for, and nothing about what is drawn.
+- **Q-3. A third line in a two-line cell (case S5).** On the credit-notes list a pending note of
+  one's own drew three lines in a 48 px row: 1.5 px over the top, 2.5 px under the bottom, the
+  letters of the last line cut. "Raised by you" and "Waiting for another approver" now share the
+  second line, set apart by a middle dot as inline facts are on the other lists; nothing is dropped,
+  and where the column is too narrow the line ends in an ellipsis and is whole in its title. The
+  screen has no state chip that could carry the marker instead. The DOM cases hold, in English and
+  Arabic, that the cell has at most two lines with nothing nested in a line that could stack, and
+  that all three facts are in its text.
+- **Fifteen more two-line cells.** The fifteen cells the section above lists as found and not
+  changed were each opened: every one is a cell of the fixed-row grid, and every one is now a
+  `TwoLineCell` — `AppointmentCalendarScreen.tsx` (the requested and confirmed window, both drawn by
+  `WindowCell`), `DeliveryReadinessScreen.tsx` (vehicle; handover), `CounterSalesScreen.tsx` (sale
+  number and when issued), `DiscountApprovalsPanel.tsx` (who asked and when),
+  `CheckInStartScreen.tsx` (role and a link that ended), `ReceptionQueueScreen.tsx` (plate and
+  vehicle reference), `ReadingsStep.tsx` (reading and its kilometres), `SummaryStep.tsx` (whose
+  report and where its wording is kept), `IntakeVehicleStep.tsx` (link state and a vehicle record
+  that is gone), `ReportSnapshotsPanel.tsx` (kind and restated), `TechnicianProfileSections.tsx` and
+  `TechnicianWorkspaceScreen.tsx` (work order and its state), `WorkOrderQueueScreen.tsx` (customer
+  and the part they play; vehicle). What each line says is unchanged. None was left as it was: none
+  of the fifteen is a card, a list or a form. Each screen's DOM test holds that both lines carry the
+  line-height utilities.
+  - _A visible change, for the Owner._ A second line is always the caption size (12 px) in the
+    muted colour. In thirteen of the fifteen cells it already was that size (the handover's link
+    keeps its own colour). In the two vehicle cells — the delivery readiness queue (`/delivery`)
+    and the work-order queue (`/work-orders`) — the make and model under the plate was the cell's
+    own text size and colour, larger than the plate, and is now the muted caption: the plate's
+    size, and greyer. A vehicle with only a plate, or only a make and model, is one line. The
+    vehicle cells of the reception queue and of the check-in screens draw no make and model under
+    a plate and do not change to the eye. Not seen in a browser.
+- **Left open, and not changed here.** The second line of the Reference cell on
+  `/inventory/movements` is still the source document's identifier (an Owner decision and an API
+  gap: the row publishes nothing else about the document); it is now cut with an ellipsis like any
+  other line and is otherwise as it was. The identifier after "Reference:" on refusals. The search
+  box that draws a deleted term's row again for about 230 to 310 ms. An early branch choice on a
+  reload or a move through history, which is lost as before (Q-1).
+
 ### Departments and employees on Material UI (`P1-32-PRE-OD-ADM2`)
 
 `/administration/departments` and `/administration/employees` moved onto the shared wrappers, and

@@ -2041,9 +2041,9 @@ function PartIssuesPanel({
           }
           // Two lines, each with a line height of its own so that both fit in
           // the row (`TwoLineCell`): how much the reservation held, then when it
-          // was made. No `title`: both lines are drawn, in a column that asks
-          // for the width the longer one needs, so a title would only say the
-          // same thing a second time.
+          // was made. No `title` on the cell: both lines are drawn, in a column
+          // that asks for the width the longer one needs. A line the cell can
+          // read carries its own text as its title, as every such line does.
           return (
             <TwoLineCell
               testId="issue-reservation"

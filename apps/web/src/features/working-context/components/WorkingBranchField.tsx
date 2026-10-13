@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo, useRef } from 'react';
 import { SelectField } from '@/components/forms/Field';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -8,6 +9,7 @@ import {
   useBranchTarget,
   type BranchTargetState,
 } from '../use-branch-target';
+import { useEarlyChoice } from '../use-early-choice';
 import { useWorkingContext } from '../WorkingContextProvider';
 
 /**
@@ -247,9 +249,21 @@ export function DirectoryEmptyNotice({
  *
  * A native select, like the header's, for the same reasons: keyboard and phone
  * pickers for free, and `optgroup` carrying the company to assistive technology.
+ *
+ * Like the header's it can be in the server's HTML — on a screen that is drawn
+ * before a branch is known, such as the boards that read every branch — and a
+ * branch chosen in it before React hydrates the page is taken the same way,
+ * through the same hook and under the same three conditions: a fresh
+ * navigation, a branch this operator was published, and the guarded `select`
+ * (`useEarlyChoice`; P1-32-PRE-OD-UXQ, Q-1).
  */
 function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
   const context = useWorkingContext();
+  const selectRef = useRef<HTMLSelectElement | null>(null);
+  const { branches, select } = context;
+  const offered = useMemo(() => branches.map((branch) => branch.id), [branches]);
+  // Drawn with nothing selected, always: what it holds beyond that was chosen.
+  useEarlyChoice(selectRef, '', offered, select);
   if (context.branches.length < 2) return null;
   const byCompany = new Map<string, { value: string; label: string }[]>();
   for (const branch of context.branches) {
@@ -266,6 +280,7 @@ function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
   }));
   return (
     <SelectField
+      ref={selectRef}
       label={translate(messages, 'workingContext.chooseHere')}
       data-testid="concrete-branch-chooser"
       value=""

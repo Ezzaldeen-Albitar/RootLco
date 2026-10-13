@@ -196,8 +196,34 @@ vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: (...args: unknown[]) => notifyActionResult(...args),
 }));
 
+/*
+ * What each operational grid of the screen was handed, by its test id. The real
+ * grid is drawn untouched: this only keeps the column definitions, because the
+ * width a column ASKS for is the one thing about widths a DOM test can see
+ * (jsdom lays nothing out — see `operational-grid-actions-width.dom.test.tsx`).
+ */
+const handedColumns = new Map<string, readonly { id: string; minChars?: number }[]>();
+vi.mock('@/components/data/OperationalGrid', async (original) => {
+  const real = await original<typeof import('@/components/data/OperationalGrid')>();
+  const Real = real.OperationalGrid as unknown as (props: Record<string, unknown>) => ReactElement;
+  return {
+    ...real,
+    OperationalGrid: (props: Record<string, unknown>) => {
+      if (typeof props['testId'] === 'string') {
+        handedColumns.set(
+          props['testId'],
+          props['columns'] as readonly { id: string; minChars?: number }[]
+        );
+      }
+      return <Real {...props} />;
+    },
+  };
+});
+
 const { InvoiceScreen } = await import('@/features/billing/components/InvoiceScreen');
 const { CreditNotesScreen } = await import('@/features/billing/components/CreditNotesScreen');
+const { REASON_COLUMN_CHARS } = await import('@/features/billing/components/shared');
+const { columnMinWidth } = await import('@/components/data/OperationalGrid');
 const { WorkOrderPicker } = await import('@/features/work-orders/components/WorkOrderPicker');
 const CreditNotesPage = (await import('@/app/[locale]/(dashboard)/credit-notes/page'))
   .default as unknown as RoutePage;
@@ -2304,6 +2330,60 @@ describe('credit notes are reachable', () => {
     />
   );
 
+  /*
+   * P1-32-PRE-OD-UXQ, Q-2. A reason longer than its column was cut at the
+   * cell's edge with nothing to show for it. What a DOM test can hold: the line
+   * is cut at the side with an ellipsis, is laid out in its own direction, and
+   * says its whole text as its title; and the column asks for a width an
+   * ordinary reason fits in.
+   */
+  it('a reason longer than its column keeps its beginning and is whole in its title', async () => {
+    const latin =
+      'FQA-1015 ar: refund q2 of the 4.000 owed, for the branch-midnight payout check (QA)';
+    const arabic = 'أعاد المشتري شفرة مساحة تالفة بعد أسبوع من الشراء وطلب استرداد ثمنها كاملا';
+    listCreditNotes.mockResolvedValue({
+      status: 'ok',
+      data: {
+        items: [
+          note({ reason: latin }),
+          note({ id: '33333333-3333-4333-8333-333333333334', reason: arabic }),
+        ],
+        nextCursor: null,
+        hasMore: false,
+      },
+      correlationId: 'corr',
+    });
+    renderLtr(creditNotesScreen());
+    const grid = await screen.findByRole('grid', {
+      name: EN['creditNotes.list.caption'] as string,
+    });
+    for (const [reason, direction] of [
+      [latin, 'ltr'],
+      [arabic, 'rtl'],
+    ] as const) {
+      const line = (await within(grid).findByText(reason)).closest(
+        '[data-grid-line="primary"]'
+      ) as HTMLElement;
+      expect(line, 'the reason is not the first line of a two-line cell').not.toBeNull();
+      expect(line).toHaveClass('text-table-cell');
+      expect(line).toHaveClass('overflow-x-clip', 'text-ellipsis', 'whitespace-nowrap');
+      expect(line).toHaveAttribute('dir', direction);
+      expect(line).toHaveAttribute('title', reason);
+      expect(line.textContent).toBe(reason);
+    }
+    const columns = handedColumns.get('credit-notes-grid') ?? [];
+    expect(columns.map((column) => column.id)).toEqual(['reason', 'amount', 'state']);
+    const reason = columns.find((column) => column.id === 'reason');
+    expect(reason?.minChars).toBe(REASON_COLUMN_CHARS);
+    expect(columnMinWidth(reason?.minChars ?? 0)).toBe(340);
+    // Two columns at the 96 px floor and a 96 px action beside it: 628 px, well
+    // inside the 925 px the grid has of a 1280 px window (see `refunds.dom`).
+    expect(columnMinWidth(reason?.minChars ?? 0) + 3 * 96).toBeLessThanOrEqual(925);
+    for (const column of columns.filter((entry) => entry.id !== 'reason')) {
+      expect(column.minChars, column.id).toBeUndefined();
+    }
+  });
+
   it('lists the working branch notes with the server amount and the state in words', async () => {
     /*
      * This used to choose a branch from a select on the screen and press a
@@ -3106,13 +3186,105 @@ describe('raising and approving a credit note', () => {
     }
   });
 
+  /*
+   * P1-32-PRE-OD-UXQ, Q-3. A pending note of one's own said three things on
+   * three lines, and a row holds two: the cell stood over the row's edges and
+   * the last line's letters were cut at the bottom. The two facts about one's
+   * own request now share the second line. jsdom lays nothing out, so what is
+   * held is the count of lines, that nothing inside a line stacks, and that
+   * all three facts are still in the cell's text.
+   */
+  const stateCellOf = (grid: HTMLElement, state: string) =>
+    within(grid)
+      .getByText(EN[`creditNotes.state.${state}`] as string)
+      .closest('[data-grid-cell="two-line"]') as HTMLElement;
+  const expectAtMostTwoLines = (cell: HTMLElement) => {
+    expect(cell).not.toBeNull();
+    expect(cell.children.length).toBeLessThanOrEqual(2);
+    // Every element of the cell is one of its lines: nothing nested in a line
+    // that could stack as a line of its own.
+    expect(cell.querySelectorAll('*')).toHaveLength(cell.children.length);
+    for (const line of cell.children) {
+      expect(line).toHaveAttribute('data-grid-line');
+      expect(line).toHaveClass('whitespace-nowrap');
+    }
+  };
+
+  it.each([
+    ['en', EN, renderLtr],
+    ['ar', AR, renderRtl],
+  ] as const)(
+    "%s: a pending note of one's own says its three facts on two lines",
+    async (locale, T, render) => {
+      render(
+        <CreditNotesScreen
+          locale={locale}
+          messages={locale === 'ar' ? ar : en}
+          initialCreditNoteId={null}
+          currentUserId={RAISED_BY}
+          canDecide
+          canSearchInvoices
+        />
+      );
+      const grid = await screen.findByRole('grid');
+      const pending = T['creditNotes.state.pending'] as string;
+      const byYou = T['creditNotes.byYou'] as string;
+      const waiting = T['creditNotes.ownRequest'] as string;
+      const cell = (await within(grid).findByText(pending)).closest(
+        '[data-grid-cell="two-line"]'
+      ) as HTMLElement;
+      expectAtMostTwoLines(cell);
+      const [first, second] = [...cell.children] as [HTMLElement, HTMLElement];
+      expect(cell.children).toHaveLength(2);
+      expect(first).toHaveClass('text-table-cell');
+      expect(first.textContent).toBe(pending);
+      expect(second).toHaveClass('text-caption');
+      // Both facts about one's own request, set apart by a middle dot.
+      expect(second.textContent).toBe(`${byYou} · ${waiting}`);
+      // Whole in the title too, for a column too narrow to draw all of it.
+      expect(second).toHaveAttribute('title', `${byYou} · ${waiting}`);
+      // Nothing was lost: the cell still says all three.
+      for (const fact of [pending, byYou, waiting]) expect(cell).toHaveTextContent(fact);
+    }
+  );
+
+  it("a decided note of one's own says who raised it and nothing about waiting", async () => {
+    listCreditNotes.mockResolvedValue({
+      status: 'ok',
+      data: {
+        items: [{ ...approvedNote, approvedBy: 'u2', requestedBy: RAISED_BY }],
+        nextCursor: null,
+        hasMore: false,
+      },
+      correlationId: 'corr',
+    });
+    renderLtr(notesScreen(RAISED_BY));
+    const grid = await screen.findByRole('grid');
+    await within(grid).findByText(EN['creditNotes.state.approved'] as string);
+    const cell = stateCellOf(grid, 'approved');
+    expectAtMostTwoLines(cell);
+    expect(cell.children).toHaveLength(2);
+    expect(cell.children[1]?.textContent).toBe(EN['creditNotes.byYou']);
+    expect(cell).not.toHaveTextContent(EN['creditNotes.ownRequest'] as string);
+  });
+
+  it('a note somebody else raised says its state alone', async () => {
+    renderLtr(notesScreen(SIGNED_IN));
+    const grid = await screen.findByRole('grid');
+    await within(grid).findByText(EN['creditNotes.state.pending'] as string);
+    const cell = stateCellOf(grid, 'pending');
+    expectAtMostTwoLines(cell);
+    expect(cell.children).toHaveLength(1);
+    expect(cell.textContent).toBe(EN['creditNotes.state.pending']);
+  });
+
   it('shows a note the caller raised as waiting for another approver, and offers them no approval', async () => {
     renderLtr(notesScreen(RAISED_BY, NOTE_ID));
     const grid = await screen.findByRole('grid');
+    // On the list both facts share the state's second line (Q-3, above).
     expect(
-      await within(grid).findByText(EN['creditNotes.ownRequest'] as string)
+      await within(grid).findByText(`${EN['creditNotes.byYou']} · ${EN['creditNotes.ownRequest']}`)
     ).toBeInTheDocument();
-    expect(within(grid).getByText(EN['creditNotes.byYou'] as string)).toBeInTheDocument();
     const detail = await screen.findByRole('region', {
       name: EN['creditNotes.detail.heading'] as string,
     });

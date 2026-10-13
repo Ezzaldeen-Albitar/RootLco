@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -200,15 +201,15 @@ function ApprovalsTable({
         headerKey: 'quotations.approvals.column.requestedBy',
         flex: 1.4,
         cell: (row) => (
-          <span className="flex flex-col">
-            <bdi>
-              {row.requestedBy.displayName ??
-                translate(messages, 'quotations.approvals.someoneElse')}
-            </bdi>
-            <span className="text-caption text-text-muted">
-              <When value={row.requestedAt} locale={locale} />
-            </span>
-          </span>
+          <TwoLineCell
+            primary={
+              <bdi>
+                {row.requestedBy.displayName ??
+                  translate(messages, 'quotations.approvals.someoneElse')}
+              </bdi>
+            }
+            secondary={<When value={row.requestedAt} locale={locale} />}
+          />
         ),
       },
       {

@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import Button from '@mui/material/Button';
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -507,22 +508,26 @@ export function ReceptionQueueScreen({
          * registered but unplated vehicle is ordinary, not a fault.
          */
         cell: (row) => (
-          <span className="flex flex-col">
-            {row.plate ? (
-              <code className="font-mono text-caption" dir="ltr">
-                {row.plate}
-              </code>
-            ) : (
-              <span className="text-text-muted">
-                {translate(messages, 'receptions.queue.column.noPlate')}
-              </span>
-            )}
-            {row.vehicleDisplayNumber ? (
-              <code className="font-mono text-caption text-text-muted" dir="ltr">
-                {row.vehicleDisplayNumber}
-              </code>
-            ) : null}
-          </span>
+          <TwoLineCell
+            primary={
+              row.plate ? (
+                <code className="font-mono text-caption" dir="ltr">
+                  {row.plate}
+                </code>
+              ) : (
+                <span className="text-text-muted">
+                  {translate(messages, 'receptions.queue.column.noPlate')}
+                </span>
+              )
+            }
+            secondary={
+              row.vehicleDisplayNumber ? (
+                <code className="font-mono text-caption text-text-muted" dir="ltr">
+                  {row.vehicleDisplayNumber}
+                </code>
+              ) : null
+            }
+          />
         ),
       },
       {

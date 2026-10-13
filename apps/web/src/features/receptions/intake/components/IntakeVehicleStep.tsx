@@ -2,7 +2,11 @@
 
 import { useActionState, useCallback, useMemo, useState } from 'react';
 import Button from '@mui/material/Button';
-import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
@@ -283,23 +287,21 @@ function CustomerVehicleList({
         id: 'link',
         headerKey: 'receptions.wizard.status',
         cell: (entry) => (
-          <span className="flex flex-col">
-            <span>
-              {translate(
-                messages,
-                entry.active
-                  ? 'receptions.intake.vehicle.linkOpen'
-                  : 'receptions.intake.vehicle.linkEnded'
-              )}
-            </span>
-            {entry.vehicleLifecycleStatus === null ? (
+          <TwoLineCell
+            primary={translate(
+              messages,
+              entry.active
+                ? 'receptions.intake.vehicle.linkOpen'
+                : 'receptions.intake.vehicle.linkEnded'
+            )}
+            secondary={
               // The relationship row outlived its vehicle. The identity comes
               // back as nulls AS A GROUP, and nothing here resurrects it.
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'receptions.intake.vehicle.noLiveVehicle')}
-              </span>
-            ) : null}
-          </span>
+              entry.vehicleLifecycleStatus === null
+                ? translate(messages, 'receptions.intake.vehicle.noLiveVehicle')
+                : null
+            }
+          />
         ),
       },
     ],

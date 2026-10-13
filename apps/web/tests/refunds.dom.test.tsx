@@ -130,8 +130,34 @@ vi.mock('@/lib/api/server-client', async () => {
 const actualBillingApi =
   await vi.importActual<typeof import('@/features/billing/api')>('@/features/billing/api');
 
+/*
+ * What each operational grid of the screen was handed, by its test id. The real
+ * grid is drawn untouched: this only keeps the column definitions, because the
+ * width a column ASKS for is the one thing about widths a DOM test can see
+ * (jsdom lays nothing out — see `operational-grid-actions-width.dom.test.tsx`).
+ */
+const handedColumns = new Map<string, readonly { id: string; minChars?: number }[]>();
+vi.mock('@/components/data/OperationalGrid', async (original) => {
+  const real = await original<typeof import('@/components/data/OperationalGrid')>();
+  const Real = real.OperationalGrid as unknown as (props: Record<string, unknown>) => ReactElement;
+  return {
+    ...real,
+    OperationalGrid: (props: Record<string, unknown>) => {
+      if (typeof props['testId'] === 'string') {
+        handedColumns.set(
+          props['testId'],
+          props['columns'] as readonly { id: string; minChars?: number }[]
+        );
+      }
+      return <Real {...props} />;
+    },
+  };
+});
+
 const { RefundsPanel } = await import('@/features/billing/components/RefundsPanel');
 const { RefundsScreen } = await import('@/features/billing/components/RefundsScreen');
+const { REASON_COLUMN_CHARS } = await import('@/features/billing/components/shared');
+const { columnMinWidth, rowActionsMinWidth } = await import('@/components/data/OperationalGrid');
 
 const INVOICE_ID = '99999999-9999-4999-8999-999999999999';
 const OBLIGATION_ID = 'aaaa0000-0000-4000-8000-000000000001';
@@ -579,6 +605,91 @@ describe('the refunds list', () => {
     await within(grid).findByText('TRF-55');
     // The state, and under it the payout reference, which the row used to cut off.
     expectBothLinesFit(within(grid).getByText(EN['refunds.state.executed'] as string), 'TRF-55');
+  });
+
+  /*
+   * P1-32-PRE-OD-UXQ, Q-2. At 1440 px the reason of every refund of the retest
+   * was longer than its column and was cut at the cell's edge with nothing to
+   * show for it; in Arabic a reason in Latin letters lost its beginning. What a
+   * DOM test can hold: the line is cut at the side with an ellipsis, is laid
+   * out in its own direction, and says its whole text as its title.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: a reason longer than its column keeps its beginning and is whole in its title`, async () => {
+      const latin =
+        'FQA-1015 ar: refund q2 of the 4.000 owed, for the branch-midnight payout check (QA)';
+      const arabic = 'أعاد المشتري شفرة مساحة تالفة بعد أسبوع من الشراء وطلب استرداد ثمنها كاملا';
+      listRefundRequests.mockResolvedValue(
+        page([
+          refundRequest({ reason: latin }),
+          refundRequest({ id: 'aaaa1111-0000-4000-8000-000000000002', reason: arabic }),
+        ])
+      );
+      list(locale);
+      const grid = await screen.findByTestId('refunds-grid');
+      for (const [reason, direction] of [
+        [latin, 'ltr'],
+        [arabic, 'rtl'],
+      ] as const) {
+        const line = (await within(grid).findByText(reason)).closest(
+          '[data-grid-line="primary"]'
+        ) as HTMLElement;
+        expect(line, 'the reason is not the first line of a two-line cell').not.toBeNull();
+        expect(line).toHaveClass('overflow-x-clip', 'text-ellipsis', 'whitespace-nowrap');
+        // Its own direction in both interfaces: what is cut is its end.
+        expect(line).toHaveAttribute('dir', direction);
+        expect(line).toHaveAttribute('title', reason);
+        expect(line.textContent).toBe(reason);
+        // The moment under it still fits: it has its own line height.
+        expectBothLinesFit(within(grid).getByText(reason), /2026/);
+      }
+    });
+  }
+
+  it('asks for the widest reason column that needs no sideways scroll at 1280 px, and leaves the others theirs', async () => {
+    listRefundRequests.mockResolvedValue(page([refundRequest()]));
+    list();
+    await within(await screen.findByTestId('refunds-grid')).findByText('Paid twice');
+    const columns = handedColumns.get('refunds-grid') ?? [];
+    expect(columns.map((column) => column.id)).toEqual([
+      'reason',
+      'invoice',
+      'amount',
+      'method',
+      'state',
+    ]);
+    const reason = columns.find((column) => column.id === 'reason');
+    expect(reason?.minChars).toBe(REASON_COLUMN_CHARS);
+    // 340 px: wider than the 297 to 301 px the column was drawn at when every
+    // reason of the retest was cut, and room for about fifty characters as
+    // they are drawn (about six and a half pixels each).
+    const reasonWidth = columnMinWidth(reason?.minChars ?? 0);
+    expect(reasonWidth).toBe(340);
+    expect(reasonWidth).toBeGreaterThan(301);
+    expect(reasonWidth).toBeGreaterThan(49 * 6.5 + 20);
+    const others = columns.filter((entry) => entry.id !== 'reason');
+    for (const column of others) expect(column.minChars, column.id).toBeUndefined();
+    /*
+     * No sideways scroll on a 1280 px window with the sidebar open. A grid
+     * scrolls sideways when its columns' minimum widths add up to more than it
+     * has. What it has is not something jsdom lays out: the retest measured
+     * 1085 px for the grid in a 1440 px window, so 355 px go to the sidebar and
+     * the paddings, and of 1280 px that leaves 925. The other columns keep the
+     * 96 px floor and the action is as wide as its longer label, the English.
+     */
+    const GRID_SHARE_OF_1280 = 1280 - (1440 - 1085);
+    const FLOOR = 96;
+    const action = Math.max(
+      rowActionsMinWidth([[EN['refunds.openInvoice'] as string]]),
+      rowActionsMinWidth([[AR['refunds.openInvoice'] as string]])
+    );
+    expect(action).toBe(164);
+    const needed = reasonWidth + others.length * FLOOR + action;
+    expect(needed).toBe(888);
+    expect(needed).toBeLessThanOrEqual(GRID_SHARE_OF_1280);
+    // And not by so little that the slack every grid's scroller already has
+    // (about 5 px, measured) would bring the scrollbar back.
+    expect(GRID_SHARE_OF_1280 - needed).toBeGreaterThan(5);
   });
 
   it('lists the branch requests with the server figures and narrows by state through the server', async () => {

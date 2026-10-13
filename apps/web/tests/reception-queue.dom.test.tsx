@@ -17,6 +17,7 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 import {
   RECEPTION_STATUSES,
   TERMINAL_RECEPTION_STATUSES,
@@ -506,6 +507,10 @@ describe('the customer and the plate', () => {
     const grid = await screen.findByRole('grid');
     expect(within(grid).getByText('A recorded customer')).toBeVisible();
     expect(within(grid).getByText('ABC-1234')).toBeVisible();
+    // The plate and, under it, the vehicle's own reference: each line has a
+    // line height of its own, so the row does not cut the reference off.
+    const vehicle = expectTwoLinesOnTheirOwnLineHeight(grid, 'ABC-1234');
+    expect(vehicle.children[1]?.textContent).toBe('V-9');
   });
 
   it('tells three absences apart rather than rendering one blank', async () => {

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Button from '@mui/material/Button';
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -633,18 +634,22 @@ function WindowCell({
 }) {
   const language = intlLocale(locale);
   return (
-    <span className="flex flex-col">
-      <bdi>{formatInZone(from, language, zone)}</bdi>
-      <span className="text-caption text-text-muted">
-        {translate(messages, 'appointments.window.until')}{' '}
-        <bdi>{formatInZone(to, language, zone)}</bdi>
-        {nameClock ? (
-          <>
-            {' '}
-            <bdi data-testid="appointment-window-clock">{zoneLabelAt(from, language, zone)}</bdi>
-          </>
-        ) : null}
-      </span>
-    </span>
+    // Two lines, each with a line height of its own so that both fit in the
+    // row (`TwoLineCell`): when the window opens, then when it closes.
+    <TwoLineCell
+      primary={<bdi>{formatInZone(from, language, zone)}</bdi>}
+      secondary={
+        <>
+          {translate(messages, 'appointments.window.until')}{' '}
+          <bdi>{formatInZone(to, language, zone)}</bdi>
+          {nameClock ? (
+            <>
+              {' '}
+              <bdi data-testid="appointment-window-clock">{zoneLabelAt(from, language, zone)}</bdi>
+            </>
+          ) : null}
+        </>
+      }
+    />
   );
 }

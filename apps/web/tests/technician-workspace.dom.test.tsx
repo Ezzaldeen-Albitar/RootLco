@@ -15,6 +15,7 @@ import {
   inBranch,
   renderLtr,
 } from './render';
+import { expectTwoLinesOnTheirOwnLineHeight } from './support/two-line-cell';
 
 /**
  * The technician workspace, rendered (P1-29, `W4`).
@@ -176,6 +177,13 @@ describe('the queue', () => {
     expect(screen.getByRole('gridcell', { name: /^WO-0001/ })).toHaveTextContent(
       EN['workOrders.state.open']!
     );
+    // Each of the two on a line height of its own, so the row does not cut
+    // the state off.
+    const workOrder = expectTwoLinesOnTheirOwnLineHeight(
+      screen.getByRole('gridcell', { name: /^WO-0001/ }),
+      'WO-0001'
+    );
+    expect(workOrder.children[1]?.textContent).toBe(EN['workOrders.state.open']);
     expect(screen.getByText(EN['workOrders.assignmentRole.primary']!)).toBeInTheDocument();
     const grid = screen.getByRole('grid');
     for (const code of ['assigned', 'primary']) {

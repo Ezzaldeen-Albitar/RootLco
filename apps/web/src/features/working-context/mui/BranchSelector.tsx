@@ -1,18 +1,20 @@
 'use client';
 
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useRef } from 'react';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
 import Typography from '@mui/material/Typography';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { writingDirectionOf } from '@/lib/text/writing-direction';
 import {
   ALL_BRANCHES,
   type WorkingContextBranch,
   type WorkingContextCompany,
   type WorkingContextStatus,
 } from '../working-context-contract';
+import { useEarlyChoice } from '../use-early-choice';
 
 /**
  * The working-branch control, drawn on Material UI — ADR-022 PR1.
@@ -42,6 +44,23 @@ import {
  * headings, the platform's own picker on a phone and its own keyboard model.
  * Material's menu select would render a button and a listbox that have to
  * re-earn all three.
+ *
+ * ## A branch chosen before the page is ready is kept (P1-32-PRE-OD-UXQ, Q-1)
+ *
+ * The header is in the server's HTML, so this select is drawn — enabled, with
+ * every branch in it — before React has attached to the page, and a branch
+ * chosen in that moment used to be lost. `useEarlyChoice` reads the select in
+ * the commit that hydrates it and hands a branch chosen there to `onSelect`,
+ * the provider's guarded switch — on a fresh navigation only, because on a
+ * reload or a move through history the browser may have put an earlier value
+ * back into the select, and that is nobody's choice. The rule and its reasons
+ * are stated there.
+ *
+ * `autocomplete="off"` asks the browser not to restore the select at all. It
+ * is kept because it does no harm and, where a browser honours it, the select
+ * does not show a stale branch for the moment before React arrives. Nothing
+ * relies on it: whether a browser honours it on a select outside a form was
+ * not established.
  */
 export interface BranchSelectorProps {
   readonly messages: Messages;
@@ -76,6 +95,16 @@ export function BranchSelector({
 }: BranchSelectorProps) {
   const base = useId();
   const selectId = `${base}-select`;
+
+  // A branch chosen before React hydrated the select — see above. What may be
+  // adopted is what this select was given to offer, never what the document
+  // says it offers.
+  const selectRef = useRef<HTMLSelectElement | null>(null);
+  const offered = useMemo(
+    () => [...(offerAllBranches ? [ALL_BRANCHES] : []), ...branches.map((branch) => branch.id)],
+    [branches, offerAllBranches]
+  );
+  useEarlyChoice(selectRef, value, offered, onSelect);
 
   const grouped = useMemo(() => {
     const byCompany = new Map<string, WorkingContextBranch[]>();
@@ -177,6 +206,7 @@ export function BranchSelector({
         <Select
           native
           className="min-w-0"
+          inputRef={selectRef}
           value={value}
           onChange={(event) => {
             const next = String(event.target.value);
@@ -186,6 +216,8 @@ export function BranchSelector({
           inputProps={{
             id: selectId,
             'data-testid': 'working-context-select',
+            // Asked of the browser, not relied on — see above.
+            autoComplete: 'off',
             className: 'truncate',
             title: shown.length > 0 ? shown : undefined,
             dir: shownDirection,
@@ -232,21 +264,4 @@ export function BranchSelector({
       ) : null}
     </div>
   );
-}
-
-/** A letter of a right-to-left script: Hebrew, Arabic and their presentation forms. */
-const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/u;
-/** A letter of a left-to-right script. */
-const LTR_LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/u;
-
-/**
- * The direction a name is written in, from its first letter that has one, or
- * `undefined` for a name with none (digits and punctuation follow the page).
- */
-function writingDirectionOf(text: string): 'rtl' | 'ltr' | undefined {
-  for (const character of text) {
-    if (RTL_LETTER.test(character)) return 'rtl';
-    if (LTR_LETTER.test(character)) return 'ltr';
-  }
-  return undefined;
 }

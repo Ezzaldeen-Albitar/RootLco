@@ -95,6 +95,7 @@ import TableRow from '@mui/material/TableRow';
 
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -625,20 +626,18 @@ function IssuedSales({
         headerKey: 'inventory.counterSales.issued.column.sale',
         flex: 1.2,
         cell: (row) => (
-          <span className="flex flex-col">
-            {row.invoiceNumber === null ? (
-              <span>{translate(messages, 'inventory.counterSales.sale.noNumber')}</span>
-            ) : (
-              <bdi className="font-mono" dir="ltr">
-                {row.invoiceNumber}
-              </bdi>
-            )}
-            {row.issuedAt === null ? null : (
-              <span className="text-caption text-text-muted">
-                <When value={row.issuedAt} locale={locale} />
-              </span>
-            )}
-          </span>
+          <TwoLineCell
+            primary={
+              row.invoiceNumber === null ? (
+                translate(messages, 'inventory.counterSales.sale.noNumber')
+              ) : (
+                <bdi className="font-mono" dir="ltr">
+                  {row.invoiceNumber}
+                </bdi>
+              )
+            }
+            secondary={row.issuedAt === null ? null : <When value={row.issuedAt} locale={locale} />}
+          />
         ),
       },
       {

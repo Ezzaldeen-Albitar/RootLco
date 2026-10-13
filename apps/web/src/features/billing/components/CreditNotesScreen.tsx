@@ -134,7 +134,7 @@ import {
 } from '../billing-contract';
 import { CreditNotePrintPanel } from './CreditNotePrint';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
-import { OutcomeNote, When } from './shared';
+import { OutcomeNote, REASON_COLUMN_CHARS, When } from './shared';
 
 /** `''` is every state — the toolbar's own "All" choice. */
 type ListFilter = CreditNoteState | '';
@@ -331,6 +331,9 @@ function BranchCreditNotes({
         id: 'reason',
         headerKey: 'creditNotes.column.reason',
         flex: 2,
+        // Wide enough for an ordinary reason; a longer one ends in an ellipsis
+        // and is whole in the line's title (`TwoLineCell`).
+        minChars: REASON_COLUMN_CHARS,
         cell: (note) => (
           <TwoLineCell
             primary={<bdi>{note.reason}</bdi>}
@@ -360,22 +363,24 @@ function BranchCreditNotes({
         flex: 1.4,
         cell: (note) => {
           const own = note.requestedBy === currentUserId;
+          /*
+           * The state, then what applies to a request of one's own — on ONE
+           * second line. A row holds two lines and no more: a pending request
+           * of one's own used to draw three, which stood over the row's edges
+           * with the letters of the last cut at the bottom (P1-32-PRE-OD-UXQ,
+           * Q-3). The two facts are set apart by a middle dot, as inline facts
+           * are on the other lists; a line too long for its column ends in an
+           * ellipsis and is whole in its title (`TwoLineCell`).
+           */
+          const mine = own
+            ? note.approvalState === 'pending'
+              ? `${translate(messages, 'creditNotes.byYou')} · ${translate(messages, 'creditNotes.ownRequest')}`
+              : translate(messages, 'creditNotes.byYou')
+            : null;
           return (
-            // The state, then what applies to a request of one's own. A pending
-            // request of one's own has two such lines, and three lines are more
-            // than a row holds: the last may still be cut short.
             <TwoLineCell
               primary={translateDynamic(messages, `creditNotes.state.${note.approvalState}`)}
-              secondary={
-                own ? (
-                  <>
-                    <span className="block">{translate(messages, 'creditNotes.byYou')}</span>
-                    {note.approvalState === 'pending' ? (
-                      <span className="block">{translate(messages, 'creditNotes.ownRequest')}</span>
-                    ) : null}
-                  </>
-                ) : null
-              }
+              secondary={mine}
             />
           );
         },

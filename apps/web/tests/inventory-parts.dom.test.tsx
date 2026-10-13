@@ -2743,7 +2743,7 @@ describe('P1-32-PRE-OD-INVH: an issue says its reservation in words, never by it
       expect(first).toHaveAttribute('data-grid-cell', 'two-line');
       expect(line).toHaveClass('text-table-cell');
       expect(made).toHaveClass('text-caption');
-      // No title: both lines are drawn, so a title would only repeat them.
+      // No title on the cell: both lines are drawn, and each carries its own.
       expect(first).not.toHaveAttribute('title');
       // A reservation the list did not return: said in words.
       expect(said(grid, 'BRK-002').textContent).toBe(T['inventory.parts.issues.fromReservation']);

@@ -10,6 +10,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import {
   OperationalGrid,
+  TwoLineCell,
   type OperationalColumn,
   type RowAction,
 } from '@/components/data/OperationalGrid';
@@ -239,21 +240,23 @@ export function ReportSnapshotsPanel({
         id: 'kind',
         headerKey: 'reports.snapshots.column.kind',
         cell: (row) => (
-          <span className="flex flex-col" lang={locale}>
-            <span>
-              {translate(
-                messages,
-                row.restatesSnapshotId === null
-                  ? 'reports.snapshots.kind.original'
-                  : 'reports.snapshots.kind.restatement'
-              )}
-            </span>
-            {row.restatedBySnapshotId === null ? null : (
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'reports.snapshots.kind.restated')}
+          <TwoLineCell
+            primary={
+              <span lang={locale}>
+                {translate(
+                  messages,
+                  row.restatesSnapshotId === null
+                    ? 'reports.snapshots.kind.original'
+                    : 'reports.snapshots.kind.restatement'
+                )}
               </span>
-            )}
-          </span>
+            }
+            secondary={
+              row.restatedBySnapshotId === null ? null : (
+                <span lang={locale}>{translate(messages, 'reports.snapshots.kind.restated')}</span>
+              )
+            }
+          />
         ),
       },
     ],

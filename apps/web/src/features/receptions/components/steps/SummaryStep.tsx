@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
 import Button from '@mui/material/Button';
-import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerTable } from '@/components/data-table/use-server-table';
 import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
@@ -374,12 +378,14 @@ function EvidenceSummary({
         flex: 2,
         cell: (row) =>
           isCustomerReported(row.kind) ? (
-            <span className="flex flex-col">
-              <span>{translate(messages, 'receptions.summary.customerReported')}</span>
-              <span className="text-caption text-text-muted" lang={locale}>
-                {translate(messages, 'receptions.summary.complaintWordsRestricted')}
-              </span>
-            </span>
+            <TwoLineCell
+              primary={translate(messages, 'receptions.summary.customerReported')}
+              secondary={
+                <span lang={locale}>
+                  {translate(messages, 'receptions.summary.complaintWordsRestricted')}
+                </span>
+              }
+            />
           ) : (
             translate(messages, 'receptions.summary.staffObserved')
           ),
