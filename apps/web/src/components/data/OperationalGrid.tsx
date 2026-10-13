@@ -278,6 +278,48 @@ export function columnMinWidth(characters: number): number {
 }
 
 /**
+ * A cell of two stacked lines that both fit in a row.
+ *
+ * A row of this grid has one fixed height, and a cell gives its text a line as
+ * tall as the row so that one line sits in the middle of it. Two stacked lines
+ * therefore only fit when EACH has a compact line height of its own: a first
+ * line left to inherit the cell's takes the whole row, and the second is cut
+ * off below it with no sign that it was ever there. So each line carries its
+ * own type size — the table's for the first, the caption's for the second —
+ * and the pair is centred in the row as a single line would be.
+ *
+ * `secondary` may be absent (`null`, `undefined`, `false`): the cell is then
+ * its first line alone, at the same size.
+ */
+export function TwoLineCell({
+  primary,
+  secondary,
+  testId,
+}: {
+  readonly primary: ReactNode;
+  readonly secondary?: ReactNode;
+  readonly testId?: string | undefined;
+}) {
+  const second = secondary === null || secondary === undefined || secondary === false;
+  return (
+    <span
+      className="flex h-full flex-col justify-center"
+      data-grid-cell="two-line"
+      data-testid={testId}
+    >
+      <span className="text-table-cell" data-grid-line="primary">
+        {primary}
+      </span>
+      {second ? null : (
+        <span className="text-caption text-text-muted" data-grid-line="secondary">
+          {secondary}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
  * The grid texts: the theme's, then this grid's. Exported so the "merged,
  * never replaced" rule is tested on the function as well as on the render.
  */
