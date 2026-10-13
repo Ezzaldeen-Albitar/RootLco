@@ -766,11 +766,18 @@ letters loses its beginning (Q-2); and a pending credit note of one's own draws 
 that holds two (Q-3). Branch `feature/owner-directive-residual-fixes-ux-q`, cut from `develop` at
 `cb3937734c1530f6d06d3c17a5d16b1e5877c894`, carries a correction for each, and gives the fifteen
 two-line cells the note above lists as not fixed the same two line heights — implemented, not yet
-runtime-retested. Left open and not changed: the source document's identifier as the second line of
-a stock movement's reference, the identifier after "Reference:" on refusals, the search box that
-draws a deleted term's row again for a moment, and the inline branch chooser, which is read as
-exposed to the same early choice as the header's select where the server renders it. The detail is
-in `route-checklist.md`, section `P1-32-PRE-OD-UXQ`.
+runtime-retested. After review the early choice is taken on a fresh navigation only, and only a
+branch the operator was published, in the header's select and in the chooser beside a screen's
+branch ask alike; what a browser does on Back and on a reload was reasoned, not run, and the retest
+must show that Back after a switch keeps the newer branch. The reason columns ask for 340 px, the
+widest that needs no sideways scroll on a 1280 px window. Left open and not changed: the source
+document's identifier as the second line of a stock movement's reference, the identifier after
+"Reference:" on refusals, the search box that draws a deleted term's row again for a moment, and
+an early branch choice on a reload or a move through history, which is lost as before. Two points
+for the Owner: a reason longer than its column is read through its tooltip or on the record, and
+cannot be reached from the keyboard alone; and on the delivery and work-order queues the make and
+model under a plate is now the muted caption size. The detail is in `route-checklist.md`, section
+`P1-32-PRE-OD-UXQ`.
 
 ### Features delivered or planned under this directive
 
