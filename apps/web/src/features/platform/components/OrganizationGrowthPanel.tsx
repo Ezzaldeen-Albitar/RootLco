@@ -1,10 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
-import { ReferenceListRetry, useUnavailableListGuard } from '@/components/forms/ReferenceList';
-import { Dialog } from '@/components/overlays/Overlays';
-import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { useRouter } from 'next/navigation';
+import { useState, useTransition, type FormEvent, type RefObject } from 'react';
+import Button from '@mui/material/Button';
+import {
+  useUnavailableListGuard,
+  type UnavailableListGuard,
+} from '@/components/forms/ReferenceList';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { FormDialog } from '@/features/administration/shared/components/FormDialog';
+import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
@@ -16,7 +23,8 @@ import {
   resendAdministratorInvitationAction,
 } from '../actions';
 import type { OrganizationDetail, ReferenceValues } from '../types';
-import { PRIMARY_BUTTON, SECONDARY_BUTTON, Section, SECTION_HINT } from './ui';
+import { ConsoleSection } from './console-parts';
+import { SECTION_HINT } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
@@ -41,9 +49,58 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * its generic name with its identifier (P1-32-PRE-OD-QAF, D-1). A select with
  * nothing to offer says so on the field, offers Try again, and refuses the
  * submission on that field; it never becomes free text.
+ *
+ * ## On Material UI (ADR-022, P1-32-PRE-OD-WP06B)
+ *
+ * The four dialogs are the shared form dialog with the Material fields; what
+ * each sends is unchanged, field for field. The list guard is the shared one
+ * (`useUnavailableListGuard`), handed the dialog's own form, because the form
+ * dialog answers a submission with no event of its own.
  */
 
 type Pending = 'company' | 'branch' | 'invite' | 'resend';
+
+/**
+ * Whether the list guard stops this submission. The guard reads the form a
+ * submission came from; the form dialog hands its caller none, so the guard is
+ * given the dialog's own form — the one the submission was made in.
+ */
+function stoppedForList(
+  guard: UnavailableListGuard,
+  formRef: RefObject<HTMLFormElement | null>
+): boolean {
+  const form = formRef.current;
+  if (form === null) return false;
+  const submission = {
+    currentTarget: form,
+    preventDefault: () => undefined,
+  } as unknown as FormEvent<HTMLFormElement>;
+  return guard.stop(submission);
+}
+
+/**
+ * Try again for a list read on the server while the page was rendered: renders
+ * the route again, which repeats the read and keeps whatever was typed
+ * (`ReferenceListRetry`'s behaviour, as a Material button).
+ */
+function ListRetry({ label }: { readonly label: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  return (
+    <div>
+      <Button
+        type="button"
+        variant="outlined"
+        size="small"
+        onClick={() => startTransition(() => router.refresh())}
+        disabled={pending}
+        aria-busy={pending || undefined}
+      >
+        {label}
+      </Button>
+    </div>
+  );
+}
 
 export function OrganizationGrowthPanel({
   locale,
@@ -69,43 +126,43 @@ export function OrganizationGrowthPanel({
   if (!offered) return null;
 
   return (
-    <Section
+    <ConsoleSection
       title={t('platform.growth.title')}
       actions={
         <>
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             data-testid="platform-add-company"
             onClick={() => setPending('company')}
           >
             {t('platform.growth.addCompany')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             data-testid="platform-add-branch"
             disabled={companies.length === 0}
             onClick={() => setPending('branch')}
           >
             {t('platform.growth.addBranch')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             data-testid="platform-invite-administrator"
             onClick={() => setPending('invite')}
           >
             {t('platform.growth.inviteAdministrator')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             data-testid="platform-resend-invitation"
             onClick={() => setPending('resend')}
           >
             {t('platform.growth.resend')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -148,7 +205,7 @@ export function OrganizationGrowthPanel({
           onClose={() => setPending(null)}
         />
       ) : null}
-    </Section>
+    </ConsoleSection>
   );
 }
 
@@ -174,14 +231,13 @@ function CompanyDialog({
   const [taxRegistrationNumber, setTaxRegistrationNumber] = useState('');
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  const { errors, formRef } = useStateRefusal(action.state, {
     code,
     legalName,
     baseCurrency,
     registrationNumber,
     taxRegistrationNumber,
   });
-  const errors = refusalErrors;
   const currencyOptions = (referenceValues?.currencies ?? []).map((currency) => ({
     value: currency.code,
     label: currencyLabel(currency.code, locale, currency.name),
@@ -196,86 +252,85 @@ function CompanyDialog({
         : undefined;
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
       title={t('platform.growth.addCompanyTitle')}
       description={t('platform.growth.addCompanyHint')}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={() => {
+        if (stoppedForList(listGuard, formRef)) return;
+        action.run(
+          () =>
+            addCompanyAction(tenantId, {
+              code,
+              legalName,
+              baseCurrency: baseCurrency.toUpperCase(),
+              registrationNumber,
+              taxRegistrationNumber,
+            }),
+          onClose
+        );
+      }}
+      formRef={formRef}
+      testId="platform-company-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          if (listGuard.stop(event)) return;
-          event.preventDefault();
-          action.run(
-            () =>
-              addCompanyAction(tenantId, {
-                code,
-                legalName,
-                baseCurrency: baseCurrency.toUpperCase(),
-                registrationNumber,
-                taxRegistrationNumber,
-              }),
-            onClose
-          );
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <TextField
-          name="code"
-          label={t('platform.provision.code')}
-          description={t('platform.provision.codeHint')}
-          required
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          error={error('code')}
-        />
-        <TextField
-          name="legalName"
-          label={t('platform.provision.legalName')}
-          required
-          value={legalName}
-          onChange={(event) => setLegalName(event.target.value)}
-          error={error('legalName')}
-        />
-        <SelectField
-          name="baseCurrency"
-          label={t('platform.provision.baseCurrency')}
-          description={
-            currencyMissing
-              ? t('platform.provision.referenceUnavailable')
-              : t('platform.provision.currencyHint')
-          }
-          required
-          value={baseCurrency}
-          placeholder={t('platform.provision.choose')}
-          onChange={(event) => setBaseCurrency(event.target.value)}
-          options={currencyOptions}
-          error={error('baseCurrency')}
-        />
-        {currencyMissing ? <ReferenceListRetry label={t('form.retry')} /> : null}
-        <TextField
-          name="registrationNumber"
-          label={t('platform.provision.registration')}
-          value={registrationNumber}
-          onChange={(event) => setRegistrationNumber(event.target.value)}
-          error={error('registrationNumber')}
-        />
-        <TextField
-          name="taxRegistrationNumber"
-          label={t('platform.provision.taxRegistration')}
-          value={taxRegistrationNumber}
-          onChange={(event) => setTaxRegistrationNumber(event.target.value)}
-          error={error('taxRegistrationNumber')}
-        />
-        <DialogButtons messages={messages} pending={action.pending} onCancel={onClose} />
-      </form>
-    </Dialog>
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <FormTextField
+        name="code"
+        label={t('platform.provision.code')}
+        description={t('platform.provision.codeHint')}
+        required
+        dir="ltr"
+        spellCheck={false}
+        autoFocus
+        value={code}
+        onChange={setCode}
+        error={error('code')}
+      />
+      <FormTextField
+        name="legalName"
+        label={t('platform.provision.legalName')}
+        required
+        value={legalName}
+        onChange={setLegalName}
+        error={error('legalName')}
+      />
+      <FormSelectField
+        name="baseCurrency"
+        label={t('platform.provision.baseCurrency')}
+        description={
+          currencyMissing
+            ? t('platform.provision.referenceUnavailable')
+            : t('platform.provision.currencyHint')
+        }
+        required
+        value={baseCurrency}
+        placeholder={t('platform.provision.choose')}
+        onChange={setBaseCurrency}
+        options={currencyOptions}
+        error={error('baseCurrency')}
+      />
+      {currencyMissing ? <ListRetry label={t('form.retry')} /> : null}
+      <FormTextField
+        name="registrationNumber"
+        label={t('platform.provision.registration')}
+        value={registrationNumber}
+        onChange={setRegistrationNumber}
+        error={error('registrationNumber')}
+      />
+      <FormTextField
+        name="taxRegistrationNumber"
+        label={t('platform.provision.taxRegistration')}
+        value={taxRegistrationNumber}
+        onChange={setTaxRegistrationNumber}
+        error={error('taxRegistrationNumber')}
+      />
+    </FormDialog>
   );
 }
 
@@ -304,7 +359,7 @@ function BranchDialog({
   const [countryCode, setCountryCode] = useState('');
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  const { errors, formRef } = useStateRefusal(action.state, {
     companyId,
     code,
     name,
@@ -312,7 +367,6 @@ function BranchDialog({
     city,
     countryCode,
   });
-  const errors = refusalErrors;
   const timezoneOptions = (referenceValues?.timezones ?? []).map((zone) => ({
     value: zone.zoneName,
     label: timeZoneLabel(zone.zoneName, locale),
@@ -327,98 +381,98 @@ function BranchDialog({
         : undefined;
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
       title={t('platform.growth.addBranchTitle')}
       description={t('platform.growth.addBranchHint')}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={() => {
+        if (stoppedForList(listGuard, formRef)) return;
+        action.run(
+          () =>
+            addBranchAction(tenantId, {
+              companyId,
+              code,
+              name,
+              timezone,
+              city,
+              countryCode: countryCode.toUpperCase(),
+            }),
+          onClose
+        );
+      }}
+      formRef={formRef}
+      testId="platform-branch-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          if (listGuard.stop(event)) return;
-          event.preventDefault();
-          action.run(
-            () =>
-              addBranchAction(tenantId, {
-                companyId,
-                code,
-                name,
-                timezone,
-                city,
-                countryCode: countryCode.toUpperCase(),
-              }),
-            onClose
-          );
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <SelectField
-          name="companyId"
-          label={t('platform.growth.company')}
-          required
-          value={companyId}
-          placeholder={t('platform.provision.choose')}
-          onChange={(event) => setCompanyId(event.target.value)}
-          options={companies.map((company) => ({ value: company.id, label: company.legalName }))}
-          error={error('companyId')}
-        />
-        <TextField
-          name="code"
-          label={t('platform.provision.code')}
-          description={t('platform.provision.codeHint')}
-          required
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          error={error('code')}
-        />
-        <TextField
-          name="name"
-          label={t('platform.provision.name')}
-          required
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          error={error('name')}
-        />
-        <SelectField
-          name="timezone"
-          label={t('platform.provision.timeZone')}
-          description={
-            timezoneMissing
-              ? t('platform.provision.referenceUnavailable')
-              : t('platform.provision.timeZoneHint')
-          }
-          required
-          value={timezone}
-          placeholder={t('platform.provision.choose')}
-          onChange={(event) => setTimezone(event.target.value)}
-          options={timezoneOptions}
-          error={error('timezone')}
-        />
-        {timezoneMissing ? <ReferenceListRetry label={t('form.retry')} /> : null}
-        <TextField
-          name="city"
-          label={t('platform.provision.city')}
-          value={city}
-          onChange={(event) => setCity(event.target.value)}
-          error={error('city')}
-        />
-        <TextField
-          name="countryCode"
-          label={t('platform.provision.country')}
-          description={t('platform.provision.countryHint')}
-          value={countryCode}
-          onChange={(event) => setCountryCode(event.target.value)}
-          error={error('countryCode')}
-        />
-        <DialogButtons messages={messages} pending={action.pending} onCancel={onClose} />
-      </form>
-    </Dialog>
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <FormSelectField
+        name="companyId"
+        label={t('platform.growth.company')}
+        required
+        value={companyId}
+        placeholder={t('platform.provision.choose')}
+        onChange={setCompanyId}
+        options={companies.map((company) => ({ value: company.id, label: company.legalName }))}
+        error={error('companyId')}
+      />
+      <FormTextField
+        name="code"
+        label={t('platform.provision.code')}
+        description={t('platform.provision.codeHint')}
+        required
+        dir="ltr"
+        spellCheck={false}
+        value={code}
+        onChange={setCode}
+        error={error('code')}
+      />
+      <FormTextField
+        name="name"
+        label={t('platform.provision.name')}
+        required
+        value={name}
+        onChange={setName}
+        error={error('name')}
+      />
+      <FormSelectField
+        name="timezone"
+        label={t('platform.provision.timeZone')}
+        description={
+          timezoneMissing
+            ? t('platform.provision.referenceUnavailable')
+            : t('platform.provision.timeZoneHint')
+        }
+        required
+        value={timezone}
+        placeholder={t('platform.provision.choose')}
+        onChange={setTimezone}
+        options={timezoneOptions}
+        error={error('timezone')}
+      />
+      {timezoneMissing ? <ListRetry label={t('form.retry')} /> : null}
+      <FormTextField
+        name="city"
+        label={t('platform.provision.city')}
+        value={city}
+        onChange={setCity}
+        error={error('city')}
+      />
+      <FormTextField
+        name="countryCode"
+        label={t('platform.provision.country')}
+        description={t('platform.provision.countryHint')}
+        dir="ltr"
+        spellCheck={false}
+        value={countryCode}
+        onChange={setCountryCode}
+        error={error('countryCode')}
+      />
+    </FormDialog>
   );
 }
 
@@ -439,88 +493,88 @@ function AdministratorDialog({
   const [reason, setReason] = useState('');
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  const { errors, formRef } = useStateRefusal(action.state, {
     email,
     displayName,
     reason,
   });
-  const errors = refusalErrors;
   const error = (field: string) => (errors[field] ? t(errors[field] as string) : undefined);
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
       title={t('platform.growth.inviteTitle')}
       description={t('platform.growth.inviteHint')}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={() => {
+        action.run(
+          () =>
+            inviteAdministratorAction(tenantId, {
+              email,
+              displayName,
+              ...(additional ? { additionalAdministrator: true, reason } : {}),
+            }),
+          onClose
+        );
+      }}
+      formRef={formRef}
+      testId="platform-invite-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          action.run(
-            () =>
-              inviteAdministratorAction(tenantId, {
-                email,
-                displayName,
-                ...(additional ? { additionalAdministrator: true, reason } : {}),
-              }),
-            onClose
-          );
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <TextField
-          name="email"
-          type="email"
-          label={t('platform.provision.email')}
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <FormTextField
+        name="email"
+        type="email"
+        label={t('platform.provision.email')}
+        required
+        dir="ltr"
+        spellCheck={false}
+        autoFocus
+        value={email}
+        onChange={setEmail}
+        error={error('email')}
+      />
+      <FormTextField
+        name="displayName"
+        label={t('platform.provision.displayName')}
+        required
+        value={displayName}
+        onChange={setDisplayName}
+        error={error('displayName')}
+      />
+      {/*
+        The refusal for an organisation that already has an active
+        administrator is filed by the service under this control, because
+        this is the control that cures it: tick it, give the reason, save
+        again. Without the `error` prop the sentence arrived in the form's
+        field errors and was dropped, and the operator was shown the generic
+        conflict line instead (Owner directive, user-facing errors).
+      */}
+      <FormCheckboxField
+        name="additionalAdministrator"
+        label={t('platform.growth.additional')}
+        description={t('platform.growth.additionalHint')}
+        checked={additional}
+        onChange={setAdditional}
+        error={error('additionalAdministrator')}
+      />
+      {additional ? (
+        <FormTextField
+          name="reason"
+          multiline
+          rows={3}
+          label={t('platform.reason')}
           required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          error={error('email')}
+          value={reason}
+          onChange={setReason}
+          error={error('reason')}
         />
-        <TextField
-          name="displayName"
-          label={t('platform.provision.displayName')}
-          required
-          value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
-          error={error('displayName')}
-        />
-        {/*
-          The refusal for an organisation that already has an active
-          administrator is filed by the service under this control, because
-          this is the control that cures it: tick it, give the reason, save
-          again. Without the `error` prop the sentence arrived in the form's
-          field errors and was dropped, and the operator was shown the generic
-          conflict line instead (Owner directive, user-facing errors).
-        */}
-        <CheckboxField
-          name="additionalAdministrator"
-          label={t('platform.growth.additional')}
-          description={t('platform.growth.additionalHint')}
-          checked={additional}
-          onChange={(event) => setAdditional(event.target.checked)}
-          error={error('additionalAdministrator')}
-        />
-        {additional ? (
-          <TextAreaField
-            name="reason"
-            label={t('platform.reason')}
-            required
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            error={error('reason')}
-          />
-        ) : null}
-        <DialogButtons messages={messages} pending={action.pending} onCancel={onClose} />
-      </form>
-    </Dialog>
+      ) : null}
+    </FormDialog>
   );
 }
 
@@ -538,64 +592,40 @@ function ResendDialog({
   const [email, setEmail] = useState('');
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  const { errors, formRef } = useStateRefusal(action.state, {
     email,
   });
-  const errors = refusalErrors;
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
       title={t('platform.growth.resendTitle')}
       description={t('platform.growth.resendHint')}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={() => {
+        action.run(() => resendAdministratorInvitationAction(tenantId, email), onClose);
+      }}
+      formRef={formRef}
+      testId="platform-resend-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          action.run(() => resendAdministratorInvitationAction(tenantId, email), onClose);
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <TextField
-          name="email"
-          type="email"
-          label={t('platform.provision.email')}
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          error={errors['email'] ? t(errors['email'] as string) : undefined}
-        />
-        <DialogButtons messages={messages} pending={action.pending} onCancel={onClose} />
-      </form>
-    </Dialog>
-  );
-}
-
-function DialogButtons({
-  messages,
-  pending,
-  onCancel,
-}: {
-  readonly messages: Messages;
-  readonly pending: boolean;
-  readonly onCancel: () => void;
-}) {
-  const t = (key: string) => translateDynamic(messages, key);
-  return (
-    <div className="flex justify-end gap-2">
-      <button type="button" className={SECONDARY_BUTTON} onClick={onCancel}>
-        {t('overlay.cancel')}
-      </button>
-      <button type="submit" className={PRIMARY_BUTTON} disabled={pending}>
-        {pending ? t('overlay.working') : t('platform.save')}
-      </button>
-    </div>
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <FormTextField
+        name="email"
+        type="email"
+        label={t('platform.provision.email')}
+        required
+        dir="ltr"
+        spellCheck={false}
+        autoFocus
+        value={email}
+        onChange={setEmail}
+        error={errors['email'] ? t(errors['email'] as string) : undefined}
+      />
+    </FormDialog>
   );
 }

@@ -1,8 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { ReasonConfirmDialog } from '@/components/overlays/Overlays';
+import { useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
+import { MuiEmptyState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
@@ -14,15 +20,19 @@ import {
   usagePercent,
   usageWarns,
   type CapacityUsage,
+  type OrganizationBranch,
+  type OrganizationCompany,
   type OrganizationDetail,
   type ReferenceValues,
+  type StatusHistoryEntry,
   type SubscriptionCharge,
   type SubscriptionPlan,
 } from '../types';
 import { BillingPanel } from './BillingPanel';
+import { ConsoleReasonDialog, ConsoleSection, useSettledTable } from './console-parts';
 import { OrganizationGrowthPanel } from './OrganizationGrowthPanel';
 import { SubscriptionPanel, currentSubscription } from './SubscriptionPanel';
-import { Cell, ReadFailure, SECONDARY_BUTTON, Section, SimpleTable, StatusBadge } from './ui';
+import { StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
 
 /**
@@ -31,6 +41,20 @@ import { useConsoleAction } from './use-console-action';
  * Every action appears only for an operator whose platform authority could
  * satisfy it, and only where the lifecycle allows it. That is courtesy: the
  * server decides, and a refusal is shown as the server gave it.
+ *
+ * ## On Material UI (ADR-022, P1-32-PRE-OD-WP06B)
+ *
+ * The companies, the branches and the status history are the operational grid
+ * over the rows the detail read already holds: one answer, so no pager. A code
+ * is drawn whole in its own line cell, ending in an ellipsis with its whole text
+ * behind it when the column is narrower; a company and a branch are named by the
+ * names the read carries, beside their codes. A reason in the history is free
+ * text and keeps to one line in the same way.
+ *
+ * The lifecycle acts are Material buttons, and the reason they ask for is the
+ * console's reason dialog (`ConsoleReasonDialog`). The usage meters are unchanged
+ * in what they say: "Unlimited" where the plan sets no limit, the count against
+ * the limit otherwise, "Near the limit" from 90% and "Over the limit" above it.
  */
 
 type LifecycleAct = 'suspend' | 'reactivate' | 'close';
@@ -57,6 +81,25 @@ export interface DetailCapabilities {
   readonly canReadBilling: boolean;
   readonly canManageBilling: boolean;
   readonly canReadAudit: boolean;
+}
+
+/** A status-history entry with the key it is drawn under: the read gives none. */
+interface HistoryRow extends StatusHistoryEntry {
+  readonly key: string;
+}
+
+/** A code, left to right, whole: the grid line cuts it only with an ellipsis. */
+function codeLine(code: string, testId?: string) {
+  return (
+    <TwoLineCell
+      primary={
+        <code dir="ltr" className="font-mono">
+          {code}
+        </code>
+      }
+      testId={testId}
+    />
+  );
 }
 
 export function OrganizationDetailScreen({
@@ -96,8 +139,98 @@ export function OrganizationDetailScreen({
   const current = currentSubscription(organization.subscriptions, today);
   const currentPlan = plans?.find((plan) => plan.planCode === current?.planCode) ?? null;
 
+  const history = useMemo<readonly HistoryRow[]>(
+    () =>
+      organization.statusHistory.map((entry, index) => ({
+        ...entry,
+        key: `${entry.occurredAt}-${index}`,
+      })),
+    [organization.statusHistory]
+  );
+  const companiesTable = useSettledTable(organization.companies);
+  const branchesTable = useSettledTable(organization.branches);
+  const historyTable = useSettledTable(history);
+
+  const companyColumns = useMemo<readonly OperationalColumn<OrganizationCompany>[]>(
+    () => [
+      {
+        id: 'code',
+        headerKey: 'platform.provision.code',
+        cell: (company) => codeLine(company.code, 'platform-company-code'),
+      },
+      {
+        id: 'name',
+        headerKey: 'platform.provision.legalName',
+        flex: 2,
+        cell: (company) => <TwoLineCell primary={<bdi>{company.legalName}</bdi>} />,
+      },
+      {
+        id: 'status',
+        headerKey: 'platform.subscription.status',
+        cell: (company) => <StatusBadge status={company.status} messages={messages} />,
+      },
+    ],
+    [messages]
+  );
+
+  const branchColumns = useMemo<readonly OperationalColumn<OrganizationBranch>[]>(
+    () => [
+      {
+        id: 'code',
+        headerKey: 'platform.provision.code',
+        cell: (branch) => codeLine(branch.code, 'platform-branch-code'),
+      },
+      {
+        id: 'name',
+        headerKey: 'platform.provision.name',
+        flex: 2,
+        cell: (branch) => <TwoLineCell primary={<bdi>{branch.name}</bdi>} />,
+      },
+      {
+        id: 'status',
+        headerKey: 'platform.subscription.status',
+        cell: (branch) => <StatusBadge status={branch.status} messages={messages} />,
+      },
+    ],
+    [messages]
+  );
+
+  const historyColumns = useMemo<readonly OperationalColumn<HistoryRow>[]>(
+    () => [
+      {
+        id: 'when',
+        headerKey: 'platform.subscription.when',
+        minChars: 24,
+        cell: (entry) => formatDateTime(entry.occurredAt, locale),
+      },
+      {
+        id: 'from',
+        headerKey: 'platform.detail.from',
+        cell: (entry) =>
+          entry.fromState ? <StatusBadge status={entry.fromState} messages={messages} /> : '—',
+      },
+      {
+        id: 'to',
+        headerKey: 'platform.detail.to',
+        cell: (entry) => <StatusBadge status={entry.toState} messages={messages} />,
+      },
+      {
+        id: 'reason',
+        headerKey: 'platform.subscription.reason',
+        flex: 2,
+        cell: (entry) =>
+          entry.reason ? (
+            <TwoLineCell primary={<bdi>{entry.reason}</bdi>} testId="platform-history-reason" />
+          ) : (
+            '—'
+          ),
+      },
+    ],
+    [locale, messages]
+  );
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={organization.status} messages={messages} />
@@ -110,30 +243,31 @@ export function OrganizationDetailScreen({
         </div>
         <div className="flex flex-wrap gap-2">
           {acts.map((entry) => (
-            <button
+            <Button
               key={entry}
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               onClick={() => {
                 lifecycle.reset();
                 setAct(entry);
               }}
             >
               {t(`platform.lifecycle.${entry}`)}
-            </button>
+            </Button>
           ))}
           {capabilities.canReadAudit ? (
-            <Link
+            <Button
+              component={Link}
               href={`/${locale}/platform/audit?organization=${organization.id}`}
-              className={SECONDARY_BUTTON}
+              variant="outlined"
             >
               {t('platform.detail.viewAudit')}
-            </Link>
+            </Button>
           ) : null}
         </div>
       </div>
 
-      <Section title={t('platform.usage.title')}>
+      <ConsoleSection title={t('platform.usage.title')}>
         <ul className="flex flex-col gap-3">
           {(['companies', 'branches', 'users'] as const).map((kind) => (
             <UsageBar
@@ -146,7 +280,7 @@ export function OrganizationDetailScreen({
             />
           ))}
         </ul>
-      </Section>
+      </ConsoleSection>
 
       <OrganizationGrowthPanel
         locale={locale}
@@ -157,59 +291,57 @@ export function OrganizationDetailScreen({
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Section title={t('platform.detail.companies')}>
-          <SimpleTable
-            caption={t('platform.detail.companies')}
-            headers={[
-              t('platform.provision.code'),
-              t('platform.provision.legalName'),
-              t('platform.subscription.status'),
-            ]}
-            empty={organization.companies.length === 0 ? t('platform.detail.noCompanies') : null}
-          >
-            {organization.companies.map((company) => (
-              <tr key={company.id} className="border-t border-border-subtle">
-                <Cell>
-                  <span dir="ltr">{company.code}</span>
-                </Cell>
-                <Cell>{company.legalName}</Cell>
-                <Cell>
-                  <StatusBadge status={company.status} messages={messages} />
-                </Cell>
-              </tr>
-            ))}
-          </SimpleTable>
-        </Section>
-        <Section title={t('platform.detail.branches')}>
-          <SimpleTable
-            caption={t('platform.detail.branches')}
-            headers={[
-              t('platform.provision.code'),
-              t('platform.provision.name'),
-              t('platform.subscription.status'),
-            ]}
-            empty={organization.branches.length === 0 ? t('platform.detail.noBranches') : null}
-          >
-            {organization.branches.map((branch) => (
-              <tr key={branch.id} className="border-t border-border-subtle">
-                <Cell>
-                  <span dir="ltr">{branch.code}</span>
-                </Cell>
-                <Cell>{branch.name}</Cell>
-                <Cell>
-                  <StatusBadge status={branch.status} messages={messages} />
-                </Cell>
-              </tr>
-            ))}
-          </SimpleTable>
-        </Section>
+        <ConsoleSection title={t('platform.detail.companies')}>
+          <OperationalGrid<OrganizationCompany>
+            messages={messages}
+            locale={locale}
+            label={t('platform.detail.companies')}
+            columns={companyColumns}
+            rowId={(company) => company.id}
+            table={companiesTable}
+            // The detail's own sentence when there is none, below.
+            suppressEmptyState
+            // Every company, in the one detail read: no pager to offer.
+            unpaged
+            testId="platform-companies-grid"
+          />
+          {organization.companies.length === 0 ? (
+            <MuiEmptyState
+              messages={messages}
+              descriptionKey="platform.detail.noCompanies"
+              testId="platform-companies-empty"
+            />
+          ) : null}
+        </ConsoleSection>
+        <ConsoleSection title={t('platform.detail.branches')}>
+          <OperationalGrid<OrganizationBranch>
+            messages={messages}
+            locale={locale}
+            label={t('platform.detail.branches')}
+            columns={branchColumns}
+            rowId={(branch) => branch.id}
+            table={branchesTable}
+            suppressEmptyState
+            unpaged
+            testId="platform-branches-grid"
+          />
+          {organization.branches.length === 0 ? (
+            <MuiEmptyState
+              messages={messages}
+              descriptionKey="platform.detail.noBranches"
+              testId="platform-branches-empty"
+            />
+          ) : null}
+        </ConsoleSection>
       </div>
 
-      <Section title={t('platform.detail.users')}>
+      <ConsoleSection title={t('platform.detail.users')}>
         {organization.userCountsByStatus.length === 0 ? (
-          <p className="text-body text-text-muted">{t('platform.detail.noUsers')}</p>
+          <p className="text-body text-text-muted" data-testid="platform-users-empty">
+            {t('platform.detail.noUsers')}
+          </p>
         ) : (
-          <ul className="flex flex-wrap gap-4">
+          <ul className="flex flex-wrap gap-4" data-testid="platform-user-counts">
             {organization.userCountsByStatus.map((entry) => (
               <li key={entry.status} className="text-body text-text-primary">
                 <StatusBadge status={entry.status} messages={messages} />{' '}
@@ -218,7 +350,7 @@ export function OrganizationDetailScreen({
             ))}
           </ul>
         )}
-      </Section>
+      </ConsoleSection>
 
       <SubscriptionPanel
         locale={locale}
@@ -245,49 +377,45 @@ export function OrganizationDetailScreen({
             defaultCurrency={currentPlan?.currencyCode ?? ''}
           />
         ) : (
-          <Section title={t('platform.billing.title')}>
-            <ReadFailure
+          <ConsoleSection title={t('platform.billing.title')}>
+            {/*
+              The read was refused or failed: said as that, never as an
+              organisation with no charges. No retry is offered, as before —
+              the page is read on the server, and a reload repeats it.
+            */}
+            <MuiReadFailureState
+              messages={messages}
+              locale={locale}
               status={charges.status}
               correlationId={charges.correlationId}
-              messages={messages}
             />
-          </Section>
+          </ConsoleSection>
         )
       ) : null}
 
-      <Section title={t('platform.detail.statusHistory')}>
-        <SimpleTable
-          caption={t('platform.detail.statusHistory')}
-          headers={[
-            t('platform.subscription.when'),
-            t('platform.detail.from'),
-            t('platform.detail.to'),
-            t('platform.subscription.reason'),
-          ]}
-          empty={organization.statusHistory.length === 0 ? t('platform.detail.noHistory') : null}
-        >
-          {organization.statusHistory.map((entry, index) => (
-            <tr key={`${entry.occurredAt}-${index}`} className="border-t border-border-subtle">
-              <Cell>{formatDateTime(entry.occurredAt, locale)}</Cell>
-              <Cell>
-                {entry.fromState ? (
-                  <StatusBadge status={entry.fromState} messages={messages} />
-                ) : (
-                  '—'
-                )}
-              </Cell>
-              <Cell>
-                <StatusBadge status={entry.toState} messages={messages} />
-              </Cell>
-              <Cell>{entry.reason ?? '—'}</Cell>
-            </tr>
-          ))}
-        </SimpleTable>
-      </Section>
+      <ConsoleSection title={t('platform.detail.statusHistory')}>
+        <OperationalGrid<HistoryRow>
+          messages={messages}
+          locale={locale}
+          label={t('platform.detail.statusHistory')}
+          columns={historyColumns}
+          rowId={(entry) => entry.key}
+          table={historyTable}
+          suppressEmptyState
+          unpaged
+          testId="platform-history-grid"
+        />
+        {organization.statusHistory.length === 0 ? (
+          <MuiEmptyState
+            messages={messages}
+            descriptionKey="platform.detail.noHistory"
+            testId="platform-history-empty"
+          />
+        ) : null}
+      </ConsoleSection>
 
       {act ? (
-        <ReasonConfirmDialog
-          open
+        <ConsoleReasonDialog
           messages={messages}
           destructive={act !== 'reactivate'}
           pending={lifecycle.pending}
@@ -308,6 +436,7 @@ export function OrganizationDetailScreen({
               () => setAct(null)
             );
           }}
+          testId="platform-lifecycle-dialog"
         />
       ) : null}
     </div>

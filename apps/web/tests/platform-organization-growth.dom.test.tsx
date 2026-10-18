@@ -1,8 +1,11 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { renderLtr, renderRtl } from './render';
 
 /**
@@ -162,6 +165,18 @@ function renderDetail(
       capabilities={{ ...NONE, ...capabilities }}
       today="2026-09-17"
     />
+  );
+}
+
+/**
+ * Under the Material foundation, as the locale layout mounts it: the grids' and
+ * the dialogs' own texts come from the catalogue through it.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
   );
 }
 
@@ -374,6 +389,179 @@ describe.each([
     });
   }
 );
+
+/*
+ * P1-32-PRE-OD-WP06B. The growth panel and its four dialogs on Material UI, in
+ * both languages, under the Material foundation as the locale layout mounts it:
+ * the four acts named in the page's language, and each dialog sending exactly
+ * the document it sent before — the whole of it, key for key.
+ */
+describe.each([
+  ['en', renderLtr, EN, messages],
+  ['ar', renderRtl, AR, arabicMessages],
+] as const)('%s: the growth dialogs on Material UI', (locale, paint, catalogue, words) => {
+  const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+  const labelled = (scope: HTMLElement, key: string) =>
+    within(scope).getByLabelText(new RegExp(`^${M(key)}`));
+  function paintDetail(overrides: Partial<typeof detail> = {}) {
+    return paint(
+      withMui(
+        <OrganizationDetailScreen
+          locale={locale}
+          messages={words}
+          organization={{ ...detail, ...overrides }}
+          plans={[plan]}
+          referenceValues={references}
+          charges={null}
+          capabilities={{ ...NONE, canManageOrganization: true }}
+          today="2026-09-17"
+        />,
+        locale
+      )
+    );
+  }
+
+  it('names the four acts in the language of the page, and waits for a company before a branch', () => {
+    const { unmount } = paintDetail();
+    const section = screen
+      .getByRole('heading', { name: M('platform.growth.title') })
+      .closest('section') as HTMLElement;
+    for (const [testId, key] of [
+      ['platform-add-company', 'platform.growth.addCompany'],
+      ['platform-add-branch', 'platform.growth.addBranch'],
+      ['platform-invite-administrator', 'platform.growth.inviteAdministrator'],
+      ['platform-resend-invitation', 'platform.growth.resend'],
+    ] as const) {
+      const button = within(section).getByTestId(testId);
+      expect(button, testId).toHaveTextContent(M(key));
+      expect(button, testId).toBeEnabled();
+    }
+    expect(section).toHaveTextContent(M('platform.growth.inviteHint'));
+    unmount();
+
+    paintDetail({ companies: [] });
+    expect(screen.getByTestId('platform-add-branch')).toBeDisabled();
+    expect(screen.getByText(M('platform.growth.noCompanies'))).toBeInTheDocument();
+  });
+
+  it('adds a company and a branch with the same documents as before', async () => {
+    addCompanyAction.mockResolvedValue(done('platform.growth.companyDone'));
+    addBranchAction.mockResolvedValue(done('platform.growth.branchDone'));
+    paintDetail();
+    await userEvent.click(screen.getByTestId('platform-add-company'));
+    const company = await screen.findByRole('dialog');
+    expect(within(company).getByRole('heading')).toHaveTextContent(
+      M('platform.growth.addCompanyTitle')
+    );
+    await userEvent.type(labelled(company, 'platform.provision.code'), 'test_second');
+    await userEvent.type(labelled(company, 'platform.provision.legalName'), 'Test Second Company');
+    await userEvent.selectOptions(labelled(company, 'platform.provision.baseCurrency'), 'USD');
+    await userEvent.type(labelled(company, 'platform.provision.registration'), 'TEST-REG-1');
+    await userEvent.type(labelled(company, 'platform.provision.taxRegistration'), 'TEST-TAX-1');
+    await userEvent.click(within(company).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(addCompanyAction).toHaveBeenCalledTimes(1));
+    expect(addCompanyAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        code: 'test_second',
+        legalName: 'Test Second Company',
+        baseCurrency: 'USD',
+        registrationNumber: 'TEST-REG-1',
+        taxRegistrationNumber: 'TEST-TAX-1',
+      },
+    ]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await userEvent.click(screen.getByTestId('platform-add-branch'));
+    const branch = await screen.findByRole('dialog');
+    // The one active company is chosen already, named by its legal name.
+    const owner = labelled(branch, 'platform.growth.company');
+    expect(owner).toHaveValue(COMPANY);
+    expect(within(owner).getByRole('option', { name: 'Test Company' })).toHaveValue(COMPANY);
+    await userEvent.type(labelled(branch, 'platform.provision.code'), 'test_north');
+    await userEvent.type(labelled(branch, 'platform.provision.name'), 'Test North Branch');
+    await userEvent.selectOptions(labelled(branch, 'platform.provision.timeZone'), 'UTC');
+    await userEvent.type(labelled(branch, 'platform.provision.city'), 'Test City');
+    await userEvent.type(labelled(branch, 'platform.provision.country'), 'jo');
+    await userEvent.click(within(branch).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(addBranchAction).toHaveBeenCalledTimes(1));
+    expect(addBranchAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        companyId: COMPANY,
+        code: 'test_north',
+        name: 'Test North Branch',
+        timezone: 'UTC',
+        city: 'Test City',
+        countryCode: 'JO',
+      },
+    ]);
+  });
+
+  it('invites a second administrator under a reason, and resends a link, as before', async () => {
+    inviteAdministratorAction.mockResolvedValue(done('platform.growth.inviteDone'));
+    resendAdministratorInvitationAction.mockResolvedValue(done('platform.growth.resendDone'));
+    paintDetail();
+    await userEvent.click(screen.getByTestId('platform-invite-administrator'));
+    const invite = await screen.findByRole('dialog');
+    expect(within(invite).queryByLabelText(new RegExp(`^${M('platform.reason')}`))).toBeNull();
+    await userEvent.type(labelled(invite, 'platform.provision.email'), 'test.deputy@example.test');
+    await userEvent.type(labelled(invite, 'platform.provision.displayName'), 'Test Deputy');
+    await userEvent.click(
+      within(invite).getByLabelText(new RegExp(M('platform.growth.additional')))
+    );
+    await userEvent.type(labelled(invite, 'platform.reason'), 'The owner asked for a deputy');
+    await userEvent.click(within(invite).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(inviteAdministratorAction).toHaveBeenCalledTimes(1));
+    expect(inviteAdministratorAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        email: 'test.deputy@example.test',
+        displayName: 'Test Deputy',
+        additionalAdministrator: true,
+        reason: 'The owner asked for a deputy',
+      },
+    ]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await userEvent.click(screen.getByTestId('platform-resend-invitation'));
+    const resend = await screen.findByRole('dialog');
+    expect(within(resend).getByRole('heading')).toHaveTextContent(M('platform.growth.resendTitle'));
+    await userEvent.type(
+      labelled(resend, 'platform.provision.email'),
+      'test.administrator@example.test'
+    );
+    await userEvent.click(within(resend).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(resendAdministratorInvitationAction).toHaveBeenCalledTimes(1));
+    expect(resendAdministratorInvitationAction.mock.calls[0]).toEqual([
+      TENANT,
+      'test.administrator@example.test',
+    ]);
+  });
+
+  it('keeps what was typed and says the server refusal on its own field', async () => {
+    addCompanyAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { code: 'platform.error.required' },
+      attempt: 1,
+    });
+    paintDetail();
+    await userEvent.click(screen.getByTestId('platform-add-company'));
+    const company = await screen.findByRole('dialog');
+    await userEvent.type(labelled(company, 'platform.provision.legalName'), 'Test Second Company');
+    await userEvent.selectOptions(labelled(company, 'platform.provision.baseCurrency'), 'JOD');
+    await userEvent.click(within(company).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(addCompanyAction).toHaveBeenCalledTimes(1));
+    const code = labelled(company, 'platform.provision.code');
+    await waitFor(() => expect(code).toHaveFocus());
+    expect(code).toHaveAttribute('aria-invalid', 'true');
+    expect(within(company).getByText(M('platform.error.required'))).toBeVisible();
+    expect(labelled(company, 'platform.provision.legalName')).toHaveValue('Test Second Company');
+    await userEvent.type(code, 'test_second');
+    expect(code).not.toHaveAttribute('aria-invalid', 'true');
+  });
+});
 
 describe('inviting an administrator', () => {
   it('sends the address and the name, and asks for nothing else', async () => {
