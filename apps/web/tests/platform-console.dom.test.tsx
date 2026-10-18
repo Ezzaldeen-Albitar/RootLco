@@ -1524,9 +1524,6 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
   const catalogue = locale === 'ar' ? AR : EN;
   const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
   const words = getMessages(locale);
-  /** A catalogue sentence with its `{name}` placeholders filled, written here. */
-  const sentence = (key: string, values: Record<string, string>) =>
-    M(key).replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
   const money = (amount: string) =>
     flat(formatMoney({ amount, currency: 'SAR' }, intlLocale(locale)));
   const show = (ui: ReactElement) => paint(withMui(ui, locale));
@@ -1689,10 +1686,12 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
   });
 
   it('draws a billing read that failed as that failure, never as no charges', () => {
-    for (const [status, testId, title] of [
-      ['denied', 'state-refused', 'state.denied.title'],
-      ['error', 'state-error', 'state.error.title'],
-      ['unavailable', 'state-unavailable', 'state.unavailable.title'],
+    for (const [status, testId, title, reference] of [
+      ['denied', 'state-refused', 'state.denied.title', true],
+      ['error', 'state-error', 'state.error.title', true],
+      ['unavailable', 'state-unavailable', 'state.unavailable.title', true],
+      ['expired', 'state-expired', 'state.expired.title', false],
+      ['not-found', 'state-not-found', 'state.notFound.title', false],
     ] as const) {
       const { unmount } = page(
         detail,
@@ -1707,16 +1706,20 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
         .closest('section') as HTMLElement;
       const state = within(billing).getByTestId(testId);
       expect(within(state).getByRole('heading'), status).toHaveTextContent(M(title));
-      expect(state, status).toHaveTextContent(`corr-${status}`);
+      if (reference) expect(state, status).toHaveTextContent(`corr-${status}`);
       // As before: the page is read on the server, and no retry is offered here.
       expect(within(billing).queryByRole('button'), status).toBeNull();
-      expect(screen.queryByRole('grid', { name: M('platform.billing.title') }), status).toBeNull();
+      // As before: an ended session is offered no link. A link to bare sign-in
+      // would skip the session-ended route the console's session check uses.
+      expect(within(billing).queryByRole('link'), status).toBeNull();
+      expect(screen.queryByRole('table', { name: M('platform.billing.title') }), status).toBeNull();
+      expect(screen.queryByTestId('platform-charge'), status).toBeNull();
       expect(screen.queryByTestId('platform-billing-empty'), status).toBeNull();
       unmount();
     }
   });
 
-  it('draws each charge with its money, its payments and what is outstanding, and opens them all', async () => {
+  it('draws each charge with its money, every payment in full and what is outstanding', () => {
     const voided = {
       ...charge,
       id: '44444444-4444-4444-8444-444444444445',
@@ -1734,41 +1737,36 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
       method: 'Cash',
       reference: 'TEST-REF-2',
     };
-    const paid = { ...charge, receipts: [...charge.receipts, second] };
+    const third = {
+      ...charge.receipts[0]!,
+      id: 'r3',
+      amount: '50.0000',
+      receivedOn: '2026-09-12',
+      method: 'Test transfer with a method name long enough to wrap in its cell',
+      reference: 'TEST-REFERENCE-THREE-LONG',
+    };
+    const paid = { ...charge, receipts: [...charge.receipts, second, third] };
     panel({ charges: [paid, voided], canManage: false });
-    const rows = dataRows(screen.getByTestId('platform-charges-grid'));
+    const table = screen.getByRole('table', { name: M('platform.billing.title') });
+    const rows = within(table).getAllByTestId('platform-charge');
     expect(rows).toHaveLength(2);
     const [open, gone] = rows as [HTMLElement, HTMLElement];
     expect(within(open).getByText(money('1200.0000'))).toBeInTheDocument();
     expect(within(open).getByTestId('platform-outstanding')).toHaveTextContent(money('700.0000'));
-    const firstLine = `${money('500.0000')} · ${flat(formatDate('2026-09-05', locale))} · Bank transfer`;
-    const secondLine = `${money('200.0000')} · ${flat(formatDate('2026-09-09', locale))} · Cash · TEST-REF-2`;
-    const receipts = within(open).getByTestId('platform-receipts');
-    expect(flat(receipts.textContent)).toContain(firstLine);
-    expect(receipts).toHaveTextContent(
-      sentence('platform.billing.moreReceipts', { count: formatInteger(1, locale) })
-    );
+    // Every payment, each written whole as it was before: amount · day · method · reference.
+    const lines = within(open).getAllByTestId('platform-receipt');
+    expect(lines.map((line) => flat(line.textContent))).toEqual([
+      `${money('500.0000')} · ${flat(formatDate('2026-09-05', locale))} · Bank transfer`,
+      `${money('200.0000')} · ${flat(formatDate('2026-09-09', locale))} · Cash · TEST-REF-2`,
+      `${money('50.0000')} · ${flat(formatDate('2026-09-12', locale))} · ${third.method} · TEST-REFERENCE-THREE-LONG`,
+    ]);
+    expect(within(gone).getByText('Test voided charge')).toBeInTheDocument();
     expect(within(gone).getByText('Raised against the wrong term')).toBeInTheDocument();
     expect(within(gone).getByText(M('platform.billing.noReceipts'))).toBeInTheDocument();
     expect(within(gone).getByText(M('platform.status.void'))).toBeInTheDocument();
-    // A reader is offered the payments, and no write.
-    expect(
-      screen.queryByRole('button', { name: labelledBy(M('platform.billing.void')) })
-    ).toBeNull();
+    // A reader is offered no write.
+    expect(within(table).queryByRole('button')).toBeNull();
     expect(screen.queryByRole('button', { name: M('platform.billing.recordCharge') })).toBeNull();
-    expect(
-      within(gone).queryByRole('button', { name: labelledBy(M('platform.billing.viewReceipts')) })
-    ).toBeNull();
-
-    await userEvent.click(
-      within(open).getByRole('button', { name: labelledBy(M('platform.billing.viewReceipts')) })
-    );
-    const drawer = await screen.findByTestId('platform-receipts-detail');
-    expect(within(drawer).getByRole('heading')).toHaveTextContent(M('platform.billing.received'));
-    const lines = within(drawer).getAllByTestId('platform-receipt');
-    expect(lines.map((line) => flat(line.textContent))).toEqual([firstLine, secondLine]);
-    await userEvent.click(within(drawer).getByRole('button', { name: M('overlay.close') }));
-    await waitFor(() => expect(screen.queryByTestId('platform-receipts-detail')).toBeNull());
   });
 
   it('says that no charge was recorded, or none with the chosen status, in its own words', () => {
@@ -1776,12 +1774,33 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
     expect(screen.getByTestId('platform-billing-empty')).toHaveTextContent(
       M('platform.billing.noneWithStatus')
     );
-    expect(dataRows(screen.getByTestId('platform-charges-grid'))).toHaveLength(0);
+    expect(screen.queryByTestId('platform-charge')).toBeNull();
     unmount();
     panel({ charges: [] });
     expect(screen.getByTestId('platform-billing-empty')).toHaveTextContent(
       M('platform.billing.none')
     );
+  });
+
+  /*
+   * The detail read answers every company in one reply, and the grid is told
+   * it is not paged. A grid still holds a page size of its own; were it to
+   * page the rows it was handed, the companies past the first page would be
+   * drawn nowhere and reached by no control.
+   */
+  it('draws every company the read holds, past any page size', () => {
+    const many = Array.from({ length: 130 }, (_, index) => ({
+      id: `c${String(index).padStart(3, '0')}`,
+      code: `test_company_${String(index).padStart(3, '0')}`,
+      legalName: `Test Company ${index}`,
+      status: 'active',
+    }));
+    page({ ...detail, companies: many }, NONE);
+    const grid = screen.getByRole('grid', { name: M('platform.detail.companies') });
+    const rows = dataRows(grid);
+    expect(rows).toHaveLength(130);
+    expect(within(rows[129] as HTMLElement).getByText('test_company_129')).toBeInTheDocument();
+    expect(within(grid).queryByRole('navigation')).toBeNull();
   });
 
   it('pages and filters by the address, in the language of the page', async () => {

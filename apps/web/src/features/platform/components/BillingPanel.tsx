@@ -2,21 +2,19 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useState } from 'react';
 import Button from '@mui/material/Button';
-import Drawer from '@mui/material/Drawer';
-import {
-  OperationalGrid,
-  TwoLineCell,
-  type OperationalColumn,
-  type RowAction,
-} from '@/components/data/OperationalGrid';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import { ZonedDateField, type DayProblem } from '@/components/forms/mui/DateField';
 import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { MuiEmptyState } from '@/components/states/MuiStates';
-import { useReducedMotion } from '@/components/ui-foundation/use-reduced-motion';
 import { FormDialog } from '@/features/administration/shared/components/FormDialog';
 import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
@@ -31,7 +29,7 @@ import {
   type OrganizationSubscription,
   type SubscriptionCharge,
 } from '../types';
-import { ConsoleReasonDialog, ConsoleSection, useSettledTable } from './console-parts';
+import { ConsoleReasonDialog, ConsoleSection } from './console-parts';
 import { SECTION_HINT, StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useStateRefusal } from '@/lib/forms/use-local-refusal';
@@ -70,12 +68,12 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  *
  * ## On Material UI (ADR-022, P1-32-PRE-OD-WP06B)
  *
- * The charges are the operational grid over the page the server read. The grid
- * draws no pager of its own: the page is the server's, reached by the two links
- * below it, exactly as before. A row holds two lines, so a charge's payments are
- * summarised in their cell — the first as it was written before, then how many
- * more there are — and **View payments** opens every one of them, whole, in a
- * drawer that reads nothing: the charge in hand already carries them.
+ * The charges are a Material table over the page the server read — the shape
+ * the tenant screens use for a short list whose cells hold more than a line. A
+ * charge's payments are every one listed in its cell, whole, as they were
+ * written before, and a description or a void reason wraps rather than being
+ * cut. The table draws no pager of its own: the page is the server's, reached by
+ * the two links below it, exactly as before.
  *
  * The three forms are the shared form dialog with the Material fields, and what
  * each sends is unchanged. The due date and the received date are day pickers on
@@ -154,123 +152,12 @@ export function BillingPanel({
   readonly canManage: boolean;
   readonly defaultCurrency: string;
 }) {
-  const t = useCallback((key: string) => translateDynamic(messages, key), [messages]);
+  const t = (key: string) => translateDynamic(messages, key);
   const router = useRouter();
   const [pending, setPending] = useState<Pending | null>(null);
-  const [viewing, setViewing] = useState<SubscriptionCharge | null>(null);
   const voiding = useConsoleAction(messages);
-  const table = useSettledTable(charges);
-
-  const columns = useMemo<readonly OperationalColumn<SubscriptionCharge>[]>(() => {
-    const money = (amount: string, currency: string) =>
-      formatMoney({ amount, currency }, intlLocale(locale));
-    return [
-      {
-        id: 'due',
-        headerKey: 'platform.billing.due',
-        minChars: 14,
-        cell: (charge) => formatDate(charge.dueOn, locale),
-      },
-      {
-        id: 'description',
-        headerKey: 'platform.billing.description',
-        flex: 2,
-        cell: (charge) => (
-          <TwoLineCell
-            primary={<bdi>{charge.description}</bdi>}
-            secondary={charge.voidReason ? <bdi>{charge.voidReason}</bdi> : null}
-            testId="platform-charge"
-          />
-        ),
-      },
-      {
-        id: 'amount',
-        headerKey: 'platform.billing.amount',
-        numeric: true,
-        minChars: 16,
-        cell: (charge) => money(charge.amount, charge.currencyCode),
-      },
-      {
-        id: 'status',
-        headerKey: 'platform.billing.status',
-        cell: (charge) => <StatusBadge status={charge.status} messages={messages} />,
-      },
-      {
-        id: 'received',
-        headerKey: 'platform.billing.received',
-        flex: 2,
-        minChars: 24,
-        cell: (charge) => {
-          const [first] = charge.receipts;
-          if (first === undefined) {
-            return <span className="text-text-muted">{t('platform.billing.noReceipts')}</span>;
-          }
-          const further = charge.receipts.length - 1;
-          return (
-            <TwoLineCell
-              primary={receiptLine(first, locale)}
-              secondary={
-                further > 0
-                  ? formatMessage(t('platform.billing.moreReceipts'), {
-                      count: formatInteger(further, locale),
-                    })
-                  : null
-              }
-              testId="platform-receipts"
-            />
-          );
-        },
-      },
-      {
-        id: 'outstanding',
-        headerKey: 'platform.billing.outstanding',
-        numeric: true,
-        minChars: 16,
-        cell: (charge) => (
-          <span data-testid="platform-outstanding">
-            {money(charge.outstanding, charge.currencyCode)}
-          </span>
-        ),
-      },
-    ];
-  }, [locale, messages, t]);
-
-  const rowActions = useCallback(
-    (charge: SubscriptionCharge): readonly RowAction[] => {
-      // Two charges may share a description; the day each falls due tells them apart.
-      const about = `${charge.description}, ${formatDate(charge.dueOn, locale)}`;
-      const actions: RowAction[] = [];
-      if (charge.receipts.length > 0) {
-        actions.push({
-          kind: 'button',
-          label: t('platform.billing.viewReceipts'),
-          about,
-          onClick: () => setViewing(charge),
-        });
-      }
-      if (canManage && charge.status === 'open') {
-        actions.push(
-          {
-            kind: 'button',
-            label: t('platform.billing.recordReceipt'),
-            about,
-            onClick: () => setPending({ type: 'receipt', charge }),
-          },
-          {
-            kind: 'button',
-            label: t('platform.billing.void'),
-            about,
-            onClick: () => {
-              voiding.reset();
-              setPending({ type: 'void', charge });
-            },
-          }
-        );
-      }
-      return actions;
-    },
-    [canManage, locale, t, voiding]
-  );
+  const money = (amount: string, currency: string) =>
+    formatMoney({ amount, currency }, intlLocale(locale));
 
   return (
     <ConsoleSection
@@ -303,20 +190,6 @@ export function BillingPanel({
         />
       </div>
 
-      <OperationalGrid<SubscriptionCharge>
-        messages={messages}
-        locale={locale}
-        label={t('platform.billing.title')}
-        columns={columns}
-        rowId={(charge) => charge.id}
-        table={table}
-        rowActions={rowActions}
-        // The panel's own sentence when the page holds no charge, below.
-        suppressEmptyState
-        // The page is the server's; the two links below reach the others.
-        unpaged
-        testId="platform-charges-grid"
-      />
       {charges.length === 0 ? (
         <MuiEmptyState
           messages={messages}
@@ -325,7 +198,108 @@ export function BillingPanel({
           }
           testId="platform-billing-empty"
         />
-      ) : null}
+      ) : (
+        <TableContainer
+          className="rounded-lg border border-border-subtle"
+          data-testid="platform-charges-table"
+        >
+          <Table size="small">
+            <caption className="sr-only">{t('platform.billing.title')}</caption>
+            <TableHead>
+              <TableRow>
+                <TableCell scope="col">{t('platform.billing.due')}</TableCell>
+                <TableCell scope="col">{t('platform.billing.description')}</TableCell>
+                <TableCell scope="col" align="right">
+                  {t('platform.billing.amount')}
+                </TableCell>
+                <TableCell scope="col">{t('platform.billing.status')}</TableCell>
+                <TableCell scope="col">{t('platform.billing.received')}</TableCell>
+                <TableCell scope="col" align="right">
+                  {t('platform.billing.outstanding')}
+                </TableCell>
+                <TableCell scope="col">
+                  <span className="sr-only">{t('platform.actions')}</span>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {charges.map((charge) => {
+                // Two charges may share a description; the day each falls due
+                // tells them apart, for a screen reader as for the eye.
+                const about = `${charge.description}, ${formatDate(charge.dueOn, locale)}`;
+                return (
+                  <TableRow key={charge.id} data-testid="platform-charge" className="align-top">
+                    <TableCell className="whitespace-nowrap">
+                      {formatDate(charge.dueOn, locale)}
+                    </TableCell>
+                    <TableCell className="break-words">
+                      <bdi>{charge.description}</bdi>
+                      {charge.voidReason ? (
+                        <span className="block text-caption text-text-muted">
+                          <bdi>{charge.voidReason}</bdi>
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell align="right" className="whitespace-nowrap tabular-nums">
+                      {money(charge.amount, charge.currencyCode)}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={charge.status} messages={messages} />
+                    </TableCell>
+                    <TableCell>
+                      {charge.receipts.length === 0 ? (
+                        <span className="text-text-muted">{t('platform.billing.noReceipts')}</span>
+                      ) : (
+                        <ul className="flex flex-col gap-1" data-testid="platform-receipts">
+                          {charge.receipts.map((receipt) => (
+                            <li
+                              key={receipt.id}
+                              data-testid="platform-receipt"
+                              className="break-words text-caption text-text-secondary"
+                            >
+                              {receiptLine(receipt, locale)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </TableCell>
+                    <TableCell align="right" className="whitespace-nowrap tabular-nums">
+                      <span data-testid="platform-outstanding">
+                        {money(charge.outstanding, charge.currencyCode)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {canManage && charge.status === 'open' ? (
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Button
+                            type="button"
+                            size="small"
+                            onClick={() => setPending({ type: 'receipt', charge })}
+                          >
+                            {t('platform.billing.recordReceipt')}
+                            <span className="sr-only"> {about}</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            size="small"
+                            onClick={() => {
+                              voiding.reset();
+                              setPending({ type: 'void', charge });
+                            }}
+                          >
+                            {t('platform.billing.void')}
+                            <span className="sr-only"> {about}</span>
+                          </Button>
+                        </div>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {hasMore ? (
         <p data-testid="platform-billing-more" className="text-caption text-text-muted">
@@ -373,15 +347,6 @@ export function BillingPanel({
         </nav>
       ) : null}
 
-      {viewing ? (
-        <ReceiptsDrawer
-          key={viewing.id}
-          locale={locale}
-          messages={messages}
-          charge={viewing}
-          onClose={() => setViewing(null)}
-        />
-      ) : null}
       {pending?.type === 'charge' ? (
         <ChargeDialog
           messages={messages}
@@ -426,72 +391,6 @@ export function BillingPanel({
         />
       ) : null}
     </ConsoleSection>
-  );
-}
-
-/**
- * Every payment recorded against one charge, whole, in the words the panel
- * wrote them in before. It reads nothing: the charge in hand carries them.
- *
- * Material's drawer keeps Tab inside while it is open and returns focus to the
- * button that opened it; Escape and Close both close it.
- */
-function ReceiptsDrawer({
-  locale,
-  messages,
-  charge,
-  onClose,
-}: {
-  readonly locale: Locale;
-  readonly messages: Messages;
-  readonly charge: SubscriptionCharge;
-  readonly onClose: () => void;
-}) {
-  const titleId = useId();
-  const reducedMotion = useReducedMotion();
-  return (
-    <Drawer
-      open
-      anchor="right"
-      onClose={onClose}
-      {...(reducedMotion ? { transitionDuration: 0 } : {})}
-      slotProps={{
-        paper: {
-          role: 'dialog',
-          'aria-modal': true,
-          'aria-labelledby': titleId,
-          className: 'w-full max-w-md',
-          'data-testid': 'platform-receipts-detail',
-        } as Record<string, unknown>,
-      }}
-    >
-      <div className="flex flex-col gap-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h2 id={titleId} className="text-section-title font-medium text-text-primary">
-              {translate(messages, 'platform.billing.received')}
-            </h2>
-            <p className="break-words text-supporting text-text-secondary">
-              <bdi>{charge.description}</bdi>
-            </p>
-          </div>
-          <Button type="button" variant="outlined" size="small" onClick={onClose} autoFocus>
-            {translate(messages, 'overlay.close')}
-          </Button>
-        </div>
-        <ul className="flex flex-col gap-2">
-          {charge.receipts.map((receipt) => (
-            <li
-              key={receipt.id}
-              data-testid="platform-receipt"
-              className="break-words text-body text-text-primary"
-            >
-              {receiptLine(receipt, locale)}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </Drawer>
   );
 }
 

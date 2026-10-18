@@ -1,7 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState, useTransition, type FormEvent, type RefObject } from 'react';
+import { useState, type FormEvent, type RefObject } from 'react';
 import Button from '@mui/material/Button';
 import {
   useUnavailableListGuard,
@@ -10,6 +9,7 @@ import {
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { ListRetry } from '@/features/administration/organization/components/StructureDialog';
 import { FormDialog } from '@/features/administration/shared/components/FormDialog';
 import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
@@ -55,7 +55,9 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * The four dialogs are the shared form dialog with the Material fields; what
  * each sends is unchanged, field for field. The list guard is the shared one
  * (`useUnavailableListGuard`), handed the dialog's own form, because the form
- * dialog answers a submission with no event of its own.
+ * dialog answers a submission with no event of its own. Try again is the
+ * Organisation screen's own Material retry (`ListRetry`), which renders the page
+ * again as `ReferenceListRetry` did.
  */
 
 type Pending = 'company' | 'branch' | 'invite' | 'resend';
@@ -76,30 +78,6 @@ function stoppedForList(
     preventDefault: () => undefined,
   } as unknown as FormEvent<HTMLFormElement>;
   return guard.stop(submission);
-}
-
-/**
- * Try again for a list read on the server while the page was rendered: renders
- * the route again, which repeats the read and keeps whatever was typed
- * (`ReferenceListRetry`'s behaviour, as a Material button).
- */
-function ListRetry({ label }: { readonly label: string }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  return (
-    <div>
-      <Button
-        type="button"
-        variant="outlined"
-        size="small"
-        onClick={() => startTransition(() => router.refresh())}
-        disabled={pending}
-        aria-busy={pending || undefined}
-      >
-        {label}
-      </Button>
-    </div>
-  );
 }
 
 export function OrganizationGrowthPanel({

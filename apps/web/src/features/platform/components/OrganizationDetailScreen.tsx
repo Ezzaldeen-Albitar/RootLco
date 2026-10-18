@@ -382,10 +382,14 @@ export function OrganizationDetailScreen({
               The read was refused or failed: said as that, never as an
               organisation with no charges. No retry is offered, as before —
               the page is read on the server, and a reload repeats it.
+
+              No locale is passed, so an ended session offers no link, as the
+              state it replaces offered none: with one, the state would link to
+              bare sign-in, where the console's own session check sends an ended
+              session to the session-ended route with the page it was on.
             */}
             <MuiReadFailureState
               messages={messages}
-              locale={locale}
               status={charges.status}
               correlationId={charges.correlationId}
             />
