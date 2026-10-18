@@ -218,7 +218,10 @@ export function OrganizationsScreen({
 
       <OperationalGrid<OrganizationRow>
         messages={messages}
-        locale={locale}
+        // No locale, so an ended session offers no link, as the organisation
+        // page's billing read does: with one, the state would link to bare
+        // sign-in, where the console's own session check sends an ended session
+        // to the session-ended route with the page it was on.
         label={t('platform.organizations.title')}
         columns={columns}
         rowId={(row) => row.id}

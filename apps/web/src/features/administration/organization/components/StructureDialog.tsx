@@ -1,8 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useId, useState, useTransition, type ReactNode } from 'react';
-import Button from '@mui/material/Button';
+import { useId, useState, type ReactNode } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -130,26 +128,8 @@ export function StructureDialog({
 }
 
 /**
- * Try again for a list read on the server while the page was rendered — the
- * currencies, the time zones and the languages. Renders the route again, which
- * repeats the read and keeps whatever was typed (`ReferenceListRetry`'s
- * behaviour, as a Material button).
+ * `ListRetry` now lives with the other administration parts the console shares
+ * (`../../shared/components/ListRetry`); it is re-exported here, unchanged, for
+ * the Organisation screen's own callers.
  */
-export function ListRetry({ label }: { readonly label: string }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  return (
-    <div>
-      <Button
-        type="button"
-        variant="outlined"
-        size="small"
-        onClick={() => startTransition(() => router.refresh())}
-        disabled={pending}
-        aria-busy={pending || undefined}
-      >
-        {label}
-      </Button>
-    </div>
-  );
-}
+export { ListRetry } from '../../shared/components/ListRetry';
