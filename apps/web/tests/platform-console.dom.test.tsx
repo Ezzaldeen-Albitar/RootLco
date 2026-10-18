@@ -829,15 +829,17 @@ describe('the subscription dialog', () => {
       attempt: 1,
     });
     renderLtr(
-      <OrganizationDetailScreen
-        locale="en"
-        messages={messages}
-        organization={detail}
-        plans={[plan]}
-        charges={null}
-        capabilities={{ ...NONE, canManageSubscription: true }}
-        today="2026-09-16"
-      />
+      withMui(
+        <OrganizationDetailScreen
+          locale="en"
+          messages={messages}
+          organization={detail}
+          plans={[plan]}
+          charges={null}
+          capabilities={{ ...NONE, canManageSubscription: true }}
+          today="2026-09-16"
+        />
+      )
     );
     await userEvent.click(
       screen.getByRole('button', { name: L('platform.subscription.act.upgraded') })
@@ -847,12 +849,8 @@ describe('the subscription dialog', () => {
       within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.plan')}`)),
       'test_plan'
     );
-    fireEvent.change(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.starts')}`)),
-      {
-        target: { value: '2026-10-01' },
-      }
-    );
+    // A day picker since P1-32-PRE-OD-WP06B2, typed part by part.
+    await typeDay(dialog, L('platform.subscription.starts'), '01102026');
     await userEvent.selectOptions(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.term')}$`)),
       '24'
@@ -903,15 +901,17 @@ describe('the subscription dialog', () => {
       attempt: 1,
     });
     renderLtr(
-      <OrganizationDetailScreen
-        locale="en"
-        messages={messages}
-        organization={detail}
-        plans={[plan]}
-        charges={null}
-        capabilities={{ ...NONE, canManageSubscription: true }}
-        today="2026-09-16"
-      />
+      withMui(
+        <OrganizationDetailScreen
+          locale="en"
+          messages={messages}
+          organization={detail}
+          plans={[plan]}
+          charges={null}
+          capabilities={{ ...NONE, canManageSubscription: true }}
+          today="2026-09-16"
+        />
+      )
     );
     await userEvent.click(
       screen.getByRole('button', { name: L('platform.subscription.act.upgraded') })
@@ -921,10 +921,7 @@ describe('the subscription dialog', () => {
       within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.plan')}`)),
       'test_plan'
     );
-    fireEvent.change(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.starts')}`)),
-      { target: { value: '2026-10-01' } }
-    );
+    await typeDay(dialog, L('platform.subscription.starts'), '01102026');
     await userEvent.type(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.reason')}`)),
       'Wrong plan chosen'
@@ -954,26 +951,23 @@ describe('the subscription dialog', () => {
       attempt: 1,
     });
     renderLtr(
-      <OrganizationDetailScreen
-        locale="en"
-        messages={messages}
-        organization={detail}
-        plans={[plan]}
-        charges={null}
-        capabilities={{ ...NONE, canManageSubscription: true }}
-        today="2026-09-16"
-      />
+      withMui(
+        <OrganizationDetailScreen
+          locale="en"
+          messages={messages}
+          organization={detail}
+          plans={[plan]}
+          charges={null}
+          capabilities={{ ...NONE, canManageSubscription: true }}
+          today="2026-09-16"
+        />
+      )
     );
     await userEvent.click(
       screen.getByRole('button', { name: L('platform.subscription.act.renewed') })
     );
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.starts')}`)),
-      {
-        target: { value: '2027-09-01' },
-      }
-    );
+    await typeDay(dialog, L('platform.subscription.starts'), '01092027');
     await userEvent.selectOptions(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.term')}$`)),
       'other'
@@ -991,6 +985,14 @@ describe('the subscription dialog', () => {
     const input = assignSubscriptionAction.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(input).toMatchObject({ kind: 'renewed', termMonths: 18, planCode: 'test_plan' });
     expect(typeof input.termMonths).toBe('number');
+    // The whole document, key for key, as the form sent it before Material UI.
+    expect(input).toEqual({
+      planCode: 'test_plan',
+      effectiveFrom: '2027-09-01',
+      termMonths: 18,
+      kind: 'renewed',
+      reason: 'Renewal',
+    });
   });
 
   it('cancels the subscription the operator was looking at, on the date and reason given', async () => {
@@ -1000,24 +1002,23 @@ describe('the subscription dialog', () => {
       attempt: 1,
     });
     renderLtr(
-      <OrganizationDetailScreen
-        locale="en"
-        messages={messages}
-        organization={detail}
-        plans={[plan]}
-        charges={null}
-        capabilities={{ ...NONE, canManageSubscription: true }}
-        today="2026-09-16"
-      />
+      withMui(
+        <OrganizationDetailScreen
+          locale="en"
+          messages={messages}
+          organization={detail}
+          plans={[plan]}
+          charges={null}
+          capabilities={{ ...NONE, canManageSubscription: true }}
+          today="2026-09-16"
+        />
+      )
     );
     await userEvent.click(
       screen.getByRole('button', { name: L('platform.subscription.act.cancel') })
     );
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.ends')}`)),
-      { target: { value: '2026-12-31' } }
-    );
+    await typeDay(dialog, L('platform.subscription.ends'), '31122026');
     await userEvent.type(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.reason')}`)),
       'Not renewing'
@@ -2014,6 +2015,543 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
     expect(voidChargeAction.mock.calls[0]).toEqual([TENANT, CHARGE, 'Raised in error']);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(M('state.denied.title'));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+});
+
+/*
+ * P1-32-PRE-OD-WP06B2. The subscription panel and the overview on Material UI,
+ * in both languages. The panel is on the plan-assignment path (CC-OD-24), so it
+ * is held to presentation only: the same acts, the same plans offered in the
+ * same order under the same names, the same term choices, the same documents
+ * sent — whole — and the same sentences, "no subscription" among them.
+ */
+describe.each(BOTH_DIRECTIONS)('%s: the subscription panel on Material UI', (locale, paint) => {
+  const catalogue = locale === 'ar' ? AR : EN;
+  const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+  const words = getMessages(locale);
+  const LONG_REASON =
+    'Test reason long enough to run past the end of its column in either language, kept whole';
+  const page = (
+    organization: Parameters<typeof OrganizationDetailScreen>[0]['organization'],
+    plans: Parameters<typeof OrganizationDetailScreen>[0]['plans'] = [plan],
+    canManageSubscription = true
+  ) =>
+    paint(
+      withMui(
+        <OrganizationDetailScreen
+          locale={locale}
+          messages={words}
+          organization={organization}
+          plans={plans}
+          charges={null}
+          capabilities={{ ...NONE, canManageSubscription }}
+          today="2026-09-16"
+        />,
+        locale
+      )
+    );
+  const panel = () =>
+    screen
+      .getByRole('heading', { name: M('platform.subscription.title') })
+      .closest('section') as HTMLElement;
+
+  it('shows the plan in force, the history and every change whole, with the acts named', () => {
+    page({
+      ...detail,
+      subscriptions: [
+        subscription,
+        {
+          ...subscription,
+          id: '22222222-2222-4222-8222-222222222223',
+          planName: 'Test Plan Earlier',
+          status: 'cancelled',
+          effectiveFrom: '2025-09-01',
+          effectiveTo: '2026-08-31',
+        },
+      ],
+      subscriptionEvents: [
+        {
+          id: 'e1',
+          subscriptionId: SUBSCRIPTION,
+          eventKind: 'upgraded',
+          effectiveFrom: '2026-09-01',
+          effectiveTo: null,
+          occurredAt: '2026-09-01T08:00:00.000Z',
+          fromPlanCode: 'test_plan_small',
+          toPlanCode: 'test_plan',
+          reason: LONG_REASON,
+        },
+      ],
+    });
+    const section = panel();
+    const summary = within(section).getByTestId('platform-current-plan');
+    expect(summary).toHaveTextContent('Test Plan');
+    expect(summary).toHaveTextContent(flat(formatDate('2026-09-01', locale)));
+    expect(flat(summary.textContent)).toContain(flat(formatDate('2027-08-31', locale)));
+
+    const history = within(section).getByRole('table', {
+      name: M('platform.subscription.history'),
+    });
+    expect(
+      within(history)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      M('platform.subscription.plan'),
+      M('platform.subscription.status'),
+      M('platform.subscription.starts'),
+      M('platform.subscription.ends'),
+    ]);
+    const [, current, earlier] = within(history).getAllByRole('row') as HTMLElement[];
+    expect(within(current as HTMLElement).getByText(M('platform.status.active'))).toBeVisible();
+    expect(earlier).toHaveTextContent('Test Plan Earlier');
+    expect(earlier).toHaveTextContent(M('platform.status.cancelled'));
+
+    const events = within(section).getByRole('table', {
+      name: M('platform.subscription.events'),
+    });
+    expect(
+      within(events)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      M('platform.subscription.when'),
+      M('platform.subscription.act'),
+      M('platform.subscription.change'),
+      M('platform.subscription.reason'),
+    ]);
+    const [, change] = within(events).getAllByRole('row') as HTMLElement[];
+    expect(change).toHaveTextContent(M('platform.subscription.event.upgraded'));
+    expect(change).toHaveTextContent('test_plan_small → test_plan');
+    // The reason is in the cell whole, on screen — not cut, not behind a title.
+    const reason = within(change as HTMLElement).getByText(LONG_REASON);
+    expect(reason).toBeVisible();
+    expect(reason.closest('[title]')).toBeNull();
+
+    // Every act the panel offers, by its accessible name, in order, and no other.
+    const acts = within(section).getAllByRole('button');
+    expect(acts).toHaveLength(4);
+    [
+      'platform.subscription.act.renewed',
+      'platform.subscription.act.upgraded',
+      'platform.subscription.act.downgraded',
+      'platform.subscription.act.cancel',
+    ].forEach((key, index) => expect(acts[index], key).toHaveAccessibleName(M(key)));
+  });
+
+  it('says the organisation has no subscription, in the same words, and offers only Assign', () => {
+    page({ ...detail, subscriptions: [], subscriptionEvents: [] });
+    const section = panel();
+    expect(within(section).getByTestId('platform-no-subscription')).toHaveTextContent(
+      M('platform.subscription.none')
+    );
+    const history = within(section).getByRole('table', {
+      name: M('platform.subscription.history'),
+    });
+    expect(within(history).getAllByRole('row')[1]).toHaveTextContent(
+      M('platform.subscription.none')
+    );
+    const events = within(section).getByRole('table', {
+      name: M('platform.subscription.events'),
+    });
+    expect(within(events).getAllByRole('row')[1]).toHaveTextContent(
+      M('platform.subscription.noEvents')
+    );
+    // Assign is the one act offered, and it is named for itself.
+    const acts = within(section).getAllByRole('button');
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toHaveAccessibleName(M('platform.subscription.act.assigned'));
+  });
+
+  it('offers no act without the authority, or when the plan catalogue could not be read', () => {
+    const { unmount } = page(detail, [plan], false);
+    expect(within(panel()).queryByRole('button')).toBeNull();
+    unmount();
+    page(detail, null, true);
+    expect(within(panel()).queryByRole('button')).toBeNull();
+  });
+
+  it('assigns a plan from the same choices, in the same order, sending the same document', async () => {
+    assignSubscriptionAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.subscription.done',
+      attempt: 1,
+    });
+    const nameOnly = {
+      ...plan,
+      id: '33333333-3333-4333-8333-333333333334',
+      planCode: 'test_plan_name_only',
+      displayName: null,
+      name: 'Test Plan Name Only',
+    };
+    const retired = { ...plan, id: 'retired', planCode: 'test_plan_retired', status: 'retired' };
+    const draft = { ...plan, id: 'draft', planCode: 'test_plan_draft', status: 'draft' };
+    page({ ...detail, subscriptions: [] }, [plan, retired, nameOnly, draft]);
+    await userEvent.click(
+      screen.getByRole('button', { name: M('platform.subscription.act.assigned') })
+    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(
+      M('platform.subscription.act.assigned')
+    );
+    const select = within(dialog).getByLabelText(labelledBy(M('platform.subscription.plan')));
+    // The active plans only, in the catalogue's order, by name.
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => [option.getAttribute('value'), option.textContent])
+    ).toEqual([
+      ['', M('platform.provision.choose')],
+      ['test_plan', 'Test Plan'],
+      ['test_plan_name_only', 'Test Plan Name Only'],
+    ]);
+    const term = within(dialog).getByLabelText(new RegExp(`^${M('platform.subscription.term')}$`));
+    expect(term).toHaveValue('12');
+    expect(
+      within(term)
+        .getAllByRole('option')
+        .map((option) => [option.getAttribute('value'), option.textContent])
+    ).toEqual([
+      ['12', `12 ${M('platform.subscription.months')}`],
+      ['24', `24 ${M('platform.subscription.months')}`],
+      ['36', `36 ${M('platform.subscription.months')}`],
+      ['other', M('platform.subscription.otherTerm')],
+    ]);
+    await userEvent.selectOptions(select, 'test_plan_name_only');
+    await typeDay(dialog, M('platform.subscription.starts'), '01102026');
+    await userEvent.selectOptions(term, '36');
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(M('platform.reason'))),
+      'First plan'
+    );
+    // No over-capacity block before the server refused anything.
+    expect(within(dialog).queryByTestId('platform-over-capacity')).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(1));
+    expect(assignSubscriptionAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        planCode: 'test_plan_name_only',
+        effectiveFrom: '2026-10-01',
+        termMonths: 36,
+        kind: 'assigned',
+        reason: 'First plan',
+      },
+    ]);
+  });
+
+  it('renews the plan in force for a free number of months, sending the same document', async () => {
+    assignSubscriptionAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.subscription.done',
+      attempt: 1,
+    });
+    page(detail);
+    await userEvent.click(
+      screen.getByRole('button', { name: M('platform.subscription.act.renewed') })
+    );
+    const dialog = await screen.findByRole('dialog');
+    // A renewal opens on the plan in force.
+    expect(within(dialog).getByLabelText(labelledBy(M('platform.subscription.plan')))).toHaveValue(
+      'test_plan'
+    );
+    await typeDay(dialog, M('platform.subscription.starts'), '01092027');
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText(new RegExp(`^${M('platform.subscription.term')}$`)),
+      'other'
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(M('platform.subscription.termMonths'))),
+      '18'
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(M('platform.reason'))),
+      'Renewal'
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(1));
+    expect(assignSubscriptionAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        planCode: 'test_plan',
+        effectiveFrom: '2027-09-01',
+        termMonths: 18,
+        kind: 'renewed',
+        reason: 'Renewal',
+      },
+    ]);
+  });
+
+  it('sends a start day left blank as before, and refuses one only partly typed on its box', async () => {
+    const user = userEvent.setup();
+    assignSubscriptionAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { effectiveFrom: 'platform.error.required' },
+      attempt: 1,
+    });
+    page(detail);
+    await user.click(screen.getByRole('button', { name: M('platform.subscription.act.upgraded') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(
+      within(dialog).getByLabelText(labelledBy(M('platform.subscription.plan'))),
+      'test_plan'
+    );
+    await user.type(within(dialog).getByLabelText(labelledBy(M('platform.reason'))), 'More');
+    await user.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(1));
+    expect(assignSubscriptionAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        planCode: 'test_plan',
+        effectiveFrom: '',
+        termMonths: 12,
+        kind: 'upgraded',
+        reason: 'More',
+      },
+    ]);
+    const starts = within(dialog).getByRole('group', {
+      name: labelledBy(M('platform.subscription.starts')),
+    });
+    await waitFor(() => expect(starts).toHaveAttribute('aria-invalid', 'true'));
+
+    // The day and the month, and no year: refused here, nothing sent.
+    await typeDay(dialog, M('platform.subscription.starts'), '0110');
+    await user.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+    expect(await within(dialog).findByText(M('platform.error.date'))).toBeVisible();
+    expect(assignSubscriptionAction).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * The behaviour that differs, pinned (the same open Owner question as the
+   * plan form and the billing forms): the old native date box sent a day such
+   * as 2100-01-01, which the action and the API both accept. The picker's range
+   * ends on 2099-12-31, so a later day is refused on its own box and nothing
+   * is sent.
+   */
+  it('refuses a start day after 2099-12-31 on its own box, and sends nothing', async () => {
+    const user = userEvent.setup();
+    page(detail);
+    await user.click(screen.getByRole('button', { name: M('platform.subscription.act.upgraded') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(
+      within(dialog).getByLabelText(labelledBy(M('platform.subscription.plan'))),
+      'test_plan'
+    );
+    const starts = await typeDay(dialog, M('platform.subscription.starts'), '01012100');
+    await user.type(within(dialog).getByLabelText(labelledBy(M('platform.reason'))), 'Later');
+    await user.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+    expect(await within(dialog).findByText(M('platform.error.date'))).toBeVisible();
+    expect(starts).toHaveAttribute('aria-invalid', 'true');
+    expect(assignSubscriptionAction).not.toHaveBeenCalled();
+  });
+
+  it('cancels the subscription in force on the day and reason given, as before', async () => {
+    const user = userEvent.setup();
+    cancelSubscriptionAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.subscription.cancelled',
+      attempt: 1,
+    });
+    page(detail);
+    await user.click(screen.getByRole('button', { name: M('platform.subscription.act.cancel') }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(
+      M('platform.subscription.act.cancel')
+    );
+    expect(dialog).toHaveTextContent(M('platform.subscription.cancelHint'));
+    // Unfinished: refused on its box, nothing sent.
+    const ends = await typeDay(dialog, M('platform.subscription.ends'), '3112');
+    await user.type(
+      within(dialog).getByLabelText(labelledBy(M('platform.reason'))),
+      'Not renewing'
+    );
+    const confirm = within(dialog).getByRole('button', {
+      name: M('platform.subscription.act.cancel'),
+    });
+    await user.click(confirm);
+    expect(await within(dialog).findByText(M('platform.error.date'))).toBeVisible();
+    expect(ends).toHaveAttribute('aria-invalid', 'true');
+    expect(cancelSubscriptionAction).not.toHaveBeenCalled();
+    await user.click(within(ends).getAllByRole('spinbutton')[2] as HTMLElement);
+    await user.keyboard('2026');
+    await waitFor(() => expect(within(dialog).queryByText(M('platform.error.date'))).toBeNull());
+    await user.click(confirm);
+    await waitFor(() => expect(cancelSubscriptionAction).toHaveBeenCalledTimes(1));
+    expect(cancelSubscriptionAction.mock.calls[0]).toEqual([
+      TENANT,
+      SUBSCRIPTION,
+      { effectiveTo: '2026-12-31', reason: 'Not renewing' },
+    ]);
+  });
+});
+
+describe.each(BOTH_DIRECTIONS)('%s: the overview on Material UI', (locale, paint) => {
+  const catalogue = locale === 'ar' ? AR : EN;
+  const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+  const words = getMessages(locale);
+  const money = (amount: string) =>
+    flat(formatMoney({ amount, currency: 'SAR' }, intlLocale(locale)));
+  const statistics = {
+    generatedAt: '2026-09-16T09:00:00.000Z',
+    asOf: '2026-09-16T09:00:00.000Z',
+    tenantsByStatus: [{ key: 'active', count: 4 }],
+    activeCompanies: 5,
+    activeBranches: 7,
+    activeUserAccounts: 30,
+    subscriptions: {
+      active: 4,
+      expiringWithin30Days: 1,
+      expiringWithin60Days: 2,
+      expiringWithin90Days: 3,
+      expired: 0,
+    },
+    capacityAlerts: [],
+    revenueByCurrency: [
+      {
+        currencyCode: 'SAR',
+        contracted: '4800.0000',
+        received: '1200.0000',
+        outstanding: '3600.0000',
+        projectedRenewalValue: '6000.0000',
+      },
+    ],
+    health: {
+      readiness: 'ready',
+      readinessChecks: [],
+      outbox: { reachable: true, undelivered: 2, deadLettered: 0, oldestPendingAgeSeconds: 5 },
+    },
+  };
+  const LONG_NAME = 'Test Organisation With A Name Long Enough To Wrap In Its Column';
+  const organizationRow = {
+    id: TENANT,
+    tenantCode: 'test_org_one',
+    displayName: LONG_NAME,
+    status: 'active',
+    defaultLocale: 'en',
+    defaultTimezone: 'Asia/Riyadh',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    activePlanCode: 'test_plan_one',
+    activePlanEffectiveTo: '2026-10-01T00:00:00.000Z',
+    activeCompanyCount: 1,
+    activeBranchCount: 2,
+    activeUserCount: 9,
+  };
+  const show = (
+    organizations: Parameters<typeof PlatformOverview>[0]['organizations'],
+    overrides: Partial<typeof statistics> = {}
+  ) =>
+    paint(
+      withMui(
+        <PlatformOverview
+          locale={locale}
+          messages={words}
+          statistics={{ ...statistics, ...overrides } as never}
+          canReadOrganizations
+          organizations={organizations}
+        />,
+        locale
+      )
+    );
+  const read = (rows: readonly unknown[], hasMore: boolean) =>
+    ({
+      status: 'ok',
+      data: { items: rows, nextCursor: null, hasMore },
+      correlationId: 'cid-organizations',
+    }) as never;
+
+  it('draws the revenue by currency and the organisations ending soon, names whole', () => {
+    show(read([organizationRow], false));
+    const revenue = screen.getByRole('table', { name: M('platform.overview.revenue') });
+    expect(
+      within(revenue)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      M('platform.overview.currency'),
+      M('platform.overview.contracted'),
+      M('platform.overview.received'),
+      M('platform.overview.outstanding'),
+      M('platform.overview.projectedRenewal'),
+    ]);
+    const [, sar] = within(revenue).getAllByRole('row') as HTMLElement[];
+    expect(within(sar as HTMLElement).getByText('SAR')).toHaveAttribute('dir', 'ltr');
+    for (const amount of ['4800.0000', '1200.0000', '3600.0000']) {
+      expect(within(sar as HTMLElement).getByText(money(amount))).toBeInTheDocument();
+    }
+    expect(within(sar as HTMLElement).getByTestId('platform-projection')).toHaveTextContent(
+      money('6000.0000')
+    );
+    const expiring = screen.getByRole('table', {
+      name: M('platform.overview.expiringOrganizations'),
+    });
+    expect(
+      within(expiring)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      M('platform.overview.organization'),
+      M('platform.overview.plan'),
+      M('platform.overview.endsOn'),
+      M('platform.overview.remaining'),
+    ]);
+    const [, row] = within(expiring).getAllByRole('row') as HTMLElement[];
+    const link = within(row as HTMLElement).getByRole('link', { name: LONG_NAME });
+    expect(link).toHaveAttribute('href', `/${locale}/platform/organizations/${TENANT}`);
+    expect(link.closest('[title]')).toBeNull();
+    expect(within(row as HTMLElement).getByText('test_plan_one')).toHaveAttribute('dir', 'ltr');
+    // Nothing beyond the page was offered, so nothing is said of it.
+    expect(screen.getByTestId('platform-expiring-scope')).toHaveTextContent(
+      M('platform.overview.expiringScope').replace('{count}', formatInteger(1, locale))
+    );
+    expect(screen.getByTestId('platform-expiring-scope')).not.toHaveTextContent(
+      M('platform.overview.expiringMore')
+    );
+  });
+
+  it('says that more organisations exist beyond the one page it examined, and offers no pager', () => {
+    show(read([organizationRow], true));
+    expect(screen.getByTestId('platform-expiring-scope')).toHaveTextContent(
+      M('platform.overview.expiringMore')
+    );
+    expect(screen.queryByRole('navigation')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('says no revenue and no organisation ending soon, each in its own words', () => {
+    show(read([{ ...organizationRow, activePlanEffectiveTo: '2028-01-01T00:00:00.000Z' }], false), {
+      revenueByCurrency: [],
+    });
+    const revenue = screen.getByRole('table', { name: M('platform.overview.revenue') });
+    expect(within(revenue).getAllByRole('row')[1]).toHaveTextContent(
+      M('platform.overview.noRevenue')
+    );
+    const expiring = screen.getByRole('table', {
+      name: M('platform.overview.expiringOrganizations'),
+    });
+    expect(within(expiring).getAllByRole('row')[1]).toHaveTextContent(
+      M('platform.overview.noExpiring')
+    );
+  });
+
+  it('says the organisations could not be read, whatever failed, with the reference', () => {
+    for (const status of ['denied', 'error', 'unavailable', 'expired', 'not-found'] as const) {
+      const { unmount } = show({ status, correlationId: `cid-${status}` });
+      const alert = screen.getByRole('alert');
+      expect(alert, status).toHaveTextContent(M('platform.overview.expiringUnavailable'));
+      expect(alert, status).toHaveTextContent(`cid-${status}`);
+      expect(
+        screen.queryByRole('table', { name: M('platform.overview.expiringOrganizations') }),
+        status
+      ).toBeNull();
+      expect(screen.queryByText(M('platform.overview.noExpiring')), status).toBeNull();
+      // The revenue was read separately and still stands.
+      expect(
+        screen.getByRole('table', { name: M('platform.overview.revenue') }),
+        status
+      ).toBeVisible();
+      unmount();
+    }
   });
 });
 

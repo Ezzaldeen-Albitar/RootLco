@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { formatInteger } from '@/lib/format';
 import { renderLtr, renderRtl } from './render';
 
 /**
@@ -155,17 +156,33 @@ function renderDetail(
   referenceValues: typeof references | null = references
 ) {
   return renderLtr(
-    <OrganizationDetailScreen
-      locale="en"
-      messages={messages}
-      organization={{ ...detail, ...overrides }}
-      plans={[plan]}
-      referenceValues={referenceValues}
-      charges={null}
-      capabilities={{ ...NONE, ...capabilities }}
-      today="2026-09-17"
-    />
+    withMui(
+      <OrganizationDetailScreen
+        locale="en"
+        messages={messages}
+        organization={{ ...detail, ...overrides }}
+        plans={[plan]}
+        referenceValues={referenceValues}
+        charges={null}
+        capabilities={{ ...NONE, ...capabilities }}
+        today="2026-09-17"
+      />
+    )
   );
+}
+
+/**
+ * Types a day into a day picker, part by part: day, month, year. Whatever the
+ * picker held is cleared first, so the digits land in blank parts.
+ */
+async function typeDay(scope: HTMLElement, label: string, digits: string) {
+  const user = userEvent.setup();
+  const group = within(scope).getByRole('group', { name: new RegExp(`^${label}`) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard('{Control>}a{/Control}');
+  await user.keyboard('{Backspace}');
+  await user.keyboard(digits);
+  return group;
 }
 
 /**
@@ -690,6 +707,149 @@ describe('inviting an administrator', () => {
   });
 });
 
+/*
+ * P1-32-PRE-OD-WP06B2. The over-capacity confirmation on Material UI, in both
+ * languages. Its semantics are unchanged: the block appears only after the
+ * server refused, it names every kind with the server's own numbers, nothing is
+ * accepted until the operator ticks it and says why, and the second request is
+ * the first one plus the acceptance — never a different request.
+ */
+describe.each([
+  ['en', renderLtr, EN, messages],
+  ['ar', renderRtl, AR, arabicMessages],
+] as const)(
+  '%s: the over-capacity confirmation on Material UI',
+  (locale, paint, catalogue, words) => {
+    const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+    const entry = (used: number, limit: number) =>
+      M('platform.overCapacity.entry')
+        .replace('{used}', formatInteger(used, locale))
+        .replace('{limit}', formatInteger(limit, locale));
+    const refused = {
+      status: 'error' as const,
+      messageKey: 'capacity.planBelowUsage',
+      attempt: 1,
+      overCapacity: [
+        { kind: 'companies', used: 2, newLimit: 1 },
+        { kind: 'branches', used: 3, newLimit: 1 },
+        { kind: 'users', used: 12, newLimit: 10 },
+      ],
+    };
+    const FIRST = {
+      planCode: 'test_plan',
+      effectiveFrom: '2026-10-01',
+      termMonths: 12,
+      kind: 'assigned',
+      reason: 'Moving to the smaller plan',
+    };
+
+    async function openAndSend() {
+      paint(
+        withMui(
+          <OrganizationDetailScreen
+            locale={locale}
+            messages={words}
+            organization={detail}
+            plans={[plan]}
+            referenceValues={references}
+            charges={null}
+            capabilities={{ ...NONE, canManageSubscription: true }}
+            today="2026-09-17"
+          />,
+          locale
+        )
+      );
+      await userEvent.click(
+        screen.getByRole('button', { name: M('platform.subscription.act.assigned') })
+      );
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).queryByTestId('platform-over-capacity')).toBeNull();
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText(new RegExp(`^${M('platform.subscription.plan')}`)),
+        'test_plan'
+      );
+      await typeDay(dialog, M('platform.subscription.starts'), '01102026');
+      await userEvent.type(
+        within(dialog).getByLabelText(new RegExp(`^${M('platform.reason')}`)),
+        'Moving to the smaller plan'
+      );
+      await userEvent.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+      await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(1));
+      expect(assignSubscriptionAction.mock.calls[0]).toEqual([TENANT, FIRST]);
+      return dialog;
+    }
+
+    it('names every kind with the server numbers, and re-sends the same request plus the acceptance', async () => {
+      assignSubscriptionAction
+        .mockResolvedValueOnce(refused)
+        .mockResolvedValueOnce(done('platform.subscription.done'));
+      const dialog = await openAndSend();
+      const block = await within(dialog).findByTestId('platform-over-capacity');
+      expect(block).toHaveTextContent(M('platform.overCapacity.title'));
+      expect(block).toHaveTextContent(M('platform.overCapacity.body'));
+      const lines = within(block).getAllByRole('listitem');
+      expect(lines.map((line) => line.textContent)).toEqual([
+        `${M('platform.capacity.companies')} ${entry(2, 1)}`,
+        `${M('platform.capacity.branches')} ${entry(3, 1)}`,
+        `${M('platform.capacity.users')} ${entry(12, 10)}`,
+      ]);
+      // Nothing accepted until it is ticked, and the reason asked only then.
+      const accept = within(block).getByRole('checkbox', {
+        name: M('platform.overCapacity.accept'),
+      });
+      expect(accept).not.toBeChecked();
+      expect(
+        within(dialog).queryByLabelText(new RegExp(`^${M('platform.overCapacity.reason')}`))
+      ).toBeNull();
+      await userEvent.click(accept);
+      await userEvent.type(
+        within(dialog).getByLabelText(new RegExp(`^${M('platform.overCapacity.reason')}`)),
+        'The customer will close a branch this month'
+      );
+      await userEvent.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+      await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(2));
+      expect(assignSubscriptionAction.mock.calls[1]).toEqual([
+        TENANT,
+        {
+          ...FIRST,
+          acceptOverCapacity: true,
+          overCapacityReason: 'The customer will close a branch this month',
+        },
+      ]);
+    });
+
+    it('sends no acceptance when it is not ticked, or ticked and taken back', async () => {
+      assignSubscriptionAction.mockResolvedValue(refused);
+      const dialog = await openAndSend();
+      const block = await within(dialog).findByTestId('platform-over-capacity');
+      // The refusal has settled, and Save is back, before it is pressed again.
+      await userEvent.click(
+        await within(dialog).findByRole('button', { name: M('platform.save') })
+      );
+      await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(2));
+      expect(assignSubscriptionAction.mock.calls[1]).toEqual([TENANT, FIRST]);
+      // The write has settled before the next act: Save is back.
+      await within(dialog).findByRole('button', { name: M('platform.save') });
+
+      const accept = within(block).getByRole('checkbox', {
+        name: M('platform.overCapacity.accept'),
+      });
+      await userEvent.click(accept);
+      await userEvent.type(
+        within(dialog).getByLabelText(new RegExp(`^${M('platform.overCapacity.reason')}`)),
+        'Typed and taken back'
+      );
+      await userEvent.click(accept);
+      expect(
+        within(dialog).queryByLabelText(new RegExp(`^${M('platform.overCapacity.reason')}`))
+      ).toBeNull();
+      await userEvent.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+      await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(3));
+      expect(assignSubscriptionAction.mock.calls[2]).toEqual([TENANT, FIRST]);
+    });
+  }
+);
+
 describe('a plan below current usage', () => {
   it('shows every kind that would be over its ceiling, and re-sends with the acceptance', async () => {
     assignSubscriptionAction
@@ -713,10 +873,8 @@ describe('a plan below current usage', () => {
       within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.plan')}`)),
       'test_plan'
     );
-    fireEvent.change(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.starts')}`)),
-      { target: { value: '2026-10-01' } }
-    );
+    // A day picker since P1-32-PRE-OD-WP06B2, typed part by part.
+    await typeDay(dialog, L('platform.subscription.starts'), '01102026');
     await userEvent.type(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.reason')}`)),
       'Moving to the smaller plan'

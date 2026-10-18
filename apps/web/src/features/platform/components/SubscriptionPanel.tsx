@@ -1,9 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
-import { Dialog } from '@/components/overlays/Overlays';
-import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import Button from '@mui/material/Button';
+import TableCell from '@mui/material/TableCell';
+import TableRow from '@mui/material/TableRow';
+import { ZonedDateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { FormDialog } from '@/features/administration/shared/components/FormDialog';
+import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -17,15 +23,8 @@ import {
   type OrganizationSubscription,
   type SubscriptionPlan,
 } from '../types';
-import {
-  Cell,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  SECTION_HINT,
-  Section,
-  SimpleTable,
-  StatusBadge,
-} from './ui';
+import { ConsoleSection, ConsoleTable, useUnfinishedDays } from './console-parts';
+import { SECTION_HINT, StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
@@ -36,11 +35,41 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * the backend records which one was meant — so each is its own button and the
  * dialog sends the act as `kind`. The term is a whole number of months: a preset
  * or a free value.
+ *
+ * ## On Material UI (ADR-022, P1-32-PRE-OD-WP06B2)
+ *
+ * Presentation only. The acts offered, the plans the assign dialog offers (the
+ * active ones, in the catalogue's order, by name), the term choices, the
+ * over-capacity confirmation and the documents the two dialogs send are exactly
+ * what they were; so is every sentence the panel says, "This organisation has no
+ * subscription" among them. The history and the changes are Material tables, so
+ * a long plan name or reason wraps rather than being cut. The two forms are the
+ * shared form dialog with the Material fields.
+ *
+ * The start day and the last day are day pickers on UTC, the clock the console's
+ * other days are read on: the console has no working branch to take another
+ * from. A day only partly typed, or one that is not a day, holds no day; sent as
+ * it stood it would have reached the server as an empty date, so the form
+ * refuses it on its own box before anything is sent. A blank box is sent as it
+ * was before.
  */
 
 type Pending =
   | { readonly type: 'assign'; readonly kind: AssignmentKind }
   | { readonly type: 'cancel'; readonly subscription: OrganizationSubscription };
+
+/** The clock the two day pickers are drawn on. See the note above. */
+const SUBSCRIPTION_DAY_ZONE = 'UTC';
+
+const EVENT_KINDS = [
+  'assigned',
+  'renewed',
+  'upgraded',
+  'downgraded',
+  'cancelled',
+  'suspended',
+  'reactivated',
+];
 
 /** The live assignment: active, and not ended before today. */
 export function currentSubscription(
@@ -83,43 +112,45 @@ export function SubscriptionPanel({
     current ? (
       <>
         {(['renewed', 'upgraded', 'downgraded'] as const).map((kind) => (
-          <button
+          <Button
             key={kind}
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             onClick={() => setPending({ type: 'assign', kind })}
           >
             {t(`platform.subscription.act.${kind}`)}
-          </button>
+          </Button>
         ))}
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           onClick={() => setPending({ type: 'cancel', subscription: current })}
         >
           {t('platform.subscription.act.cancel')}
-        </button>
+        </Button>
       </>
     ) : (
-      <button
+      <Button
         type="button"
-        className={SECONDARY_BUTTON}
+        variant="outlined"
         onClick={() => setPending({ type: 'assign', kind: 'assigned' })}
       >
         {t('platform.subscription.act.assigned')}
-      </button>
+      </Button>
     )
   ) : null;
 
   return (
-    <Section title={t('platform.subscription.title')} actions={actions}>
+    <ConsoleSection title={t('platform.subscription.title')} actions={actions}>
       {current ? (
         <dl data-testid="platform-current-plan" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <dt className="text-supporting text-text-secondary">
               {t('platform.subscription.plan')}
             </dt>
-            <dd className="text-body font-medium text-text-primary">{current.planName}</dd>
+            <dd className="break-words text-body font-medium text-text-primary">
+              <bdi>{current.planName}</bdi>
+            </dd>
           </div>
           <div>
             <dt className="text-supporting text-text-secondary">
@@ -141,66 +172,82 @@ export function SubscriptionPanel({
           </div>
         </dl>
       ) : (
-        <p className="text-body text-text-muted">{t('platform.subscription.none')}</p>
+        <p data-testid="platform-no-subscription" className="text-body text-text-muted">
+          {t('platform.subscription.none')}
+        </p>
       )}
 
-      <h3 className="mt-4 mb-2 text-label font-semibold text-text-secondary">
+      <h3 className="mt-1 text-label font-semibold text-text-secondary">
         {t('platform.subscription.history')}
       </h3>
-      <SimpleTable
+      <ConsoleTable
         caption={t('platform.subscription.history')}
         headers={[
-          t('platform.subscription.plan'),
-          t('platform.subscription.status'),
-          t('platform.subscription.starts'),
-          t('platform.subscription.ends'),
+          { label: t('platform.subscription.plan') },
+          { label: t('platform.subscription.status') },
+          { label: t('platform.subscription.starts') },
+          { label: t('platform.subscription.ends') },
         ]}
         empty={organization.subscriptions.length === 0 ? t('platform.subscription.none') : null}
+        testId="platform-subscription-history"
       >
         {organization.subscriptions.map((entry) => (
-          <tr key={entry.id} className="border-t border-border-subtle">
-            <Cell>{entry.planName}</Cell>
-            <Cell>
+          <TableRow key={entry.id} className="align-top">
+            <TableCell className="break-words">
+              <bdi>{entry.planName}</bdi>
+            </TableCell>
+            <TableCell>
               <StatusBadge status={entry.status} messages={messages} />
-            </Cell>
-            <Cell>{formatDate(entry.effectiveFrom, locale)}</Cell>
-            <Cell>
+            </TableCell>
+            <TableCell className="whitespace-nowrap">
+              {formatDate(entry.effectiveFrom, locale)}
+            </TableCell>
+            <TableCell className="whitespace-nowrap">
               {entry.effectiveTo
                 ? formatDate(entry.effectiveTo, locale)
                 : t('platform.subscription.openEnded')}
-            </Cell>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </SimpleTable>
+      </ConsoleTable>
 
-      <h3 className="mt-4 mb-2 text-label font-semibold text-text-secondary">
+      <h3 className="mt-1 text-label font-semibold text-text-secondary">
         {t('platform.subscription.events')}
       </h3>
-      <SimpleTable
+      <ConsoleTable
         caption={t('platform.subscription.events')}
         headers={[
-          t('platform.subscription.when'),
-          t('platform.subscription.act'),
-          t('platform.subscription.change'),
-          t('platform.subscription.reason'),
+          { label: t('platform.subscription.when') },
+          { label: t('platform.subscription.act') },
+          { label: t('platform.subscription.change') },
+          { label: t('platform.subscription.reason') },
         ]}
         empty={
           organization.subscriptionEvents.length === 0 ? t('platform.subscription.noEvents') : null
         }
+        testId="platform-subscription-events"
       >
         {organization.subscriptionEvents.map((event) => (
-          <tr key={event.id} className="border-t border-border-subtle">
-            <Cell>{formatDateTime(event.occurredAt, locale)}</Cell>
-            <Cell>
+          <TableRow key={event.id} className="align-top">
+            <TableCell className="whitespace-nowrap">
+              {formatDateTime(event.occurredAt, locale)}
+            </TableCell>
+            <TableCell>
               {t(
-                `platform.subscription.event.${['assigned', 'renewed', 'upgraded', 'downgraded', 'cancelled', 'suspended', 'reactivated'].includes(event.eventKind) ? event.eventKind : 'other'}`
+                `platform.subscription.event.${EVENT_KINDS.includes(event.eventKind) ? event.eventKind : 'other'}`
               )}
-            </Cell>
-            <Cell>{[event.fromPlanCode, event.toPlanCode].filter(Boolean).join(' → ') || '—'}</Cell>
-            <Cell>{event.reason}</Cell>
-          </tr>
+            </TableCell>
+            <TableCell className="break-words">
+              <span dir="ltr">
+                {[event.fromPlanCode, event.toPlanCode].filter(Boolean).join(' → ') || '—'}
+              </span>
+            </TableCell>
+            <TableCell className="break-words">
+              <bdi>{event.reason}</bdi>
+            </TableCell>
+          </TableRow>
         ))}
-      </SimpleTable>
+      </ConsoleTable>
 
       {pending?.type === 'assign' && plans ? (
         <AssignDialog
@@ -221,7 +268,7 @@ export function SubscriptionPanel({
           onClose={() => setPending(null)}
         />
       ) : null}
-    </Section>
+    </ConsoleSection>
   );
 }
 
@@ -247,22 +294,24 @@ function AssignDialog({
   const active = plans.filter((plan) => plan.status === 'active');
   const [planCode, setPlanCode] = useState(kind === 'renewed' && current ? current.planCode : '');
   const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [fromProblem, setFromProblem] = useState<DayProblem>(null);
   const [preset, setPreset] = useState<string>('12');
   const [customTerm, setCustomTerm] = useState('');
   const [reason, setReason] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [acceptedReason, setAcceptedReason] = useState('');
+  const { refusal, refuse } = useUnfinishedDays(action.state);
   // Question f: the cursor goes to the first refused field, and a complaint
-  // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  // goes once its field changes (route sweep B3). A day box changes when its
+  // day does or when what the picker finds wrong with it does.
+  const { errors, formRef } = useStateRefusal(refusal, {
     planCode,
-    effectiveFrom,
+    effectiveFrom: `${effectiveFrom}#${fromProblem ?? ''}`,
     preset,
     customTerm,
     reason,
     acceptedReason,
   });
-  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
   // What the backend refused with, kind by kind. It appears only after a
   // refusal: the console never predicts a ceiling, because the numbers that
@@ -274,6 +323,7 @@ function AssignDialog({
       : []) ?? [];
 
   const submit = () => {
+    if (refuse({ effectiveFrom: fromProblem })) return;
     const termText = preset === 'other' ? customTerm.trim() : preset;
     const termMonths = /^\d{1,3}$/.test(termText) ? Number.parseInt(termText, 10) : Number.NaN;
     action.run(
@@ -291,132 +341,126 @@ function AssignDialog({
   };
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
       title={t(`platform.subscription.act.${kind}`)}
       description={t('platform.subscription.dialogHint')}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={submit}
+      formRef={formRef}
+      testId="platform-assign-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <SelectField
-          name="planCode"
-          label={t('platform.subscription.plan')}
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <FormSelectField
+        name="planCode"
+        label={t('platform.subscription.plan')}
+        required
+        value={planCode}
+        placeholder={t('platform.provision.choose')}
+        onChange={setPlanCode}
+        options={active.map((plan) => ({
+          value: plan.planCode,
+          label: plan.displayName ?? plan.name,
+        }))}
+        error={error('planCode')}
+      />
+      <ZonedDateField
+        name="effectiveFrom"
+        timezone={SUBSCRIPTION_DAY_ZONE}
+        label={t('platform.subscription.starts')}
+        required
+        value={effectiveFrom}
+        onChange={setEffectiveFrom}
+        onProblem={setFromProblem}
+        error={error('effectiveFrom')}
+        testId="platform-assign-starts"
+      />
+      <FormSelectField
+        name="termPreset"
+        label={t('platform.subscription.term')}
+        value={preset}
+        onChange={setPreset}
+        options={[
+          ...TERM_PRESETS.map((months) => ({
+            value: String(months),
+            label: `${months} ${t('platform.subscription.months')}`,
+          })),
+          { value: 'other', label: t('platform.subscription.otherTerm') },
+        ]}
+        error={preset === 'other' ? undefined : error('termMonths')}
+      />
+      {preset === 'other' ? (
+        <FormTextField
+          name="termMonths"
+          inputMode="numeric"
+          dir="ltr"
+          label={t('platform.subscription.termMonths')}
           required
-          value={planCode}
-          placeholder={t('platform.provision.choose')}
-          onChange={(event) => setPlanCode(event.target.value)}
-          options={active.map((plan) => ({
-            value: plan.planCode,
-            label: plan.displayName ?? plan.name,
-          }))}
-          error={error('planCode')}
+          value={customTerm}
+          onChange={setCustomTerm}
+          error={error('termMonths')}
         />
-        <TextField
-          name="effectiveFrom"
-          type="date"
-          label={t('platform.subscription.starts')}
-          required
-          value={effectiveFrom}
-          onChange={(event) => setEffectiveFrom(event.target.value)}
-          error={error('effectiveFrom')}
-        />
-        <SelectField
-          name="termPreset"
-          label={t('platform.subscription.term')}
-          value={preset}
-          onChange={(event) => setPreset(event.target.value)}
-          options={[
-            ...TERM_PRESETS.map((months) => ({
-              value: String(months),
-              label: `${months} ${t('platform.subscription.months')}`,
-            })),
-            { value: 'other', label: t('platform.subscription.otherTerm') },
-          ]}
-          error={preset === 'other' ? undefined : error('termMonths')}
-        />
-        {preset === 'other' ? (
-          <TextField
-            name="termMonths"
-            inputMode="numeric"
-            label={t('platform.subscription.termMonths')}
-            required
-            value={customTerm}
-            onChange={(event) => setCustomTerm(event.target.value)}
-            error={error('termMonths')}
-          />
-        ) : null}
-        <TextAreaField
-          name="reason"
-          label={t('platform.reason')}
-          required
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          error={error('reason')}
-        />
-        {overCapacity.length > 0 ? (
-          <div
-            data-testid="platform-over-capacity"
-            className="rounded-lg border border-warning-border bg-warning-subtle p-3"
-          >
-            <p className="text-body font-medium text-text-primary">
-              {t('platform.overCapacity.title')}
-            </p>
-            <ul className="mt-2 flex flex-col gap-1">
-              {overCapacity.map((entry) => (
-                <li key={entry.kind} className="text-supporting text-text-secondary">
-                  <span className="font-medium text-text-primary">
-                    {t(`platform.capacity.${entry.kind}`)}
-                  </span>{' '}
-                  {translateWithValues(messages, 'platform.overCapacity.entry', {
-                    used: formatInteger(entry.used, locale),
-                    limit: formatInteger(entry.newLimit, locale),
-                  })}
-                </li>
-              ))}
-            </ul>
-            <p className={`mt-2 ${SECTION_HINT}`}>{t('platform.overCapacity.body')}</p>
-            <div className="mt-3 flex flex-col gap-3">
-              <CheckboxField
-                name="acceptOverCapacity"
-                label={t('platform.overCapacity.accept')}
-                checked={accepted}
-                onChange={(event) => setAccepted(event.target.checked)}
+      ) : null}
+      <FormTextField
+        name="reason"
+        multiline
+        rows={3}
+        label={t('platform.reason')}
+        required
+        value={reason}
+        onChange={setReason}
+        error={error('reason')}
+      />
+      {overCapacity.length > 0 ? (
+        <div
+          data-testid="platform-over-capacity"
+          className="rounded-lg border border-warning-border bg-warning-subtle p-3"
+        >
+          <p className="text-body font-medium text-text-primary">
+            {t('platform.overCapacity.title')}
+          </p>
+          <ul className="mt-2 flex flex-col gap-1">
+            {overCapacity.map((entry) => (
+              <li key={entry.kind} className="text-supporting text-text-secondary">
+                <span className="font-medium text-text-primary">
+                  {t(`platform.capacity.${entry.kind}`)}
+                </span>{' '}
+                {translateWithValues(messages, 'platform.overCapacity.entry', {
+                  used: formatInteger(entry.used, locale),
+                  limit: formatInteger(entry.newLimit, locale),
+                })}
+              </li>
+            ))}
+          </ul>
+          <p className={`mt-2 ${SECTION_HINT}`}>{t('platform.overCapacity.body')}</p>
+          <div className="mt-3 flex flex-col gap-3">
+            <FormCheckboxField
+              name="acceptOverCapacity"
+              label={t('platform.overCapacity.accept')}
+              checked={accepted}
+              onChange={setAccepted}
+            />
+            {accepted ? (
+              <FormTextField
+                name="overCapacityReason"
+                multiline
+                rows={3}
+                label={t('platform.overCapacity.reason')}
+                required
+                value={acceptedReason}
+                onChange={setAcceptedReason}
+                error={error('overCapacityReason')}
               />
-              {accepted ? (
-                <TextAreaField
-                  name="overCapacityReason"
-                  label={t('platform.overCapacity.reason')}
-                  required
-                  value={acceptedReason}
-                  onChange={(event) => setAcceptedReason(event.target.value)}
-                  error={error('overCapacityReason')}
-                />
-              ) : null}
-            </div>
+            ) : null}
           </div>
-        ) : null}
-        <div className="flex justify-end gap-2">
-          <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
-            {t('overlay.cancel')}
-          </button>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={action.pending}>
-            {action.pending ? t('overlay.working') : t('platform.save')}
-          </button>
         </div>
-      </form>
-    </Dialog>
+      ) : null}
+    </FormDialog>
   );
 }
 
@@ -434,65 +478,60 @@ function CancelDialog({
   const t = (key: string) => translateDynamic(messages, key);
   const action = useConsoleAction(messages);
   const [effectiveTo, setEffectiveTo] = useState('');
+  const [toProblem, setToProblem] = useState<DayProblem>(null);
   const [reason, setReason] = useState('');
+  const { refusal, refuse } = useUnfinishedDays(action.state);
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
-    effectiveTo,
+  const { errors, formRef } = useStateRefusal(refusal, {
+    effectiveTo: `${effectiveTo}#${toProblem ?? ''}`,
     reason,
   });
-  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
       title={t('platform.subscription.act.cancel')}
       description={t('platform.subscription.cancelHint')}
+      submitLabel={t('platform.subscription.act.cancel')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={() => {
+        if (refuse({ effectiveTo: toProblem })) return;
+        action.run(
+          () => cancelSubscriptionAction(tenantId, subscription.id, { effectiveTo, reason }),
+          onClose
+        );
+      }}
+      formRef={formRef}
+      testId="platform-cancel-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          action.run(
-            () => cancelSubscriptionAction(tenantId, subscription.id, { effectiveTo, reason }),
-            onClose
-          );
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <TextField
-          name="effectiveTo"
-          type="date"
-          label={t('platform.subscription.ends')}
-          required
-          value={effectiveTo}
-          onChange={(event) => setEffectiveTo(event.target.value)}
-          error={error('effectiveTo')}
-        />
-        <TextAreaField
-          name="reason"
-          label={t('platform.reason')}
-          required
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          error={error('reason')}
-        />
-        <div className="flex justify-end gap-2">
-          <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
-            {t('overlay.cancel')}
-          </button>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={action.pending}>
-            {action.pending ? t('overlay.working') : t('platform.subscription.act.cancel')}
-          </button>
-        </div>
-      </form>
-    </Dialog>
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <ZonedDateField
+        name="effectiveTo"
+        timezone={SUBSCRIPTION_DAY_ZONE}
+        label={t('platform.subscription.ends')}
+        required
+        value={effectiveTo}
+        onChange={setEffectiveTo}
+        onProblem={setToProblem}
+        error={error('effectiveTo')}
+        testId="platform-cancel-ends"
+      />
+      <FormTextField
+        name="reason"
+        multiline
+        rows={3}
+        label={t('platform.reason')}
+        required
+        value={reason}
+        onChange={setReason}
+        error={error('reason')}
+      />
+    </FormDialog>
   );
 }
