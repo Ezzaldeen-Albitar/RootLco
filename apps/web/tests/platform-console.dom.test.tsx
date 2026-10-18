@@ -582,6 +582,39 @@ describe('the organisation list', () => {
     }
   );
 
+  /*
+   * An ended session is said as itself and offers no link to bare sign-in. The
+   * console's own session check sends an ended session to the session-ended
+   * route with the page it was on; a link from here would skip that, so the
+   * list offers none, as the organisation page's billing read already does.
+   */
+  it.each(BOTH_DIRECTIONS)(
+    '%s: says an ended session as itself when the organisations are read, with no sign-in link',
+    async (locale, paint) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      apiGet.mockResolvedValue({ ok: false, kind: 'unauthenticated', correlationId: 'c-ended' });
+      paint(
+        withMui(
+          <OrganizationsScreen locale={locale} messages={catalogue} canProvision={false} />,
+          locale
+        )
+      );
+
+      const state = await screen.findByTestId('state-expired');
+      expect(within(state).getByRole('heading')).toHaveTextContent(
+        words['state.expired.title'] as string
+      );
+      expect(within(state).queryByRole('link')).toBeNull();
+      expect(screen.queryByRole('link', { name: words['auth.backToLogin'] as string })).toBeNull();
+      expect(document.querySelector(`a[href^="/${locale}/login"]`)).toBeNull();
+      expect(
+        within(state).queryByRole('button', { name: words['state.retry'] as string })
+      ).toBeNull();
+      expect(screen.queryByRole('grid')).toBeNull();
+    }
+  );
+
   it('asks for a chosen status from the first page, says when none matches, and clears it', async () => {
     const page = (items: readonly unknown[]) => ({
       ok: true,
@@ -716,8 +749,8 @@ describe('the organisation detail', () => {
     ]) {
       expect(screen.getByRole('button', { name: L(key) }), key).toBeInTheDocument();
     }
-    // A charge's own acts are the grid's row actions, whose names carry the
-    // charge they act on after the label (P1-32-PRE-OD-WP06B).
+    // A charge's own acts are the billing table's row buttons, whose names
+    // carry the charge they act on after the label (P1-32-PRE-OD-WP06B).
     for (const key of ['platform.billing.recordReceipt', 'platform.billing.void']) {
       expect(screen.getByRole('button', { name: labelledBy(L(key)) }), key).toBeInTheDocument();
     }
@@ -1770,6 +1803,19 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
     expect(screen.queryByRole('button', { name: M('platform.billing.recordCharge') })).toBeNull();
   });
 
+  it('names each charge button by the charge it acts on: its description and its due day', () => {
+    panel();
+    const table = screen.getByRole('table', { name: M('platform.billing.title') });
+    const line = within(table).getByTestId('platform-charge');
+    const about = `${charge.description}, ${formatDate(charge.dueOn, locale)}`;
+    for (const key of ['platform.billing.recordReceipt', 'platform.billing.void']) {
+      expect(
+        within(line).getByRole('button', { name: labelledBy(M(key)) }),
+        key
+      ).toHaveAccessibleName(`${M(key)} ${about}`);
+    }
+  });
+
   it('says that no charge was recorded, or none with the chosen status, in its own words', () => {
     const { unmount } = panel({ charges: [], status: 'void' });
     expect(screen.getByTestId('platform-billing-empty')).toHaveTextContent(
@@ -2339,6 +2385,12 @@ describe.each(BOTH_DIRECTIONS)('%s: the subscription panel on Material UI', (loc
       'test_plan'
     );
     const starts = await typeDay(dialog, M('platform.subscription.starts'), '01012100');
+    // The year box holds the year typed, whole, so the refusal below is of
+    // 2100 itself and not of a year the picker cut short.
+    expect(within(starts).getByRole('spinbutton', { name: M('mui.pickers.year') })).toHaveAttribute(
+      'aria-valuenow',
+      '2100'
+    );
     await user.type(within(dialog).getByLabelText(labelledBy(M('platform.reason'))), 'Later');
     await user.click(within(dialog).getByRole('button', { name: M('platform.save') }));
     expect(await within(dialog).findByText(M('platform.error.date'))).toBeVisible();
@@ -3445,11 +3497,35 @@ describe('the plan catalogue', () => {
       expect(
         within(first).getByText(words['platform.usage.unlimited'] as string)
       ).toBeInTheDocument();
+      // The row's one edit button, named by the plan and its first day after
+      // the visible label: the hidden text is part of the name.
       expect(
         within(first).getByRole('button', {
-          name: `${words['platform.plans.edit']} Test Plan 0, ${formatDate('2026-01-01', locale)}`,
+          name: labelledBy(words['platform.plans.edit'] as string),
         })
-      ).toBeInTheDocument();
+      ).toHaveAccessibleName(
+        `${words['platform.plans.edit']} Test Plan 0, ${formatDate('2026-01-01', locale)}`
+      );
+    }
+  );
+
+  /*
+   * The catalogue is read on the server and handed over whole, so its grid holds
+   * a settled table that never reports an ended session; the page's own session
+   * check handles one. What is pinned here is that the screen offers no link to
+   * bare sign-in, in either language, as on the other console lists.
+   */
+  it.each(BOTH_DIRECTIONS)(
+    '%s: offers no link to bare sign-in and no ended-session state of its own',
+    (locale, paint) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      paint(withMui(<PlansScreen locale={locale} messages={catalogue} plans={[plan]} />, locale));
+
+      expect(dataRows(screen.getByTestId('platform-plans-grid'))).toHaveLength(1);
+      expect(screen.queryByTestId('state-expired')).toBeNull();
+      expect(screen.queryByRole('link', { name: words['auth.backToLogin'] as string })).toBeNull();
+      expect(document.querySelector(`a[href^="/${locale}/login"]`)).toBeNull();
     }
   );
 
@@ -3845,11 +3921,14 @@ describe('the activity search', () => {
       );
       expect(account.closest('[data-grid-line]')).toHaveAttribute('title', whole.actorId);
 
-      await userEvent.click(
-        within(grid).getByRole('button', {
-          name: labelledBy(words['platform.audit.detail.open'] as string),
-        })
+      const open = within(grid).getByRole('button', {
+        name: labelledBy(words['platform.audit.detail.open'] as string),
+      });
+      // Named by the change and its moment after the visible label.
+      expect(open).toHaveAccessibleName(
+        `${words['platform.audit.detail.open']} ${words['platform.audit.action.0']}, ${formatDateTime(whole.occurredAt, locale)}`
       );
+      await userEvent.click(open);
       const drawer = await screen.findByTestId('platform-audit-detail');
       expect(drawer).toHaveAttribute('role', 'dialog');
       expect(within(drawer).getByRole('heading')).toHaveTextContent(
@@ -3930,9 +4009,14 @@ describe('the activity search', () => {
     expect(within(line).getByText(THIRD_TENANT)).toBeInTheDocument();
     expect(within(line).getByText(L('platform.audit.actor.system'))).toBeInTheDocument();
 
-    await userEvent.click(
-      within(line).getByRole('button', { name: labelledBy(L('platform.audit.detail.open')) })
+    const open = within(line).getByRole('button', {
+      name: labelledBy(L('platform.audit.detail.open')),
+    });
+    // An entry with no words of its own is named by the neutral words.
+    expect(open).toHaveAccessibleName(
+      `${L('platform.audit.detail.open')} ${L('platform.audit.action.other')}, ${formatDateTime(bare.occurredAt, 'en')}`
     );
+    await userEvent.click(open);
     const drawer = await screen.findByTestId('platform-audit-detail');
     const field = (name: string) =>
       within(drawer)
@@ -3990,6 +4074,43 @@ describe('the activity search', () => {
       expect(
         screen.getByRole('button', { name: words['platform.audit.apply'] as string })
       ).toBeEnabled();
+    }
+  );
+
+  /*
+   * An ended session is said as itself and offers no link to bare sign-in, as
+   * on the organisation list: the console's own session check is what sends an
+   * ended session on, with the page it was on.
+   */
+  it.each(BOTH_DIRECTIONS)(
+    '%s: says an ended session as itself when the activity is read, with no sign-in link',
+    async (locale, paint) => {
+      const catalogue = getMessages(locale);
+      const words = catalogue as Record<string, string>;
+      apiGet.mockResolvedValue({ ok: false, kind: 'unauthenticated', correlationId: 'c-ended' });
+      paint(
+        withMui(
+          <PlatformAuditScreen
+            locale={locale}
+            messages={catalogue}
+            initialFrom="2026-08-17"
+            initialTo="2026-09-16"
+            initialOrganizationId=""
+            organizations={[row]}
+          />,
+          locale
+        )
+      );
+
+      const state = await screen.findByTestId('state-expired');
+      expect(within(state).getByRole('heading')).toHaveTextContent(
+        words['state.expired.title'] as string
+      );
+      expect(within(state).queryByRole('link')).toBeNull();
+      expect(screen.queryByRole('link', { name: words['auth.backToLogin'] as string })).toBeNull();
+      expect(document.querySelector(`a[href^="/${locale}/login"]`)).toBeNull();
+      expect(screen.queryByTestId('platform-audit-empty')).toBeNull();
+      expect(screen.queryByRole('grid')).toBeNull();
     }
   );
 

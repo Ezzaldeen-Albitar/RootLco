@@ -9,8 +9,8 @@ import {
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
-import { ListRetry } from '@/features/administration/organization/components/StructureDialog';
 import { FormDialog } from '@/features/administration/shared/components/FormDialog';
+import { ListRetry } from '@/features/administration/shared/components/ListRetry';
 import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -56,8 +56,8 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * each sends is unchanged, field for field. The list guard is the shared one
  * (`useUnavailableListGuard`), handed the dialog's own form, because the form
  * dialog answers a submission with no event of its own. Try again is the
- * Organisation screen's own Material retry (`ListRetry`), which renders the page
- * again as `ReferenceListRetry` did.
+ * administration's shared Material retry (`ListRetry`, the one the Organisation
+ * screen uses), which renders the page again as `ReferenceListRetry` did.
  */
 
 type Pending = 'company' | 'branch' | 'invite' | 'resend';

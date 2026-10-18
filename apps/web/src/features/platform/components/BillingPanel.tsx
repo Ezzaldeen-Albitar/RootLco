@@ -20,7 +20,6 @@ import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFee
 import type { Locale } from '@/i18n/config';
 import { formatMessage, translate, translateDynamic, type Messages } from '@/i18n/get-messages';
 import { formatDate, formatInteger, intlLocale } from '@/lib/format';
-import type { ActionState } from '@/lib/forms/action-result';
 import { formatMoney } from '@/lib/money';
 import { recordChargeAction, recordReceiptAction, voidChargeAction } from '../actions';
 import {
@@ -29,7 +28,7 @@ import {
   type OrganizationSubscription,
   type SubscriptionCharge,
 } from '../types';
-import { ConsoleReasonDialog, ConsoleSection } from './console-parts';
+import { ConsoleReasonDialog, ConsoleSection, useUnfinishedDays } from './console-parts';
 import { SECTION_HINT, StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useStateRefusal } from '@/lib/forms/use-local-refusal';
@@ -392,36 +391,6 @@ export function BillingPanel({
       ) : null}
     </ConsoleSection>
   );
-}
-
-/**
- * What a day picker found wrong, as this form's own refusal: a day only partly
- * typed or one that is not a day is refused on its box, before anything is sent.
- */
-function useUnfinishedDays(state: ActionState) {
-  const [unfinished, setUnfinished] = useState<{
-    readonly errors: Readonly<Record<string, string>>;
-    readonly attempts: number;
-  }>({ errors: {}, attempts: 0 });
-  const attempt = (state.attempt ?? 0) + unfinished.attempts;
-  const refusal: ActionState =
-    Object.keys(unfinished.errors).length > 0
-      ? { status: 'invalid', fieldErrors: unfinished.errors, attempt }
-      : { ...state, attempt };
-  /** Records the days not finished; answers whether the submission must stop. */
-  const refuse = (problems: Readonly<Record<string, DayProblem>>): boolean => {
-    const errors: Record<string, string> = {};
-    for (const [field, problem] of Object.entries(problems)) {
-      if (problem !== null) errors[field] = 'platform.error.date';
-    }
-    const refused = Object.keys(errors).length > 0;
-    setUnfinished((previous) => ({
-      errors,
-      attempts: previous.attempts + (refused ? 1 : 0),
-    }));
-    return refused;
-  };
-  return { refusal, refuse };
 }
 
 function ChargeDialog({
