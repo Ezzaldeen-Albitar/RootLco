@@ -2110,6 +2110,16 @@ describe.each(BOTH_DIRECTIONS)('%s: the subscription panel on Material UI', (loc
     const events = within(section).getByRole('table', {
       name: M('platform.subscription.events'),
     });
+    expect(
+      within(events)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      M('platform.subscription.when'),
+      M('platform.subscription.act'),
+      M('platform.subscription.change'),
+      M('platform.subscription.reason'),
+    ]);
     const [, change] = within(events).getAllByRole('row') as HTMLElement[];
     expect(change).toHaveTextContent(M('platform.subscription.event.upgraded'));
     expect(change).toHaveTextContent('test_plan_small → test_plan');
@@ -2118,19 +2128,15 @@ describe.each(BOTH_DIRECTIONS)('%s: the subscription panel on Material UI', (loc
     expect(reason).toBeVisible();
     expect(reason.closest('[title]')).toBeNull();
 
-    for (const key of [
+    // Every act the panel offers, by its accessible name, in order, and no other.
+    const acts = within(section).getAllByRole('button');
+    expect(acts).toHaveLength(4);
+    [
       'platform.subscription.act.renewed',
       'platform.subscription.act.upgraded',
       'platform.subscription.act.downgraded',
       'platform.subscription.act.cancel',
-    ]) {
-      expect(within(section).getByRole('button', { name: M(key) }), key).toHaveAccessibleName(
-        M(key)
-      );
-    }
-    expect(
-      within(section).queryByRole('button', { name: M('platform.subscription.act.assigned') })
-    ).toBeNull();
+    ].forEach((key, index) => expect(acts[index], key).toHaveAccessibleName(M(key)));
   });
 
   it('says the organisation has no subscription, in the same words, and offers only Assign', () => {
@@ -2151,12 +2157,10 @@ describe.each(BOTH_DIRECTIONS)('%s: the subscription panel on Material UI', (loc
     expect(within(events).getAllByRole('row')[1]).toHaveTextContent(
       M('platform.subscription.noEvents')
     );
-    expect(
-      within(section).getByRole('button', { name: M('platform.subscription.act.assigned') })
-    ).toHaveAccessibleName(M('platform.subscription.act.assigned'));
-    expect(
-      within(section).queryByRole('button', { name: M('platform.subscription.act.cancel') })
-    ).toBeNull();
+    // Assign is the one act offered, and it is named for itself.
+    const acts = within(section).getAllByRole('button');
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toHaveAccessibleName(M('platform.subscription.act.assigned'));
   });
 
   it('offers no act without the authority, or when the plan catalogue could not be read', () => {
@@ -2318,6 +2322,30 @@ describe.each(BOTH_DIRECTIONS)('%s: the subscription panel on Material UI', (loc
     expect(assignSubscriptionAction).toHaveBeenCalledTimes(1);
   });
 
+  /*
+   * The behaviour that differs, pinned (the same open Owner question as the
+   * plan form and the billing forms): the old native date box sent a day such
+   * as 2100-01-01, which the action and the API both accept. The picker's range
+   * ends on 2099-12-31, so a later day is refused on its own box and nothing
+   * is sent.
+   */
+  it('refuses a start day after 2099-12-31 on its own box, and sends nothing', async () => {
+    const user = userEvent.setup();
+    page(detail);
+    await user.click(screen.getByRole('button', { name: M('platform.subscription.act.upgraded') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(
+      within(dialog).getByLabelText(labelledBy(M('platform.subscription.plan'))),
+      'test_plan'
+    );
+    const starts = await typeDay(dialog, M('platform.subscription.starts'), '01012100');
+    await user.type(within(dialog).getByLabelText(labelledBy(M('platform.reason'))), 'Later');
+    await user.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+    expect(await within(dialog).findByText(M('platform.error.date'))).toBeVisible();
+    expect(starts).toHaveAttribute('aria-invalid', 'true');
+    expect(assignSubscriptionAction).not.toHaveBeenCalled();
+  });
+
   it('cancels the subscription in force on the day and reason given, as before', async () => {
     const user = userEvent.setup();
     cancelSubscriptionAction.mockResolvedValue({
@@ -2435,6 +2463,17 @@ describe.each(BOTH_DIRECTIONS)('%s: the overview on Material UI', (locale, paint
   it('draws the revenue by currency and the organisations ending soon, names whole', () => {
     show(read([organizationRow], false));
     const revenue = screen.getByRole('table', { name: M('platform.overview.revenue') });
+    expect(
+      within(revenue)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      M('platform.overview.currency'),
+      M('platform.overview.contracted'),
+      M('platform.overview.received'),
+      M('platform.overview.outstanding'),
+      M('platform.overview.projectedRenewal'),
+    ]);
     const [, sar] = within(revenue).getAllByRole('row') as HTMLElement[];
     expect(within(sar as HTMLElement).getByText('SAR')).toHaveAttribute('dir', 'ltr');
     for (const amount of ['4800.0000', '1200.0000', '3600.0000']) {
@@ -2446,6 +2485,16 @@ describe.each(BOTH_DIRECTIONS)('%s: the overview on Material UI', (locale, paint
     const expiring = screen.getByRole('table', {
       name: M('platform.overview.expiringOrganizations'),
     });
+    expect(
+      within(expiring)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      M('platform.overview.organization'),
+      M('platform.overview.plan'),
+      M('platform.overview.endsOn'),
+      M('platform.overview.remaining'),
+    ]);
     const [, row] = within(expiring).getAllByRole('row') as HTMLElement[];
     const link = within(row as HTMLElement).getByRole('link', { name: LONG_NAME });
     expect(link).toHaveAttribute('href', `/${locale}/platform/organizations/${TENANT}`);
