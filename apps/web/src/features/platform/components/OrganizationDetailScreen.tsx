@@ -294,7 +294,10 @@ export function OrganizationDetailScreen({
         <ConsoleSection title={t('platform.detail.companies')}>
           <OperationalGrid<OrganizationCompany>
             messages={messages}
-            locale={locale}
+            // No locale on any of this page's grids, as on the console lists: an
+            // ended session offers no link to bare sign-in. These hold the one
+            // detail read and never report one; the page's own session check
+            // sends an ended session to the session-ended route.
             label={t('platform.detail.companies')}
             columns={companyColumns}
             rowId={(company) => company.id}
@@ -316,7 +319,6 @@ export function OrganizationDetailScreen({
         <ConsoleSection title={t('platform.detail.branches')}>
           <OperationalGrid<OrganizationBranch>
             messages={messages}
-            locale={locale}
             label={t('platform.detail.branches')}
             columns={branchColumns}
             rowId={(branch) => branch.id}
@@ -400,7 +402,6 @@ export function OrganizationDetailScreen({
       <ConsoleSection title={t('platform.detail.statusHistory')}>
         <OperationalGrid<HistoryRow>
           messages={messages}
-          locale={locale}
           label={t('platform.detail.statusHistory')}
           columns={historyColumns}
           rowId={(entry) => entry.key}

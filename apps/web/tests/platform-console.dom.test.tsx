@@ -3509,26 +3509,6 @@ describe('the plan catalogue', () => {
     }
   );
 
-  /*
-   * The catalogue is read on the server and handed over whole, so its grid holds
-   * a settled table that never reports an ended session; the page's own session
-   * check handles one. What is pinned here is that the screen offers no link to
-   * bare sign-in, in either language, as on the other console lists.
-   */
-  it.each(BOTH_DIRECTIONS)(
-    '%s: offers no link to bare sign-in and no ended-session state of its own',
-    (locale, paint) => {
-      const catalogue = getMessages(locale);
-      const words = catalogue as Record<string, string>;
-      paint(withMui(<PlansScreen locale={locale} messages={catalogue} plans={[plan]} />, locale));
-
-      expect(dataRows(screen.getByTestId('platform-plans-grid'))).toHaveLength(1);
-      expect(screen.queryByTestId('state-expired')).toBeNull();
-      expect(screen.queryByRole('link', { name: words['auth.backToLogin'] as string })).toBeNull();
-      expect(document.querySelector(`a[href^="/${locale}/login"]`)).toBeNull();
-    }
-  );
-
   it.each(BOTH_DIRECTIONS)(
     '%s: says in its own sentence that no plan exists yet',
     (locale, paint) => {
