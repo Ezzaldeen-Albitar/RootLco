@@ -25,41 +25,54 @@ import { useLayoutEffect, type RefObject } from 'react';
  *   - it is handed to `adopt` exactly as if it had just been chosen — the
  *     provider's guarded switch, so it is remembered, it moves the version
  *     once, and unsaved work is asked about first; or
- *   - it is not one of the values the select was given to offer (below), so
- *     nothing is adopted and the select is put back to the value it was drawn
- *     with, so the remembered selection stands and the select does not go on
- *     naming a branch that is not in force.
+ *   - it is not one of the values the select was given to offer, or the
+ *     select is not marked `autocomplete="off"` and the document was not
+ *     reached by a fresh navigation (both below), so nothing is adopted and
+ *     the select is put back to the value it was drawn with: the remembered
+ *     selection stands and the select does not go on naming a branch that is
+ *     not in force.
  *
  * It is the adoption the sign-in form makes for a box filled before hydration
- * (`usePrefilledValue`): whatever the select holds that it was not drawn with
- * is the operator's.
+ * (`usePrefilledValue`), for a select the browser does not put back.
  *
- * ## Every caller's select carries `autocomplete="off"`
+ * ## A select marked `autocomplete="off"` holds only the operator's choice
  *
- * That is what makes the held value the operator's on every arrival. A browser
- * puts form controls back the way they were when it re-opens a document from
- * its history or reloads it — but not a control marked `autocomplete="off"`,
- * whose state it neither saves nor restores. Both selects that use this hook
- * are so marked: the header's (`BranchSelector`) and the chooser beside a
- * screen's branch ask (`ConcreteBranchChooser` in `WorkingBranchField`). A new
- * caller must mark its select the same way, or a value the browser put back
- * would be adopted as a choice and move this tab and every other without a
- * word.
+ * A browser can put a form control back the way it was when it re-opens a
+ * document from its history, and a value it put back is nobody's choice:
+ * adopted, it would move this tab and every other without a word. What a
+ * browser does was measured once, on plain static pages (experiment
+ * 2026-10-18, Chromium 151): on a move through history without the
+ * back/forward cache the earlier value was put back into every select that
+ * was NOT marked `autocomplete="off"`, inside a form or outside one, and into
+ * none that was; a reload put nothing back; and a page restored from the
+ * back/forward cache is the live page itself, so React does not hydrate again
+ * and this hook does not run. Firefox and WebKit were not verified.
  *
- * ## Why not by how the document was reached
+ * So the mark is checked here, not assumed. In a select marked
+ * `autocomplete="off"`, a value that differs from what it was drawn with is
+ * the operator's on every arrival, and it is adopted. In any other select it
+ * may have been put back, so it is adopted on a fresh navigation only — on a
+ * reload, a move through history, a prerender, or when the browser does not
+ * say how the document was reached, the select is put back to the value it
+ * was drawn with and the remembered selection stands (the earlier rule, kept
+ * for a select without the mark). Both callers mark their select: the
+ * header's (`BranchSelector`) and the chooser beside a screen's branch ask
+ * (`ConcreteBranchChooser` in `WorkingBranchField`, marked in the same change
+ * that made this rule).
+ *
+ * ## Why the mark, rather than how the document was reached
  *
  * This hook used to adopt only on a fresh navigation
  * (`PerformanceNavigationTiming.type === 'navigate'`) and put the select back
- * on a reload, a move through history or a prerender, to discard a value the
- * browser might have restored; later it also adopted when the event being
+ * on every other arrival; later it also adopted when the event being
  * dispatched (`window.event`) was an `input` or `change` aimed at the select.
- * Neither select could be restored, so on those arrivals the reset only ever
- * discarded the operator's own choice: the runtime retest at 784322b1 (F-1)
- * lost 18 of 18 branches chosen before the page had finished loading on a
- * reload or a move through history, among them choices React was already
- * listening for. Adopting on every arrival does not depend on when React
- * hydrates or on which event, if any, it is dispatching then; a fresh
- * navigation is unchanged.
+ * For the header's select, which was already marked, the reset could only
+ * ever discard the operator's own choice, and the runtime retest at 784322b1
+ * (F-1) lost 18 of 18 branches chosen in the header or the chooser before the
+ * page had finished loading on a reload or a move through history, among
+ * them choices React was already listening for. Adopting in a marked select
+ * on every arrival does not depend on when React hydrates or on which event,
+ * if any, it is dispatching then; a fresh navigation is unchanged.
  *
  * When React hydrates inside the dispatch of the choice itself, the choice
  * then arrives twice — read here, and delivered to the select's handler — and
@@ -95,12 +108,36 @@ export function useEarlyChoice(
     const held = select.value;
     if (held === value) return;
     if (!Array.from(select.options).some((option) => option.value === value)) return;
-    // The select cannot be put back by the browser (`autocomplete="off"`), so
-    // what it holds that it was not drawn with was chosen — on any arrival.
-    if (offered.includes(held)) {
+    // A select marked `autocomplete="off"` is not put back by the browser, so
+    // what it holds was chosen on any arrival; any other select only on a
+    // fresh navigation.
+    if (offered.includes(held) && (isNotRestored(select) || arrivedByFreshNavigation())) {
       adopt(held);
       return;
     }
     select.value = value;
   }, [selectRef, value, offered, adopt]);
+}
+
+/**
+ * Whether the select is marked `autocomplete="off"`: a control whose state the
+ * browser was measured neither to save nor to restore (see above).
+ */
+function isNotRestored(select: HTMLSelectElement): boolean {
+  return (select.getAttribute('autocomplete') ?? '').trim().toLowerCase() === 'off';
+}
+
+/**
+ * Whether this document was reached by a fresh navigation — a link, a typed
+ * address, a bookmark — rather than by a reload, a move through history or a
+ * prerender. `false` whenever the browser does not say: an unknown arrival is
+ * treated as one that may have restored the form.
+ */
+function arrivedByFreshNavigation(): boolean {
+  try {
+    const [entry] = performance.getEntriesByType('navigation');
+    return (entry as PerformanceNavigationTiming | undefined)?.type === 'navigate';
+  } catch {
+    return false;
+  }
 }

@@ -255,10 +255,15 @@ export function DirectoryEmptyNotice({
  * branch chosen in it before React hydrates the page is taken the same way,
  * through the same hook and under the same two conditions: a branch this
  * operator was published, and the guarded `select` (`useEarlyChoice`;
- * P1-32-PRE-OD-UXQ, Q-1). Like the header's it carries `autocomplete="off"`,
- * so the browser does not put an earlier branch back into it on a reload or a
- * move through history, and what it holds beyond the ask was chosen — the
- * hook adopts it on every arrival and relies on that mark.
+ * P1-32-PRE-OD-UXQ, Q-1). It is marked `autocomplete="off"` like the header's
+ * (since F-1; before that it carried no mark, so a browser could put an
+ * earlier branch back into it on a move through history). The hook checks the
+ * mark and, because of it, adopts what the chooser holds beyond the ask on
+ * every arrival. Measured once, on plain static pages (experiment 2026-10-18,
+ * Chromium 151): a move through history without the back/forward cache put
+ * the earlier value back only into selects without the mark, a reload put
+ * nothing back, and a page restored from the back/forward cache is the live
+ * page, so the hook does not run. Firefox and WebKit were not verified.
  */
 function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
   const context = useWorkingContext();

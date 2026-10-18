@@ -51,14 +51,18 @@ import { useEarlyChoice } from '../use-early-choice';
  * every branch in it — before React has attached to the page, and a branch
  * chosen in that moment used to be lost. `useEarlyChoice` reads the select in
  * the commit that hydrates it and hands a branch chosen there to `onSelect`,
- * the provider's guarded switch, however the document was reached. The rule
- * and its reasons are stated there.
+ * the provider's guarded switch, however the document was reached — because
+ * this select is marked `autocomplete="off"`. The hook checks the mark: a
+ * select without it is adopted from on a fresh navigation only.
  *
- * `autocomplete="off"` is what that rule rests on: the browser neither saves
- * nor restores the state of a control so marked, so on a reload or a move
- * through history it does not put an earlier branch back into this select,
- * and a branch the select holds that it was not drawn with is the operator's.
- * Do not remove it.
+ * Why the mark is enough was measured once, on plain static pages (experiment
+ * 2026-10-18, Chromium 151): on a move through history without the
+ * back/forward cache the browser put the earlier value back into every select
+ * not marked `autocomplete="off"` and into none that was; a reload put nothing
+ * back; a page restored from the back/forward cache is the live page, so the
+ * hook does not run. Firefox and WebKit were not verified. Do not remove the
+ * mark: without it an early choice here would be lost again on a reload or a
+ * move through history. The rule and its reasons are stated in the hook.
  */
 export interface BranchSelectorProps {
   readonly messages: Messages;

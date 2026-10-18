@@ -18,6 +18,7 @@ import {
 } from '@/features/working-context/working-context-contract';
 import { getMessages, translate } from '@/i18n/get-messages';
 import { BranchSelector } from '@/features/working-context/mui/BranchSelector';
+import { useEarlyChoice } from '@/features/working-context/use-early-choice';
 import { OTHER_BRANCH, TEST_BRANCH, TEST_COMPANY, branchSnapshot, renderLtr } from './render';
 
 /**
@@ -60,20 +61,25 @@ import { OTHER_BRANCH, TEST_BRANCH, TEST_COMPANY, branchSnapshot, renderLtr } fr
  * takes a request for the selection already remembered and in force as nothing
  * to do, so the version moves once.
  *
- * ## On every arrival
+ * ## On every arrival, in a select marked `autocomplete="off"`
  *
- * A browser puts a form control back the way it was when it re-opens a
- * document from its history or reloads it — but not one marked
- * `autocomplete="off"`, and both selects that take an early choice are so
- * marked (asserted below). So a select that differs from what the server drew
- * is a choice however the document was reached: a fresh navigation, a reload,
- * a move through history, a prerender, or an arrival the browser does not
- * name. That rule replaced one that adopted on a fresh navigation only and
- * lost every branch chosen before load on a reload or a move through history
+ * Measured once, on plain static pages (experiment 2026-10-18, Chromium 151):
+ * a move through history without the back/forward cache put an earlier value
+ * back into every select not marked `autocomplete="off"` and into none that
+ * was; a reload put nothing back; a page restored from the back/forward cache
+ * is the live page, so React does not hydrate again. Firefox and WebKit were
+ * not verified. Both selects that take an early choice are marked (asserted
+ * below; the chooser only since F-1), and the hook checks the mark. So in
+ * them a value that differs from what the server drew is a choice however the
+ * document was reached: a fresh navigation, a reload, a move through history,
+ * a prerender, or an arrival the browser does not name. A select without the
+ * mark keeps the earlier rule — adopted on a fresh navigation only — and has
+ * its own cases at the end. The earlier rule, applied to both selects, lost
+ * every branch chosen before load on a reload or a move through history
  * (runtime retest at 784322b1, F-1). jsdom has no navigation entry of its own,
- * so each case still states how the page was reached (`arriveBy`), to show it
- * no longer matters, and the stub is taken away afterwards. What a real
- * browser restores, and when, is not something this file can see.
+ * so each case states how the page was reached (`arriveBy`), and the stub is
+ * taken away afterwards. What a real browser restores, and when, is not
+ * something this file can see.
  *
  * ## The moments, in order
  *
@@ -423,14 +429,15 @@ describe('a branch chosen before React hydrates is kept on a reload or a move th
 });
 
 /**
- * Neither select can be put back by the browser: both carry
- * `autocomplete="off"`, whose state a browser neither saves nor restores. So a
- * value the select holds that it was not drawn with, when React hydrates it,
- * is the operator's on every arrival — a reload, a move through history, a
- * prerender, or one the browser does not name — and it is adopted, whether or
- * not an event is being dispatched and whichever element that event is aimed
- * at. (These cases replace the #581 ones that put such a value back on every
- * arrival but a fresh navigation.)
+ * Both selects are marked `autocomplete="off"`, and in Chromium 151 a select
+ * so marked was not put back on a move through history, nor anything on a
+ * reload (experiment 2026-10-18; Firefox and WebKit not verified). So a value
+ * the select holds that it was not drawn with, when React hydrates it, is the
+ * operator's on every arrival — a reload, a move through history, a prerender,
+ * or one the browser does not name — and it is adopted, whether or not an
+ * event is being dispatched and whichever element that event is aimed at.
+ * (These cases replace the #581 ones that put such a value back on every
+ * arrival but a fresh navigation; a select without the mark still is, below.)
  */
 describe('what the select holds beyond what it was drawn with is a choice on every arrival', () => {
   /** A value in the select, and no event says so. */
@@ -1121,4 +1128,130 @@ describe('on a reload, a choice made as React hydrates is kept in the select it 
     // One selection came into force, once: the header's untouched ask was not one.
     expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
   });
+
+  /*
+   * Both selects hold a different early branch when React hydrates. Each is
+   * the operator's, and the order they were chosen in cannot be read. The
+   * result is pinned so that a change to it is seen: each select adopts its
+   * own branch in the commit that hydrates it, the header first (it comes
+   * first in the tree) and then the chooser, so the chooser's branch is the
+   * one in force — two writes of the remembered selection, the version moved
+   * twice.
+   */
+  it('reached by reload, the header and the chooser both hold a branch: both adopted, the chooser last', async () => {
+    arriveBy('reload');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = serverPage(bothTree, SELECT);
+    chooseAsABrowser(OTHER_BRANCH.id, SELECT);
+    chooseAsABrowser(TEST_BRANCH.id, CHOOSER);
+    const writes: string[] = [];
+    const original = Storage.prototype.setItem;
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string
+    ) {
+      if (key === KEY) writes.push(value);
+      original.call(this, key, value);
+    });
+    try {
+      await page.hydrate();
+    } finally {
+      setItem.mockRestore();
+    }
+    expect(page.recoverable).not.toHaveBeenCalled();
+    expect(writes).toEqual([OTHER_BRANCH.id, TEST_BRANCH.id]);
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.selection()).toBe(TEST_BRANCH.id);
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    expect(page.version()).toBe('2');
+    expect(seen).toEqual(['0:', `2:${TEST_BRANCH.id}`]);
+  });
+});
+
+/**
+ * The mark is checked by the hook, not assumed of its callers.
+ *
+ * A select drawn through `useEarlyChoice` WITHOUT `autocomplete="off"` may be
+ * put back by the browser on a move through history (measured in Chromium
+ * 151, experiment 2026-10-18), so for it the earlier rule stands: what it
+ * holds is adopted on a fresh navigation only, and on any other arrival the
+ * select is put back to the value it was drawn with. Both real callers are
+ * marked, so these cases draw a bare select of their own.
+ */
+describe('a select without autocomplete="off" is adopted from on a fresh navigation only', () => {
+  const PLAIN = '[data-testid="plain-select"]';
+  const OFFERED: readonly string[] = [TEST_BRANCH.id, OTHER_BRANCH.id];
+
+  function PlainSelect({
+    mark,
+    adopt,
+  }: {
+    readonly mark: 'off' | 'OFF' | null;
+    readonly adopt: (chosen: string) => void;
+  }) {
+    const ref = useRef<HTMLSelectElement | null>(null);
+    useEarlyChoice(ref, '', OFFERED, adopt);
+    return (
+      <select
+        ref={ref}
+        data-testid="plain-select"
+        value=""
+        onChange={() => undefined}
+        autoComplete={mark ?? undefined}
+      >
+        <option value="">ask</option>
+        {OFFERED.map((id) => (
+          <option key={id} value={id}>
+            {id}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  function plainPage(mark: 'off' | 'OFF' | null) {
+    const adopt = vi.fn<(chosen: string) => void>();
+    const page = serverPage(() => <PlainSelect mark={mark} adopt={adopt} />, PLAIN);
+    return { page, adopt };
+  }
+
+  it.each(['reload', 'back_forward', 'prerender', null] as const)(
+    'unmarked, reached by %s, a branch held with no event: not adopted, and put back',
+    async (arrival) => {
+      arriveBy(arrival);
+      const { page, adopt } = plainPage(null);
+      expect(page.select()).not.toHaveAttribute('autocomplete');
+      page.select().value = TEST_BRANCH.id;
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(adopt).not.toHaveBeenCalled();
+      expect(page.select().value).toBe('');
+    }
+  );
+
+  it('unmarked, reached by a fresh navigation: the held branch is adopted', async () => {
+    arriveBy('navigate');
+    const { page, adopt } = plainPage(null);
+    page.select().value = TEST_BRANCH.id;
+    await page.hydrate();
+    expect(adopt).toHaveBeenCalledTimes(1);
+    expect(adopt).toHaveBeenCalledWith(TEST_BRANCH.id);
+  });
+
+  it.each([
+    ['reload', 'off'],
+    ['back_forward', 'off'],
+    ['reload', 'OFF'],
+  ] as const)(
+    'marked, reached by %s (autocomplete="%s"): the held branch is adopted',
+    async (arrival, mark) => {
+      arriveBy(arrival);
+      const { page, adopt } = plainPage(mark);
+      page.select().value = TEST_BRANCH.id;
+      await page.hydrate();
+      expect(adopt).toHaveBeenCalledTimes(1);
+      expect(adopt).toHaveBeenCalledWith(TEST_BRANCH.id);
+    }
+  );
 });
