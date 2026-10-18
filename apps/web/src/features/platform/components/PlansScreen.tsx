@@ -218,7 +218,10 @@ export function PlansScreen({
 
       <OperationalGrid<SubscriptionPlan>
         messages={messages}
-        locale={locale}
+        // No locale, as on the other console lists: an ended session offers no
+        // link to bare sign-in. This settled table never reports one anyway —
+        // the page's own session check sends an ended session to the
+        // session-ended route with the page it was on.
         label={t('platform.plans.title')}
         columns={columns}
         rowId={(plan) => plan.id}

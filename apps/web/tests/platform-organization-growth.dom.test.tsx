@@ -404,6 +404,34 @@ describe.each([
       // Nothing falls back to free text.
       expect(within(branchDialog).queryByRole('textbox', { name: /time zone/i })).toBeNull();
     });
+
+    /*
+     * Try again on either list is the administration's shared retry
+     * (`features/administration/shared/components/ListRetry`), the same one the
+     * Organisation screen re-exports: each press renders the page again, once.
+     */
+    it('retries each list that could not be loaded with the shared retry, one refresh a press', async () => {
+      const shared = await import('@/features/administration/shared/components/ListRetry');
+      const structure =
+        await import('@/features/administration/organization/components/StructureDialog');
+      expect(structure.ListRetry).toBe(shared.ListRetry);
+
+      paintDetail(null);
+      await userEvent.click(screen.getByTestId('platform-add-company'));
+      const companyDialog = await screen.findByRole('dialog');
+      await userEvent.click(within(companyDialog).getByRole('button', { name: M('form.retry') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await userEvent.click(
+        within(companyDialog).getByRole('button', { name: M('overlay.cancel') })
+      );
+
+      await userEvent.click(screen.getByTestId('platform-add-branch'));
+      const branchDialog = await screen.findByRole('dialog');
+      await userEvent.click(within(branchDialog).getByRole('button', { name: M('form.retry') }));
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(addCompanyAction).not.toHaveBeenCalled();
+      expect(addBranchAction).not.toHaveBeenCalled();
+    });
   }
 );
 
