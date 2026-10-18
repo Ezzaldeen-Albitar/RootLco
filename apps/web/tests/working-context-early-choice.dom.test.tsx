@@ -854,3 +854,132 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
     expect(seen).toEqual(['0:', '1:all']);
   });
 });
+
+/**
+ * The guards of the choice React is hydrating to deliver, on a reload or a move
+ * through history.
+ *
+ * A browser choosing an option fires `input` and then `change` on the select,
+ * and React hydrates on the first of them; `choose` above fires `change`
+ * alone, so the cases here fire both, in that order. Only an event aimed at the
+ * select that holds the value makes that value a choice: a value the browser
+ * put back into another select on the same page is still put back.
+ */
+describe('on a reload, only the change being delivered to a select is its choice', () => {
+  const CHOOSER = '[data-testid="concrete-branch-chooser"]';
+
+  /** What a browser does when a person picks an option: the value, then `input`, then `change`. */
+  function chooseAsABrowser(branchId: string, selector: string): void {
+    const select = document.querySelector(selector) as HTMLSelectElement;
+    select.value = branchId;
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  /** Hydrates outside `act`, as in a browser, makes the choice, and lets everything scheduled land. */
+  async function hydrateThenChoose(
+    page: Page,
+    build: () => ReactElement,
+    act_: () => void,
+    settled: () => void
+  ): Promise<void> {
+    const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
+    const before = environment.IS_REACT_ACT_ENVIRONMENT;
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      (open as { root: Root | null }).root = hydrateRoot(page.container, build(), {
+        onRecoverableError: page.recoverable,
+      });
+      act_();
+      await waitFor(settled);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      environment.IS_REACT_ACT_ENVIRONMENT = before;
+    }
+  }
+
+  const screenTree = () => (
+    <WorkingContextProvider snapshot={TWO} messages={messages}>
+      <main>
+        <WorkingBranchField messages={messages} />
+      </main>
+      <Probe />
+    </WorkingContextProvider>
+  );
+
+  const bothTree = () => (
+    <WorkingContextProvider snapshot={TWO} messages={messages}>
+      <header>
+        <WorkingContextControl messages={messages} />
+      </header>
+      <main>
+        <WorkingBranchField messages={messages} />
+      </main>
+      <Probe />
+    </WorkingContextProvider>
+  );
+
+  it.each(['reload', 'back_forward'] as const)(
+    'reached by %s, the header chosen as a browser does (input, then change): the choice is kept',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, ALL_BRANCHES);
+      const page = serverPage();
+      await hydrateThenChoose(
+        page,
+        tree,
+        () => chooseAsABrowser(TEST_BRANCH.id, SELECT),
+        () => expect(page.selection()).toBe(TEST_BRANCH.id)
+      );
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(page.select().value).toBe(TEST_BRANCH.id);
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.version()).toBe('1');
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+    }
+  );
+
+  it.each(['reload', 'back_forward'] as const)(
+    'reached by %s, the chooser chosen as a browser does (input, then change): the choice is kept',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, ALL_BRANCHES);
+      const page = serverPage(screenTree, CHOOSER);
+      await hydrateThenChoose(
+        page,
+        screenTree,
+        () => chooseAsABrowser(TEST_BRANCH.id, CHOOSER),
+        () => expect(page.selection()).toBe(TEST_BRANCH.id)
+      );
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.version()).toBe('1');
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+      expect(page.select()).toBeNull();
+    }
+  );
+
+  it('the header put back by the browser, a branch chosen in the chooser: only the chooser chose', async () => {
+    arriveBy('reload');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = serverPage(bothTree, SELECT);
+    // The header holds a value the browser put back: no event says so.
+    page.select().value = OTHER_BRANCH.id;
+    expect(page.select().value).toBe(OTHER_BRANCH.id);
+    // A person picks the other branch in the chooser, and that makes React hydrate.
+    await hydrateThenChoose(
+      page,
+      bothTree,
+      () => chooseAsABrowser(TEST_BRANCH.id, CHOOSER),
+      () => expect(page.selection()).toBe(TEST_BRANCH.id)
+    );
+    expect(page.recoverable).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.selection()).toBe(TEST_BRANCH.id);
+    // The header now shows the branch in force, not the one the browser put back.
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    // The branch the browser put back never came into force, not even for a moment.
+    expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+  });
+});
