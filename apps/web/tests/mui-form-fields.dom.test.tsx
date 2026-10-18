@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DateField,
   DateTimeField,
+  ZonedDateField,
   ZonedDateTimeField,
   type DayProblem,
   type MomentProblem,
@@ -1077,6 +1078,76 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
     mount(<ZonedHost zone="America/New_York" />);
     const group = screen.getByRole('group', { name: /^Visit time/ });
     expect(pickerInput(group)).toHaveValue('15/01/2026 07:00');
+  });
+
+  /*
+   * `ZonedDateField` — the day picker on a clock the caller NAMES, for the
+   * Platform Owner Console, which has no working branch at all (its plan,
+   * activity, charge and payment days are UTC days). It reads no working
+   * context. Falsified by rendering `DateField` with no `timezone` in its
+   * place: the first case then marks today on the working branch's clock (the
+   * 21st in New York), not on the named one.
+   */
+  function ZonedDayHost({
+    zone,
+    onDay,
+    onProblem,
+  }: {
+    readonly zone: string;
+    readonly onDay?: (day: string) => void;
+    readonly onProblem?: (problem: DayProblem) => void;
+  }) {
+    const [value, setValue] = useState('');
+    return (
+      <ZonedDateField
+        label="Due day"
+        value={value}
+        onChange={(next) => {
+          onDay?.(next);
+          setValue(next);
+        }}
+        onProblem={onProblem}
+        timezone={zone}
+      />
+    );
+  }
+
+  it("ZonedDateField: marks TODAY on the named clock, not the working branch's", async () => {
+    // 22:30 UTC: already the 22nd in Amman, still the 21st in New York.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-21T22:30:00Z'));
+    try {
+      const user = userEvent.setup();
+      const newYork = { ...TEST_BRANCH, timezone: 'America/New_York' };
+      mount(inBranch(<ZonedDayHost zone="Asia/Amman" />, { snapshot: branchSnapshot([newYork]) }));
+      await user.click(screen.getByRole('button', { name: en['mui.pickers.chooseDate'] }));
+      const marked = await screen.findByRole('gridcell', { current: 'date' });
+      expect(marked).toHaveTextContent('22');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ZonedDateField: needs no working context, takes a typed day and reports a half-typed one', async () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const user = userEvent.setup();
+      const onDay = vi.fn();
+      const onProblem = vi.fn();
+      const { unmount } = mount(
+        <ZonedDayHost zone="UTC" onDay={onDay} onProblem={onProblem} />,
+        locale
+      );
+      const group = screen.getByRole('group', { name: /^Due day/ });
+      await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('1510');
+      expect(onProblem, locale).toHaveBeenLastCalledWith('incomplete');
+      expect(onDay, locale).not.toHaveBeenCalled();
+      await user.keyboard('2026');
+      expect(onDay, locale).toHaveBeenLastCalledWith('2026-10-15');
+      expect(onProblem, locale).toHaveBeenLastCalledWith(null);
+      expect(pickerInput(group), locale).toHaveValue('15/10/2026');
+      unmount();
+    }
   });
 
   /*

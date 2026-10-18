@@ -689,19 +689,21 @@ describe('the organisation detail', () => {
 
   it('offers each action to an operator holding its authority', () => {
     renderLtr(
-      <OrganizationDetailScreen
-        locale="en"
-        messages={messages}
-        organization={detail}
-        plans={[plan]}
-        charges={{
-          status: 'ok',
-          data: { items: [charge], nextCursor: null, hasMore: false },
-          correlationId: null,
-        }}
-        capabilities={ALL}
-        today="2026-09-16"
-      />
+      withMui(
+        <OrganizationDetailScreen
+          locale="en"
+          messages={messages}
+          organization={detail}
+          plans={[plan]}
+          charges={{
+            status: 'ok',
+            data: { items: [charge], nextCursor: null, hasMore: false },
+            correlationId: null,
+          }}
+          capabilities={ALL}
+          today="2026-09-16"
+        />
+      )
     );
     for (const key of [
       'platform.lifecycle.suspend',
@@ -711,10 +713,13 @@ describe('the organisation detail', () => {
       'platform.subscription.act.downgraded',
       'platform.subscription.act.cancel',
       'platform.billing.recordCharge',
-      'platform.billing.recordReceipt',
-      'platform.billing.void',
     ]) {
       expect(screen.getByRole('button', { name: L(key) }), key).toBeInTheDocument();
+    }
+    // A charge's own acts are the grid's row actions, whose names carry the
+    // charge they act on after the label (P1-32-PRE-OD-WP06B).
+    for (const key of ['platform.billing.recordReceipt', 'platform.billing.void']) {
+      expect(screen.getByRole('button', { name: labelledBy(L(key)) }), key).toBeInTheDocument();
     }
     expect(screen.queryByRole('button', { name: L('platform.lifecycle.reactivate') })).toBeNull();
     expect(screen.getByRole('link', { name: L('platform.detail.viewAudit') })).toHaveAttribute(
@@ -771,7 +776,8 @@ describe('the organisation detail', () => {
         today="2026-09-16"
       />
     );
-    const history = screen.getByRole('table', { name: L('platform.detail.statusHistory') });
+    // The status history is the operational grid since P1-32-PRE-OD-WP06B.
+    const history = screen.getByRole('grid', { name: L('platform.detail.statusHistory') });
     expect(within(history).getByText('Payment overdue')).toBeInTheDocument();
     expect(within(history).getAllByText('—').length).toBeGreaterThanOrEqual(2);
     expect(within(history).getAllByText(L('platform.status.suspended')).length).toBe(1);
@@ -1039,33 +1045,35 @@ describe('billing', () => {
       attempt: 1,
     });
     renderLtr(
-      <BillingPanel
-        locale="en"
-        messages={messages}
-        tenantId={TENANT}
-        charges={[charge]}
-        hasMore={false}
-        subscriptions={[subscription]}
-        canManage
-        defaultCurrency="SAR"
-      />
+      withMui(
+        <BillingPanel
+          locale="en"
+          messages={messages}
+          tenantId={TENANT}
+          charges={[charge]}
+          hasMore={false}
+          subscriptions={[subscription]}
+          canManage
+          defaultCurrency="SAR"
+        />
+      )
     );
     expect(screen.getByTestId('platform-outstanding')).toHaveTextContent('700.00 SAR');
 
+    // A row action: its name carries the charge after the label.
     await userEvent.click(
-      screen.getByRole('button', { name: L('platform.billing.recordReceipt') })
+      screen.getByRole('button', { name: labelledBy(L('platform.billing.recordReceipt')) })
     );
     const dialog = await screen.findByRole('dialog');
     const amount = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.amount')}`));
     await userEvent.type(amount, '150.5');
     fireEvent.blur(amount);
-    expect(amount).toHaveValue('150.5000');
-    fireEvent.change(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.receivedOn')}`)),
-      {
-        target: { value: '2026-09-16' },
-      }
-    );
+    // The Material money field keeps showing what was typed and reports the
+    // canonical string upward (`FormMoneyField`, DF-6); the old field rewrote
+    // the box. What is sent is the same canonical string, asserted below.
+    expect(amount).toHaveValue('150.5');
+    // A day picker since P1-32-PRE-OD-WP06B, typed part by part.
+    await typeDay(dialog, L('platform.billing.receivedOn'), '16092026');
     await userEvent.type(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.method')}`)),
       'Bank transfer'
@@ -1086,6 +1094,15 @@ describe('billing', () => {
       receivedOn: '2026-09-16',
       method: 'Bank transfer',
     });
+    // The whole document, and nothing beside it: what the form sent before it
+    // moved onto Material UI, key for key — the blank reference and notes left out.
+    expect(input).toEqual({
+      chargeId: CHARGE,
+      amount: '150.5000',
+      currencyCode: 'SAR',
+      receivedOn: '2026-09-16',
+      method: 'Bank transfer',
+    });
   });
 
   it('records a charge as a decimal string, in the currency typed, against the subscription chosen', async () => {
@@ -1095,16 +1112,18 @@ describe('billing', () => {
       attempt: 1,
     });
     renderLtr(
-      <BillingPanel
-        locale="en"
-        messages={messages}
-        tenantId={TENANT}
-        charges={[charge]}
-        hasMore={false}
-        subscriptions={[subscription]}
-        canManage
-        defaultCurrency="SAR"
-      />
+      withMui(
+        <BillingPanel
+          locale="en"
+          messages={messages}
+          tenantId={TENANT}
+          charges={[charge]}
+          hasMore={false}
+          subscriptions={[subscription]}
+          canManage
+          defaultCurrency="SAR"
+        />
+      )
     );
     await userEvent.click(screen.getByRole('button', { name: L('platform.billing.recordCharge') }));
     const dialog = await screen.findByRole('dialog');
@@ -1116,9 +1135,8 @@ describe('billing', () => {
     const amount = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.amount')}`));
     await userEvent.type(amount, '1200');
     fireEvent.blur(amount);
-    fireEvent.change(within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.due')}`)), {
-      target: { value: '2026-10-15' },
-    });
+    // A day picker since P1-32-PRE-OD-WP06B, typed part by part.
+    await typeDay(dialog, L('platform.billing.due'), '15102026');
     await userEvent.type(
       within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.description')}`)),
       'Annual subscription'
@@ -1140,6 +1158,14 @@ describe('billing', () => {
       description: 'Annual subscription',
       subscriptionId: SUBSCRIPTION,
     });
+    // The whole document, key for key, as the form sent it before Material UI.
+    expect(input).toEqual({
+      amount: '1200.0000',
+      currencyCode: 'SAR',
+      dueOn: '2026-10-15',
+      description: 'Annual subscription',
+      subscriptionId: SUBSCRIPTION,
+    });
   });
 
   it('moves the cursor to a refused charge field and withdraws the complaint once it is edited (route sweep B3)', async () => {
@@ -1150,16 +1176,18 @@ describe('billing', () => {
       attempt: 1,
     });
     renderLtr(
-      <BillingPanel
-        locale="en"
-        messages={messages}
-        tenantId={TENANT}
-        charges={[charge]}
-        hasMore={false}
-        subscriptions={[subscription]}
-        canManage
-        defaultCurrency="SAR"
-      />
+      withMui(
+        <BillingPanel
+          locale="en"
+          messages={messages}
+          tenantId={TENANT}
+          charges={[charge]}
+          hasMore={false}
+          subscriptions={[subscription]}
+          canManage
+          defaultCurrency="SAR"
+        />
+      )
     );
     await userEvent.click(screen.getByRole('button', { name: L('platform.billing.recordCharge') }));
     const dialog = await screen.findByRole('dialog');
@@ -1167,11 +1195,17 @@ describe('billing', () => {
     await userEvent.type(amount, '1200');
     fireEvent.blur(amount);
     await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
-    const due = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.due')}`));
-    await waitFor(() => expect(due).toHaveFocus());
+    // A due day left blank is still sent as no day, as before, and the server's
+    // refusal of it is said on its own box.
+    await waitFor(() => expect(recordChargeAction).toHaveBeenCalledTimes(1));
+    expect((recordChargeAction.mock.calls[0]?.[1] as Record<string, unknown>).dueOn).toBe('');
+    // The due day is a day picker since P1-32-PRE-OD-WP06B: a group of parts,
+    // and the cursor lands on its first part.
+    const due = within(dialog).getByRole('group', { name: labelledBy(L('platform.billing.due')) });
+    await waitFor(() => expect(due.contains(document.activeElement)).toBe(true));
     expect(due).toHaveAttribute('aria-invalid', 'true');
-    fireEvent.change(due, { target: { value: '2026-10-15' } });
-    expect(due).not.toHaveAttribute('aria-invalid', 'true');
+    await typeDay(dialog, L('platform.billing.due'), '15102026');
+    await waitFor(() => expect(due).not.toHaveAttribute('aria-invalid', 'true'));
   });
 
   it('voids a charge under the reason given, and shows the server refusal in place', async () => {
@@ -1182,18 +1216,23 @@ describe('billing', () => {
       attempt: 1,
     });
     renderLtr(
-      <BillingPanel
-        locale="en"
-        messages={messages}
-        tenantId={TENANT}
-        charges={[charge]}
-        hasMore={false}
-        subscriptions={[subscription]}
-        canManage
-        defaultCurrency="SAR"
-      />
+      withMui(
+        <BillingPanel
+          locale="en"
+          messages={messages}
+          tenantId={TENANT}
+          charges={[charge]}
+          hasMore={false}
+          subscriptions={[subscription]}
+          canManage
+          defaultCurrency="SAR"
+        />
+      )
     );
-    await userEvent.click(screen.getByRole('button', { name: L('platform.billing.void') }));
+    // A row action: its name carries the charge after the label.
+    await userEvent.click(
+      screen.getByRole('button', { name: labelledBy(L('platform.billing.void')) })
+    );
     const dialog = await screen.findByRole('alertdialog');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Raised against the wrong term');
     await userEvent.click(within(dialog).getByRole('button', { name: L('platform.billing.void') }));
@@ -1471,6 +1510,510 @@ describe('billing', () => {
       />
     );
     expect(screen.getByText(L('platform.billing.none'))).toBeInTheDocument();
+  });
+});
+
+/*
+ * P1-32-PRE-OD-WP06B. The organisation page — its detail, its billing panel and
+ * the reason dialogs — on Material UI, in both languages: the rows the reads
+ * returned, each empty part and each failed read said as itself, the address
+ * the pager and the filter lead to, and every write sending the document it
+ * sent before, whole.
+ */
+describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (locale, paint) => {
+  const catalogue = locale === 'ar' ? AR : EN;
+  const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+  const words = getMessages(locale);
+  const money = (amount: string) =>
+    flat(formatMoney({ amount, currency: 'SAR' }, intlLocale(locale)));
+  const show = (ui: ReactElement) => paint(withMui(ui, locale));
+  const page = (
+    organization: Parameters<typeof OrganizationDetailScreen>[0]['organization'],
+    capabilities: typeof NONE,
+    charges: Parameters<typeof OrganizationDetailScreen>[0]['charges'] = null
+  ) =>
+    show(
+      <OrganizationDetailScreen
+        locale={locale}
+        messages={words}
+        organization={organization}
+        plans={[plan]}
+        charges={charges}
+        capabilities={capabilities}
+        today="2026-09-16"
+      />
+    );
+  const panel = (props: Partial<Parameters<typeof BillingPanel>[0]> = {}) =>
+    show(
+      <BillingPanel
+        locale={locale}
+        messages={words}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[subscription]}
+        canManage
+        defaultCurrency="SAR"
+        {...props}
+      />
+    );
+
+  const LONG_CODE = 'test_company_code_long_enough_to_outrun_its_column';
+  const LONG_REASON =
+    'Test reason long enough to run past the end of its column in either language';
+
+  it('draws the companies, the branches and the status history as grids, codes whole', () => {
+    page(
+      {
+        ...detail,
+        companies: [{ id: 'c1', code: LONG_CODE, legalName: 'Test Company', status: 'active' }],
+        statusHistory: [
+          {
+            occurredAt: '2026-09-10T09:00:00.000Z',
+            fromState: null,
+            toState: 'active',
+            reason: null,
+          },
+          {
+            occurredAt: '2026-09-14T09:00:00.000Z',
+            fromState: 'active',
+            toState: 'suspended',
+            reason: LONG_REASON,
+          },
+        ],
+      },
+      NONE
+    );
+    const companies = screen.getByRole('grid', { name: M('platform.detail.companies') });
+    const [company] = dataRows(companies);
+    expect(dataRows(companies)).toHaveLength(1);
+    // The code, left to right and whole; a narrower column ends it in an
+    // ellipsis and keeps the whole value behind it.
+    const code = within(company as HTMLElement).getByText(LONG_CODE);
+    expect(code).toHaveAttribute('dir', 'ltr');
+    expect(code.closest('[data-grid-line]')).toHaveAttribute('title', LONG_CODE);
+    // Named by the name the read carries, beside the code.
+    expect(within(company as HTMLElement).getByText('Test Company')).toBeInTheDocument();
+    expect(within(company as HTMLElement).getByText(M('platform.status.active'))).toBeVisible();
+
+    const branches = screen.getByRole('grid', { name: M('platform.detail.branches') });
+    const [branch] = dataRows(branches);
+    expect(within(branch as HTMLElement).getByText('test_branch')).toHaveAttribute('dir', 'ltr');
+    expect(within(branch as HTMLElement).getByText('Test Branch')).toBeInTheDocument();
+
+    const history = dataRows(
+      screen.getByRole('grid', { name: M('platform.detail.statusHistory') })
+    );
+    expect(history).toHaveLength(2);
+    const [first, second] = history as [HTMLElement, HTMLElement];
+    expect(flat(first.textContent)).toContain(
+      flat(formatDateTime('2026-09-10T09:00:00.000Z', locale))
+    );
+    // The first entry arrives from no earlier state, and gives no reason.
+    expect(within(first).getAllByText('—')).toHaveLength(2);
+    expect(within(second).getByText(M('platform.status.suspended'))).toBeInTheDocument();
+    // A long reason keeps to its line and carries its whole text.
+    expect(within(second).getByText(LONG_REASON).closest('[data-grid-line]')).toHaveAttribute(
+      'title',
+      LONG_REASON
+    );
+  });
+
+  it('says each empty part of the organisation in its own words', () => {
+    page(
+      { ...detail, companies: [], branches: [], statusHistory: [], userCountsByStatus: [] },
+      NONE
+    );
+    for (const [testId, key, grid] of [
+      ['platform-companies-empty', 'platform.detail.noCompanies', 'platform.detail.companies'],
+      ['platform-branches-empty', 'platform.detail.noBranches', 'platform.detail.branches'],
+      ['platform-history-empty', 'platform.detail.noHistory', 'platform.detail.statusHistory'],
+    ] as const) {
+      expect(screen.getByTestId(testId), key).toHaveTextContent(M(key));
+      expect(dataRows(screen.getByRole('grid', { name: M(grid) })), grid).toHaveLength(0);
+    }
+    expect(screen.getByTestId('platform-users-empty')).toHaveTextContent(
+      M('platform.detail.noUsers')
+    );
+  });
+
+  it('keeps the usage meters in their words: unlimited, near the limit and against it', () => {
+    page(detail, NONE);
+    const companies = screen.getByTestId('platform-usage-companies');
+    expect(companies).toHaveAttribute('data-warning', 'true');
+    expect(within(companies).getByText(M('platform.usage.warning'))).toBeInTheDocument();
+    const branches = screen.getByTestId('platform-usage-branches');
+    expect(branches.textContent).toContain(M('platform.usage.unlimited'));
+    expect(within(branches).queryByRole('meter')).toBeNull();
+    const users = screen.getByTestId('platform-usage-users');
+    expect(within(users).getByRole('meter')).toHaveAttribute('aria-valuenow', '5');
+    expect(users.textContent).toContain(
+      `${formatInteger(5, locale)} / ${formatInteger(10, locale)}`
+    );
+    expect(screen.getAllByRole('heading', { name: M('platform.usage.title') })).toHaveLength(1);
+  });
+
+  it('changes the lifecycle under the reason given, trimmed, and links to the activity', async () => {
+    changeOrganizationStatusAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.lifecycle.done',
+      attempt: 1,
+    });
+    page(detail, { ...NONE, canChangeLifecycle: true, canReadAudit: true });
+    expect(screen.getByRole('link', { name: M('platform.detail.viewAudit') })).toHaveAttribute(
+      'href',
+      `/${locale}/platform/audit?organization=${TENANT}`
+    );
+    expect(screen.queryByRole('button', { name: M('platform.lifecycle.reactivate') })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: M('platform.lifecycle.suspend') }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(
+      M('platform.lifecycle.suspendTitle')
+    );
+    const confirm = within(dialog).getByRole('button', { name: M('platform.lifecycle.suspend') });
+    // Nothing is sent without a reason.
+    expect(confirm).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole('textbox'), '  Test reason  ');
+    await userEvent.click(confirm);
+    await waitFor(() => expect(changeOrganizationStatusAction).toHaveBeenCalledTimes(1));
+    expect(changeOrganizationStatusAction.mock.calls[0]).toEqual([
+      TENANT,
+      'suspended',
+      'Test reason',
+    ]);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('draws a billing read that failed as that failure, never as no charges', () => {
+    for (const [status, testId, title, reference] of [
+      ['denied', 'state-refused', 'state.denied.title', true],
+      ['error', 'state-error', 'state.error.title', true],
+      ['unavailable', 'state-unavailable', 'state.unavailable.title', true],
+      ['expired', 'state-expired', 'state.expired.title', false],
+      ['not-found', 'state-not-found', 'state.notFound.title', false],
+    ] as const) {
+      const { unmount } = page(
+        detail,
+        { ...NONE, canReadBilling: true },
+        {
+          status,
+          correlationId: `corr-${status}`,
+        }
+      );
+      const billing = screen
+        .getByRole('heading', { name: M('platform.billing.title') })
+        .closest('section') as HTMLElement;
+      const state = within(billing).getByTestId(testId);
+      expect(within(state).getByRole('heading'), status).toHaveTextContent(M(title));
+      if (reference) expect(state, status).toHaveTextContent(`corr-${status}`);
+      // As before: the page is read on the server, and no retry is offered here.
+      expect(within(billing).queryByRole('button'), status).toBeNull();
+      // As before: an ended session is offered no link. A link to bare sign-in
+      // would skip the session-ended route the console's session check uses.
+      expect(within(billing).queryByRole('link'), status).toBeNull();
+      expect(screen.queryByRole('table', { name: M('platform.billing.title') }), status).toBeNull();
+      expect(screen.queryByTestId('platform-charge'), status).toBeNull();
+      expect(screen.queryByTestId('platform-billing-empty'), status).toBeNull();
+      unmount();
+    }
+  });
+
+  it('draws each charge with its money, every payment in full and what is outstanding', () => {
+    const voided = {
+      ...charge,
+      id: '44444444-4444-4444-8444-444444444445',
+      description: 'Test voided charge',
+      status: 'void',
+      voidReason: 'Raised against the wrong term',
+      outstanding: '0.0000',
+      receipts: [],
+    };
+    const second = {
+      ...charge.receipts[0]!,
+      id: 'r2',
+      amount: '200.0000',
+      receivedOn: '2026-09-09',
+      method: 'Cash',
+      reference: 'TEST-REF-2',
+    };
+    const third = {
+      ...charge.receipts[0]!,
+      id: 'r3',
+      amount: '50.0000',
+      receivedOn: '2026-09-12',
+      method: 'Test transfer with a method name long enough to wrap in its cell',
+      reference: 'TEST-REFERENCE-THREE-LONG',
+    };
+    const paid = { ...charge, receipts: [...charge.receipts, second, third] };
+    panel({ charges: [paid, voided], canManage: false });
+    const table = screen.getByRole('table', { name: M('platform.billing.title') });
+    const rows = within(table).getAllByTestId('platform-charge');
+    expect(rows).toHaveLength(2);
+    const [open, gone] = rows as [HTMLElement, HTMLElement];
+    expect(within(open).getByText(money('1200.0000'))).toBeInTheDocument();
+    expect(within(open).getByTestId('platform-outstanding')).toHaveTextContent(money('700.0000'));
+    // Every payment, each written whole as it was before: amount · day · method · reference.
+    const lines = within(open).getAllByTestId('platform-receipt');
+    expect(lines.map((line) => flat(line.textContent))).toEqual([
+      `${money('500.0000')} · ${flat(formatDate('2026-09-05', locale))} · Bank transfer`,
+      `${money('200.0000')} · ${flat(formatDate('2026-09-09', locale))} · Cash · TEST-REF-2`,
+      `${money('50.0000')} · ${flat(formatDate('2026-09-12', locale))} · ${third.method} · TEST-REFERENCE-THREE-LONG`,
+    ]);
+    expect(within(gone).getByText('Test voided charge')).toBeInTheDocument();
+    expect(within(gone).getByText('Raised against the wrong term')).toBeInTheDocument();
+    expect(within(gone).getByText(M('platform.billing.noReceipts'))).toBeInTheDocument();
+    expect(within(gone).getByText(M('platform.status.void'))).toBeInTheDocument();
+    // A reader is offered no write.
+    expect(within(table).queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: M('platform.billing.recordCharge') })).toBeNull();
+  });
+
+  it('says that no charge was recorded, or none with the chosen status, in its own words', () => {
+    const { unmount } = panel({ charges: [], status: 'void' });
+    expect(screen.getByTestId('platform-billing-empty')).toHaveTextContent(
+      M('platform.billing.noneWithStatus')
+    );
+    expect(screen.queryByTestId('platform-charge')).toBeNull();
+    unmount();
+    panel({ charges: [] });
+    expect(screen.getByTestId('platform-billing-empty')).toHaveTextContent(
+      M('platform.billing.none')
+    );
+  });
+
+  /*
+   * The detail read answers every company in one reply, and the grid is told
+   * it is not paged. A grid still holds a page size of its own; were it to
+   * page the rows it was handed, the companies past the first page would be
+   * drawn nowhere and reached by no control.
+   */
+  it('draws every company the read holds, past any page size', () => {
+    const many = Array.from({ length: 130 }, (_, index) => ({
+      id: `c${String(index).padStart(3, '0')}`,
+      code: `test_company_${String(index).padStart(3, '0')}`,
+      legalName: `Test Company ${index}`,
+      status: 'active',
+    }));
+    page({ ...detail, companies: many }, NONE);
+    const grid = screen.getByRole('grid', { name: M('platform.detail.companies') });
+    const rows = dataRows(grid);
+    expect(rows).toHaveLength(130);
+    expect(within(rows[129] as HTMLElement).getByText('test_company_129')).toBeInTheDocument();
+    expect(within(grid).queryByRole('navigation')).toBeNull();
+  });
+
+  it('pages and filters by the address, in the language of the page', async () => {
+    panel({ hasMore: true, nextCursor: 'cursor-2', status: 'open', paged: true });
+    const pager = screen.getByRole('navigation', { name: M('platform.billing.pager') });
+    expect(
+      within(pager).getByRole('link', { name: M('platform.billing.firstPage') })
+    ).toHaveAttribute('href', `/${locale}/platform/organizations/${TENANT}?chargeStatus=open`);
+    expect(
+      within(pager).getByRole('link', { name: M('platform.billing.nextPage') })
+    ).toHaveAttribute(
+      'href',
+      `/${locale}/platform/organizations/${TENANT}?chargeStatus=open&chargeCursor=cursor-2`
+    );
+    const filter = screen.getByLabelText(labelledBy(M('platform.billing.filterStatus')));
+    await userEvent.selectOptions(filter, 'settled');
+    await userEvent.selectOptions(filter, '');
+    expect(push.mock.calls).toEqual([
+      [`/${locale}/platform/organizations/${TENANT}?chargeStatus=settled`],
+      [`/${locale}/platform/organizations/${TENANT}`],
+    ]);
+  });
+
+  it('records a charge and a payment with the same documents as before', async () => {
+    recordChargeAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.billing.chargeDone',
+      attempt: 1,
+    });
+    recordReceiptAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.billing.receiptDone',
+      attempt: 1,
+    });
+    panel({ defaultCurrency: '' });
+    await userEvent.click(screen.getByRole('button', { name: M('platform.billing.recordCharge') }));
+    const chargeDialog = await screen.findByRole('dialog');
+    expect(within(chargeDialog).getByRole('heading')).toHaveTextContent(
+      M('platform.billing.recordCharge')
+    );
+    await userEvent.type(
+      within(chargeDialog).getByLabelText(labelledBy(M('platform.billing.currency'))),
+      'sar'
+    );
+    const amount = within(chargeDialog).getByLabelText(labelledBy(M('platform.billing.amount')));
+    await userEvent.type(amount, '1200.5');
+    fireEvent.blur(amount);
+    await typeDay(chargeDialog, M('platform.billing.due'), '15102026');
+    await userEvent.type(
+      within(chargeDialog).getByLabelText(labelledBy(M('platform.billing.description'))),
+      'Annual subscription'
+    );
+    await userEvent.selectOptions(
+      within(chargeDialog).getByLabelText(labelledBy(M('platform.billing.subscription'))),
+      SUBSCRIPTION
+    );
+    await userEvent.click(within(chargeDialog).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(recordChargeAction).toHaveBeenCalledTimes(1));
+    expect(recordChargeAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        amount: '1200.5000',
+        currencyCode: 'SAR',
+        dueOn: '2026-10-15',
+        description: 'Annual subscription',
+        subscriptionId: SUBSCRIPTION,
+      },
+    ]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await userEvent.click(
+      screen.getByRole('button', { name: labelledBy(M('platform.billing.recordReceipt')) })
+    );
+    const receiptDialog = await screen.findByRole('dialog');
+    const paid = within(receiptDialog).getByLabelText(labelledBy(M('platform.billing.amount')));
+    await userEvent.type(paid, '150.5');
+    fireEvent.blur(paid);
+    await typeDay(receiptDialog, M('platform.billing.receivedOn'), '16092026');
+    await userEvent.type(
+      within(receiptDialog).getByLabelText(labelledBy(M('platform.billing.method'))),
+      'Bank transfer'
+    );
+    await userEvent.type(
+      within(receiptDialog).getByLabelText(labelledBy(M('platform.billing.reference'))),
+      'TEST-REF-1'
+    );
+    await userEvent.type(
+      within(receiptDialog).getByLabelText(labelledBy(M('platform.billing.notes'))),
+      'Test note'
+    );
+    await userEvent.click(within(receiptDialog).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(recordReceiptAction).toHaveBeenCalledTimes(1));
+    expect(recordReceiptAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        chargeId: CHARGE,
+        amount: '150.5000',
+        currencyCode: 'SAR',
+        receivedOn: '2026-09-16',
+        method: 'Bank transfer',
+        reference: 'TEST-REF-1',
+        notes: 'Test note',
+      },
+    ]);
+  });
+
+  /*
+   * The behaviour that differs from the old screens, pinned: a native date box
+   * handed back no value for a day half typed, and the form sent the date
+   * empty. The picker reports the day unfinished, and the form refuses it on
+   * its own box before anything is sent — the same rule as the plan form.
+   */
+  it('refuses a due day or a received day only partly typed, on its own box', async () => {
+    const user = userEvent.setup();
+    recordChargeAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.billing.chargeDone',
+      attempt: 1,
+    });
+    panel();
+    await user.click(screen.getByRole('button', { name: M('platform.billing.recordCharge') }));
+    const chargeDialog = await screen.findByRole('dialog');
+    const amount = within(chargeDialog).getByLabelText(labelledBy(M('platform.billing.amount')));
+    await user.type(amount, '10');
+    fireEvent.blur(amount);
+    // The day and the month, and no year.
+    const due = await typeDay(chargeDialog, M('platform.billing.due'), '1510');
+    await user.click(within(chargeDialog).getByRole('button', { name: M('platform.save') }));
+    expect(await within(chargeDialog).findByText(M('platform.error.date'))).toBeVisible();
+    expect(due).toHaveAttribute('aria-invalid', 'true');
+    expect(recordChargeAction).not.toHaveBeenCalled();
+    await user.click(within(due).getAllByRole('spinbutton')[2] as HTMLElement);
+    await user.keyboard('2026');
+    await waitFor(() =>
+      expect(within(chargeDialog).queryByText(M('platform.error.date'))).toBeNull()
+    );
+    await user.click(within(chargeDialog).getByRole('button', { name: M('overlay.cancel') }));
+    expect(recordChargeAction).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole('button', { name: labelledBy(M('platform.billing.recordReceipt')) })
+    );
+    const receiptDialog = await screen.findByRole('dialog');
+    const received = await typeDay(receiptDialog, M('platform.billing.receivedOn'), '16');
+    await user.click(within(receiptDialog).getByRole('button', { name: M('platform.save') }));
+    expect(await within(receiptDialog).findByText(M('platform.error.date'))).toBeVisible();
+    expect(received).toHaveAttribute('aria-invalid', 'true');
+    expect(recordReceiptAction).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The money field reads ASCII digits only — the old one did too: both parse
+   * through `parseMoneyInput`. Arabic-Indic digits are refused on the box in
+   * the catalogue's words, and the form sends what was typed as it did before,
+   * for the server to refuse; nothing converts or invents an amount.
+   */
+  it('refuses Arabic-Indic digits in an amount as the old field did, sending what was typed', async () => {
+    recordChargeAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { amount: 'money.error.notDecimal' },
+      attempt: 1,
+    });
+    panel();
+    await userEvent.click(screen.getByRole('button', { name: M('platform.billing.recordCharge') }));
+    const dialog = await screen.findByRole('dialog');
+    const amount = within(dialog).getByLabelText(labelledBy(M('platform.billing.amount')));
+    await userEvent.type(amount, '١٢٠٠');
+    fireEvent.blur(amount);
+    expect(await within(dialog).findByText(M('money.error.notDecimal'))).toBeVisible();
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    await typeDay(dialog, M('platform.billing.due'), '15102026');
+    await userEvent.type(
+      within(dialog).getByLabelText(labelledBy(M('platform.billing.description'))),
+      'Annual subscription'
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: M('platform.save') }));
+    await waitFor(() => expect(recordChargeAction).toHaveBeenCalledTimes(1));
+    expect(recordChargeAction.mock.calls[0]).toEqual([
+      TENANT,
+      {
+        amount: '١٢٠٠',
+        currencyCode: 'SAR',
+        dueOn: '2026-10-15',
+        description: 'Annual subscription',
+      },
+    ]);
+  });
+
+  it('voids a charge under the reason given, trimmed, and keeps the dialog on a refusal', async () => {
+    voidChargeAction.mockResolvedValue({
+      status: 'denied',
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-void',
+      attempt: 1,
+    });
+    panel();
+    await userEvent.click(
+      screen.getByRole('button', { name: labelledBy(M('platform.billing.void')) })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(M('platform.billing.voidTitle'));
+    expect(dialog).toHaveTextContent(M('platform.billing.voidBody'));
+    const confirm = within(dialog).getByRole('button', { name: M('platform.billing.void') });
+    expect(confirm).toBeDisabled();
+    // A destructive act: Cancel holds the cursor when the dialog opens.
+    expect(within(dialog).getByRole('button', { name: M('overlay.cancel') })).toHaveFocus();
+    await userEvent.type(within(dialog).getByRole('textbox'), '  Raised in error  ');
+    await userEvent.click(confirm);
+    await waitFor(() => expect(voidChargeAction).toHaveBeenCalledTimes(1));
+    expect(voidChargeAction.mock.calls[0]).toEqual([TENANT, CHARGE, 'Raised in error']);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(M('state.denied.title'));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 });
 

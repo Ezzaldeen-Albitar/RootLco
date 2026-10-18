@@ -3,25 +3,34 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
-import { MoneyField } from '@/components/forms/MoneyField';
-import { Dialog, ReasonConfirmDialog } from '@/components/overlays/Overlays';
-import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { ZonedDateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { MuiEmptyState } from '@/components/states/MuiStates';
+import { FormDialog } from '@/features/administration/shared/components/FormDialog';
+import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
 import { formatMessage, translate, translateDynamic, type Messages } from '@/i18n/get-messages';
 import { formatDate, formatInteger, intlLocale } from '@/lib/format';
+import type { ActionState } from '@/lib/forms/action-result';
 import { formatMoney } from '@/lib/money';
 import { recordChargeAction, recordReceiptAction, voidChargeAction } from '../actions';
-import { CHARGE_STATUSES, type OrganizationSubscription, type SubscriptionCharge } from '../types';
 import {
-  Cell,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  SECTION_HINT,
-  Section,
-  SimpleTable,
-  StatusBadge,
-} from './ui';
+  CHARGE_STATUSES,
+  type SubscriptionReceipt,
+  type OrganizationSubscription,
+  type SubscriptionCharge,
+} from '../types';
+import { ConsoleReasonDialog, ConsoleSection } from './console-parts';
+import { SECTION_HINT, StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
@@ -29,7 +38,7 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * The billing panel of an organisation (P1-32-PRE-067).
  *
  * Charges, the receipts against each, and what is still outstanding — every
- * figure as the server computed it. Amounts are typed through `MoneyField`,
+ * figure as the server computed it. Amounts are typed through the money field,
  * which keeps them as canonical decimal strings; nothing here adds, subtracts or
  * converts money. Nothing is totalled across charges either: two charges in two
  * currencies have no sum, and the platform-wide figures that DO add up are the
@@ -56,12 +65,31 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * the read still happens on the server. Changing the filter returns to the first
  * page rather than carrying a cursor from the previous set, which belonged to a
  * different ordering of a different set of rows.
+ *
+ * ## On Material UI (ADR-022, P1-32-PRE-OD-WP06B)
+ *
+ * The charges are a Material table over the page the server read — the shape
+ * the tenant screens use for a short list whose cells hold more than a line. A
+ * charge's payments are every one listed in its cell, whole, as they were
+ * written before, and a description or a void reason wraps rather than being
+ * cut. The table draws no pager of its own: the page is the server's, reached by
+ * the two links below it, exactly as before.
+ *
+ * The three forms are the shared form dialog with the Material fields, and what
+ * each sends is unchanged. The due date and the received date are day pickers on
+ * UTC, the clock the console's other days are read on: the console has no
+ * working branch to take another from. A day only partly typed, or one that is
+ * not a day, holds no day; sent as it stood it would have reached the server as
+ * an empty date, so the form refuses it on its own box before anything is sent.
  */
 
 type Pending =
   | { readonly type: 'charge' }
   | { readonly type: 'receipt'; readonly charge: SubscriptionCharge }
   | { readonly type: 'void'; readonly charge: SubscriptionCharge };
+
+/** The clock the two day pickers are drawn on. See the note above. */
+const BILLING_DAY_ZONE = 'UTC';
 
 /**
  * The address of this organisation's detail page, carrying the billing filter
@@ -82,6 +110,17 @@ export function billingHref(
   if (page.cursor !== null && page.cursor.length > 0) search.set('chargeCursor', page.cursor);
   const rendered = search.toString();
   return `/${locale}/platform/organizations/${tenantId}${rendered.length > 0 ? `?${rendered}` : ''}`;
+}
+
+/** One payment, in the words it was written in before: amount · day · method · reference. */
+function receiptLine(receipt: SubscriptionReceipt, locale: Locale): string {
+  const amount = formatMoney(
+    { amount: receipt.amount, currency: receipt.currencyCode },
+    intlLocale(locale)
+  );
+  return `${amount} · ${formatDate(receipt.receivedOn, locale)} · ${receipt.method}${
+    receipt.reference ? ` · ${receipt.reference}` : ''
+  }`;
 }
 
 export function BillingPanel({
@@ -121,26 +160,22 @@ export function BillingPanel({
     formatMoney({ amount, currency }, intlLocale(locale));
 
   return (
-    <Section
+    <ConsoleSection
       title={t('platform.billing.title')}
       actions={
         canManage ? (
-          <button
-            type="button"
-            className={SECONDARY_BUTTON}
-            onClick={() => setPending({ type: 'charge' })}
-          >
+          <Button type="button" variant="outlined" onClick={() => setPending({ type: 'charge' })}>
             {t('platform.billing.recordCharge')}
-          </button>
+          </Button>
         ) : null
       }
     >
-      <p data-testid="platform-billing-model" className={`mb-3 ${SECTION_HINT}`}>
+      <p data-testid="platform-billing-model" className={SECTION_HINT}>
         {t('platform.billing.recordedNote')}
       </p>
 
-      <div className="mb-3 max-w-xs">
-        <SelectField
+      <div className="w-full max-w-xs">
+        <FormSelectField
           name="chargeStatus"
           label={t('platform.billing.filterStatus')}
           placeholder={t('platform.billing.allStatuses')}
@@ -149,100 +184,125 @@ export function BillingPanel({
             value,
             label: t(`platform.status.${value}`),
           }))}
-          onChange={(event) =>
-            router.push(billingHref(locale, tenantId, { status: event.target.value, cursor: null }))
+          onChange={(chosen) =>
+            router.push(billingHref(locale, tenantId, { status: chosen, cursor: null }))
           }
         />
       </div>
 
-      <SimpleTable
-        caption={t('platform.billing.title')}
-        headers={[
-          t('platform.billing.due'),
-          t('platform.billing.description'),
-          t('platform.billing.amount'),
-          t('platform.billing.status'),
-          t('platform.billing.received'),
-          t('platform.billing.outstanding'),
-          t('platform.actions'),
-        ]}
-        empty={
-          charges.length === 0
-            ? t(status.length > 0 ? 'platform.billing.noneWithStatus' : 'platform.billing.none')
-            : null
-        }
-      >
-        {charges.map((charge) => (
-          <tr
-            key={charge.id}
-            data-testid="platform-charge"
-            className="border-t border-border-subtle align-top"
-          >
-            <Cell>{formatDate(charge.dueOn, locale)}</Cell>
-            <Cell>
-              {charge.description}
-              {charge.voidReason ? (
-                <span className="block text-caption text-text-muted">{charge.voidReason}</span>
-              ) : null}
-            </Cell>
-            <Cell end>{money(charge.amount, charge.currencyCode)}</Cell>
-            <Cell>
-              <StatusBadge status={charge.status} messages={messages} />
-            </Cell>
-            <Cell>
-              {charge.receipts.length === 0 ? (
-                <span className="text-text-muted">{t('platform.billing.noReceipts')}</span>
-              ) : (
-                <ul className="flex flex-col gap-1">
-                  {charge.receipts.map((receipt) => (
-                    <li key={receipt.id} className="text-caption text-text-secondary">
-                      <span className="tabular-nums">
-                        {money(receipt.amount, receipt.currencyCode)}
+      {charges.length === 0 ? (
+        <MuiEmptyState
+          messages={messages}
+          descriptionKey={
+            status.length > 0 ? 'platform.billing.noneWithStatus' : 'platform.billing.none'
+          }
+          testId="platform-billing-empty"
+        />
+      ) : (
+        <TableContainer
+          className="rounded-lg border border-border-subtle"
+          data-testid="platform-charges-table"
+        >
+          <Table size="small">
+            <caption className="sr-only">{t('platform.billing.title')}</caption>
+            <TableHead>
+              <TableRow>
+                <TableCell scope="col">{t('platform.billing.due')}</TableCell>
+                <TableCell scope="col">{t('platform.billing.description')}</TableCell>
+                <TableCell scope="col" align="right">
+                  {t('platform.billing.amount')}
+                </TableCell>
+                <TableCell scope="col">{t('platform.billing.status')}</TableCell>
+                <TableCell scope="col">{t('platform.billing.received')}</TableCell>
+                <TableCell scope="col" align="right">
+                  {t('platform.billing.outstanding')}
+                </TableCell>
+                <TableCell scope="col">
+                  <span className="sr-only">{t('platform.actions')}</span>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {charges.map((charge) => {
+                // Two charges may share a description; the day each falls due
+                // tells them apart, for a screen reader as for the eye.
+                const about = `${charge.description}, ${formatDate(charge.dueOn, locale)}`;
+                return (
+                  <TableRow key={charge.id} data-testid="platform-charge" className="align-top">
+                    <TableCell className="whitespace-nowrap">
+                      {formatDate(charge.dueOn, locale)}
+                    </TableCell>
+                    <TableCell className="break-words">
+                      <bdi>{charge.description}</bdi>
+                      {charge.voidReason ? (
+                        <span className="block text-caption text-text-muted">
+                          <bdi>{charge.voidReason}</bdi>
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell align="right" className="whitespace-nowrap tabular-nums">
+                      {money(charge.amount, charge.currencyCode)}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={charge.status} messages={messages} />
+                    </TableCell>
+                    <TableCell>
+                      {charge.receipts.length === 0 ? (
+                        <span className="text-text-muted">{t('platform.billing.noReceipts')}</span>
+                      ) : (
+                        <ul className="flex flex-col gap-1" data-testid="platform-receipts">
+                          {charge.receipts.map((receipt) => (
+                            <li
+                              key={receipt.id}
+                              data-testid="platform-receipt"
+                              className="break-words text-caption text-text-secondary"
+                            >
+                              {receiptLine(receipt, locale)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </TableCell>
+                    <TableCell align="right" className="whitespace-nowrap tabular-nums">
+                      <span data-testid="platform-outstanding">
+                        {money(charge.outstanding, charge.currencyCode)}
                       </span>
-                      {' · '}
-                      {formatDate(receipt.receivedOn, locale)}
-                      {' · '}
-                      {receipt.method}
-                      {receipt.reference ? ` · ${receipt.reference}` : ''}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Cell>
-            <Cell end>
-              <span data-testid="platform-outstanding">
-                {money(charge.outstanding, charge.currencyCode)}
-              </span>
-            </Cell>
-            <Cell>
-              {canManage && charge.status === 'open' ? (
-                <div className="flex flex-wrap justify-end gap-1">
-                  <button
-                    type="button"
-                    className={SECONDARY_BUTTON}
-                    onClick={() => setPending({ type: 'receipt', charge })}
-                  >
-                    {t('platform.billing.recordReceipt')}
-                  </button>
-                  <button
-                    type="button"
-                    className={SECONDARY_BUTTON}
-                    onClick={() => {
-                      voiding.reset();
-                      setPending({ type: 'void', charge });
-                    }}
-                  >
-                    {t('platform.billing.void')}
-                  </button>
-                </div>
-              ) : null}
-            </Cell>
-          </tr>
-        ))}
-      </SimpleTable>
+                    </TableCell>
+                    <TableCell>
+                      {canManage && charge.status === 'open' ? (
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Button
+                            type="button"
+                            size="small"
+                            onClick={() => setPending({ type: 'receipt', charge })}
+                          >
+                            {t('platform.billing.recordReceipt')}
+                            <span className="sr-only"> {about}</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            size="small"
+                            onClick={() => {
+                              voiding.reset();
+                              setPending({ type: 'void', charge });
+                            }}
+                          >
+                            {t('platform.billing.void')}
+                            <span className="sr-only"> {about}</span>
+                          </Button>
+                        </div>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {hasMore ? (
-        <p data-testid="platform-billing-more" className="mt-2 text-caption text-text-muted">
+        <p data-testid="platform-billing-more" className="text-caption text-text-muted">
           {formatMessage(translate(messages, 'platform.billing.morePages'), {
             count: formatInteger(charges.length, locale),
           })}
@@ -260,25 +320,29 @@ export function BillingPanel({
         <nav
           data-testid="platform-billing-pager"
           aria-label={t('platform.billing.pager')}
-          className="mt-2 flex flex-wrap gap-2"
+          className="flex flex-wrap gap-2"
         >
           {paged ? (
-            <Link
+            <Button
+              component={Link}
               data-testid="platform-billing-first"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
+              size="small"
               href={billingHref(locale, tenantId, { status, cursor: null })}
             >
               {t('platform.billing.firstPage')}
-            </Link>
+            </Button>
           ) : null}
           {hasMore && nextCursor !== null ? (
-            <Link
+            <Button
+              component={Link}
               data-testid="platform-billing-next"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
+              size="small"
               href={billingHref(locale, tenantId, { status, cursor: nextCursor })}
             >
               {t('platform.billing.nextPage')}
-            </Link>
+            </Button>
           ) : null}
         </nav>
       ) : null}
@@ -302,8 +366,7 @@ export function BillingPanel({
         />
       ) : null}
       {pending?.type === 'void' ? (
-        <ReasonConfirmDialog
-          open
+        <ConsoleReasonDialog
           destructive
           messages={messages}
           pending={voiding.pending}
@@ -324,32 +387,41 @@ export function BillingPanel({
               () => setPending(null)
             );
           }}
+          testId="platform-void-dialog"
         />
       ) : null}
-    </Section>
+    </ConsoleSection>
   );
 }
 
-function DialogButtons({
-  messages,
-  pending,
-  onClose,
-}: {
-  readonly messages: Messages;
-  readonly pending: boolean;
-  readonly onClose: () => void;
-}) {
-  const t = (key: string) => translateDynamic(messages, key);
-  return (
-    <div className="flex justify-end gap-2">
-      <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
-        {t('overlay.cancel')}
-      </button>
-      <button type="submit" className={PRIMARY_BUTTON} disabled={pending}>
-        {pending ? t('overlay.working') : t('platform.save')}
-      </button>
-    </div>
-  );
+/**
+ * What a day picker found wrong, as this form's own refusal: a day only partly
+ * typed or one that is not a day is refused on its box, before anything is sent.
+ */
+function useUnfinishedDays(state: ActionState) {
+  const [unfinished, setUnfinished] = useState<{
+    readonly errors: Readonly<Record<string, string>>;
+    readonly attempts: number;
+  }>({ errors: {}, attempts: 0 });
+  const attempt = (state.attempt ?? 0) + unfinished.attempts;
+  const refusal: ActionState =
+    Object.keys(unfinished.errors).length > 0
+      ? { status: 'invalid', fieldErrors: unfinished.errors, attempt }
+      : { ...state, attempt };
+  /** Records the days not finished; answers whether the submission must stop. */
+  const refuse = (problems: Readonly<Record<string, DayProblem>>): boolean => {
+    const errors: Record<string, string> = {};
+    for (const [field, problem] of Object.entries(problems)) {
+      if (problem !== null) errors[field] = 'platform.error.date';
+    }
+    const refused = Object.keys(errors).length > 0;
+    setUnfinished((previous) => ({
+      errors,
+      attempts: previous.attempts + (refused ? 1 : 0),
+    }));
+    return refused;
+  };
+  return { refusal, refuse };
 }
 
 function ChargeDialog({
@@ -370,97 +442,108 @@ function ChargeDialog({
   const [amount, setAmount] = useState('');
   const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
   const [dueOn, setDueOn] = useState('');
+  const [dueProblem, setDueProblem] = useState<DayProblem>(null);
   const [description, setDescription] = useState('');
   const [subscriptionId, setSubscriptionId] = useState('');
+  const { refusal, refuse } = useUnfinishedDays(action.state);
   // Question f: the cursor goes to the first refused field, and a complaint
-  // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  // goes once its field changes (route sweep B3). A day box changes when its
+  // day does or when what the picker finds wrong with it does.
+  const { errors, formRef } = useStateRefusal(refusal, {
     amount,
     currencyCode,
-    dueOn,
+    dueOn: `${dueOn}#${dueProblem ?? ''}`,
     description,
     subscriptionId,
   });
-  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
+  const submit = () => {
+    if (refuse({ dueOn: dueProblem })) return;
+    action.run(
+      () =>
+        recordChargeAction(tenantId, {
+          amount,
+          currencyCode: currencyCode.trim().toUpperCase(),
+          dueOn,
+          description,
+          ...(subscriptionId ? { subscriptionId } : {}),
+        }),
+      onClose
+    );
+  };
+
   return (
-    <Dialog open onClose={onClose} messages={messages} title={t('platform.billing.recordCharge')}>
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          action.run(
-            () =>
-              recordChargeAction(tenantId, {
-                amount,
-                currencyCode: currencyCode.trim().toUpperCase(),
-                dueOn,
-                description,
-                ...(subscriptionId ? { subscriptionId } : {}),
-              }),
-            onClose
-          );
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <TextField
-          name="currencyCode"
-          label={t('platform.billing.currency')}
-          required
-          maxLength={3}
-          dir="ltr"
-          value={currencyCode}
-          onChange={(event) => setCurrencyCode(event.target.value)}
-          error={error('currencyCode')}
+    <FormDialog
+      messages={messages}
+      title={t('platform.billing.recordCharge')}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={submit}
+      formRef={formRef}
+      testId="platform-charge-dialog"
+    >
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <FormTextField
+        name="currencyCode"
+        label={t('platform.billing.currency')}
+        required
+        maxLength={3}
+        dir="ltr"
+        spellCheck={false}
+        autoFocus
+        value={currencyCode}
+        onChange={setCurrencyCode}
+        error={error('currencyCode')}
+      />
+      <FormMoneyField
+        name="amount"
+        messages={messages}
+        label={t('platform.billing.amount')}
+        currency={currencyCode.trim().toUpperCase()}
+        required
+        value={amount}
+        onChange={(value) => setAmount(value)}
+        error={error('amount')}
+      />
+      <ZonedDateField
+        name="dueOn"
+        timezone={BILLING_DAY_ZONE}
+        label={t('platform.billing.due')}
+        required
+        value={dueOn}
+        onChange={setDueOn}
+        onProblem={setDueProblem}
+        error={error('dueOn')}
+        testId="platform-charge-due"
+      />
+      <FormTextField
+        name="description"
+        label={t('platform.billing.description')}
+        required
+        value={description}
+        onChange={setDescription}
+        error={error('description')}
+      />
+      {subscriptions.length > 0 ? (
+        <FormSelectField
+          name="subscriptionId"
+          label={t('platform.billing.subscription')}
+          value={subscriptionId}
+          placeholder={t('platform.billing.noSubscriptionLink')}
+          onChange={setSubscriptionId}
+          options={subscriptions.map((entry) => ({
+            value: entry.id,
+            label: `${entry.planName} (${entry.effectiveFrom.slice(0, 10)})`,
+          }))}
+          error={error('subscriptionId')}
         />
-        <MoneyField
-          name="amount"
-          messages={messages}
-          label={t('platform.billing.amount')}
-          currency={currencyCode.trim().toUpperCase()}
-          required
-          value={amount}
-          onChange={(value) => setAmount(value)}
-          error={error('amount')}
-        />
-        <TextField
-          name="dueOn"
-          type="date"
-          label={t('platform.billing.due')}
-          required
-          value={dueOn}
-          onChange={(event) => setDueOn(event.target.value)}
-          error={error('dueOn')}
-        />
-        <TextField
-          name="description"
-          label={t('platform.billing.description')}
-          required
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          error={error('description')}
-        />
-        {subscriptions.length > 0 ? (
-          <SelectField
-            name="subscriptionId"
-            label={t('platform.billing.subscription')}
-            value={subscriptionId}
-            placeholder={t('platform.billing.noSubscriptionLink')}
-            onChange={(event) => setSubscriptionId(event.target.value)}
-            options={subscriptions.map((entry) => ({
-              value: entry.id,
-              label: `${entry.planName} (${entry.effectiveFrom.slice(0, 10)})`,
-            }))}
-          />
-        ) : null}
-        <DialogButtons messages={messages} pending={action.pending} onClose={onClose} />
-      </form>
-    </Dialog>
+      ) : null}
+    </FormDialog>
   );
 }
 
@@ -481,97 +564,101 @@ function ReceiptDialog({
   const action = useConsoleAction(messages);
   const [amount, setAmount] = useState('');
   const [receivedOn, setReceivedOn] = useState('');
+  const [receivedProblem, setReceivedProblem] = useState<DayProblem>(null);
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
+  const { refusal, refuse } = useUnfinishedDays(action.state);
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+  const { errors, formRef } = useStateRefusal(refusal, {
     amount,
-    receivedOn,
+    receivedOn: `${receivedOn}#${receivedProblem ?? ''}`,
     method,
     reference,
     notes,
   });
-  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
+  const submit = () => {
+    if (refuse({ receivedOn: receivedProblem })) return;
+    action.run(
+      () =>
+        recordReceiptAction(tenantId, {
+          chargeId: charge.id,
+          amount,
+          currencyCode: charge.currencyCode,
+          receivedOn,
+          method,
+          ...(reference.trim() ? { reference } : {}),
+          ...(notes.trim() ? { notes } : {}),
+        }),
+      onClose
+    );
+  };
+
   return (
-    <Dialog
-      open
-      onClose={onClose}
+    <FormDialog
       messages={messages}
       title={t('platform.billing.recordReceipt')}
       description={charge.description}
+      submitLabel={t('platform.save')}
+      pendingLabel={t('overlay.working')}
+      pending={action.pending}
+      onCancel={onClose}
+      onSubmit={submit}
+      formRef={formRef}
+      testId="platform-receipt-dialog"
     >
-      <form
-        ref={refusalFormRef}
-        noValidate
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          action.run(
-            () =>
-              recordReceiptAction(tenantId, {
-                chargeId: charge.id,
-                amount,
-                currencyCode: charge.currencyCode,
-                receivedOn,
-                method,
-                ...(reference.trim() ? { reference } : {}),
-                ...(notes.trim() ? { notes } : {}),
-              }),
-            onClose
-          );
-        }}
-      >
-        {action.state.status !== 'idle' && action.state.status !== 'success' ? (
-          <FormFeedback state={action.state} messages={messages} />
-        ) : null}
-        <MoneyField
-          name="amount"
-          messages={messages}
-          label={t('platform.billing.amount')}
-          description={`${t('platform.billing.outstanding')}: ${formatMoney({ amount: charge.outstanding, currency: charge.currencyCode }, intlLocale(locale))}`}
-          currency={charge.currencyCode}
-          required
-          value={amount}
-          onChange={(value) => setAmount(value)}
-          error={error('amount')}
-        />
-        <TextField
-          name="receivedOn"
-          type="date"
-          label={t('platform.billing.receivedOn')}
-          required
-          value={receivedOn}
-          onChange={(event) => setReceivedOn(event.target.value)}
-          error={error('receivedOn')}
-        />
-        <TextField
-          name="method"
-          label={t('platform.billing.method')}
-          required
-          value={method}
-          onChange={(event) => setMethod(event.target.value)}
-          error={error('method')}
-        />
-        <TextField
-          name="reference"
-          label={t('platform.billing.reference')}
-          value={reference}
-          onChange={(event) => setReference(event.target.value)}
-          error={error('reference')}
-        />
-        <TextAreaField
-          name="notes"
-          label={t('platform.billing.notes')}
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          error={error('notes')}
-        />
-        <DialogButtons messages={messages} pending={action.pending} onClose={onClose} />
-      </form>
-    </Dialog>
+      {action.state.status !== 'idle' && action.state.status !== 'success' ? (
+        <MuiFormFeedback state={action.state} messages={messages} />
+      ) : null}
+      <FormMoneyField
+        name="amount"
+        messages={messages}
+        label={t('platform.billing.amount')}
+        description={`${t('platform.billing.outstanding')}: ${formatMoney({ amount: charge.outstanding, currency: charge.currencyCode }, intlLocale(locale))}`}
+        currency={charge.currencyCode}
+        required
+        value={amount}
+        onChange={(value) => setAmount(value)}
+        error={error('amount')}
+      />
+      <ZonedDateField
+        name="receivedOn"
+        timezone={BILLING_DAY_ZONE}
+        label={t('platform.billing.receivedOn')}
+        required
+        value={receivedOn}
+        onChange={setReceivedOn}
+        onProblem={setReceivedProblem}
+        error={error('receivedOn')}
+        testId="platform-receipt-received"
+      />
+      <FormTextField
+        name="method"
+        label={t('platform.billing.method')}
+        required
+        value={method}
+        onChange={setMethod}
+        error={error('method')}
+      />
+      <FormTextField
+        name="reference"
+        label={t('platform.billing.reference')}
+        value={reference}
+        onChange={setReference}
+        error={error('reference')}
+      />
+      <FormTextField
+        name="notes"
+        multiline
+        rows={3}
+        label={t('platform.billing.notes')}
+        value={notes}
+        onChange={setNotes}
+        error={error('notes')}
+      />
+    </FormDialog>
   );
 }
