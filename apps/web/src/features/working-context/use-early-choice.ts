@@ -33,9 +33,10 @@ import { useLayoutEffect, type RefObject } from 'react';
  *     not in force.
  *
  * It is the adoption the sign-in form makes for a box filled before hydration
- * (`usePrefilledValue`), for a select the browser does not put back.
+ * (`usePrefilledValue`), for a select Chromium 151 did not put back in our
+ * experiment (Firefox and WebKit not verified; below).
  *
- * ## A select marked `autocomplete="off"` holds only the operator's choice
+ * ## A select marked `autocomplete="off"` is taken to hold the operator's choice
  *
  * A browser can put a form control back the way it was when it re-opens a
  * document from its history, and a value it put back is nobody's choice:
@@ -50,7 +51,9 @@ import { useLayoutEffect, type RefObject } from 'react';
  *
  * So the mark is checked here, not assumed. In a select marked
  * `autocomplete="off"`, a value that differs from what it was drawn with is
- * the operator's on every arrival, and it is adopted. In any other select it
+ * taken to be the operator's on every arrival, and it is adopted — on the
+ * strength of that Chromium 151 measurement; a browser that did put a value
+ * back into a marked select would have it adopted. In any other select it
  * may have been put back, so it is adopted on a fresh navigation only — on a
  * reload, a move through history, a prerender, or when the browser does not
  * say how the document was reached, the select is put back to the value it
@@ -67,7 +70,8 @@ import { useLayoutEffect, type RefObject } from 'react';
  * on every other arrival; later it also adopted when the event being
  * dispatched (`window.event`) was an `input` or `change` aimed at the select.
  * For the header's select, which was already marked, the reset could only
- * ever discard the operator's own choice, and the runtime retest at 784322b1
+ * ever discard the operator's own choice in Chromium 151 in our experiment
+ * (Firefox and WebKit not verified), and the runtime retest at 784322b1
  * (F-1) lost 18 of 18 branches chosen in the header or the chooser before the
  * page had finished loading on a reload or a move through history, among
  * them choices React was already listening for. Adopting in a marked select
@@ -108,9 +112,10 @@ export function useEarlyChoice(
     const held = select.value;
     if (held === value) return;
     if (!Array.from(select.options).some((option) => option.value === value)) return;
-    // A select marked `autocomplete="off"` is not put back by the browser, so
-    // what it holds was chosen on any arrival; any other select only on a
-    // fresh navigation.
+    // A select marked `autocomplete="off"` was not put back by Chromium 151 in
+    // our experiment (Firefox and WebKit not verified), so what it holds is
+    // taken as chosen on any arrival; any other select only on a fresh
+    // navigation.
     if (offered.includes(held) && (isNotRestored(select) || arrivedByFreshNavigation())) {
       adopt(held);
       return;
@@ -121,7 +126,9 @@ export function useEarlyChoice(
 
 /**
  * Whether the select is marked `autocomplete="off"`: a control whose state the
- * browser was measured neither to save nor to restore (see above).
+ * browser was measured not to restore — in Chromium 151 only; whether it is
+ * saved was not measured, and Firefox and WebKit were not verified (see
+ * above).
  */
 function isNotRestored(select: HTMLSelectElement): boolean {
   return (select.getAttribute('autocomplete') ?? '').trim().toLowerCase() === 'off';

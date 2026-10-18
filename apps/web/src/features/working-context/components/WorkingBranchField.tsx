@@ -291,7 +291,8 @@ function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
       ref={selectRef}
       label={translate(messages, 'workingContext.chooseHere')}
       data-testid="concrete-branch-chooser"
-      // Not restored by the browser, so an early choice is the operator's.
+      // Not put back by Chromium 151 in our experiment (Firefox and WebKit not
+      // verified), so an early choice is taken as the operator's.
       autoComplete="off"
       value=""
       onChange={(event) => {

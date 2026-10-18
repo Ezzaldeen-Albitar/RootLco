@@ -218,7 +218,8 @@ export function BranchSelector({
           inputProps={{
             id: selectId,
             'data-testid': 'working-context-select',
-            // Not restored by the browser, so an early choice is the operator's — see above.
+            // Not put back by Chromium 151 in our experiment (Firefox and WebKit
+            // not verified), so an early choice is taken as the operator's — see above.
             autoComplete: 'off',
             className: 'truncate',
             title: shown.length > 0 ? shown : undefined,

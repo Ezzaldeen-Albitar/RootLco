@@ -261,8 +261,9 @@ describe('the server draws the select before anything is remembered', () => {
     const page = serverPage();
     expect(page.select().disabled).toBe(false);
     expect(page.select().value).toBe('');
-    // The browser does not put an earlier page's value back into it, which is
-    // what makes what it holds a choice on every arrival: see below.
+    // Chromium 151 did not put an earlier page's value back into a select so
+    // marked in our experiment (Firefox and WebKit not verified), which is why
+    // what it holds is taken as a choice on every arrival: see below.
     expect(page.select()).toHaveAttribute('autocomplete', 'off');
     expect([...page.select().options].map((option) => option.value)).toEqual([
       '',
@@ -432,8 +433,8 @@ describe('a branch chosen before React hydrates is kept on a reload or a move th
  * Both selects are marked `autocomplete="off"`, and in Chromium 151 a select
  * so marked was not put back on a move through history, nor anything on a
  * reload (experiment 2026-10-18; Firefox and WebKit not verified). So a value
- * the select holds that it was not drawn with, when React hydrates it, is the
- * operator's on every arrival — a reload, a move through history, a prerender,
+ * the select holds that it was not drawn with, when React hydrates it, is taken
+ * as the operator's on every arrival — a reload, a move through history, a prerender,
  * or one the browser does not name — and it is adopted, whether or not an
  * event is being dispatched and whichever element that event is aimed at.
  * (These cases replace the #581 ones that put such a value back on every
@@ -848,7 +849,8 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
     window.localStorage.setItem(KEY, OTHER_BRANCH.id);
     const page = screenPage();
     expect(page.select().disabled).toBe(false);
-    // Like the header's: a select the browser does not put back from history.
+    // Like the header's: a select Chromium 151 did not put back from history
+    // in our experiment (Firefox and WebKit not verified).
     expect(page.select()).toHaveAttribute('autocomplete', 'off');
     expect([...page.select().options].map((option) => option.value)).toEqual([
       '',
@@ -934,8 +936,9 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
       arriveBy(arrival);
       window.localStorage.setItem(KEY, OTHER_BRANCH.id);
       const page = screenPage();
-      // A value, and no event. The browser does not put one back here
-      // (`autocomplete="off"`), so it was chosen.
+      // A value, and no event. Chromium 151 did not put one back into a select
+      // marked `autocomplete="off"` in our experiment (Firefox and WebKit not
+      // verified), so it is taken as chosen.
       page.select().value = TEST_BRANCH.id;
       await page.hydrate();
       expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
@@ -1187,7 +1190,7 @@ describe('a select without autocomplete="off" is adopted from on a fresh navigat
     mark,
     adopt,
   }: {
-    readonly mark: 'off' | 'OFF' | null;
+    readonly mark: string | null;
     readonly adopt: (chosen: string) => void;
   }) {
     const ref = useRef<HTMLSelectElement | null>(null);
@@ -1210,7 +1213,7 @@ describe('a select without autocomplete="off" is adopted from on a fresh navigat
     );
   }
 
-  function plainPage(mark: 'off' | 'OFF' | null) {
+  function plainPage(mark: string | null) {
     const adopt = vi.fn<(chosen: string) => void>();
     const page = serverPage(() => <PlainSelect mark={mark} adopt={adopt} />, PLAIN);
     return { page, adopt };
@@ -1242,11 +1245,53 @@ describe('a select without autocomplete="off" is adopted from on a fresh navigat
   it.each([
     ['reload', 'off'],
     ['back_forward', 'off'],
+    ['prerender', 'off'],
+    [null, 'off'],
     ['reload', 'OFF'],
+    ['reload', ' off '],
+    ['back_forward', ' off '],
   ] as const)(
     'marked, reached by %s (autocomplete="%s"): the held branch is adopted',
     async (arrival, mark) => {
       arriveBy(arrival);
+      const { page, adopt } = plainPage(mark);
+      page.select().value = TEST_BRANCH.id;
+      await page.hydrate();
+      expect(adopt).toHaveBeenCalledTimes(1);
+      expect(adopt).toHaveBeenCalledWith(TEST_BRANCH.id);
+    }
+  );
+
+  /*
+   * An `autocomplete` that is present but is not "off" is not the mark: such a
+   * select may be put back (it was not measured), so it follows the
+   * fresh-navigation-only rule.
+   */
+  it.each([
+    ['nope', 'reload'],
+    ['nope', 'back_forward'],
+    ['new-password', 'reload'],
+    ['new-password', 'back_forward'],
+    ['on', 'reload'],
+    ['on', 'back_forward'],
+  ] as const)(
+    'autocomplete="%s", reached by %s: not adopted, and put back',
+    async (mark, arrival) => {
+      arriveBy(arrival);
+      const { page, adopt } = plainPage(mark);
+      expect(page.select()).toHaveAttribute('autocomplete', mark);
+      page.select().value = TEST_BRANCH.id;
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(adopt).not.toHaveBeenCalled();
+      expect(page.select().value).toBe('');
+    }
+  );
+
+  it.each(['nope', 'new-password', 'on'] as const)(
+    'autocomplete="%s", reached by a fresh navigation: the held branch is adopted',
+    async (mark) => {
+      arriveBy('navigate');
       const { page, adopt } = plainPage(mark);
       page.select().value = TEST_BRANCH.id;
       await page.hydrate();
