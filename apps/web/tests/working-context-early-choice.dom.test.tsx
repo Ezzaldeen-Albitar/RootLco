@@ -502,6 +502,44 @@ describe('a branch chosen while React is taking the page over is kept', () => {
     expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
   });
 
+  /*
+   * The same choice on a reload or a move through history. The select differs
+   * from what the server drew here too, but the difference is not one the
+   * browser put back: the choice is the event React is hydrating to deliver.
+   * Putting the select back to the drawn value before that event reached the
+   * select's handler left the handler reading the ask, and the remembered
+   * "All my branches" stood (runtime retest 2026-10-18: a branch chosen about a
+   * quarter of a second after the select was drawn, on a reload, was lost).
+   */
+  it.each(['reload', 'back_forward'] as const)(
+    'reached by %s, after hydration is asked for and before it has rendered: the choice is kept',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, ALL_BRANCHES);
+      const page = serverPage();
+      const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
+      const before = environment.IS_REACT_ACT_ENVIRONMENT;
+      environment.IS_REACT_ACT_ENVIRONMENT = false;
+      try {
+        (open as { root: Root | null }).root = hydrateRoot(page.container, tree(), {
+          onRecoverableError: page.recoverable,
+        });
+        expect(page.version()).toBe('0');
+        choose(TEST_BRANCH.id);
+        await waitFor(() => expect(page.selection()).toBe(TEST_BRANCH.id));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      } finally {
+        environment.IS_REACT_ACT_ENVIRONMENT = before;
+      }
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(page.select().value).toBe(TEST_BRANCH.id);
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.version()).toBe('1');
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+    }
+  );
+
   it.each([
     ['in the commit that hydrates, before any effect of the provider', 'hydrating-commit'],
     ['among the first effects, the remembered selection not yet read', 'restore-pending'],
@@ -707,6 +745,35 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
     expect(page.version()).toBe('1');
     expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
   });
+
+  it.each(['reload', 'back_forward'] as const)(
+    'reached by %s, chosen while React is taking the page over: the choice is kept',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, ALL_BRANCHES);
+      const page = screenPage();
+      const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
+      const before = environment.IS_REACT_ACT_ENVIRONMENT;
+      environment.IS_REACT_ACT_ENVIRONMENT = false;
+      try {
+        (open as { root: Root | null }).root = hydrateRoot(page.container, screenTree(), {
+          onRecoverableError: page.recoverable,
+        });
+        choose(TEST_BRANCH.id, CHOOSER);
+        await waitFor(() => expect(page.selection()).toBe(TEST_BRANCH.id));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      } finally {
+        environment.IS_REACT_ACT_ENVIRONMENT = before;
+      }
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.version()).toBe('1');
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+      // The screen has its branch, so the chooser is gone rather than left naming it.
+      expect(page.select()).toBeNull();
+    }
+  );
 
   it.each(['reload', 'back_forward', 'prerender', null] as const)(
     'reached by %s: the remembered branch stands',
