@@ -60,7 +60,17 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import ts from 'typescript';
+import typescript from 'typescript';
+
+/*
+ * Bound ONCE to a local. Under vitest the default import of a CommonJS package
+ * is rewritten into a property read on an interop wrapper, so every `ts.isX(...)`
+ * call in the AST walk paid that indirection again; over the 611-file source
+ * tree that made `inspect()` about 4.5 times slower in a test than under plain
+ * node (measured 8.2-8.6 s against 1.8-1.9 s, identical findings). The value is
+ * the same module object either way.
+ */
+const ts = typescript;
 
 import { constResolver, styleObjectRoots } from './check-design-tokens.mjs';
 
