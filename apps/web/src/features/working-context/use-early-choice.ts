@@ -25,67 +25,46 @@ import { useLayoutEffect, type RefObject } from 'react';
  *   - it is handed to `adopt` exactly as if it had just been chosen — the
  *     provider's guarded switch, so it is remembered, it moves the version
  *     once, and unsaved work is asked about first; or
- *   - nothing is adopted and the select is put back to the value it was drawn
+ *   - it is not one of the values the select was given to offer (below), so
+ *     nothing is adopted and the select is put back to the value it was drawn
  *     with, so the remembered selection stands and the select does not go on
- *     naming a branch that is not in force. (The header's select was put back
- *     by its next render anyway; the chooser beside a screen's branch ask,
- *     with nothing remembered, was not.)
+ *     naming a branch that is not in force.
  *
  * It is the adoption the sign-in form makes for a box filled before hydration
- * (`usePrefilledValue`), with one difference that matters: there, whatever the
- * box holds is the operator's. Here it may not be.
+ * (`usePrefilledValue`): whatever the select holds that it was not drawn with
+ * is the operator's.
  *
- * ## Only a fresh navigation can hold a choice
+ * ## Every caller's select carries `autocomplete="off"`
  *
- * A browser puts form controls back the way they were when it re-opens a
- * document from its history. Go Back to a page that showed branch A after
- * switching to B elsewhere, or reload it, and the select may hold A again
- * before React arrives — put there by the browser, chosen by nobody. Adopted,
- * it would move this tab and every other back to A without a word.
+ * That is what makes the held value the operator's on every arrival. A browser
+ * puts form controls back the way they were when it re-opens a document from
+ * its history or reloads it — but not a control marked `autocomplete="off"`,
+ * whose state it neither saves nor restores. Both selects that use this hook
+ * are so marked: the header's (`BranchSelector`) and the chooser beside a
+ * screen's branch ask (`ConcreteBranchChooser` in `WorkingBranchField`). A new
+ * caller must mark its select the same way, or a value the browser put back
+ * would be adopted as a choice and move this tab and every other without a
+ * word.
  *
- * A select cannot say who set it, but the document can say how it was reached
- * (`PerformanceNavigationTiming.type`). On a fresh navigation the browser
- * restores nothing, so a select that differs from what the server drew was
- * changed by a person. On a reload, a move through history or a prerender, or
- * when the browser does not say, nothing is adopted: the remembered selection
- * wins, as it did before this hook existed. The cost is a choice made before
- * React was listening on those navigations, which is lost as it always was.
+ * ## Why not by how the document was reached
  *
- * ## Except the choice React is hydrating to deliver
+ * This hook used to adopt only on a fresh navigation
+ * (`PerformanceNavigationTiming.type === 'navigate'`) and put the select back
+ * on a reload, a move through history or a prerender, to discard a value the
+ * browser might have restored; later it also adopted when the event being
+ * dispatched (`window.event`) was an `input` or `change` aimed at the select.
+ * Neither select could be restored, so on those arrivals the reset only ever
+ * discarded the operator's own choice: the runtime retest at 784322b1 (F-1)
+ * lost 18 of 18 branches chosen before the page had finished loading on a
+ * reload or a move through history, among them choices React was already
+ * listening for. Adopting on every arrival does not depend on when React
+ * hydrates or on which event, if any, it is dispatching then; a fresh
+ * navigation is unchanged.
  *
- * Once React is listening, a choice made in a select it has not hydrated yet
- * makes it hydrate at once, inside the dispatch of that `input` or `change`
- * event, and only then hand the event on. This hook runs in that hydration,
- * so the select already holds the choice — and on a reload or a move through
- * history, putting it back to the drawn value here left the select's handler
- * reading the ask when the event reached it: the choice was dropped and the
- * remembered selection stood (runtime retest 2026-10-18, a branch chosen on a
- * reload about a quarter of a second after the select was drawn).
- *
- * Merely leaving the select alone is not enough. Hydration is followed, inside
- * the same dispatch, by the render that restores the remembered selection,
- * and that render puts the controlled select back to the value it is given
- * before the event reaches the handler — so the handler would read the ask
- * all the same.
- *
- * So when the event being dispatched is an `input` or `change` aimed at this
- * very select, the choice is handed to `adopt` here, as on a fresh
- * navigation: the provider's guarded switch, the one the handler would have
- * called. The event then reaches the handler, which asks for the selection
- * now in force, and the provider takes that as nothing to do. A value the
- * browser put back comes with no event, so it is still put back.
- *
- * The event is read from `window.event` — the event the browser is
- * dispatching right now, `undefined` between dispatches — because it answers
- * the one question asked (is a person's change to THIS select being delivered
- * at this moment?) with no timing and no listener of this hook's own. A
- * listener of its own runs in an effect, after hydration has begun, so it
- * would have to be a document-wide one installed when this module loads — a
- * side effect of an import, and a mark that outlives the dispatch it was made
- * in. `window.event` is a legacy interface but every current browser and
- * jsdom keep it; where it is missing the select is put back, as before.
- * A fresh navigation is unchanged: the choice is adopted here, and the provider
- * takes the event's request for the selection now in force as nothing to do.
+ * When React hydrates inside the dispatch of the choice itself, the choice
+ * then arrives twice — read here, and delivered to the select's handler — and
+ * the provider takes the handler's request for the selection already in force
+ * as nothing to do, so the version moves once.
  *
  * ## Only a value the select was given to offer
  *
@@ -116,39 +95,12 @@ export function useEarlyChoice(
     const held = select.value;
     if (held === value) return;
     if (!Array.from(select.options).some((option) => option.value === value)) return;
-    // On a fresh navigation the browser restored nothing; otherwise only the
-    // choice React is hydrating to deliver is one.
-    if (offered.includes(held) && (arrivedByFreshNavigation() || isBeingChosen(select))) {
+    // The select cannot be put back by the browser (`autocomplete="off"`), so
+    // what it holds that it was not drawn with was chosen — on any arrival.
+    if (offered.includes(held)) {
       adopt(held);
       return;
     }
     select.value = value;
   }, [selectRef, value, offered, adopt]);
-}
-
-/**
- * Whether a person's change to `select` is being dispatched at this moment —
- * the `input` or `change` event whose dispatch made React hydrate. `false`
- * between dispatches, for an event aimed at anything else, and wherever the
- * browser does not expose the event being dispatched.
- */
-function isBeingChosen(select: HTMLSelectElement): boolean {
-  const event = typeof window === 'undefined' ? undefined : window.event;
-  if (event === undefined) return false;
-  return event.target === select && (event.type === 'input' || event.type === 'change');
-}
-
-/**
- * Whether this document was reached by a fresh navigation — a link, a typed
- * address, a bookmark — rather than by a reload, a move through history or a
- * prerender. `false` whenever the browser does not say: an unknown arrival is
- * treated as one that may have restored the form.
- */
-function arrivedByFreshNavigation(): boolean {
-  try {
-    const [entry] = performance.getEntriesByType('navigation');
-    return (entry as PerformanceNavigationTiming | undefined)?.type === 'navigate';
-  } catch {
-    return false;
-  }
 }

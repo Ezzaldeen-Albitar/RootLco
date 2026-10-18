@@ -253,9 +253,12 @@ export function DirectoryEmptyNotice({
  * Like the header's it can be in the server's HTML — on a screen that is drawn
  * before a branch is known, such as the boards that read every branch — and a
  * branch chosen in it before React hydrates the page is taken the same way,
- * through the same hook and under the same three conditions: a fresh
- * navigation, a branch this operator was published, and the guarded `select`
- * (`useEarlyChoice`; P1-32-PRE-OD-UXQ, Q-1).
+ * through the same hook and under the same two conditions: a branch this
+ * operator was published, and the guarded `select` (`useEarlyChoice`;
+ * P1-32-PRE-OD-UXQ, Q-1). Like the header's it carries `autocomplete="off"`,
+ * so the browser does not put an earlier branch back into it on a reload or a
+ * move through history, and what it holds beyond the ask was chosen — the
+ * hook adopts it on every arrival and relies on that mark.
  */
 function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
   const context = useWorkingContext();
@@ -283,6 +286,8 @@ function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
       ref={selectRef}
       label={translate(messages, 'workingContext.chooseHere')}
       data-testid="concrete-branch-chooser"
+      // Not restored by the browser, so an early choice is the operator's.
+      autoComplete="off"
       value=""
       onChange={(event) => {
         const next = event.target.value;

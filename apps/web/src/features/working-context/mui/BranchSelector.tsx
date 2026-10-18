@@ -51,16 +51,14 @@ import { useEarlyChoice } from '../use-early-choice';
  * every branch in it — before React has attached to the page, and a branch
  * chosen in that moment used to be lost. `useEarlyChoice` reads the select in
  * the commit that hydrates it and hands a branch chosen there to `onSelect`,
- * the provider's guarded switch — on a fresh navigation only, because on a
- * reload or a move through history the browser may have put an earlier value
- * back into the select, and that is nobody's choice. The rule and its reasons
- * are stated there.
+ * the provider's guarded switch, however the document was reached. The rule
+ * and its reasons are stated there.
  *
- * `autocomplete="off"` asks the browser not to restore the select at all. It
- * is kept because it does no harm and, where a browser honours it, the select
- * does not show a stale branch for the moment before React arrives. Nothing
- * relies on it: whether a browser honours it on a select outside a form was
- * not established.
+ * `autocomplete="off"` is what that rule rests on: the browser neither saves
+ * nor restores the state of a control so marked, so on a reload or a move
+ * through history it does not put an earlier branch back into this select,
+ * and a branch the select holds that it was not drawn with is the operator's.
+ * Do not remove it.
  */
 export interface BranchSelectorProps {
   readonly messages: Messages;
@@ -216,7 +214,7 @@ export function BranchSelector({
           inputProps={{
             id: selectId,
             'data-testid': 'working-context-select',
-            // Asked of the browser, not relied on — see above.
+            // Not restored by the browser, so an early choice is the operator's — see above.
             autoComplete: 'off',
             className: 'truncate',
             title: shown.length > 0 ? shown : undefined,
