@@ -399,6 +399,36 @@ describe('a select the browser may have put back is not read as a choice', () =>
     expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
   });
 
+  it('reached by reload, hydrated by an event aimed elsewhere: the put-back value is still not a choice', async () => {
+    arriveBy('reload');
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const page = serverPage();
+    restoredByTheBrowser(page, TEST_BRANCH.id);
+    const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
+    const before = environment.IS_REACT_ACT_ENVIRONMENT;
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      (open as { root: Root | null }).root = hydrateRoot(page.container, tree(), {
+        onRecoverableError: page.recoverable,
+      });
+      // A click somewhere else on the page makes React hydrate at once; it is
+      // not a change to the select.
+      const elsewhere = page.container.querySelector(
+        '[data-testid="probe-version"]'
+      ) as HTMLElement;
+      elsewhere.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => expect(page.selection()).toBe(OTHER_BRANCH.id));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      environment.IS_REACT_ACT_ENVIRONMENT = before;
+    }
+    expect(page.recoverable).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+    expect(page.select().value).toBe(OTHER_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+  });
+
   it('a fresh navigation is the one arrival on which the same select is a choice', async () => {
     arriveBy('navigate');
     window.localStorage.setItem(KEY, OTHER_BRANCH.id);

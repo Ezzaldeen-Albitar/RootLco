@@ -48,8 +48,44 @@ import { useLayoutEffect, type RefObject } from 'react';
  * restores nothing, so a select that differs from what the server drew was
  * changed by a person. On a reload, a move through history or a prerender, or
  * when the browser does not say, nothing is adopted: the remembered selection
- * wins, as it did before this hook existed. The cost is the early choice on
- * those navigations, which is lost as it always was.
+ * wins, as it did before this hook existed. The cost is a choice made before
+ * React was listening on those navigations, which is lost as it always was.
+ *
+ * ## Except the choice React is hydrating to deliver
+ *
+ * Once React is listening, a choice made in a select it has not hydrated yet
+ * makes it hydrate at once, inside the dispatch of that `input` or `change`
+ * event, and only then hand the event on. This hook runs in that hydration,
+ * so the select already holds the choice — and on a reload or a move through
+ * history, putting it back to the drawn value here left the select's handler
+ * reading the ask when the event reached it: the choice was dropped and the
+ * remembered selection stood (runtime retest 2026-10-18, a branch chosen on a
+ * reload about a quarter of a second after the select was drawn).
+ *
+ * Merely leaving the select alone is not enough. Hydration is followed, inside
+ * the same dispatch, by the render that restores the remembered selection,
+ * and that render puts the controlled select back to the value it is given
+ * before the event reaches the handler — so the handler would read the ask
+ * all the same.
+ *
+ * So when the event being dispatched is an `input` or `change` aimed at this
+ * very select, the choice is handed to `adopt` here, as on a fresh
+ * navigation: the provider's guarded switch, the one the handler would have
+ * called. The event then reaches the handler, which asks for the selection
+ * now in force, and the provider takes that as nothing to do. A value the
+ * browser put back comes with no event, so it is still put back.
+ *
+ * The event is read from `window.event` — the event the browser is
+ * dispatching right now, `undefined` between dispatches — because it answers
+ * the one question asked (is a person's change to THIS select being delivered
+ * at this moment?) with no timing and no listener of this hook's own. A
+ * listener of its own runs in an effect, after hydration has begun, so it
+ * would have to be a document-wide one installed when this module loads — a
+ * side effect of an import, and a mark that outlives the dispatch it was made
+ * in. `window.event` is a legacy interface but every current browser and
+ * jsdom keep it; where it is missing the select is put back, as before.
+ * A fresh navigation is unchanged: the choice is adopted here, and the provider
+ * takes the event's request for the selection now in force as nothing to do.
  *
  * ## Only a value the select was given to offer
  *
@@ -80,12 +116,26 @@ export function useEarlyChoice(
     const held = select.value;
     if (held === value) return;
     if (!Array.from(select.options).some((option) => option.value === value)) return;
-    if (offered.includes(held) && arrivedByFreshNavigation()) {
+    // On a fresh navigation the browser restored nothing; otherwise only the
+    // choice React is hydrating to deliver is one.
+    if (offered.includes(held) && (arrivedByFreshNavigation() || isBeingChosen(select))) {
       adopt(held);
       return;
     }
     select.value = value;
   }, [selectRef, value, offered, adopt]);
+}
+
+/**
+ * Whether a person's change to `select` is being dispatched at this moment —
+ * the `input` or `change` event whose dispatch made React hydrate. `false`
+ * between dispatches, for an event aimed at anything else, and wherever the
+ * browser does not expose the event being dispatched.
+ */
+function isBeingChosen(select: HTMLSelectElement): boolean {
+  const event = typeof window === 'undefined' ? undefined : window.event;
+  if (event === undefined) return false;
+  return event.target === select && (event.type === 'input' || event.type === 'change');
 }
 
 /**
