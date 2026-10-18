@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import Alert from '@mui/material/Alert';
+import TableCell from '@mui/material/TableCell';
+import TableRow from '@mui/material/TableRow';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
@@ -6,7 +9,7 @@ import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { formatDate, formatDateTime, formatInteger, intlLocale } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 import { expiringOrganizations, type OrganizationRow, type PlatformStatistics } from '../types';
-import { Section, SimpleTable, Cell } from './ui';
+import { ConsoleSection, ConsoleTable } from './console-parts';
 
 /**
  * How one capacity severity is drawn and what it is called.
@@ -44,6 +47,15 @@ const CAPACITY_SEVERITY_UNKNOWN_TONE = 'border-warning-border bg-warning-subtle'
  * is: contracted, received and outstanding are recorded amounts; the projected
  * renewal value is a planning figure and is never presented as money owed.
  * Amounts arrive as decimal strings and are only formatted for reading.
+ *
+ * ## On Material UI (ADR-022, P1-32-PRE-OD-WP06B2)
+ *
+ * The revenue and the expiring organisations are Material tables, so a long
+ * name wraps rather than being cut; each part is the console section. The
+ * figures, the sentences and the reads are what they were: one page of
+ * organisations, no pager, and a sentence saying how many were examined and
+ * that more exist when the server said so. This stays a server component: the
+ * Material pieces are client components it renders, handed plain values.
  */
 export function PlatformOverview({
   locale,
@@ -138,44 +150,65 @@ export function PlatformOverview({
         ))}
       </ul>
 
-      <Section title={t('platform.overview.revenue')}>
-        <p className="mb-3 text-supporting text-text-muted">
-          {t('platform.overview.projectionNote')}
-        </p>
-        <SimpleTable
+      <ConsoleSection title={t('platform.overview.revenue')}>
+        <p className="text-supporting text-text-muted">{t('platform.overview.projectionNote')}</p>
+        <ConsoleTable
           caption={t('platform.overview.revenue')}
           headers={[
-            t('platform.overview.currency'),
-            t('platform.overview.contracted'),
-            t('platform.overview.received'),
-            t('platform.overview.outstanding'),
-            t('platform.overview.projectedRenewal'),
+            { label: t('platform.overview.currency') },
+            { label: t('platform.overview.contracted'), end: true },
+            { label: t('platform.overview.received'), end: true },
+            { label: t('platform.overview.outstanding'), end: true },
+            { label: t('platform.overview.projectedRenewal'), end: true },
           ]}
           empty={
             statistics.revenueByCurrency.length === 0 ? t('platform.overview.noRevenue') : null
           }
+          testId="platform-revenue"
         >
           {statistics.revenueByCurrency.map((row) => (
-            <tr key={row.currencyCode} className="border-t border-border-subtle">
-              <Cell>{row.currencyCode}</Cell>
-              <Cell end>{money(row.contracted, row.currencyCode)}</Cell>
-              <Cell end>{money(row.received, row.currencyCode)}</Cell>
-              <Cell end>{money(row.outstanding, row.currencyCode)}</Cell>
-              <Cell end>
+            <TableRow key={row.currencyCode}>
+              <TableCell>
+                <code dir="ltr" className="font-mono">
+                  {row.currencyCode}
+                </code>
+              </TableCell>
+              <TableCell align="right" className="whitespace-nowrap tabular-nums">
+                {money(row.contracted, row.currencyCode)}
+              </TableCell>
+              <TableCell align="right" className="whitespace-nowrap tabular-nums">
+                {money(row.received, row.currencyCode)}
+              </TableCell>
+              <TableCell align="right" className="whitespace-nowrap tabular-nums">
+                {money(row.outstanding, row.currencyCode)}
+              </TableCell>
+              <TableCell align="right" className="whitespace-nowrap tabular-nums">
                 <span data-testid="platform-projection">
                   {money(row.projectedRenewalValue, row.currencyCode)}
                 </span>
-              </Cell>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </SimpleTable>
-      </Section>
+        </ConsoleTable>
+      </ConsoleSection>
 
-      <Section title={t('platform.overview.expiringOrganizations')}>
+      <ConsoleSection title={t('platform.overview.expiringOrganizations')}>
         {organizations === null ? (
           <p className="text-body text-text-muted">{t('platform.overview.expiringNotOffered')}</p>
         ) : organizations.status !== 'ok' ? (
-          <p role="alert" className="text-body text-error">
+          /*
+           * Every failure of this read says the one sentence it said before —
+           * the organisations could not be read, so none is named — with its
+           * support reference, announced as before (`role="alert"`). The tiles
+           * above were read separately and still stand.
+           */
+          <Alert
+            severity="error"
+            variant="outlined"
+            role="alert"
+            data-testid="platform-expiring-unavailable"
+            data-state={organizations.status}
+          >
             {t('platform.overview.expiringUnavailable')}
             {organizations.correlationId ? (
               <>
@@ -188,46 +221,63 @@ export function PlatformOverview({
                 </span>
               </>
             ) : null}
-          </p>
+          </Alert>
         ) : (
           <>
-            <SimpleTable
+            <ConsoleTable
               caption={t('platform.overview.expiringOrganizations')}
               headers={[
-                t('platform.overview.organization'),
-                t('platform.overview.plan'),
-                t('platform.overview.endsOn'),
-                t('platform.overview.remaining'),
+                { label: t('platform.overview.organization') },
+                { label: t('platform.overview.plan') },
+                { label: t('platform.overview.endsOn') },
+                { label: t('platform.overview.remaining') },
               ]}
               empty={expiring?.length === 0 ? t('platform.overview.noExpiring') : null}
+              testId="platform-expiring"
             >
               {(expiring ?? []).map((row) => (
-                <tr key={row.id} className="border-t border-border-subtle">
-                  <Cell>
+                <TableRow key={row.id} className="align-top">
+                  <TableCell className="break-words">
                     {canReadOrganizations ? (
                       <Link
                         href={`/${locale}/platform/organizations/${row.id}`}
                         className="font-medium text-text-primary underline"
                       >
-                        {row.displayName}
+                        <bdi>{row.displayName}</bdi>
                       </Link>
                     ) : (
-                      <span className="font-medium text-text-primary">{row.displayName}</span>
+                      <span className="font-medium text-text-primary">
+                        <bdi>{row.displayName}</bdi>
+                      </span>
                     )}
-                  </Cell>
-                  <Cell>{row.planCode ?? t('platform.overview.noPlan')}</Cell>
-                  <Cell>{formatDate(row.endsOn, locale)}</Cell>
-                  <Cell>
+                  </TableCell>
+                  <TableCell className="break-words">
+                    {row.planCode === null ? (
+                      t('platform.overview.noPlan')
+                    ) : (
+                      <code dir="ltr" className="font-mono">
+                        {row.planCode}
+                      </code>
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {formatDate(row.endsOn, locale)}
+                  </TableCell>
+                  <TableCell>
                     {row.daysRemaining < 0
                       ? t('platform.overview.alreadyEnded')
                       : formatMessage(t('platform.overview.daysRemaining'), {
                           days: formatInteger(row.daysRemaining, locale),
                         })}
-                  </Cell>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </SimpleTable>
-            <p className="mt-2 text-caption text-text-muted">
+            </ConsoleTable>
+            {/*
+              The page read is one page of 100 organisations with no pager:
+              what was examined is said, and so is that more exist beyond it.
+            */}
+            <p data-testid="platform-expiring-scope" className="text-caption text-text-muted">
               {formatMessage(t('platform.overview.expiringScope'), {
                 count: formatInteger(organizations.data.items.length, locale),
               })}
@@ -235,9 +285,9 @@ export function PlatformOverview({
             </p>
           </>
         )}
-      </Section>
+      </ConsoleSection>
 
-      <Section title={t('platform.overview.capacityAlerts')}>
+      <ConsoleSection title={t('platform.overview.capacityAlerts')}>
         {statistics.capacityAlerts.length === 0 ? (
           <p className="text-body text-text-muted">{t('platform.overview.noCapacityAlerts')}</p>
         ) : (
@@ -274,9 +324,9 @@ export function PlatformOverview({
             })}
           </ul>
         )}
-      </Section>
+      </ConsoleSection>
 
-      <Section title={t('platform.overview.health')}>
+      <ConsoleSection title={t('platform.overview.health')}>
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <dt className="text-supporting text-text-secondary">
@@ -312,7 +362,7 @@ export function PlatformOverview({
             </dd>
           </div>
         </dl>
-      </Section>
+      </ConsoleSection>
     </div>
   );
 }
