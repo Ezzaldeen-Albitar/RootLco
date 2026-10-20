@@ -297,10 +297,11 @@ describe('the server draws the select before anything is remembered', () => {
     const page = serverPage();
     expect(page.select().disabled).toBe(false);
     expect(page.select().value).toBe('');
-    // Chromium 151 did not put an earlier page's value back into a select so
-    // marked in our experiment (Firefox and WebKit not verified), which is why
-    // what it holds is taken as a choice on every arrival: see below.
+    // Kept, not relied on: WebKit 26.5 put an earlier value back into a select
+    // so marked (experiment 2026-10-20). What makes a held value a choice is a
+    // recorded event: see below.
     expect(page.select()).toHaveAttribute('autocomplete', 'off');
+    expect(page.select()).toHaveAttribute('data-early-choice', '');
     expect([...page.select().options].map((option) => option.value)).toEqual([
       '',
       TEST_BRANCH.id,
@@ -717,9 +718,9 @@ describe('a branch chosen while React is taking the page over is kept', () => {
    * back to the drawn value before that event reached the select's handler left
    * the handler reading the ask, and the remembered "All my branches" stood
    * (runtime retest 2026-10-18: a branch chosen about a quarter of a second
-   * after the select was drawn, on a reload, was lost). The select is no longer
-   * put back on any arrival; these cases keep pinning the choice delivered as
-   * React hydrates.
+   * after the select was drawn, on a reload, was lost). The choice is recorded
+   * by the early script before React hydrates, so it is adopted on every
+   * arrival; these cases keep pinning the choice delivered as React hydrates.
    */
   it.each(['reload', 'back_forward'] as const)(
     'reached by %s, after hydration is asked for and before it has rendered: the choice is kept',
@@ -888,8 +889,9 @@ describe('a branch chosen later is kept, as before', () => {
  * server's HTML wherever a screen is drawn before a branch is known — the
  * boards that read every branch, for an operator with several. It takes an
  * early choice through the same hook as the header's select, and carries the
- * same `autocomplete="off"`, so the cases mirror the header's: adopted on
- * every arrival, and never a value it was not given to offer.
+ * same `data-early-choice`, so the cases mirror the header's: a recorded
+ * choice is adopted on every arrival, a value with no event is put back on
+ * every arrival, and a value it was not given to offer is never adopted.
  */
 describe("the chooser beside a screen's branch ask keeps an early choice the same way", () => {
   const CHOOSER = '[data-testid="concrete-branch-chooser"]';
@@ -907,9 +909,10 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
     window.localStorage.setItem(KEY, OTHER_BRANCH.id);
     const page = screenPage();
     expect(page.select().disabled).toBe(false);
-    // Like the header's: a select Chromium 151 did not put back from history
-    // in our experiment (Firefox and WebKit not verified).
+    // Like the header's: kept, not relied on (WebKit put a value back anyway),
+    // and opted in to the early script's record.
     expect(page.select()).toHaveAttribute('autocomplete', 'off');
+    expect(page.select()).toHaveAttribute('data-early-choice', '');
     expect([...page.select().options].map((option) => option.value)).toEqual([
       '',
       TEST_BRANCH.id,
@@ -1086,10 +1089,11 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
  *
  * A browser choosing an option fires `input` and then `change` on the select,
  * and React hydrates on the first of them; `choose` above fires `change`
- * alone, so the cases here fire both, in that order. Which element the event
- * is aimed at no longer decides anything: a select adopts what it holds beyond
- * what it was drawn with, and a select that still holds what it was drawn with
- * adopts nothing, whichever select the person changed.
+ * alone, so the cases here fire both, in that order. Only the select the
+ * events are aimed at is recorded, so only it adopts what it holds: another
+ * select holding a value with no event behind it (one the browser put back)
+ * is put back, and a select that still holds what it was drawn with adopts
+ * nothing.
  */
 describe('on a reload, a choice made as React hydrates is kept in the select it was made in', () => {
   const CHOOSER = '[data-testid="concrete-branch-chooser"]';
@@ -1214,6 +1218,7 @@ describe('on a reload, a choice made as React hydrates is kept in the select it 
     const page = serverPage(bothTree, SELECT);
     // The header holds a value the browser put back: no event says so.
     page.select().value = OTHER_BRANCH.id;
+    expect(page.select().value).toBe(OTHER_BRANCH.id);
     // A person picks a branch in the chooser, and that makes React hydrate.
     await hydrateThenChoose(
       page,
@@ -1225,6 +1230,7 @@ describe('on a reload, a choice made as React hydrates is kept in the select it 
     // The event was aimed at the chooser, so the header was never recorded.
     expect(wasChosenBeforeHydration(page.select())).toBe(false);
     expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.selection()).toBe(TEST_BRANCH.id);
     // The header now shows the branch in force, not the one the browser put back.
     expect(page.select().value).toBe(TEST_BRANCH.id);
     // The branch the browser put back never came into force, not even for a moment.
@@ -1445,7 +1451,7 @@ describe('the early script records only a person’s change to an opted-in selec
   });
 
   it('records a select whose event is stopped before it reaches the document', () => {
-    // Capture on the document runs first, before any listener below it.
+    // Capture on `window` runs first, before any listener on the document or below it.
     const element = select(true);
     element.addEventListener('change', (event) => event.stopPropagation());
     element.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1463,6 +1469,56 @@ describe('the early script records only a person’s change to an opted-in selec
     element.dispatchEvent(new Event('change', { bubbles: true }));
     runEarlyChoiceScript();
     expect(wasChosenBeforeHydration(element)).toBe(true);
+  });
+});
+
+/**
+ * The record must be made before React hydrates inside the choice's own
+ * dispatch, whatever order the listeners were registered in.
+ *
+ * Under Next, React's root is the `document` (`next/dist/client/app-index.js`
+ * hydrates `document`), so React's capture listener sits on the document, and
+ * nothing guarantees it was registered after the early script ran. Here a
+ * stand-in for it — a capture listener on the document that reads what the
+ * hook would read at that moment — is registered FIRST, and the early script
+ * is installed only afterwards. The early script listens on `window`, which an
+ * event's capture path visits before the document, so the stand-in still sees
+ * the select recorded; a listener of the script's on the document, registered
+ * second, would run second and be too late.
+ */
+describe('the record is made before a listener on the document, whichever was registered first', () => {
+  it('a choice dispatched after both are in place is recorded when the document listener runs, and adopted', async () => {
+    arriveBy('reload');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = serverPage();
+    const target = page.select();
+    const seenAtDocument: boolean[] = [];
+    // React's root listener under Next, registered before the early script.
+    const standIn = (event: Event) => {
+      if (event.target === target) seenAtDocument.push(wasChosenBeforeHydration(target));
+    };
+    document.addEventListener('input', standIn, true);
+    document.addEventListener('change', standIn, true);
+    const global = window as unknown as Record<string, unknown>;
+    try {
+      // The early script, installed again only now: after the stand-in. Its
+      // record is kept for the cases that follow.
+      delete global[EARLY_CHOICE_GLOBAL];
+      runEarlyChoiceScript();
+      target.value = TEST_BRANCH.id;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(seenAtDocument).toEqual([true, true]);
+      await page.hydrate();
+    } finally {
+      document.removeEventListener('input', standIn, true);
+      document.removeEventListener('change', standIn, true);
+    }
+    expect(page.recoverable).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.selection()).toBe(TEST_BRANCH.id);
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
   });
 });
 

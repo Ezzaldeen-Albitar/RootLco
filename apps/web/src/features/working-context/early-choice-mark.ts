@@ -23,10 +23,20 @@
  * rendered inline, with the request's CSP nonce, as the first element of the
  * document body — before any select is parsed, so before anyone can use one.
  * It installs one capture-phase listener for `input` and one for `change` on
- * the document, and records in a `WeakSet` every select carrying
- * `data-early-choice` that such an event is aimed at. Capture on the document
- * runs before React's own listeners on its root, so a choice whose event makes
- * React hydrate is recorded before the hydration it causes.
+ * `window`, and records in a `WeakSet` every select carrying
+ * `data-early-choice` that such an event is aimed at.
+ *
+ * Why `window`: React listens on its root container, and Next (16.3) makes
+ * that container the `document` itself (`next/dist/client/app-index.js`
+ * hydrates `document`). Two capture listeners on the same node run in the
+ * order they were registered, and whether this script runs before the
+ * application's chunk calls `hydrateRoot` is not something the page can
+ * promise — an async chunk can run before the body has been parsed, and with
+ * streaming a select further down can be hydrated by a root registered
+ * earlier. An event's capture path visits `window` before `document`, so a
+ * listener on `window` runs before every listener on the document whatever
+ * the order of registration, and a choice whose event makes React hydrate is
+ * recorded before the hydration it causes.
  *
  * Nothing is written to the select itself: a changed attribute would be a
  * mismatch React reports when it hydrates. The set lives on `window` under
@@ -56,8 +66,8 @@ export const EARLY_CHOICE_SCRIPT =
   'var target=event.target;' +
   `if(target&&target.tagName==='SELECT'&&target.hasAttribute('${EARLY_CHOICE_ATTRIBUTE}'))chosen.add(target);` +
   '}' +
-  "document.addEventListener('input',mark,true);" +
-  "document.addEventListener('change',mark,true);" +
+  "window.addEventListener('input',mark,true);" +
+  "window.addEventListener('change',mark,true);" +
   '})();';
 
 /**

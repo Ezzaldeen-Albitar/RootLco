@@ -58,7 +58,7 @@ import { wasChosenBeforeHydration } from './early-choice-mark';
  *
  * So the one thing that told them apart in every build tested is the event.
  * The locale layout renders `EarlyChoiceScript` first in the body, before any
- * select is parsed; it listens for `input` and `change` on the document, in
+ * select is parsed; it listens for `input` and `change` on `window`, in
  * the capture phase, and records each select carrying `data-early-choice`
  * that one is aimed at (`early-choice-mark.ts`). A held value is adopted only
  * from a select so recorded — on every arrival: a fresh navigation, a reload,
@@ -86,8 +86,9 @@ import { wasChosenBeforeHydration } from './early-choice-mark';
  * hook, never a value adopted that nobody chose.
  *
  * The `window.event` path is gone: a choice whose own event makes React
- * hydrate is recorded by the document's capture listener, which runs before
- * React's listeners on its root, so it is recorded before that hydration.
+ * hydrate is recorded by the capture listener on `window`, which an event
+ * reaches before any listener on the document — React's root under Next — so
+ * it is recorded before that hydration, whichever was registered first.
  *
  * Both callers keep `autocomplete="off"` on their select. It is not relied on;
  * where a browser honours it, it only spares the select from showing a stale
