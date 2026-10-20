@@ -234,6 +234,24 @@ entry, the root dependency and the `apps/api` dependency — and the lockfile mo
 `@img/sharp-*` platform packages with it (libvips 1.3.3 to 1.3.4). No exception was added and
 no gate was changed (change-control row CC-OD-57). From P1-32-PRE-OD-DEP5.
 
+**vite advisories GHSA-587h-7wmj-h5pm, GHSA-698v-4r3x-3vcv and GHSA-r825-w8mm-5pxw
+(2026-10-20): closed by a lockfile update.** GitHub published and reviewed all three on
+2026-10-20 between 18:30 and 19:52 UTC: GHSA-587h-7wmj-h5pm (high, CWE-77),
+GHSA-698v-4r3x-3vcv (moderate, CWE-78) and GHSA-r825-w8mm-5pxw (moderate, CWE-88), Windows
+command-execution and argument-escaping defects in `launch-editor` up to 2.14.1, which vite
+bundles. They name vite 7.0.0 to 7.3.6 on the 7.x line, patched in 7.3.7. `vite` is
+development only and no manifest declares it: `vitest` 4.1.11 (dependency and peer,
+`^6.0.0 || ^7.0.0 || ^8.0.0`), `@vitest/mocker` 4.1.11 (peer, same range) and
+`@vitejs/plugin-react` 4.7.0 (peer, up to `^7.0.0`) reach it, and every one of those ranges
+admits 7.3.7. They turned the web audit step red, which blocks on any severity and reads no
+exception, while the root production and the api reports stayed at zero. The lockfile moves
+the single `vite` node from 7.3.6 to 7.3.7; vite 7.3.7 declares the same dependencies and
+engines as 7.3.6, so no other node moves. `npm update vite` keeps 7.3.6, so a temporary root
+override moved the node, and the lockfile was then regenerated with npm 11.13.0 without it;
+npm kept 7.3.7. vite 8 is outside the `@vitejs/plugin-react` 4.7.0 peer range and was not
+taken. No manifest, override or exception was added and no gate was changed (change-control
+row CC-OD-59). From P1-32-PRE-OD-DEP6.
+
 ### The one development exception, and why it is gone
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this
