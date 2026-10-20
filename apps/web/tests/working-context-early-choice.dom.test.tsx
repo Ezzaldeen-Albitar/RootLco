@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useEffect, useLayoutEffect, useRef, type ReactElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { hydrateRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import {
   WorkingContextProvider,
@@ -18,6 +18,14 @@ import {
 } from '@/features/working-context/working-context-contract';
 import { getMessages, translate } from '@/i18n/get-messages';
 import { BranchSelector } from '@/features/working-context/mui/BranchSelector';
+import { useEarlyChoice } from '@/features/working-context/use-early-choice';
+import {
+  EARLY_CHOICE_ATTRIBUTE,
+  EARLY_CHOICE_GLOBAL,
+  EARLY_CHOICE_SCRIPT,
+  wasChosenBeforeHydration,
+} from '@/features/working-context/early-choice-mark';
+import LocaleLayout from '@/app/[locale]/layout';
 import { OTHER_BRANCH, TEST_BRANCH, TEST_COMPANY, branchSnapshot, renderLtr } from './render';
 
 /**
@@ -60,16 +68,31 @@ import { OTHER_BRANCH, TEST_BRANCH, TEST_COMPANY, branchSnapshot, renderLtr } fr
  * takes a request for the selection already remembered and in force as nothing
  * to do, so the version moves once.
  *
- * ## Only on a fresh navigation
+ * ## A choice is recognised by its event, on every arrival
  *
- * A browser puts a select back the way it was when it re-opens a document from
- * its history, so a select that differs from what the server drew is a choice
- * only when the document was reached by a fresh navigation. On a reload, a move
- * through history or a prerender, and when the browser does not say, nothing
- * is adopted: the remembered selection stands and the select is put back to
- * it. jsdom has no navigation entry of its own, so each case states how the
- * page was reached (`arriveBy`) and the stub is taken away afterwards. What a
- * real browser restores, and when, is not something this file can see.
+ * A browser can put an earlier value back into a select when it re-opens a
+ * document from its history, and in the browser-restore experiment of
+ * 2026-10-20 (Chromium 151, Firefox 153, WebKit 26.5; plain static pages)
+ * WebKit did so even into a select marked `autocomplete="off"`; no browser
+ * fired an `input` or `change` event while doing it. So the locale layout
+ * sends an inline script, first in the body, that records each select
+ * carrying `data-early-choice` an `input` or `change` is aimed at
+ * (`early-choice-mark.ts`), and the hook adopts a held value only from a
+ * recorded select — on a fresh navigation, a reload, a move through history,
+ * a prerender, or an arrival the browser does not name. A value with no event
+ * behind it is what a browser puts back, and it is put back on every arrival.
+ *
+ * This file runs that exact script once, before any case (`beforeAll`), so
+ * every `choose` below is recorded as a person's would be, and every value set
+ * with no event is what a browser's restore looks like. The earlier rules —
+ * adopt on a fresh navigation only (#581), then also while `window.event` was
+ * an input or change aimed at the select (#591), then on every arrival in a
+ * select marked `autocomplete="off"` — lost every branch chosen before load on
+ * a reload or a move through history (runtime retest at 784322b1, F-1), or
+ * would have adopted WebKit's restore. jsdom has no navigation entry of its
+ * own, so each case states how the page was reached (`arriveBy`), and the
+ * stub is taken away afterwards. What a real browser restores, and when, is
+ * not something this file can see.
  *
  * ## The moments, in order
  *
@@ -95,7 +118,30 @@ vi.mock('next/navigation', () => ({
   usePathname: () => nav.pathname,
   useSearchParams: () => new URLSearchParams(''),
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  notFound: () => {
+    throw new Error('not found');
+  },
 }));
+
+/** The nonce `src/proxy.ts` would have set on the request, for the layout case. */
+const requestNonce = vi.hoisted(() => ({ value: null as string | null }));
+vi.mock('next/headers', () => ({
+  headers: async () =>
+    new Headers(requestNonce.value === null ? {} : { 'x-nonce': requestNonce.value }),
+}));
+
+/**
+ * Runs the early script exactly as the browser receives it. In a page it runs
+ * once, first in the body; here once before any case, so every `choose` below
+ * is recorded as a person’s choice would be.
+ */
+function runEarlyChoiceScript(): void {
+  new Function(EARLY_CHOICE_SCRIPT)();
+}
+
+beforeAll(() => {
+  runEarlyChoiceScript();
+});
 
 const TWO = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
 const KEY = preferenceKeyFor(TWO.tenantId as string, TWO.accountId as string);
@@ -231,7 +277,7 @@ beforeEach(() => {
   window.localStorage.clear();
   nav.pathname = '/en/inventory/parts';
   seen.length = 0;
-  // A link, a typed address, a bookmark: the arrival on which a choice is read.
+  // A link, a typed address, a bookmark — unless a case says otherwise.
   arriveBy('navigate');
 });
 
@@ -251,9 +297,11 @@ describe('the server draws the select before anything is remembered', () => {
     const page = serverPage();
     expect(page.select().disabled).toBe(false);
     expect(page.select().value).toBe('');
-    // The browser is asked not to put an earlier page's value back into it.
-    // Nothing relies on the answer: see the arrivals below.
+    // Kept, not relied on: WebKit 26.5 put an earlier value back into a select
+    // so marked (experiment 2026-10-20). What makes a held value a choice is a
+    // recorded event: see below.
     expect(page.select()).toHaveAttribute('autocomplete', 'off');
+    expect(page.select()).toHaveAttribute('data-early-choice', '');
     expect([...page.select().options].map((option) => option.value)).toEqual([
       '',
       TEST_BRANCH.id,
@@ -335,37 +383,132 @@ describe('a branch chosen before React hydrates the page is kept (the defect)', 
   });
 });
 
-describe('a select the browser may have put back is not read as a choice', () => {
-  /** What a browser does when it re-opens a document: the select holds a value, and no event says so. */
-  function restoredByTheBrowser(page: Page, branchId: string): void {
-    page.select().value = branchId;
-    expect(page.select().value).toBe(branchId);
+/**
+ * F-1 (runtime retest at 784322b1, 2026-10-18): on a reload or a move through
+ * history, a branch chosen in the header or in the chooser before the page had
+ * finished loading showed for a moment and was then replaced by the remembered
+ * "All my branches" — 18 of 18 such choices. The shape here is that one: the
+ * person's `input` and `change` are dispatched before `hydrateRoot` is called,
+ * so when React hydrates the select holds the choice and no event is in flight.
+ */
+describe('a branch chosen before React hydrates is kept on a reload or a move through history (F-1)', () => {
+  const CHOOSER = '[data-testid="concrete-branch-chooser"]';
+
+  /** What a browser does when a person picks an option: the value, then `input`, then `change`. */
+  function chooseAsABrowser(branchId: string, selector: string): void {
+    const select = document.querySelector(selector) as HTMLSelectElement;
+    select.value = branchId;
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  it.each(['reload', 'back_forward', 'prerender'] as const)(
-    'reached by %s: the remembered branch stands and the select goes back to it',
+  const bothTree = () => (
+    <WorkingContextProvider snapshot={TWO} messages={messages}>
+      <header>
+        <WorkingContextControl messages={messages} />
+      </header>
+      <main>
+        <WorkingBranchField messages={messages} />
+      </main>
+      <Probe />
+    </WorkingContextProvider>
+  );
+
+  it.each([
+    ['reload', '"All my branches"', ALL_BRANCHES],
+    ['back_forward', '"All my branches"', ALL_BRANCHES],
+    ['reload', 'another branch', OTHER_BRANCH.id],
+    ['back_forward', 'nothing', null],
+  ] as const)(
+    'reached by %s with %s remembered, chosen in the header: the choice is kept',
+    async (arrival, _name, remembered) => {
+      arriveBy(arrival);
+      if (remembered !== null) window.localStorage.setItem(KEY, remembered);
+      const page = serverPage();
+      chooseAsABrowser(TEST_BRANCH.id, SELECT);
+      expect(page.select().value).toBe(TEST_BRANCH.id);
+      // Hydration begins with no event being dispatched.
+      expect(window.event).toBeUndefined();
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.selection()).toBe(TEST_BRANCH.id);
+      expect(page.select().value).toBe(TEST_BRANCH.id);
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+    }
+  );
+
+  it.each([
+    ['reload', '"All my branches"', ALL_BRANCHES],
+    ['back_forward', '"All my branches"', ALL_BRANCHES],
+    ['reload', 'another branch', OTHER_BRANCH.id],
+    ['back_forward', 'nothing', null],
+  ] as const)(
+    'reached by %s with %s remembered, chosen in the chooser: the choice is kept',
+    async (arrival, _name, remembered) => {
+      arriveBy(arrival);
+      if (remembered !== null) window.localStorage.setItem(KEY, remembered);
+      const page = serverPage(bothTree, CHOOSER);
+      chooseAsABrowser(TEST_BRANCH.id, CHOOSER);
+      expect(page.select().value).toBe(TEST_BRANCH.id);
+      expect(window.event).toBeUndefined();
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.selection()).toBe(TEST_BRANCH.id);
+      // The screen has its branch, so the chooser is gone, and the header names it.
+      expect(page.select()).toBeNull();
+      expect((page.container.querySelector(SELECT) as HTMLSelectElement).value).toBe(
+        TEST_BRANCH.id
+      );
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+    }
+  );
+});
+
+/**
+ * A value in the select with no event behind it is what a browser puts back
+ * when it re-opens a document: in the browser-restore experiment of 2026-10-20
+ * no browser fired an `input` or `change` while doing so, and WebKit 26.5 did
+ * it even into a select marked `autocomplete="off"` on a move through history.
+ * Both selects carry that mark, so the mark cannot be what decides. Such a
+ * value is never adopted, on any arrival — a fresh navigation included — and
+ * the select is put back. (These cases replace the ones that adopted it on
+ * every arrival because of `autocomplete="off"`, and before them the #581
+ * ones that adopted it on a fresh navigation.)
+ */
+describe('a value the browser put back, with no event, is never a choice', () => {
+  /** What a browser's restore looks like: a value in the select, and no event. */
+  function putBackByTheBrowser(page: Page, branchId: string): void {
+    page.select().value = branchId;
+    expect(page.select().value).toBe(branchId);
+    expect(wasChosenBeforeHydration(page.select())).toBe(false);
+  }
+
+  it.each(['navigate', 'reload', 'back_forward', 'prerender', null] as const)(
+    'reached by %s, with a branch remembered: the remembered branch stands and the select goes back to it',
     async (arrival) => {
       arriveBy(arrival);
       window.localStorage.setItem(KEY, OTHER_BRANCH.id);
       const page = serverPage();
-      restoredByTheBrowser(page, TEST_BRANCH.id);
+      putBackByTheBrowser(page, TEST_BRANCH.id);
       await page.hydrate();
       expect(page.recoverable).not.toHaveBeenCalled();
       // Storage is untouched, so no other tab is moved either.
       expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
       expect(page.selection()).toBe(OTHER_BRANCH.id);
       expect(page.select().value).toBe(OTHER_BRANCH.id);
-      // The version moved for the restore alone.
+      // The version moved for the restore of the remembered branch alone.
       expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
     }
   );
 
-  it.each(['reload', 'back_forward'] as const)(
+  it.each(['navigate', 'reload', 'back_forward'] as const)(
     'reached by %s with nothing remembered: the select goes back to the ask',
     async (arrival) => {
       arriveBy(arrival);
       const page = serverPage();
-      restoredByTheBrowser(page, TEST_BRANCH.id);
+      putBackByTheBrowser(page, TEST_BRANCH.id);
       await page.hydrate();
       expect(window.localStorage.getItem(KEY)).toBeNull();
       expect(page.selection()).toBe('');
@@ -375,35 +518,24 @@ describe('a select the browser may have put back is not read as a choice', () =>
     }
   );
 
-  it('the browser has no navigation entry to give: nothing is adopted', async () => {
-    arriveBy(null);
-    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
-    const page = serverPage();
-    restoredByTheBrowser(page, TEST_BRANCH.id);
-    await page.hydrate();
-    expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
-    expect(page.select().value).toBe(OTHER_BRANCH.id);
-    expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
-  });
-
-  it('the browser cannot be asked at all: nothing is adopted', async () => {
+  it('the browser cannot be asked how the page was reached: nothing is adopted', async () => {
     stubNavigationEntries(() => {
       throw new Error('not supported here');
     });
     window.localStorage.setItem(KEY, OTHER_BRANCH.id);
     const page = serverPage();
-    restoredByTheBrowser(page, TEST_BRANCH.id);
+    putBackByTheBrowser(page, TEST_BRANCH.id);
     await page.hydrate();
     expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
     expect(page.select().value).toBe(OTHER_BRANCH.id);
     expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
   });
 
-  it('reached by reload, hydrated by an event aimed elsewhere: the put-back value is still not a choice', async () => {
-    arriveBy('reload');
+  it('reached by back_forward, hydrated by a click aimed elsewhere: the put-back value is still not a choice', async () => {
+    arriveBy('back_forward');
     window.localStorage.setItem(KEY, OTHER_BRANCH.id);
     const page = serverPage();
-    restoredByTheBrowser(page, TEST_BRANCH.id);
+    putBackByTheBrowser(page, TEST_BRANCH.id);
     const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
     const before = environment.IS_REACT_ACT_ENVIRONMENT;
     environment.IS_REACT_ACT_ENVIRONMENT = false;
@@ -411,8 +543,8 @@ describe('a select the browser may have put back is not read as a choice', () =>
       (open as { root: Root | null }).root = hydrateRoot(page.container, tree(), {
         onRecoverableError: page.recoverable,
       });
-      // A click somewhere else on the page makes React hydrate at once; it is
-      // not a change to the select.
+      // A click somewhere else on the page makes React hydrate at once. It is
+      // neither an input nor a change, and it is not aimed at the select.
       const elsewhere = page.container.querySelector(
         '[data-testid="probe-version"]'
       ) as HTMLElement;
@@ -424,16 +556,65 @@ describe('a select the browser may have put back is not read as a choice', () =>
       environment.IS_REACT_ACT_ENVIRONMENT = before;
     }
     expect(page.recoverable).not.toHaveBeenCalled();
+    expect(wasChosenBeforeHydration(page.select())).toBe(false);
     expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
     expect(page.select().value).toBe(OTHER_BRANCH.id);
     expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
   });
 
-  it('a fresh navigation is the one arrival on which the same select is a choice', async () => {
-    arriveBy('navigate');
+  it.each(['reload', 'back_forward'] as const)(
+    'reached by %s, the ask left as it was drawn: nothing is adopted',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+      const page = serverPage();
+      putBackByTheBrowser(page, '');
+      await page.hydrate();
+      expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
+      expect(page.selection()).toBe(OTHER_BRANCH.id);
+      expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+    }
+  );
+});
+
+describe("the same value, with a person's event behind it, is a choice on every arrival", () => {
+  it.each(['navigate', 'reload', 'back_forward', 'prerender', null] as const)(
+    'reached by %s, with a branch remembered: the chosen branch is adopted',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+      const page = serverPage();
+      choose(TEST_BRANCH.id);
+      expect(wasChosenBeforeHydration(page.select())).toBe(true);
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.selection()).toBe(TEST_BRANCH.id);
+      expect(page.select().value).toBe(TEST_BRANCH.id);
+      // The remembered branch never came into force.
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+    }
+  );
+
+  it('the browser cannot be asked how the page was reached: the chosen branch is adopted', async () => {
+    stubNavigationEntries(() => {
+      throw new Error('not supported here');
+    });
     window.localStorage.setItem(KEY, OTHER_BRANCH.id);
     const page = serverPage();
-    restoredByTheBrowser(page, TEST_BRANCH.id);
+    choose(TEST_BRANCH.id);
+    await page.hydrate();
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+  });
+
+  it('a value put back, then chosen over by a person: the chosen branch is adopted', async () => {
+    arriveBy('back_forward');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = serverPage();
+    page.select().value = OTHER_BRANCH.id;
+    choose(TEST_BRANCH.id);
     await page.hydrate();
     expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
     expect(page.select().value).toBe(TEST_BRANCH.id);
@@ -533,13 +714,13 @@ describe('a branch chosen while React is taking the page over is kept', () => {
   });
 
   /*
-   * The same choice on a reload or a move through history. The select differs
-   * from what the server drew here too, but the difference is not one the
-   * browser put back: the choice is the event React is hydrating to deliver.
-   * Putting the select back to the drawn value before that event reached the
-   * select's handler left the handler reading the ask, and the remembered
-   * "All my branches" stood (runtime retest 2026-10-18: a branch chosen about a
-   * quarter of a second after the select was drawn, on a reload, was lost).
+   * The same choice on a reload or a move through history. Putting the select
+   * back to the drawn value before that event reached the select's handler left
+   * the handler reading the ask, and the remembered "All my branches" stood
+   * (runtime retest 2026-10-18: a branch chosen about a quarter of a second
+   * after the select was drawn, on a reload, was lost). The choice is recorded
+   * by the early script before React hydrates, so it is adopted on every
+   * arrival; these cases keep pinning the choice delivered as React hydrates.
    */
   it.each(['reload', 'back_forward'] as const)(
     'reached by %s, after hydration is asked for and before it has rendered: the choice is kept',
@@ -707,9 +888,10 @@ describe('a branch chosen later is kept, as before', () => {
  * It is a second select that writes the working context, and it is in the
  * server's HTML wherever a screen is drawn before a branch is known — the
  * boards that read every branch, for an operator with several. It takes an
- * early choice through the same hook as the header's select, so the cases
- * mirror the header's: adopted on a fresh navigation, not on a reload or a
- * move through history, and never a value it was not given to offer.
+ * early choice through the same hook as the header's select, and carries the
+ * same `data-early-choice`, so the cases mirror the header's: a recorded
+ * choice is adopted on every arrival, a value with no event is put back on
+ * every arrival, and a value it was not given to offer is never adopted.
  */
 describe("the chooser beside a screen's branch ask keeps an early choice the same way", () => {
   const CHOOSER = '[data-testid="concrete-branch-chooser"]';
@@ -727,6 +909,10 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
     window.localStorage.setItem(KEY, OTHER_BRANCH.id);
     const page = screenPage();
     expect(page.select().disabled).toBe(false);
+    // Like the header's: kept, not relied on (WebKit put a value back anyway),
+    // and opted in to the early script's record.
+    expect(page.select()).toHaveAttribute('autocomplete', 'off');
+    expect(page.select()).toHaveAttribute('data-early-choice', '');
     expect([...page.select().options].map((option) => option.value)).toEqual([
       '',
       TEST_BRANCH.id,
@@ -805,23 +991,28 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
     }
   );
 
-  it.each(['reload', 'back_forward', 'prerender', null] as const)(
-    'reached by %s: the remembered branch stands',
+  it.each(['navigate', 'reload', 'back_forward', 'prerender', null] as const)(
+    'reached by %s, a branch put back with no event: the remembered branch stands',
     async (arrival) => {
       arriveBy(arrival);
       window.localStorage.setItem(KEY, OTHER_BRANCH.id);
       const page = screenPage();
-      // Put back by the browser: a value, and no event.
+      // A value, and no event: what a browser's restore looks like. WebKit 26.5
+      // put one back into a select marked `autocomplete="off"` in the
+      // experiment of 2026-10-20, so the mark does not make it a choice.
       page.select().value = TEST_BRANCH.id;
+      expect(wasChosenBeforeHydration(page.select())).toBe(false);
       await page.hydrate();
       expect(window.localStorage.getItem(KEY)).toBe(OTHER_BRANCH.id);
       expect(page.selection()).toBe(OTHER_BRANCH.id);
       expect(seen).toEqual(['0:', `1:${OTHER_BRANCH.id}`]);
+      // The screen has the remembered branch, so it no longer asks.
+      expect(page.select()).toBeNull();
     }
   );
 
-  it.each(['reload', 'back_forward'] as const)(
-    'reached by %s with nothing remembered: nothing is chosen, and the chooser says so',
+  it.each(['navigate', 'reload', 'back_forward'] as const)(
+    'reached by %s with nothing remembered, a branch put back with no event: nothing is chosen, and the chooser says so',
     async (arrival) => {
       arriveBy(arrival);
       const page = screenPage();
@@ -834,6 +1025,43 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
       expect(page.select().value).toBe('');
     }
   );
+
+  it.each(['reload', 'back_forward', 'prerender', null] as const)(
+    'reached by %s, a branch chosen with an event: it is adopted',
+    async (arrival) => {
+      arriveBy(arrival);
+      window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+      const page = screenPage();
+      choose(TEST_BRANCH.id, CHOOSER);
+      await page.hydrate();
+      expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+      expect(page.selection()).toBe(TEST_BRANCH.id);
+      expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+      expect(page.select()).toBeNull();
+    }
+  );
+
+  it('reached by reload, a value it was never given to offer is not a choice', async () => {
+    arriveBy('reload');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = screenPage();
+    const option = [...page.select().options].find(
+      (candidate) => candidate.value === TEST_BRANCH.id
+    ) as HTMLOptionElement;
+    option.value = '99999999-9999-4999-8999-999999999999';
+    page.select().value = option.value;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await page.hydrate();
+    } finally {
+      errors.mockRestore();
+    }
+    expect(window.localStorage.getItem(KEY)).toBe(ALL_BRANCHES);
+    expect(page.selection()).toBe('all');
+    expect(seen).toEqual(['0:', '1:all']);
+    // Put back to the ask, not left naming a branch nobody was published.
+    expect(page.select().value).toBe('');
+  });
 
   it('a value it was never given to offer is not a choice', async () => {
     window.localStorage.setItem(KEY, ALL_BRANCHES);
@@ -856,16 +1084,18 @@ describe("the chooser beside a screen's branch ask keeps an early choice the sam
 });
 
 /**
- * The guards of the choice React is hydrating to deliver, on a reload or a move
- * through history.
+ * The choice React is hydrating to deliver, on a reload or a move through
+ * history (#591).
  *
  * A browser choosing an option fires `input` and then `change` on the select,
  * and React hydrates on the first of them; `choose` above fires `change`
- * alone, so the cases here fire both, in that order. Only an event aimed at the
- * select that holds the value makes that value a choice: a value the browser
- * put back into another select on the same page is still put back.
+ * alone, so the cases here fire both, in that order. Only the select the
+ * events are aimed at is recorded, so only it adopts what it holds: another
+ * select holding a value with no event behind it (one the browser put back)
+ * is put back, and a select that still holds what it was drawn with adopts
+ * nothing.
  */
-describe('on a reload, only the change being delivered to a select is its choice', () => {
+describe('on a reload, a choice made as React hydrates is kept in the select it was made in', () => {
   const CHOOSER = '[data-testid="concrete-branch-chooser"]';
 
   /** What a browser does when a person picks an option: the value, then `input`, then `change`. */
@@ -960,14 +1190,13 @@ describe('on a reload, only the change being delivered to a select is its choice
     }
   );
 
-  it('the header put back by the browser, a branch chosen in the chooser: only the chooser chose', async () => {
+  it('the header left as it was drawn, a branch chosen in the chooser: only the chooser chose', async () => {
     arriveBy('reload');
     window.localStorage.setItem(KEY, ALL_BRANCHES);
     const page = serverPage(bothTree, SELECT);
-    // The header holds a value the browser put back: no event says so.
-    page.select().value = OTHER_BRANCH.id;
-    expect(page.select().value).toBe(OTHER_BRANCH.id);
-    // A person picks the other branch in the chooser, and that makes React hydrate.
+    // The header holds what it was drawn with: nothing in it to adopt.
+    expect(page.select().value).toBe('');
+    // A person picks a branch in the chooser, and that makes React hydrate.
     await hydrateThenChoose(
       page,
       bothTree,
@@ -977,9 +1206,345 @@ describe('on a reload, only the change being delivered to a select is its choice
     expect(page.recoverable).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
     expect(page.selection()).toBe(TEST_BRANCH.id);
+    // The header now shows the branch in force.
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    // One selection came into force, once: the header's untouched ask was not one.
+    expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+  });
+
+  it('the header put back by the browser, a branch chosen in the chooser: only the chooser chose', async () => {
+    arriveBy('back_forward');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = serverPage(bothTree, SELECT);
+    // The header holds a value the browser put back: no event says so.
+    page.select().value = OTHER_BRANCH.id;
+    expect(page.select().value).toBe(OTHER_BRANCH.id);
+    // A person picks a branch in the chooser, and that makes React hydrate.
+    await hydrateThenChoose(
+      page,
+      bothTree,
+      () => chooseAsABrowser(TEST_BRANCH.id, CHOOSER),
+      () => expect(page.selection()).toBe(TEST_BRANCH.id)
+    );
+    expect(page.recoverable).not.toHaveBeenCalled();
+    // The event was aimed at the chooser, so the header was never recorded.
+    expect(wasChosenBeforeHydration(page.select())).toBe(false);
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.selection()).toBe(TEST_BRANCH.id);
     // The header now shows the branch in force, not the one the browser put back.
     expect(page.select().value).toBe(TEST_BRANCH.id);
     // The branch the browser put back never came into force, not even for a moment.
     expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+  });
+
+  /*
+   * Both selects hold a different early branch when React hydrates. Each is
+   * the operator's, and the order they were chosen in cannot be read. The
+   * result is pinned so that a change to it is seen: each select adopts its
+   * own branch in the commit that hydrates it, the header first (it comes
+   * first in the tree) and then the chooser, so the chooser's branch is the
+   * one in force — two writes of the remembered selection, the version moved
+   * twice.
+   */
+  it('reached by reload, the header and the chooser both hold a branch: both adopted, the chooser last', async () => {
+    arriveBy('reload');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = serverPage(bothTree, SELECT);
+    chooseAsABrowser(OTHER_BRANCH.id, SELECT);
+    chooseAsABrowser(TEST_BRANCH.id, CHOOSER);
+    const writes: string[] = [];
+    const original = Storage.prototype.setItem;
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string
+    ) {
+      if (key === KEY) writes.push(value);
+      original.call(this, key, value);
+    });
+    try {
+      await page.hydrate();
+    } finally {
+      setItem.mockRestore();
+    }
+    expect(page.recoverable).not.toHaveBeenCalled();
+    expect(writes).toEqual([OTHER_BRANCH.id, TEST_BRANCH.id]);
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.selection()).toBe(TEST_BRANCH.id);
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    expect(page.version()).toBe('2');
+    expect(seen).toEqual(['0:', `2:${TEST_BRANCH.id}`]);
+  });
+});
+
+/**
+ * The record, not `autocomplete`, decides — and only a select that opts in is
+ * recorded.
+ *
+ * A bare select drawn through `useEarlyChoice`, so the attributes can be
+ * varied: `data-early-choice` (the opt-in the early script looks for) and
+ * `autocomplete`. Both real callers carry `data-early-choice=""` and
+ * `autocomplete="off"`.
+ */
+describe('the record of an event decides, not autocomplete', () => {
+  const PLAIN = '[data-testid="plain-select"]';
+  const OTHER_PLAIN = '[data-testid="other-plain-select"]';
+  const OFFERED: readonly string[] = [TEST_BRANCH.id, OTHER_BRANCH.id];
+
+  function PlainSelect({
+    optIn,
+    autoComplete,
+    adopt,
+    testId = 'plain-select',
+  }: {
+    readonly optIn: boolean;
+    readonly autoComplete: string | null;
+    readonly adopt: (chosen: string) => void;
+    readonly testId?: string;
+  }) {
+    const ref = useRef<HTMLSelectElement | null>(null);
+    useEarlyChoice(ref, '', OFFERED, adopt);
+    return (
+      <select
+        ref={ref}
+        data-testid={testId}
+        data-early-choice={optIn ? '' : undefined}
+        value=""
+        onChange={() => undefined}
+        autoComplete={autoComplete ?? undefined}
+      >
+        <option value="">ask</option>
+        {OFFERED.map((id) => (
+          <option key={id} value={id}>
+            {id}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  function plainPage(optIn: boolean, autoComplete: string | null) {
+    const adopt = vi.fn<(chosen: string) => void>();
+    const page = serverPage(
+      () => <PlainSelect optIn={optIn} autoComplete={autoComplete} adopt={adopt} />,
+      PLAIN
+    );
+    return { page, adopt };
+  }
+
+  /** What a browser does when a person picks an option: the value, then `input`, then `change`. */
+  function chooseAsABrowser(branchId: string, selector: string): void {
+    const select = document.querySelector(selector) as HTMLSelectElement;
+    select.value = branchId;
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // The WebKit case: autocomplete="off", a value put back on a move through
+  // history, no event.
+  it.each([
+    ['back_forward', 'off'],
+    ['reload', 'off'],
+    ['navigate', 'off'],
+    ['prerender', 'off'],
+    [null, 'off'],
+    ['back_forward', null],
+    ['reload', null],
+  ] as const)(
+    'reached by %s (autocomplete=%s), a value with no event: not adopted, and put back',
+    async (arrival, autoComplete) => {
+      arriveBy(arrival);
+      const { page, adopt } = plainPage(true, autoComplete);
+      page.select().value = TEST_BRANCH.id;
+      await page.hydrate();
+      expect(page.recoverable).not.toHaveBeenCalled();
+      expect(adopt).not.toHaveBeenCalled();
+      expect(page.select().value).toBe('');
+    }
+  );
+
+  it.each([
+    ['navigate', 'off'],
+    ['reload', 'off'],
+    ['back_forward', 'off'],
+    ['back_forward', null],
+    ['reload', 'on'],
+  ] as const)(
+    'reached by %s (autocomplete=%s), a value chosen with input and change: adopted',
+    async (arrival, autoComplete) => {
+      arriveBy(arrival);
+      const { page, adopt } = plainPage(true, autoComplete);
+      chooseAsABrowser(TEST_BRANCH.id, PLAIN);
+      expect(wasChosenBeforeHydration(page.select())).toBe(true);
+      await page.hydrate();
+      expect(adopt).toHaveBeenCalledTimes(1);
+      expect(adopt).toHaveBeenCalledWith(TEST_BRANCH.id);
+    }
+  );
+
+  it('a select that does not opt in is not recorded, so even a chosen value is put back', async () => {
+    arriveBy('reload');
+    const { page, adopt } = plainPage(false, 'off');
+    expect(page.select()).not.toHaveAttribute('data-early-choice');
+    chooseAsABrowser(TEST_BRANCH.id, PLAIN);
+    expect(wasChosenBeforeHydration(page.select())).toBe(false);
+    await page.hydrate();
+    expect(adopt).not.toHaveBeenCalled();
+    expect(page.select().value).toBe('');
+  });
+
+  it('an event aimed at another select does not record this one', async () => {
+    arriveBy('back_forward');
+    const adopt = vi.fn<(chosen: string) => void>();
+    const adoptOther = vi.fn<(chosen: string) => void>();
+    const page = serverPage(
+      () => (
+        <>
+          <PlainSelect optIn autoComplete="off" adopt={adopt} />
+          <PlainSelect optIn autoComplete="off" adopt={adoptOther} testId="other-plain-select" />
+        </>
+      ),
+      PLAIN
+    );
+    // This select holds a value put back; the person chooses in the other.
+    page.select().value = OTHER_BRANCH.id;
+    chooseAsABrowser(TEST_BRANCH.id, OTHER_PLAIN);
+    expect(wasChosenBeforeHydration(page.select())).toBe(false);
+    await page.hydrate();
+    expect(adopt).not.toHaveBeenCalled();
+    expect(page.select().value).toBe('');
+    expect(adoptOther).toHaveBeenCalledWith(TEST_BRANCH.id);
+  });
+});
+
+describe('the early script records only a person’s change to an opted-in select', () => {
+  function select(optIn: boolean): HTMLSelectElement {
+    const element = document.createElement('select');
+    if (optIn) element.setAttribute(EARLY_CHOICE_ATTRIBUTE, '');
+    element.append(new Option('ask', ''), new Option('branch', TEST_BRANCH.id));
+    document.body.append(element);
+    return element;
+  }
+
+  afterEach(() => {
+    for (const element of document.body.querySelectorAll('select')) element.remove();
+  });
+
+  it.each(['input', 'change'] as const)('records an opted-in select on %s', (type) => {
+    const element = select(true);
+    expect(wasChosenBeforeHydration(element)).toBe(false);
+    element.dispatchEvent(new Event(type, { bubbles: true }));
+    expect(wasChosenBeforeHydration(element)).toBe(true);
+  });
+
+  it('records nothing for a select that does not opt in, or for another element', () => {
+    const element = select(false);
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(wasChosenBeforeHydration(element)).toBe(false);
+    const input = document.createElement('input');
+    input.setAttribute(EARLY_CHOICE_ATTRIBUTE, '');
+    document.body.append(input);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.remove();
+    const chosen = (window as unknown as Record<string, WeakSet<object>>)[EARLY_CHOICE_GLOBAL];
+    expect(chosen?.has(input)).toBe(false);
+  });
+
+  it('records a select whose event is stopped before it reaches the document', () => {
+    // Capture on `window` runs first, before any listener on the document or below it.
+    const element = select(true);
+    element.addEventListener('change', (event) => event.stopPropagation());
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(wasChosenBeforeHydration(element)).toBe(true);
+  });
+
+  it('records nothing for a value set with no event', () => {
+    const element = select(true);
+    element.value = TEST_BRANCH.id;
+    expect(wasChosenBeforeHydration(element)).toBe(false);
+  });
+
+  it('runs once: a second copy installs no second listener and keeps the record', () => {
+    const element = select(true);
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    runEarlyChoiceScript();
+    expect(wasChosenBeforeHydration(element)).toBe(true);
+  });
+});
+
+/**
+ * The record must be made before React hydrates inside the choice's own
+ * dispatch, whatever order the listeners were registered in.
+ *
+ * Under Next, React's root is the `document` (`next/dist/client/app-index.js`
+ * hydrates `document`), so React's capture listener sits on the document, and
+ * nothing guarantees it was registered after the early script ran. Here a
+ * stand-in for it — a capture listener on the document that reads what the
+ * hook would read at that moment — is registered FIRST, and the early script
+ * is installed only afterwards. The early script listens on `window`, which an
+ * event's capture path visits before the document, so the stand-in still sees
+ * the select recorded; a listener of the script's on the document, registered
+ * second, would run second and be too late.
+ */
+describe('the record is made before a listener on the document, whichever was registered first', () => {
+  it('a choice dispatched after both are in place is recorded when the document listener runs, and adopted', async () => {
+    arriveBy('reload');
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const page = serverPage();
+    const target = page.select();
+    const seenAtDocument: boolean[] = [];
+    // React's root listener under Next, registered before the early script.
+    const standIn = (event: Event) => {
+      if (event.target === target) seenAtDocument.push(wasChosenBeforeHydration(target));
+    };
+    document.addEventListener('input', standIn, true);
+    document.addEventListener('change', standIn, true);
+    const global = window as unknown as Record<string, unknown>;
+    try {
+      // The early script, installed again only now: after the stand-in. Its
+      // record is kept for the cases that follow.
+      delete global[EARLY_CHOICE_GLOBAL];
+      runEarlyChoiceScript();
+      target.value = TEST_BRANCH.id;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(seenAtDocument).toEqual([true, true]);
+      await page.hydrate();
+    } finally {
+      document.removeEventListener('input', standIn, true);
+      document.removeEventListener('change', standIn, true);
+    }
+    expect(page.recoverable).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(KEY)).toBe(TEST_BRANCH.id);
+    expect(page.selection()).toBe(TEST_BRANCH.id);
+    expect(page.select().value).toBe(TEST_BRANCH.id);
+    expect(seen).toEqual(['0:', `1:${TEST_BRANCH.id}`]);
+  });
+});
+
+describe('the locale layout sends the early script first in the body, with the nonce', () => {
+  it('renders it before the skip link, carrying the nonce of the request', async () => {
+    requestNonce.value = 'testnonce';
+    const element = await LocaleLayout({
+      children: <main />,
+      params: Promise.resolve({ locale: 'en' }),
+    });
+    const html = renderToString(element);
+    const body = html.slice(html.indexOf('<body'));
+    const firstInBody = body.slice(body.indexOf('>') + 1);
+    expect(
+      firstInBody.startsWith(`<script nonce="testnonce">${EARLY_CHOICE_SCRIPT}</script>`)
+    ).toBe(true);
+    expect(body.indexOf('<script')).toBeLessThan(body.indexOf('skip-link'));
+  });
+
+  it('without a nonce on the request, renders it without one', async () => {
+    requestNonce.value = null;
+    const element = await LocaleLayout({
+      children: <main />,
+      params: Promise.resolve({ locale: 'en' }),
+    });
+    const html = renderToString(element);
+    expect(html).toContain(`<script>${EARLY_CHOICE_SCRIPT}</script>`);
   });
 });

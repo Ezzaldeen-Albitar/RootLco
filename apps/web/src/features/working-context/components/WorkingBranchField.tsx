@@ -253,9 +253,16 @@ export function DirectoryEmptyNotice({
  * Like the header's it can be in the server's HTML — on a screen that is drawn
  * before a branch is known, such as the boards that read every branch — and a
  * branch chosen in it before React hydrates the page is taken the same way,
- * through the same hook and under the same three conditions: a fresh
- * navigation, a branch this operator was published, and the guarded `select`
- * (`useEarlyChoice`; P1-32-PRE-OD-UXQ, Q-1).
+ * through the same hook and under the same two conditions: a branch this
+ * operator was published, and the guarded `select` (`useEarlyChoice`;
+ * P1-32-PRE-OD-UXQ, Q-1), and only when a person's `input` or `change` was
+ * aimed at it: it carries `data-early-choice`, so the early script in the
+ * locale layout records such an event (`early-choice-mark.ts`). A value the
+ * browser put back comes with no event and is put back. In the
+ * browser-restore experiment of 2026-10-20 (plain static pages) Chromium,
+ * Firefox and WebKit all put an earlier value back into a select without
+ * `autocomplete="off"`, as this one was until F-1; WebKit 26.5 did so into a
+ * select with it too, so the attribute is kept but not relied on.
  */
 function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
   const context = useWorkingContext();
@@ -283,6 +290,10 @@ function ConcreteBranchChooser({ messages }: { readonly messages: Messages }) {
       ref={selectRef}
       label={translate(messages, 'workingContext.chooseHere')}
       data-testid="concrete-branch-chooser"
+      // Records a person's early choice (`early-choice-mark.ts`) — see above.
+      data-early-choice=""
+      // Kept, not relied on: WebKit put a value back anyway — see above.
+      autoComplete="off"
       value=""
       onChange={(event) => {
         const next = event.target.value;
