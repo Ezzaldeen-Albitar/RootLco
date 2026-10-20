@@ -51,18 +51,17 @@ import { useEarlyChoice } from '../use-early-choice';
  * every branch in it — before React has attached to the page, and a branch
  * chosen in that moment used to be lost. `useEarlyChoice` reads the select in
  * the commit that hydrates it and hands a branch chosen there to `onSelect`,
- * the provider's guarded switch, however the document was reached — because
- * this select is marked `autocomplete="off"`. The hook checks the mark: a
- * select without it is adopted from on a fresh navigation only.
+ * the provider's guarded switch, however the document was reached — but only
+ * when a person's `input` or `change` was aimed at the select. The select
+ * carries `data-early-choice`, which is what has the early script in the
+ * locale layout record such an event (`early-choice-mark.ts`); a value the
+ * browser put back comes with no event and is put back. Do not remove the
+ * attribute: without it an early choice here would be lost again.
  *
- * Why the mark is enough was measured once, on plain static pages (experiment
- * 2026-10-18, Chromium 151): on a move through history without the
- * back/forward cache the browser put the earlier value back into every select
- * not marked `autocomplete="off"` and into none that was; a reload put nothing
- * back; a page restored from the back/forward cache is the live page, so the
- * hook does not run. Firefox and WebKit were not verified. Do not remove the
- * mark: without it an early choice here would be lost again on a reload or a
- * move through history. The rule and its reasons are stated in the hook.
+ * `autocomplete="off"` is kept but not relied on: in the browser-restore
+ * experiment of 2026-10-20 WebKit 26.5 put an earlier value back into a select
+ * so marked on a move through history. The rule and its reasons are stated in
+ * the hook.
  */
 export interface BranchSelectorProps {
   readonly messages: Messages;
@@ -218,8 +217,9 @@ export function BranchSelector({
           inputProps={{
             id: selectId,
             'data-testid': 'working-context-select',
-            // Not put back by Chromium 151 in our experiment (Firefox and WebKit
-            // not verified), so an early choice is taken as the operator's — see above.
+            // Records a person's early choice (`early-choice-mark.ts`) — see above.
+            'data-early-choice': '',
+            // Kept, not relied on: WebKit put a value back anyway — see above.
             autoComplete: 'off',
             className: 'truncate',
             title: shown.length > 0 ? shown : undefined,
