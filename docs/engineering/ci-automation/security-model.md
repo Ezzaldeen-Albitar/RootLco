@@ -265,29 +265,54 @@ GitHub advisory records give publication and review times of 2026-10-21 19:48:38
 run 39666043682 on develop `4cc558d4` printed zero advisories for the web production and full
 reports at 2026-10-21 19:57:31 UTC, which is after both GitHub publication times. The job of
 PR #596 (job 119503477247) printed `audit-web-full.json: 6 advisory/advisories` at 21:44:15 UTC
-and failed. Why the two audits differed is not established. The two advisory ids reach three
-packages in the audit report: `@vitest/mocker` directly, and `vitest` and `@vitest/coverage-v8`
-through it. The printed 6 is the sum of every value in the report's `metadata.vulnerabilities`
-object, which holds both the per-severity count (moderate 3) and the `total` (3); it counts
-packages twice and is not an advisory count. All three packages are development only, and the
-root and apps/web manifests declare `vitest` and `@vitest/coverage-v8` as `^4.1.11`, which
-admits 4.1.12, the lowest patched 4.x release; 5.x is a major version change and was not taken.
-The lockfile moves eleven nodes from 4.1.11 to 4.1.12: `vitest`, `@vitest/coverage-v8`,
+and failed. Why the two audits differed is not established. The three affected package names
+come from the root `audit-full.json` in the dependency-security evidence artifact of PR #596
+(artifact 12383203842): `@vitest/mocker` is affected directly, `vitest` through
+`@vitest/mocker`, and `@vitest/coverage-v8` through `vitest`. The web full report's
+`metadata.vulnerabilities` object (moderate 3, total 3) matches those three packages. The
+printed 6 is the sum of every value in that object, `total` included; it counts packages twice
+and is not an advisory count. All three packages are development only. The root manifest
+declares `vitest` and `@vitest/coverage-v8` as `^4.1.11`, and the apps/web manifest declares
+only `vitest` as `^4.1.11`; both ranges admit 4.1.12, the lowest patched 4.x release. 5.x is a
+major version change and was not taken. The lockfile moves eleven nodes from 4.1.11 to 4.1.12: `vitest`, `@vitest/coverage-v8`,
 `@vitest/mocker`, `@vitest/expect`, `@vitest/runner`, `@vitest/snapshot`, `@vitest/spy`,
 `@vitest/utils`, and the three nested `@vitest/pretty-format` copies under `vitest`,
 `@vitest/snapshot` and `@vitest/utils`. The top-level `@vitest/pretty-format` 3.2.7 used by
 `vitest-axe` stays. Every new integrity value equals the registry's `dist.integrity` for 4.1.12.
-`npm update` keeps 4.1.11, because `vitest` and `@vitest/coverage-v8` require each other at the
+In the registry metadata of `vitest` 4.1.12, the optional peer `@vitest/browser-webdriverio`
+changed from exactly 4.1.11 to `^4.1.11`; that package is not installed, so the change is
+harmless. `npm update` keeps 4.1.11, because `vitest` and `@vitest/coverage-v8` require each other at the
 exact same version, and a root override is refused (EOVERRIDE) because both are root
 dependencies. The root devDependency floors were therefore raised to `^4.1.12` for one install,
 with temporary overrides holding `chai` at 6.2.2 and the 3.x `tinyrainbow` copies at 3.1.1, so
 that no node outside the family moved; the manifest was then restored byte for byte and the
 lockfile regenerated with npm 11.13.0, which kept the eleven nodes at 4.1.12. Without those
 holds npm also moved `chai` to 6.3.0 and four nested `tinyrainbow` copies to 3.2.0, which the
-4.1.12 ranges do not require. The Owner authorised the update on 2026-10-22; the bounded
-authority given with it for further development-only advisory fixes was not used. No manifest,
-override or exception was added and no gate was changed (change-control row CC-OD-60). From
-P1-32-PRE-OD-DEP7.
+4.1.12 ranges do not require. The Owner authorised the update in a message of 2026-10-22,
+quoted here in full and verbatim:
+
+> "2. Approved Vitest fix — I authorize the minimal compatible patch update of the Vitest family
+> from 4.1.11 to 4.1.12, including the necessary related lockfile entries and the usual
+> security/change-control documentation. The reported scope is 11 lockfile entries with no
+> package.json changes. Independently verify that scope, the affected advisory IDs, patched
+> versions, dependency compatibility and package integrity before treating it as established.
+> Prepare a focused PR. Do not use a blanket dependency update or npm audit fix --force. This
+> explicitly authorizes superseding the current checkpoint freeze after the security PR passes
+> independent review and the required checks. 3. Bounded authority for this closure — Until this
+> checkpoint-and-records closure is complete, I also authorize subsequent advisory-driven fixes
+> without another approval request only when all these conditions hold: They address an
+> advisory actually blocking the current required audit. The affected dependencies are
+> development/test tooling only. The fix stays within the existing major/minor version line and
+> declared dependency ranges. Changes are limited to necessary lockfile entries and security
+> records. No production dependency, manifest, override, gate, exception or security policy
+> changes. Independent review, required CI and the normal landing guard remain mandatory. Record
+> each use of this authority and its scope. If a fix exceeds these boundaries, prepare the
+> concrete proposal and ask only for that additional decision. This authority ends when the
+> current closure and handoff are finished."
+
+The bounded authority in point 3 was not used: no other advisory blocked the required audit. No
+manifest, override or exception was added and no gate was changed (change-control row CC-OD-60).
+From P1-32-PRE-OD-DEP7.
 
 ### The one development exception, and why it is gone
 
