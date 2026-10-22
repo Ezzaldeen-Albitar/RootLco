@@ -115,7 +115,7 @@ export async function createIndividualAction(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<CreatedCustomer>('POST', '/api/v1/customers/individuals', {
     givenName: parsed.data.givenName,
@@ -150,7 +150,7 @@ export async function createCompanyAction(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<CreatedCustomer>('POST', '/api/v1/customers/companies', {
     legalName: parsed.data.legalName,

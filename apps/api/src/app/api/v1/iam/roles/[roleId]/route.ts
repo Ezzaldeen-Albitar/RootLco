@@ -48,11 +48,12 @@ export async function PATCH(
   request: Request,
   route: { params: Promise<{ roleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     ROLE_UPDATE_OPERATION,
     request,
     async ({ db, request: raw, expectedVersion }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const body = await parseJsonBody(raw, PatchBody);
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -60,6 +61,6 @@ export async function PATCH(
       const role = await iamModule().access.updateRole(db, params.roleId, expectedVersion, body);
       return { body: role, recordVersion: role.recordVersion };
     },
-    { params }
+    { params: rawParams }
   );
 }

@@ -12,9 +12,10 @@
  *    cannot produce an escalation. The database refusal is asserted independently
  *    by the P1-14 capability suite.
  *  - **Self-service is refused.** An administrator may not grant to, revoke from,
- *    or set an approval limit for themselves. `ck_role_grants_no_self_grant`
- *    agrees on the grant direction; the others are application rules and are
- *    stated as such.
+ *    or set an approval limit for themselves — nor set one for a role they hold,
+ *    which reaches them just the same. `ck_role_grants_no_self_grant` agrees on
+ *    the grant direction; the others are application rules and are stated as
+ *    such.
  *  - **Deny is never blocked.** Adding a `deny` mapping, revoking a grant, and
  *    ending an approval limit are all *reductions* in access, and requiring the
  *    actor to hold the permission they are taking away would be a safety
@@ -33,18 +34,44 @@ import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import {
   AuthorizationRepository,
   ROLE_ORDERING,
-  type ApprovalLimitRow,
+  type ApprovalLimitListRow,
   type GrantRow,
   type RoleRow,
 } from '../data/authorization-repository';
 import { IdentityRepository } from '../data/identity-repository';
+import { IdentityDirectoryService } from './identity-directory-service';
 import { OrganizationRepository } from '../data/organization-repository';
 import { DelegationPolicy, type GrantFacts, type ScopeRequest } from '../domain/delegation-policy';
 import { CredentialPolicy } from '../domain/credential-policy';
 import { IdentityPolicy } from '../domain/identity-policy';
 
+/**
+ * One row of `iam.approval-limit-list`: the stored limit, the role's name
+ * (`null` without `iam.role.read`, or for a person's limit) and the person's
+ * display name (`null` without `iam.user.read`, or for a role's limit).
+ */
+export interface ApprovalLimitListItem extends ApprovalLimitListRow {
+  readonly userDisplayName: string | null;
+}
+
 /** SQLSTATE for an EXCLUDE-constraint violation (overlapping effective windows). */
 const EXCLUSION_VIOLATION = '23P01';
+
+/**
+ * The amount rule `iam.guard_approval_limit_money` raised, as the field rule the
+ * screen words, or `null` for any other failure. The guard puts a stable token
+ * before the first colon of its `check_violation` message.
+ */
+function approvalLimitAmountRule(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return null;
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? String((error as { message?: unknown }).message ?? '')
+      : '';
+  if (message.startsWith('approval_limit_minor_unit:')) return 'minor_unit_scale';
+  if (message.startsWith('approval_limit_not_positive:')) return 'not_positive';
+  return null;
+}
 
 /** The exact incoming scope shape a caller may submit for a grant. */
 interface IncomingScope {
@@ -630,11 +657,36 @@ export class AccessAdministrationService extends ApplicationService {
 
   // ---- Approval limits ---------------------------------------------------
 
+  /**
+   * The approval limits, each with the names its references need
+   * (`P1-32-PRE-OD-ADM4`, route checklist prerequisite 9).
+   *
+   * `userDisplayName` names a person's limit through the identity directory,
+   * which publishes a name only to a caller holding `iam.user.read` and an
+   * empty answer to anyone else — so without that code every name is `null`,
+   * and the caller learns nothing it could not already read; and only an
+   * account the user list shows is named (`listedOnly`). `roleName` is
+   * resolved by the list's own statement under `iam.role.read` the same way.
+   * Both are additive: the references are published as before, and a `null`
+   * is the screen's cue to say a name is not available, never to print an id.
+   */
   async listApprovalLimits(
     db: DbHandle,
     filters: { companyId?: string | undefined; userId?: string | undefined }
-  ): Promise<readonly ApprovalLimitRow[]> {
-    return this.authorization.listApprovalLimits(db, filters, 200);
+  ): Promise<readonly ApprovalLimitListItem[]> {
+    const rows = await this.authorization.listApprovalLimits(db, filters, 200);
+    const people = [...new Set(rows.flatMap((row) => (row.userId === null ? [] : [row.userId])))];
+    // `listedOnly`: a limit names its CURRENT subject, so an account the user
+    // list no longer shows (soft-deleted) is not named here either.
+    const names = await new IdentityDirectoryService(this.identities).resolveDisplayIdentities(
+      db,
+      people,
+      { listedOnly: true }
+    );
+    return rows.map((row) => ({
+      ...row,
+      userDisplayName: row.userId === null ? null : (names.get(row.userId)?.displayName ?? null),
+    }));
   }
 
   /**
@@ -668,10 +720,17 @@ export class AccessAdministrationService extends ApplicationService {
     }
     if (input.userId) {
       // Self-approval escalation: an administrator raising their own ceiling.
-      this.delegationPolicy.assertNotSelf(facts, input.userId, 'set an approval limit for');
+      this.delegationPolicy.assertApprovalLimitNotForSelf(facts, input.userId);
+    }
+    if (input.roleId) {
+      // The same escalation through a role: a limit on a role reaches every
+      // holder, so a role the administrator holds is their own ceiling too.
+      this.delegationPolicy.assertApprovalLimitNotForHeldRole(
+        await this.authorization.callerHoldsRole(db, input.roleId)
+      );
     }
 
-    this.credentialPolicy.assertApprovalAmount(input.amount, input.currency);
+    this.credentialPolicy.assertApprovalAmount(input.amount, input.currency, input.limitType);
     this.credentialPolicy.assertEffectiveWindow(input.effectiveFrom, input.effectiveTo ?? null);
     this.delegationPolicy.assertScopeWithinAuthority(facts, {
       scopeType: 'company',
@@ -702,6 +761,17 @@ export class AccessAdministrationService extends ApplicationService {
       if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
         throw new AppFailure('ERR-RES-001', {
           message: 'The company, role, user, or currency was not found',
+        });
+      }
+      // `iam.guard_approval_limit_money` (ADR-023 D1, D13): the amount is finer than
+      // the currency's minor unit, or a credit-note limit is not above zero. Both are
+      // about the amount the administrator typed, so both are filed on it.
+      const amountRule = approvalLimitAmountRule(error);
+      if (amountRule !== null) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The approval limit amount does not fit its currency or its type',
+          safeDetails: { violations: [{ path: 'body.amount', rule: amountRule }] },
+          cause: error,
         });
       }
       throw error;

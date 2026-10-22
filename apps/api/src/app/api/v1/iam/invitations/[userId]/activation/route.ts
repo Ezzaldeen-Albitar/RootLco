@@ -43,7 +43,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ userId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -52,9 +52,10 @@ export async function POST(
     INVITATION_ACTIVATE_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const parsed = await parseJsonBody(raw, ActivateBody);
       return { body: await iamModule().invitations.activate(db, params.userId, parsed.reason) };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }

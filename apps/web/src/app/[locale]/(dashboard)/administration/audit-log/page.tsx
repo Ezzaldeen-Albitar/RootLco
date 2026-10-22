@@ -4,6 +4,7 @@ import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { DEFAULT_WINDOW_DAYS } from '@/features/administration/audit/types';
 import { AuditLogScreen } from '@/features/administration/audit/components/AuditLogScreen';
+import { readAuditScopeOptions } from '@/features/administration/audit/api';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
@@ -16,6 +17,11 @@ import { pageMetadata } from '@/lib/page-metadata';
  * make the first request depend on the visitor's clock, so two operators in
  * different time zones would open the same screen on different windows and see
  * different rows — and neither would know why.
+ *
+ * The screen counts the window's days on the clock in force — the working
+ * branch's, or UTC under all branches (`P1-32-PRE-OD-ADM6`) — from the server's
+ * moment of opening (`openedAt`), so a branch ahead of UTC still opens on its
+ * own today. The UTC days below are what it falls back to.
  */
 export default async function AuditLogPage({
   params,
@@ -44,7 +50,9 @@ export default async function AuditLogPage({
   }
 
   const now = new Date();
-  const from = new Date(now.getTime() - DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const scopeOptions = await readAuditScopeOptions();
+  // Today is one of the window's days, so the first is one fewer days back.
+  const from = new Date(now.getTime() - (DEFAULT_WINDOW_DAYS - 1) * 24 * 60 * 60 * 1000);
 
   return (
     <>
@@ -61,6 +69,9 @@ export default async function AuditLogPage({
           messages={messages}
           initialFrom={isoDate(from)}
           initialTo={isoDate(now)}
+          openedAt={now.toISOString()}
+          scopeOptions={scopeOptions}
+          canReadUsers={holds(session.permissions, PERMISSIONS.userRead)}
         />
       </PageBody>
     </>

@@ -1,11 +1,19 @@
 'use client';
 
-import { useActionState, useId, useState } from 'react';
+import { useActionState, useState } from 'react';
 import Link from 'next/link';
+import Button from '@mui/material/Button';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { Icon } from '@/components/primitives/Icon';
+import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { unreachable } from '@/lib/forms/action-result';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   createCompanyAction,
   createIndividualAction,
@@ -42,13 +50,19 @@ import type { ChosenCustomer } from './WalkInIntakeScreen';
  * which is the decision a reception desk actually faces when the person at
  * the counter may already be in the book.
  *
- * ## Controlled fields, uncontrolled-remounted select
+ * ## On the Material UI wrappers (ADR-022)
  *
- * The text fields are controlled so a transport failure cannot discard a
- * typed name; the status select carries the `key` + `defaultValue` +
- * `onChange` shape because a controlled select loses to React's post-action
- * `form.reset()` — measured and recorded at `CustomerCreateScreen.tsx`, and
- * inventoried by `tests/form-reset-class.test.ts`.
+ * The form is a Server Action form (`useActionState`), so the actions receive
+ * the form's own data and nothing here assembles a request body. The text
+ * fields are controlled, so a refusal keeps every name typed; the status select
+ * is controlled too and is REMOUNTED on every settle (`key` on the attempt), so
+ * the reset React applies after an action cannot strand it on a stale option —
+ * the shape `tests/form-reset-class.test.ts` inventories for the native select.
+ * A refusal marks its field (red, the sentence beside it, `aria-invalid`),
+ * moves the cursor to the first, and is withdrawn once that field is edited.
+ * Typed details are unsaved work: leaving the page or changing branch asks
+ * first, and a confirmed discard empties the form. A create whose answer never
+ * arrives is said as that, with the entries kept.
  */
 
 interface Props {
@@ -60,19 +74,43 @@ interface Props {
 }
 
 const INITIAL: CreationState = { status: 'idle' };
+const DEFAULT_LIFECYCLE = 'prospect';
 
 export function IntakeCustomerCreate({ locale, messages, kind, onChosen, onBack }: Props) {
-  const formId = useId();
+  const [values, setValues] = useState<Record<string, string>>({});
   const [state, action, pending] = useActionState(
-    kind === 'individual' ? createIndividualAction : createCompanyAction,
+    async (previous: CreationState, form: FormData): Promise<CreationState> => {
+      try {
+        return kind === 'individual'
+          ? await createIndividualAction(previous, form)
+          : await createCompanyAction(previous, form);
+      } catch {
+        // No answer came back: said as that, every entry kept.
+        return unreachable((previous.attempt ?? 0) + 1);
+      }
+    },
     INITIAL
   );
-  const [values, setValues] = useState<Record<string, string>>({});
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
   const set = (name: string) => (value: string) =>
     setValues((current) => ({ ...current, [name]: value }));
 
-  if (state.status === 'success' && state.created) {
-    const created = state.created;
+  const created = state.status === 'success' ? (state.created ?? null) : null;
+  const typed = Object.entries(values).some(
+    ([name, value]) =>
+      value.trim() !== '' && !(name === 'lifecycleStatus' && value === DEFAULT_LIFECYCLE)
+  );
+  useUnsavedGuard(created === null && typed, () => {
+    setValues({});
+  });
+
+  const fieldError = (name: string): string | undefined => {
+    const key = corrections.errorFor(name);
+    return key === undefined ? undefined : translateDynamic(messages, key);
+  };
+
+  if (created !== null) {
     // The operator's own words, because the creation response deliberately
     // does not echo the name back.
     const displayName =
@@ -102,11 +140,11 @@ export function IntakeCustomerCreate({ locale, messages, kind, onChosen, onBack 
 
         {created.possibleDuplicates.length > 0 ? (
           <section
-            aria-labelledby={`${formId}-duplicates`}
+            aria-labelledby="intake-customer-duplicates"
             className="rounded-md border border-warning bg-surface p-3"
           >
             <h3
-              id={`${formId}-duplicates`}
+              id="intake-customer-duplicates"
               className="flex items-center gap-2 text-body font-semibold text-text-primary"
             >
               <span aria-hidden="true" className="text-warning">
@@ -126,8 +164,10 @@ export function IntakeCustomerCreate({ locale, messages, kind, onChosen, onBack 
                       {match.displayNumber}
                     </code>
                   ) : null}
-                  <button
+                  <Button
                     type="button"
+                    variant="outlined"
+                    size="small"
                     onClick={() =>
                       onChosen({
                         id: match.id,
@@ -138,10 +178,10 @@ export function IntakeCustomerCreate({ locale, messages, kind, onChosen, onBack 
                         partyType: null,
                       })
                     }
-                    className="rounded-md border border-border px-2 py-1 text-caption text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                   >
                     {translate(messages, 'receptions.intake.customer.useExisting')}
-                  </button>
+                    <span className="sr-only"> {match.displayName}</span>
+                  </Button>
                   <Link
                     href={`/${locale}/crm/customers/${match.id}`}
                     className="text-caption text-primary underline-offset-2 hover:underline"
@@ -155,8 +195,9 @@ export function IntakeCustomerCreate({ locale, messages, kind, onChosen, onBack 
         ) : null}
 
         <div>
-          <button
+          <Button
             type="button"
+            variant="contained"
             onClick={() =>
               onChosen({
                 id: created.customerId,
@@ -165,189 +206,88 @@ export function IntakeCustomerCreate({ locale, messages, kind, onChosen, onBack 
                 partyType: created.partyType,
               })
             }
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
           >
             {translate(messages, 'receptions.intake.customer.continueCreated')}
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
+  const field = (
+    name: string,
+    labelKey: string,
+    maxLength: number,
+    options: { readonly required?: boolean; readonly hintKey?: string } = {}
+  ) => (
+    <FormTextField
+      label={translateDynamic(messages, labelKey)}
+      name={name}
+      required={options.required}
+      description={options.hintKey ? translateDynamic(messages, options.hintKey) : undefined}
+      value={values[name] ?? ''}
+      maxLength={maxLength}
+      onEdit={() => corrections.noteEdited(name)}
+      onChange={set(name)}
+      error={fieldError(name)}
+    />
+  );
+
   return (
-    <form action={action} className="flex flex-col gap-3">
-      {state.status !== 'idle' ? (
-        <p
-          key={state.attempt}
-          role="alert"
-          className="rounded-md border border-error bg-surface px-3 py-2 text-body text-error"
-        >
-          {translateDynamic(messages, state.messageKey ?? 'form.formError')}
-          {state.correlationId ? (
-            <span className="ms-2 text-caption text-text-muted">
-              {translate(messages, 'state.correlationId')}{' '}
-              <code className="font-mono">{state.correlationId}</code>
-            </span>
-          ) : null}
-        </p>
-      ) : null}
+    <form ref={formRef} action={action} noValidate className="flex flex-col gap-3">
+      <FormFeedback state={state} messages={messages} />
 
       {kind === 'individual' ? (
         <>
-          <TextField
-            formId={formId}
-            name="givenName"
-            value={values['givenName'] ?? ''}
-            onValueChange={set('givenName')}
-            labelKey="crm.customers.create.givenName"
-            messages={messages}
-            maxLength={MAX_PERSON_NAME}
-            required
-            error={state.fieldErrors?.['givenName']}
-          />
-          <TextField
-            formId={formId}
-            name="familyName"
-            value={values['familyName'] ?? ''}
-            onValueChange={set('familyName')}
-            labelKey="crm.customers.create.familyName"
-            messages={messages}
-            maxLength={MAX_PERSON_NAME}
-            required
-            error={state.fieldErrors?.['familyName']}
-          />
+          {field('givenName', 'crm.customers.create.givenName', MAX_PERSON_NAME, {
+            required: true,
+          })}
+          {field('familyName', 'crm.customers.create.familyName', MAX_PERSON_NAME, {
+            required: true,
+          })}
         </>
       ) : (
         <>
-          <TextField
-            formId={formId}
-            name="legalName"
-            value={values['legalName'] ?? ''}
-            onValueChange={set('legalName')}
-            labelKey="crm.customers.create.legalName"
-            messages={messages}
-            maxLength={MAX_COMPANY_NAME}
-            required
-            error={state.fieldErrors?.['legalName']}
-          />
-          <TextField
-            formId={formId}
-            name="tradeName"
-            value={values['tradeName'] ?? ''}
-            onValueChange={set('tradeName')}
-            labelKey="crm.customers.create.tradeName"
-            hintKey="crm.customers.create.tradeNameHint"
-            messages={messages}
-            maxLength={MAX_COMPANY_NAME}
-            error={state.fieldErrors?.['tradeName']}
-          />
+          {field('legalName', 'crm.customers.create.legalName', MAX_COMPANY_NAME, {
+            required: true,
+          })}
+          {field('tradeName', 'crm.customers.create.tradeName', MAX_COMPANY_NAME, {
+            hintKey: 'crm.customers.create.tradeNameHint',
+          })}
         </>
       )}
 
-      <div className="flex flex-col gap-1">
-        <label
-          className="text-caption font-medium text-text-secondary"
-          htmlFor={`${formId}-lifecycle`}
-        >
-          {translate(messages, 'crm.customers.create.lifecycleStatus')}
-        </label>
-        {/* `key` + `defaultValue` + `onChange` — the reset-safe shape. See the
-            module note and `tests/form-reset-class.test.ts`. */}
-        <select
-          key={`lifecycle-${state.attempt ?? 0}`}
-          id={`${formId}-lifecycle`}
-          name="lifecycleStatus"
-          defaultValue={values['lifecycleStatus'] ?? 'prospect'}
-          onChange={(event) => set('lifecycleStatus')(event.target.value)}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-        >
-          {/* Two options, because creation accepts two: a customer can REACH
-              the other statuses; it cannot be born there. */}
-          {CREATABLE_LIFECYCLE_STATUSES.map((value) => (
-            <option key={value} value={value}>
-              {translateDynamic(messages, `crm.lifecycle.${value}`)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <FormSelectField
+        // Remounted on every settle, so the reset after an action never leaves
+        // the select showing an option other than the one held here.
+        key={`lifecycle-${state.attempt ?? 0}`}
+        label={translate(messages, 'crm.customers.create.lifecycleStatus')}
+        name="lifecycleStatus"
+        value={values['lifecycleStatus'] ?? DEFAULT_LIFECYCLE}
+        onEdit={() => corrections.noteEdited('lifecycleStatus')}
+        onChange={set('lifecycleStatus')}
+        // Two options, because creation accepts two: a customer can REACH the
+        // other statuses; it cannot be born there.
+        options={CREATABLE_LIFECYCLE_STATUSES.map((value) => ({
+          value,
+          label: translateDynamic(messages, `crm.lifecycle.${value}`),
+        }))}
+        error={fieldError('lifecycleStatus')}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="submit"
+          variant="contained"
           disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60"
+          aria-busy={pending || undefined}
         >
           {translate(messages, pending ? 'form.saving' : 'form.submit')}
-        </button>
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded-md border border-border px-4 py-2 text-body text-text-secondary"
-        >
+        </Button>
+        <Button type="button" variant="outlined" onClick={onBack}>
           {translate(messages, 'receptions.intake.customer.backToSearch')}
-        </button>
+        </Button>
       </div>
     </form>
-  );
-}
-
-function TextField({
-  formId,
-  name,
-  labelKey,
-  hintKey,
-  messages,
-  maxLength,
-  required,
-  error,
-  value,
-  onValueChange,
-}: {
-  readonly formId: string;
-  readonly name: string;
-  readonly labelKey: string;
-  readonly hintKey?: string;
-  readonly messages: Messages;
-  readonly maxLength: number;
-  readonly required?: boolean;
-  readonly error?: string | undefined;
-  readonly value: string;
-  readonly onValueChange: (next: string) => void;
-}) {
-  const id = `${formId}-${name}`;
-  const hintId = hintKey ? `${id}-hint` : undefined;
-  const errorId = error ? `${id}-error` : undefined;
-  const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
-
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-caption font-medium text-text-secondary" htmlFor={id}>
-        {translateDynamic(messages, labelKey)}
-        {required ? null : (
-          <span className="ms-1 text-text-muted">{translate(messages, 'field.optional')}</span>
-        )}
-      </label>
-      <input
-        id={id}
-        name={name}
-        type="text"
-        maxLength={maxLength}
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy}
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-      />
-      {hintKey ? (
-        <span id={hintId} className="text-caption text-text-muted">
-          {translateDynamic(messages, hintKey)}
-        </span>
-      ) : null}
-      {error ? (
-        <span id={errorId} className="text-caption text-error">
-          {translateDynamic(messages, error)}
-        </span>
-      ) : null}
-    </div>
   );
 }

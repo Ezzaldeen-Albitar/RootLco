@@ -42,11 +42,68 @@ export const WORK_ORDER_PERMISSIONS = {
  * `ck_work_orders_kind`, mirrored. Two values, closed.
  *
  * Mirrored rather than imported: `apps/web` may not import from `apps/api`, and
- * `tests/work-orders-contract.test.ts` holds this array against the route source
- * so a third kind added in the Backend fails a test rather than a reviewer.
+ * `tests/work-orders-queue-api.test.ts` holds this array against the backend
+ * domain source so a third kind added in the Backend fails a test rather than a
+ * reviewer. That gate is real as of the Owner directive (P1-32-PRE-OD-UX); this
+ * sentence named a file that did not exist before it.
  */
 export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
+
+/**
+ * The state groups `wo.work-order-list` accepts, mirrored from
+ * `WORK_ORDER_STATE_GROUPS` in the work-order domain.
+ *
+ * Mirrored rather than imported for the reason the kinds are: `apps/web` may not
+ * import from `apps/api`, and the contract test holds this array against the
+ * backend source so a fourth group fails a test rather than a reviewer.
+ *
+ * The three PARTITION the catalogue — `terminal` excludes the cancellations
+ * rather than containing them — so no work order is returned by two groups, and
+ * `active` is exactly the set the overview aggregate calls active.
+ */
+export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
+export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
+
+/**
+ * The state codes seeded at PLATFORM scope, transcribed from
+ * `supabase/seeds/06_wo_job_state_graph.sql`.
+ *
+ * This is NOT a contradiction of the opacity rule stated above, and it is not a
+ * copy of any tenant's configuration. `wo.work_order_states` is dual-scope: the
+ * nine codes below are inserted at `scope = 'platform'` for every organisation
+ * the platform provisions, and a tenant may then define more of its own. So
+ * these nine are a fact about the PLATFORM, not about a tenant, and a screen may
+ * name them in the operator's language.
+ *
+ * What stays true is that an unrecognised code is never invented a sentence for.
+ * `workOrderStateMessageKey` answers `null` for anything not in this list, and
+ * the caller renders the code itself — which is what the screen did for every
+ * code before, including these.
+ */
+export const PLATFORM_WORK_ORDER_STATES = [
+  'draft',
+  'open',
+  'in_progress',
+  'awaiting_parts',
+  'awaiting_customer',
+  'qc_pending',
+  'ready_to_close',
+  'closed',
+  'cancelled',
+] as const;
+export type PlatformWorkOrderState = (typeof PLATFORM_WORK_ORDER_STATES)[number];
+
+/**
+ * The catalogue key for a state code, or `null` when the platform does not
+ * define it — in which case the caller renders the code as the opaque token it
+ * is, rather than a guess.
+ */
+export function workOrderStateMessageKey(code: string): string | null {
+  return (PLATFORM_WORK_ORDER_STATES as readonly string[]).includes(code)
+    ? `workOrders.state.${code}`
+    : null;
+}
 
 /**
  * The party who brought the car for THIS work order, as at its `opened_at`.
@@ -94,6 +151,41 @@ export interface WorkOrderListEntry {
   readonly recordVersion: number;
   readonly customer: WorkOrderCustomer | null;
   readonly vehicle: WorkOrderVehicle;
+  /**
+   * Who is currently on the car, or null when no job carries a live assignment
+   * (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `displayName` is null on its own when the caller may not read the user
+   * directory: the assignment is a work-order fact and the person's NAME is not,
+   * so the row is published either way and a screen renders the absence rather
+   * than assuming a name is always there.
+   */
+  readonly assignedTechnician: WorkOrderAssignedTechnician | null;
+  /**
+   * When the work order last entered a terminal state, or null whenever it is
+   * not currently in one. There is no `completed_at` column: the API reads the
+   * transition ledger and gates it on the current state, so a reopened order
+   * reports null again.
+   */
+  readonly completedAt: string | null;
+  /**
+   * `pending`, `passed` or `failed`, or null when quality control was never
+   * opened on this work order. Null and `pending` are DIFFERENT facts and a
+   * screen must not collapse them.
+   */
+  readonly qualityState: string | null;
+}
+
+/**
+ * The technician holding the live assignment.
+ *
+ * A named type rather than an inline object for the reason every other nested
+ * projection here is one: the contract test compares this mirror against the
+ * published row field by field, and an inline shape is invisible to it.
+ */
+export interface WorkOrderAssignedTechnician {
+  readonly id: string;
+  readonly displayName: string | null;
 }
 
 /**
@@ -112,11 +204,261 @@ export interface WorkOrderListEntry {
 export interface WorkOrderListCriteria {
   /** An opaque catalogue code. An unknown one returns an empty page, not a 422. */
   readonly state?: string;
+  /**
+   * A state GROUP (Owner directive, `P1-32-PRE-OD-UX`), resolved by the backend
+   * from the tenant catalogue's terminal and cancellation flags.
+   *
+   * A CLOSED vocabulary where `state` is open, and the two may not be sent
+   * together — the backend answers 422 with `state_and_group_exclusive` rather
+   * than intersecting them, so a screen offering both controls must clear one
+   * when the other is chosen.
+   *
+   * The three partition the catalogue: `terminal` excludes the cancellations
+   * rather than containing them, so no work order is returned by two groups.
+   */
+  readonly stateGroup?: WorkOrderStateGroup;
+  /**
+   * Inclusive bounds on the COMPLETION instant — the same value a row publishes
+   * as `completedAt`. Either bound narrows the board to finished work by
+   * construction, because an unfinished work order has no completion instant.
+   * An inverted window is a 422 (`completion_window_inverted`), never an empty
+   * page.
+   */
+  readonly completedFrom?: string;
+  readonly completedTo?: string;
   readonly kind?: WorkOrderKind;
   readonly openedFrom?: string;
   readonly openedTo?: string;
   readonly customerId?: string;
+  /**
+   * P1-32. One box: part of the number, of a party name, of any plate the
+   * vehicle carried, or of its VIN. Two characters at least.
+   */
+  readonly q?: string;
+  /**
+   * The board flags (Owner directive, `P1-32-PRE-OD-UX`). Each is backed by a
+   * state or a column the schema really keeps, and each travels as the literal
+   * `'true'`/`'false'` the route's `z.enum` accepts — never as a coerced
+   * boolean, because coercion makes every non-empty string true and
+   * `?assignedToMe=false` would then silently widen the board.
+   *
+   *   `assignedToMe`      a live job assignment for the caller's own technician
+   *                       profile; a caller with no profile is answered an EMPTY
+   *                       page rather than the whole board;
+   *   `awaitingParts`     parts are `requested` or `reserved_elsewhere` (not yet
+   *                       in hand) on an order that is not in a terminal state —
+   *                       the same predicate the dashboard figure counts with;
+   *   `awaitingApproval`  a live work order has an additional-work request still
+   *                       `pending` — the same predicate the dashboard counts;
+   *   `awaitingQuality`   a quality record's `overall_result` is `pending`;
+   *   `readyForDelivery`  the state is closed and not a cancellation, resolved
+   *                       from the live catalogue.
+   *
+   * There is deliberately no `dueAt`, no `approvalState` and no
+   * `deliveryReadiness`: the platform records no due date on a work order, so
+   * nothing here may compute one.
+   */
+  readonly assignedToMe?: boolean;
+  readonly awaitingParts?: boolean;
+  readonly awaitingApproval?: boolean;
+  readonly awaitingQuality?: boolean;
+  readonly readyForDelivery?: boolean;
 }
+
+/**
+ * The work-order state catalogue, as `wo.work-order-catalogue` publishes it.
+ *
+ * `GET /work-order-catalogue` is `scope: 'tenant'`, takes `wo.work_order.read`
+ * and accepts no parameters at all. It exists precisely so a screen never has to
+ * hard-code a state code: `wo.work_order_states` is tenant-extensible, so a
+ * board that decided "which states mean the car is still with us" from a list in
+ * this file would be confidently wrong for any workshop that configured its own.
+ *
+ * Only the fields a board actually reads are mirrored. `closureEligible` is
+ * deliberately absent from the work-order half — it is a JOB flag, it is
+ * enforced by nothing, and closure readiness comes from
+ * `GET /work-orders/{id}/closure-eligibility` and from nowhere else.
+ */
+export interface WorkOrderStateCatalogueEntry {
+  readonly code: string;
+  /** The tenant's own name for the state. Rendered when the platform has none. */
+  readonly name: string;
+  readonly isTerminal: boolean;
+  readonly isClosed: boolean;
+  readonly isCancellation: boolean;
+}
+
+/** The published body of `wo.work-order-catalogue`, narrowed to what is read. */
+export interface WorkOrderCatalogue {
+  readonly workOrderStates: readonly WorkOrderStateCatalogueEntry[];
+}
+
+/**
+ * The states that mean the car is still the workshop's problem.
+ *
+ * DERIVED from the catalogue's own `isTerminal`, never from a list of codes. A
+ * tenant that adds `awaiting_insurer` gets it counted as open on the day they
+ * add it, and this file never has to hear about it.
+ */
+export function openStates(
+  catalogue: readonly WorkOrderStateCatalogueEntry[]
+): readonly WorkOrderStateCatalogueEntry[] {
+  return catalogue.filter((state) => !state.isTerminal);
+}
+
+/** The complement: finished, whether completed or abandoned. */
+export function finishedStates(
+  catalogue: readonly WorkOrderStateCatalogueEntry[]
+): readonly WorkOrderStateCatalogueEntry[] {
+  return catalogue.filter((state) => state.isTerminal);
+}
+
+/**
+ * How a state code should read on screen.
+ *
+ * The platform's own nine codes get the operator's language. Anything else is
+ * the tenant's, and the tenant's own `name` from the catalogue is used — which
+ * is a fact they wrote, not a guess this repository made. With neither, the code
+ * is rendered as the opaque token it is.
+ */
+export function workOrderStateLabel(
+  code: string,
+  catalogue: readonly WorkOrderStateCatalogueEntry[],
+  translateKey: (key: string) => string
+): string {
+  const key = workOrderStateMessageKey(code);
+  if (key !== null) return translateKey(key);
+  const entry = catalogue.find((state) => state.code === code);
+  return entry?.name ?? code;
+}
+
+/**
+ * The job-state codes seeded at PLATFORM scope, transcribed from
+ * `supabase/seeds/06_wo_job_state_graph.sql` — the same dual-scope rule as
+ * `PLATFORM_WORK_ORDER_STATES`: these six are a fact about the platform and
+ * are said in the operator's language; a code a workshop added is not, and is
+ * drawn as the code it is rather than a guess (browser QA, row B.S3: the job
+ * list and the technician's queue printed `in_progress` as written).
+ */
+export const PLATFORM_JOB_STATES = [
+  'planned',
+  'assigned',
+  'in_progress',
+  'paused',
+  'completed',
+  'cancelled',
+] as const;
+
+/** A job state in words for the platform's six, the code itself for any other. */
+export function jobStateLabel(code: string, translateKey: (key: string) => string): string {
+  return (PLATFORM_JOB_STATES as readonly string[]).includes(code)
+    ? translateKey(`workOrders.jobState.${code}`)
+    : code;
+}
+
+/** The two assignment roles `wo.job_assignments` admits, in words; any other keeps its code. */
+export function assignmentRoleLabel(code: string, translateKey: (key: string) => string): string {
+  return code === 'primary' || code === 'assist'
+    ? translateKey(`workOrders.assignmentRole.${code}`)
+    : code;
+}
+
+/**
+ * What an action on one work-order row is ABOUT, for assistive technology — the
+ * words appended to the action's name so a page of "Open" links is a page of
+ * different links.
+ *
+ * The work-order number when the order has one. A draft has none yet, and
+ * before this every such row's link carried the same name (the residual #471
+ * recorded), so the row is then named by what the operator can see on it: the
+ * plate, the vehicle, the customer and the moment it was opened — never the
+ * internal identifier. `opened` is the moment as the row shows it, formatted by
+ * the caller on the branch's clock.
+ */
+export function workOrderRowAbout(
+  row: Pick<WorkOrderListEntry, 'displayNumber' | 'vehicle' | 'customer'>,
+  opened: string
+): string {
+  if (row.displayNumber) return row.displayNumber;
+  return [
+    row.vehicle.registrationPlate,
+    row.vehicle.makeModel,
+    row.customer?.displayName ?? null,
+    opened,
+  ]
+    .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+    .join(' · ');
+}
+
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * A separate list from `WORK_ORDER_REFUSAL_KEYS`, which names the STATE
+ * refusals a command answers — "this order is closed to new work" and its
+ * siblings. These two are about the REQUEST: a state code sent beside a state
+ * group, and a completion window whose end precedes its start.
+ *
+ * Both are unreachable from the board as it is built — the controls cannot hold
+ * a code and a group at once, and an inverted window is refused at the field —
+ * and they are catalogued anyway. A refusal that reaches an operator as a raw
+ * token is the failure the catalogue exists to prevent, and "it cannot happen"
+ * is the sentence that is true right up until a screen changes.
+ */
+export const WORK_ORDER_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.state_and_group_exclusive',
+  'form.violation.completion_window_inverted',
+]);
+
+/** `MAX_WORK_ORDER_SEARCH_FRAGMENT` in the domain. */
+export const MAX_WORK_ORDER_SEARCH = 80;
+/** `MIN_WORK_ORDER_SEARCH_FRAGMENT` in the domain: the free-text box only. */
+export const MIN_WORK_ORDER_SEARCH = 2;
+
+/**
+ * The board's quick views — exactly the requests the list operation can be sent.
+ *
+ * Here rather than inside the board because a SECOND screen now names one: the
+ * dashboard links a figure to the view that shows the rows behind it, and a
+ * link built from a name the board does not recognise lands on the unfiltered
+ * list while looking like it worked. One declaration, and both sides of the
+ * link are checked against it.
+ */
+export const WORK_ORDER_BOARD_VIEWS = [
+  'active',
+  'all',
+  'openedToday',
+  'completedToday',
+  'mine',
+  'awaitingApproval',
+  'awaitingParts',
+  'awaitingQuality',
+  'readyForDelivery',
+] as const;
+
+export type WorkOrderBoardView = (typeof WORK_ORDER_BOARD_VIEWS)[number];
+
+/**
+ * The view the board opens on when nothing else is asked for: the work that is
+ * still the workshop's problem. An address that names no view means this one,
+ * which is why a link to it says nothing.
+ */
+export const WORK_ORDER_BOARD_DEFAULT_VIEW: WorkOrderBoardView = 'active';
+
+/** Whether an arriving name is one of the nine. Anything else is discarded. */
+export function isWorkOrderBoardView(value: string): value is WorkOrderBoardView {
+  return (WORK_ORDER_BOARD_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * The shape a state code may take, mirrored from the list operation's own
+ * schema (`^[a-z][a-z0-9_]{1,62}$`).
+ *
+ * A code is a declared vocabulary term, not something an operator types, so it
+ * is the one filter value that may travel in an address. This pattern is what a
+ * value arriving from one has to satisfy before it is believed.
+ */
+export const WORK_ORDER_STATE_CODE_PATTERN = /^[a-z][a-z0-9_]{1,62}$/;
 
 /* ------------------------------------------------------------------ *
  * W3 — the work-order detail
@@ -164,6 +506,28 @@ export interface WorkOrderJob {
   readonly departmentId: string | null;
   readonly state: string;
   readonly requiresDiagnostic: boolean;
+  readonly recordVersion: number;
+}
+
+/**
+ * One service line of a work order — the published `LineRow` of
+ * `wo.service-line-list`, which is `GET /work-orders/{workOrderId}/service-lines`
+ * and takes `wo.work_order.read`.
+ *
+ * Typed here so a picker can offer the lines instead of asking an operator to
+ * type a 36-character identifier the product publishes nowhere (DEF-M-05). The
+ * line's own `id` is what a material requirement binds to; `description`,
+ * `quantity` and `unit` are what makes it recognisable to the person choosing.
+ * `quantity` is an exact decimal string, as every quantity on the wire is.
+ */
+export interface WorkOrderServiceLine {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly jobId: string | null;
+  readonly description: string;
+  readonly quantity: string;
+  readonly unit: string;
+  readonly reference: string | null;
   readonly recordVersion: number;
 }
 
@@ -226,3 +590,40 @@ export interface DepartmentOption {
   readonly status: string;
   readonly recordVersion: number;
 }
+
+/* ------------------------------------------------------------------ *
+ * The refusal reasons the work-order commands publish
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every rule token the work-order services publish for a state refusal a user
+ * can reach, mirrored so the catalogue can be held against it.
+ *
+ * One catalogue code covers "this order is closed to new work", "parts are
+ * still held so it cannot be closed", "the customer has not agreed to this
+ * quotation" and a dozen other refusals with different cures. The interface
+ * renders no server prose, so without a token every one of them reached a
+ * service adviser as the same line. The token selects the sentence; the
+ * sentence names the reason and what to do next.
+ *
+ * Mirrored rather than imported, because this workspace may not import backend
+ * source. `tests/field-error-translation.test.ts` asserts every entry has a
+ * sentence in both catalogues, so a token with no wording fails a test instead
+ * of reaching a screen as a raw name.
+ */
+export const WORK_ORDER_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.work_order_closed_to_lines',
+  'form.violation.work_order_closed_to_jobs',
+  'form.violation.work_order_closed_to_job_changes',
+  'form.violation.work_order_stock_still_held',
+  'form.violation.work_order_rework_needs_closed_order',
+  'form.violation.work_order_rework_on_cancelled',
+  'form.violation.work_order_visit_not_ready',
+  'form.violation.work_order_closed_to_extra_work',
+  'form.violation.work_order_extra_work_not_approved',
+  'form.violation.work_order_extra_work_already_settled',
+  'form.violation.work_order_extra_work_already_decided',
+  'form.violation.work_order_quotation_not_issued',
+  'form.violation.work_order_quotation_expired',
+  'form.violation.work_order_quotation_not_accepted',
+]);

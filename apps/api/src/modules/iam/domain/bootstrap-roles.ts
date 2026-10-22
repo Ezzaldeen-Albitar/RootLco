@@ -59,10 +59,19 @@
  * delegate a code it does not hold. Both are held, and so is `org.tenant.read`
  * — the same screen's Workspace card (`iam.tenant-settings-read`), which the
  * production build refused to the first administrator of its own organization.
- * The settings WRITES (`org.settings.manage`, `org.company.manage`,
- * `org.branch.manage`) stay out: no walked route on the journey declares them,
- * and the card renders read-only without them (residual W9-R2, Owner
- * disposition requested in the derivation record).
+ * The settings WRITE `org.settings.manage` was kept out on the same ground — no
+ * walked route on the journey declared it, and the card rendered read-only
+ * without it (residual W9-R2). The Owner disposed of W9-R2 on 2026-09-27 and the
+ * code is now carried; see the section at the end of this comment.
+ * `org.company.manage` and `org.branch.manage` were withheld on that same ground
+ * until the Owner directive of 2026-09-16 shipped `org.company-create` and
+ * `org.branch-create`, which declare them. The Owner decided they are carried:
+ * without them the first administrator of an organisation could never add a
+ * second legal company or a second branch, and nobody else in the organisation
+ * could either, because nobody could be delegated a code nobody holds.
+ * Organisations provisioned before that decision are brought up to the bundle by
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs`, which reads this
+ * list rather than carrying a copy of it.
  *
  * `wo.job.transition` was excluded because no W1–W8 adapter calls it — and
  * that is exactly why it must be held: a job accepts labour, diagnostics and
@@ -109,6 +118,513 @@
  * The bundle is written ONCE, at provisioning. Organisations created before this
  * slice keep the set they were given; bringing them forward is a backfill
  * decision, recorded as a residual rather than performed here.
+ *
+ * ## The P1-31 delivery, warranty and reporting block (prerequisite P-1)
+ *
+ * The same closure a third time, in a third namespace. The P1-31 A0 preflight
+ * (`docs/phase-1/phase-1-31/a0-preflight.md`, prerequisite P-1) measured that
+ * neither bootstrap role held ANY `sal.delivery`, `wty.`, `rpt.` or `iam.audit`
+ * code, and `ins_role_permissions_delegable` admits a mapping only when the
+ * acting administrator already holds the code being mapped. So no principal in
+ * an organisation created by `platform.organization-provision` could hold one,
+ * or ever be granted one — closing all sixteen P1-31 scope items and the audit
+ * screen that already ships.
+ *
+ * The six codes added below are DERIVED by the rule the P1-30 A0 matrix set:
+ * a code is proposed only when a SHIPPED operation declares it, and each is
+ * already a row in the permission catalogue seed — this slice mints nothing and
+ * adds no migration. Declaration is the NECESSARY condition, not the sufficient
+ * one: `rpt.export` clears it and is still withheld (CC-04 below). Each one,
+ * with the operation that declares it:
+ *
+ *  - `sal.delivery.manage` — `sal.delivery-create`, `sal.delivery-receiver-verify`,
+ *    `sal.delivery-checklist-record`, `sal.delivery-signature-attach`, and the
+ *    INSERT half of `ins_authorized_receivers_gated` / the signatures policy.
+ *  - `sal.delivery.view` — the eligibility read and the SELECT half of
+ *    `sel_authorized_receivers_gated` and `sel_delivery_signatures_gated`. Not
+ *    bookkeeping: `sal.complete_delivery` is `SECURITY INVOKER` and two of its
+ *    three gates read those tables, so a holder without it is told there is no
+ *    authorized receiver for a delivery whose receiver is verified. A0 measured
+ *    the eligibility read failing on this ONE code, the bundle already holding
+ *    its companion `sal.finance.view`.
+ *  - `sal.delivery.complete` — `sal.delivery-complete`, and the sole overridable
+ *    blocker (`financial_balance_outstanding`, `OVERRIDABLE_BLOCKERS`). The
+ *    high-risk authority is held on the same reasoning as `wo.work_order.close`
+ *    and `qms.quality_control.finalize`, which the bundle already carries: an
+ *    administrator can build a delivery-officer role only out of codes it holds.
+ *  - `wty.warranty.issue` — `wty.warranty-generate`. It also gated
+ *    `wty.warranty-detail` until 2026-09-08; see the P-7 entry below.
+ *  - `rpt.report.read` — `rpt.report-catalogue` and `rpt.report-read`.
+ *  - `iam.audit.view` — `iam.audit-event-list`, `iam.audit-event-detail` and the
+ *    four `sel_*_permitted` audit policies. The Audit Log screen already ships.
+ *
+ * ### CC-01 AND CC-02 ARE NOW CLOSED; ONE exclusion remains (P1-31 CC-04)
+ *
+ * The three were excluded on two different grounds, and the kinds were never
+ * recorded as though they were the same. Two were excluded because nothing
+ * declared them; the third is excluded although something does. The undeclared
+ * pair are now both declared, and both are held below; the third is still
+ * withheld, and on grounds that have not moved.
+ *
+ * `wty.policy.manage` was the first of the undeclared pair, and **P-10 closed
+ * it on 2026-09-09 exactly as CC-01 said it would.** The code is now declared by
+ * five registered operations — `wty.warranty-policy-create`,
+ * `wty.warranty-policy-rename`, `wty.warranty-policy-status-set`,
+ * `wty.warranty-coverage-create` and `wty.warranty-coverage-status-set` — which
+ * publish the warranty policy and coverage write surface PPD-04 measured as
+ * absent. So the ground for withholding it is gone, and the rule CC-01 stated
+ * applies: "the slice that publishes them owns the widening". It is held below.
+ *
+ * Withholding it now would be worse than withholding it was: `resolvePolicy`
+ * refuses a company with no active warranty policy, so an administrator who
+ * could not create one could never issue a warranty in a freshly provisioned
+ * organisation, and could not delegate the authority to anyone either.
+ *
+ * `rpt.report.configure` was the second, and **P-11 closed it on 2026-09-09
+ * exactly as CC-02 said it would.** The code is now declared by seven registered
+ * operations — the two report-configuration reads and the five commands that
+ * create, rename, re-status, version and publish-a-version of a report
+ * definition — which publish the configuration write surface A0 measured as
+ * absent. The same rule applies, and it is held below.
+ *
+ * Withholding it now would be worse than withholding it was for the same shape
+ * of reason: both published report reads filter on `status = 'published'`, and
+ * nothing but this code can set that value — so an administrator who could not
+ * configure a report could never see one either, in a freshly provisioned
+ * organisation, and could not delegate the authority to anyone.
+ *
+ * EXISTING organisations do not gain either code automatically — this constant
+ * is read at provisioning time — so
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` owes them ONE
+ * operator run covering both newly approved codes, exactly as it did for the P-1
+ * and P-7 widenings. The run is an operator act and is not performed by this
+ * slice.
+ *
+ * Both followed the `inv.item.manage` sequence exactly: excluded here while no
+ * route declared the code, and carried on the day the routes that declare it
+ * landed — #322 for `inv.item.manage`, P-10 for `wty.policy.manage`, P-11 for
+ * `rpt.report.configure`.
+ *
+ * `rpt.export` is the third and now the only one, and it is excluded on
+ * DIFFERENT grounds — least
+ * privilege, by an explicit Owner decision of 2026-09-08 (CC-04). Two shipped
+ * operations do declare it, `shared.export-authorize` and
+ * `shared.export-catalogue`, so the "nothing declares it" rule above would have
+ * carried it. What that rule does not weigh is REACH: `rpt.export` is not a
+ * P1-31 code at all but the platform-wide export switch of P1-15, and the
+ * bundle already holds the entitlements all three registered resources use
+ * (`shared.document.read`, `org.branch.read`) and the sensitive-field second
+ * permission (`iam.sensitive.view`). Carrying it would therefore let the
+ * administrator of a one-day-old organisation authorize bulk export of
+ * documents, outbound messages and branch data, sensitive fields included,
+ * before anyone had decided that it should.
+ *
+ * Excluding it delays nothing that this phase can reach. The reporting items
+ * that would consume an export are still blocked regardless — P-11 published the
+ * report CONFIGURATION writer and deliberately not the engine, which waits on
+ * Owner decision D-4, so there is still no way to run a report and no
+ * `POST /reports/{reportCode}:export` route (P-12) — so the only capability
+ * withheld today is the one described above. CONSEQUENCE, on the same terms
+ * CC-01 and CC-02 were recorded in before they closed: a freshly provisioned
+ * administrator is refused `ERR-IAM-001` by `shared.export-catalogue` and
+ * `shared.export-authorize`, and cannot delegate the code to anyone. It is
+ * revisitable — when the export contract exists and the need is demonstrated,
+ * the slice that publishes it owns the widening.
+ *
+ * The bundle is still written ONCE, at provisioning. The pilot organisation and
+ * every other organisation provisioned before this slice keep the set they were
+ * given; the backfill remains the unperformed decision recorded above and as
+ * P1-31 A0 decision D-2.
+ *
+ * ## The seventh P1-31 code: `wty.warranty.read` (prerequisite P-7, CC-07)
+ *
+ * The warranty read seam mints ONE permission — the only shipping insert this
+ * phase makes into `iam.permissions` — and the bundle carries it. The reasoning is
+ * the same rule, applied rather than reflexed:
+ *
+ *  - **Declared by shipped operations**, the necessary condition: `wty.warranty-list`
+ *    (new) and `wty.warranty-detail` (re-pointed from the write code it was wrongly
+ *    gated on). That is two declarers, where CC-01 and CC-02 each withheld a code
+ *    with zero — until P-10 published five for `wty.policy.manage` and P-11 seven
+ *    for `rpt.report.configure`, and both codes were carried on the same rule.
+ *  - **Reach, the question CC-04 added**, and it is the opposite answer.
+ *    `rpt.export` is a platform-wide switch over every registered export resource;
+ *    `wty.warranty.read` reads warranty records, their coverage terms and their
+ *    covered jobs and parts in ONE schema. `wty` has 80 columns, all classified
+ *    `internal` and none `restricted`, and NOT ONE is monetary — so the code
+ *    confers no money, no restricted identifier and no write of any kind.
+ *  - **Withholding it would REMOVE a capability**, which none of CC-01, CC-02 or
+ *    CC-04 does. A freshly provisioned administrator can read a warranty today,
+ *    through `wty.warranty.issue`, which this bundle already holds. Re-pointing
+ *    the detail read without carrying the read code would take that away — a
+ *    regression dressed as least privilege. Least privilege here means the
+ *    administrator reads warranties under a READ code instead of an ISSUE code,
+ *    not that it stops reading them.
+ *
+ * Nothing is withdrawn: `wty.warranty.issue` stays, because
+ * `wty.warranty-generate` still declares it and an administrator that could not
+ * hold it could not delegate a warranty clerk.
+ *
+ * ## The five P1-32 material codes (slice 3c, P1-32-PRE-134)
+ *
+ * Slice 3a minted `inv.material.request`, `inv.material.approve`,
+ * `inv.material.exception.approve`, `inv.unit_conversion.manage` and
+ * `inv.specification.manage` together with their schema; slice 3b published the
+ * operations that declare them. They were withheld until slice 3c on the "nothing
+ * declares it" rule — and slice 3c made the withholding a CLOSURE rather than a
+ * delay: since P1-32-PRE-132 EVERY reservation and issue for a work order draws on an
+ * approved material requirement, so a freshly provisioned organisation whose
+ * administrator could not ask for, approve or delegate one could never issue a part
+ * to a job at all. The sequence is the one `inv.item.manage`, `wty.policy.manage` and
+ * `rpt.report.configure` went through: carried on the day the rule that required
+ * withholding stopped being true.
+ *
+ * The split, as the codes are held and delegated:
+ *
+ *  - REQUESTERS hold `inv.material.request`: asking for material on a service line,
+ *    asking for an exception, re-checking a requirement once its missing fact exists,
+ *    cancelling a requirement nothing is committed against, and closing or cancelling
+ *    a material request. It is added to every bundle that already REQUESTS parts —
+ *    i.e. that holds `inv.stock.operate`, the authority to reserve and issue.
+ *  - APPROVERS hold `inv.material.approve` (how much a job may take) and EXCEPTION
+ *    approvers `inv.material.exception.approve` (a finite quantity beyond it). They
+ *    are added only to a bundle that already APPROVES — one that holds
+ *    `inv.adjustment.approve`, the existing second-person inventory authority. The
+ *    requester of a requirement or an exception can never decide it
+ *    (`ck_material_requirements_separation`,
+ *    `ck_material_requirement_exceptions_separation`), so holding both halves confers
+ *    nothing but the ability to decide OTHER people's requests.
+ *  - `inv.unit_conversion.manage` and `inv.specification.manage` belong to whoever
+ *    maintains parts reference data: a bundle that already holds `inv.item.manage`.
+ *    They change what every later requirement is measured against, so they are not a
+ *    requester's or an approver's codes.
+ *
+ * Measured against the bundles this file ships: `first_owner` holds none of
+ * `inv.stock.operate`, `inv.adjustment.approve` or `inv.item.manage` and gains
+ * nothing. `tenant_administrator` holds all three, so it carries all five — to be
+ * exercised, and above all to be DELEGATED, because a service-advisor, parts-keeper
+ * or workshop-controller role is one the Owner builds from codes the administrator
+ * holds. No other shipped bundle exists: those roles are tenant configuration, and
+ * the split above is the rule an Owner-built role follows.
+ *
+ * Organisations provisioned before this slice keep the set they were given;
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` owes them one operator
+ * run covering the five codes, and that run is not performed by this slice. The
+ * transfer write-off slice 3a added needs no new code: it is approved under
+ * `inv.adjustment.approve`.
+ *
+ * ## The three codes the QA campaign found closed (Owner directive, 2026-09-17)
+ *
+ * A fifth instance of the same closure, in three namespaces at once, and this one
+ * was found by exercising the product rather than by walking a phase's routes.
+ * Each of the three codes below is declared by at least one SHIPPED operation and
+ * already exists in the permission catalogue seed — this widening mints nothing
+ * and adds no migration — and none of them was in the bundle, so under
+ * `ins_role_permissions_delegable` no principal in any platform-provisioned
+ * organisation could hold one or ever be granted one. The capability was not
+ * merely withheld from the first administrator: it was shut for the whole
+ * organisation, permanently. Each one, with the operations that declare it and
+ * the consequence measured:
+ *
+ *  - `wo.work_order.line.manage` — `wo.service-line-record` and
+ *    `wo.required-part-record`. Without it a work order can be created,
+ *    transitioned and closed but can never say WHAT work is on it, and no part
+ *    can ever be required against it. Since every reservation and issue now
+ *    draws on an approved material requirement, and a requirement is asked for
+ *    against a line, this one absence closed the whole material-demand surface
+ *    the P1-32 material codes above were carried to open. The bundle already
+ *    holds `wo.job.manage` and `wo.work_order.transition`, so this is the
+ *    narrower of the two authorities, not a wider one.
+ *  - `crm.customer.profile.write` — `crm.contact-add`, `crm.address-add` and
+ *    `crm.preference-set`. The bundle already carries `crm.customer.create`, so
+ *    a freshly provisioned organisation could register a customer and then never
+ *    record a telephone number, an address or a preference for it — including
+ *    for the customer whose vehicle it had just received.
+ *  - `rec.reception.evidence.manage` — `rec.reception-condition-evidence`,
+ *    `rec.reception-evidence-binding` and `rec.reception-evidence-binding-finalize`.
+ *    The bundle already carries the whole reception path from check-in to
+ *    conversion, and this is the one step in the middle of it that nobody could
+ *    perform: the pre-service condition record a workshop is answerable for.
+ *
+ * ### `inv.cost.view` STAYS EXCLUDED, and the consequence is owed to the Owner
+ *
+ * The same campaign measured a FOURTH code the same way, and this file does not
+ * carry it. The measurement stands and is recorded here rather than acted on.
+ *
+ * `inv.cost.view` is declared by `inv.item-cost-history-read`, and it is read as a
+ * SECOND permission by the receipt, adjustment and external-purchase services —
+ * and by RLS on `inv.item_cost_layers` — before a unit cost will be accepted or
+ * returned. So QA's DEF-T-03 is true as measured: in an organisation the shipped
+ * provisioning operation created, NOBODY can record a unit cost on anything
+ * received. An unheld code cannot be delegated, so the first administrator cannot
+ * hand the authority to anyone either; no cost layer can be written, and no
+ * valuation and no margin can be derived from one.
+ *
+ * It is not carried here because its exclusion is an EXISTING RECORDED DECISION,
+ * and reversing a recorded decision is the Owner's act and not this slice's.
+ * `docs/phase-1/phase-1-30/change-control-2026-09-06.md` CC-12, still open, files
+ * the `inv.cost.view` exclusion from this bundle as DELIBERATE, cites the P1-30 A0
+ * matrix for it, and carries it as register gap E-14. The ground that decision
+ * rests on is the code's own classification — `high`, disclosing purchase cost.
+ * The three codes carried above have no such record against them, which is the
+ * whole difference between them and this one.
+ *
+ * The disposition is therefore: measured, unresolved, and awaiting an Owner
+ * decision. If the Owner decides the cost authority belongs in the first
+ * administrator's bundle, the change is one entry in the list below plus the
+ * backfill run named next. If the Owner decides it stays a separately granted
+ * authority, DEF-T-03 still needs an answer — an operator grant made after
+ * provisioning — and that answer is not this constant.
+ *
+ * Organisations provisioned before this widening keep the set they were given;
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at
+ * run time and needs no edit, so they owe ONE operator run covering all three
+ * codes — one run, not one each. That run is an operator act and is not performed
+ * by this slice, and this slice does not claim it was run anywhere.
+ *
+ * ## `sal.credit.manage` — credit notes, by Owner decision
+ *
+ * The sixth instance of the same closure, and the first one carried on an explicit
+ * Owner decision rather than on the "a shipped operation declares it" rule alone.
+ * Four shipped operations declare the code — `sal.credit-note-create`,
+ * `sal.credit-note-approve`, `sal.credit-note-list` and `sal.credit-note-detail`,
+ * each together with `sal.finance.view`, which this bundle already carries — and the
+ * code is already a row in the permission catalogue seed, so nothing is minted. The
+ * QA campaign measured the
+ * consequence of its absence (result matrix part 5 row 6.19, part 7 row 5.9): a
+ * customer return raises a credit note and says a second person must approve it,
+ * and nobody in a platform-provisioned organisation could read, request or approve
+ * one, because nobody held the code and `ins_role_permissions_delegable` let nobody
+ * be given it.
+ *
+ * The diagnosis was a MISSING DEFAULT GRANT and nothing else: the delegation rule
+ * applies to this code exactly as to every other — an actor maps or grants only what
+ * it holds — and there is no platform-only flag, assignable-codes list or grant
+ * ceiling that singles it out. So the repair is one entry below and no migration.
+ *
+ * The Owner decided the standard tenant administrator holds it, scoped to its own
+ * organisation and under the controls that already bind every credit note, none of
+ * which this entry relaxes: every credit-note operation is `scope: 'branch'`, so a
+ * branch-scoped grant confines it; the request is born `pending` and credits
+ * nothing (`sal.stamp_dual_control_maker`); approval is refused to the person who
+ * requested it (`ck_credit_notes_approved_distinct`), so an administrator who holds the code
+ * still needs a SECOND person — one it can now delegate the code to — before any
+ * receivable moves; and the request and the approval each append their own audit
+ * record (`sal.credit_note.requested`, `sal.credit_note.approved`).
+ *
+ * Carried here and NOWHERE else. `first_owner` stays frozen at its three IAM codes,
+ * and no cashier, employee or other role gains anything: those are tenant roles an
+ * administrator builds, and it now CAN give this code to a finance approver it
+ * chooses — which is the point.
+ *
+ * Organisations provisioned before this entry keep the set they were given.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at run
+ * time, so it owes them ONE operator run; that run adds the code only to an
+ * administrator role that is still the standard one, and skips and reports every
+ * role the organisation has customised. The run is an operator act, not performed by
+ * this change.
+ *
+ * ## `sal.credit.approve` — deciding a credit note, by Owner decision D13
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D13) that approving a credit note is
+ * its own authority with its own limit, never inherited from `sal.credit.manage` or
+ * from a discount limit. The code is MINTED by that decision (seeded in
+ * `04_iam_permission_catalog.sql`), and `sal.credit-note-approve` and
+ * `sal.credit-note-reject` now declare it in place of `sal.credit.manage`;
+ * requesting and withdrawing keep `sal.credit.manage`.
+ *
+ * The standard tenant administrator carries it because it is the one standard role
+ * that carried credit approval before, through `sal.credit.manage` — there is no
+ * standard finance-manager role, so no other role is widened. Carrying it changes
+ * no control: the approver is still never the requester, holds the code in the
+ * note's own company and branch, and approves only within a `credit_note` approval
+ * limit in the note's currency that somebody else set and that covers the
+ * invoice's cumulative approved credit. An administrator holding the code and no
+ * such limit can reject a note but approve none, and it can now delegate the code
+ * to a finance approver it chooses.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so
+ * nobody in them can approve a credit note until an administrator who holds the
+ * code grants it and a credit-note limit is set — a behaviour change by design of
+ * D13. `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list
+ * at run time; by the Owner's decision it is run only for the previously authorised
+ * QA organisations (`--tenant odqa_alpha --tenant odqa_beta`), and it skips and
+ * reports every administrator role an organisation has customised. Other existing
+ * organisations are left unchanged. The run is an operator act, not performed by
+ * this change.
+ *
+ * ## `sal.reversal.approve` — deciding a receipt reversal, by Owner decision D4
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D4) that a mis-recorded receipt is
+ * corrected by a full reversal REQUESTED by an authorised payment recorder and
+ * APPROVED by a different authorised person, and that no credit-note code grants
+ * that power. `sal.reversal.approve` ("Approve receipt reversals (dual control)")
+ * has been seeded in `04_iam_permission_catalog.sql` since Phase 1-11 for exactly
+ * this decision and bound to no operation until now; `sal.receipt-reversal-approve`
+ * and `sal.receipt-reversal-reject` declare it, while requesting and withdrawing
+ * declare `sal.payment.record`, which this role already carries.
+ *
+ * The standard tenant administrator carries it because it is the one standard role
+ * that carries the finance codes at all — there is no standard finance-manager
+ * role, so no other role is widened. Carrying it changes no control: the approver
+ * is never the requester and holds the code in the receipt's own company and
+ * branch, and an administrator can now delegate the code to the finance approver
+ * it chooses.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so
+ * nobody in them can approve or reject a receipt reversal until an administrator
+ * who holds the code grants it — a behaviour change disclosed in ADR-023 D4.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at
+ * run time; by the Owner's decision it is run only for the previously authorised
+ * QA organisations (`--tenant odqa_alpha --tenant odqa_beta`), and it skips and
+ * reports every administrator role an organisation has customised. Other existing
+ * organisations are left unchanged. The run is an operator act, not performed by
+ * this change. The code is already seeded, so no seed run is owed for it.
+ *
+ * ## `sal.payment.third_party` — a third-party payer, by Owner decision D14
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D14) that applying a receipt to an
+ * unrelated customer's invoice is refused by default, and that a payment from an
+ * insurer or an employer is accepted only through explicit, authorised, audited
+ * third-party handling. `sal.payment.third_party` ("Allocate a receipt to another
+ * customer's invoice as a third-party payment") is MINTED for that authority in
+ * `04_iam_permission_catalog.sql`. No operation DECLARES it: `sal.payment-allocate`
+ * keeps `sal.payment.allocate` and `sal.finance.view`, and consults this code only
+ * when the allocation is a third-party one, in the receipt's own company and branch
+ * — the service asks first so the refusal is named, and the BEFORE INSERT trigger
+ * `sal.guard_allocation_payer` asks again, whoever writes the row.
+ *
+ * The standard tenant administrator carries it for the reason it carries the other
+ * finance codes: it is the one standard role that carries them at all, and it can
+ * now delegate the code to the finance person it chooses. Carrying it changes no
+ * control: a third-party allocation still names its relationship, authorisation
+ * reference and reason, records who authorised it, and moves nothing between the
+ * two parties.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so an
+ * allocation across customers that technically worked before is now refused in
+ * them, and nobody there can make a third-party allocation until an administrator
+ * who holds the code grants it — a behaviour change disclosed in ADR-023 D14. The
+ * code is minted by a seed, so `04_iam_permission_catalog.sql` is re-run on an
+ * existing database first; `scripts/platform/backfill-tenant-administrator-bundle.mjs`
+ * then reads this list at run time and, by the Owner's decision, is run only for
+ * the previously authorised QA organisations (`--tenant odqa_alpha --tenant
+ * odqa_beta`), skipping and reporting every administrator role an organisation has
+ * customised. Other existing organisations are left unchanged. Both runs are
+ * operator acts, not performed by this change.
+ *
+ * ## `sal.refund.approve` — deciding a refund request, by Owner decision D2
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D2) that money a customer is owed back
+ * is never refunded automatically, and that approving a refund and paying it out are
+ * separate steps with a second approver. `sal.refund.approve` ("Approve and reject
+ * refund requests (dual control)") is MINTED for that decision in
+ * `04_iam_permission_catalog.sql` (P1-32-PRE-OD-FD2B); `sal.refund-approve` and
+ * `sal.refund-reject` declare it, while requesting, withdrawing and recording the
+ * payout declare `sal.payment.record`, which this role already carries. No other code
+ * satisfies it — not a credit-note code and not `sal.reversal.approve`.
+ *
+ * The standard tenant administrator carries it for the reason it carries the other
+ * finance decision codes: it is the one standard role that carries them at all, and
+ * it can now delegate the code to the finance approver it chooses. Carrying it changes
+ * no control: the approver is never the requester and holds the code in the
+ * obligation's own company and branch, and an approval pays nothing.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so nobody
+ * in them can approve or reject a refund request until an administrator who holds the
+ * code grants it — a behaviour change disclosed in ADR-023 D2 and recorded as
+ * CC-OD-58. The code is minted by a seed, so `04_iam_permission_catalog.sql` is
+ * re-run on an existing database first; `scripts/platform/backfill-tenant-administrator-bundle.mjs`
+ * then reads this list at run time and, by the precedent of D4, D13 and D14 (an open
+ * Owner question for this code, README question 22), is run only for the previously
+ * authorised QA organisations (`--tenant odqa_alpha --tenant odqa_beta`), dry run
+ * first, skipping and reporting every administrator role an organisation has
+ * customised. Other existing organisations are left unchanged. Both runs are operator
+ * acts, not performed by this change.
+ *
+ * ## `org.settings.manage` — the organisation's own settings, by Owner decision
+ *
+ * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
+ * own organisation's operational settings, its default language and time zone
+ * included, which closes residual W9-R2. The scope was measured before the code was
+ * carried, and every operation that declares it is tenant-bound by the database:
+ *
+ *  - `iam.tenant-settings-update` changes the caller's own tenant row and only its
+ *    display name, default language and default time zone. Those three are the only
+ *    columns `app_runtime` may update on `org.tenants`, and `upd_tenants_settings`
+ *    admits the row only when `id = iam.current_tenant_id()`. The tenant code and the
+ *    status are not writable here; status stays a platform operator act.
+ *  - `iam.company-settings-write` and `iam.branch-settings-write` append a versioned
+ *    key and value for a company or branch inside the caller's scope. That includes
+ *    the numbering, tax and currency slots the settings screens write, and nothing on
+ *    the server reads any of those keys to decide a price, a discount, an approval
+ *    limit, a credit note, a payment or an invoice's tax.
+ *  - `shared.branch-status-change` activates or deactivates a branch of the caller's
+ *    own organisation, with a stated reason.
+ *  - The eight message-template operations author, approve, retire and activate the
+ *    organisation's own templates; platform templates stay read-only.
+ *
+ * None of them reaches another organisation, a platform setting, a subscription or
+ * plan, sign-in or session policy, roles and grants, or a financial control. Those
+ * stay behind their own codes (`platform.*`, `org.subscription.manage`,
+ * `iam.role.manage`, `iam.grant.manage`, `svc.price.manage`, `iam.approval.manage`,
+ * `sal.credit.manage`), and carrying this code changes none of them.
+ *
+ * Organisation-wide settings belong to the organisation's administrator, so the code
+ * is carried HERE and nowhere else: no company or branch manager role gains it, and
+ * `first_owner` stays frozen at its three IAM codes. A company or branch manager an
+ * organisation builds holds it only if its administrator decides to delegate it.
+ *
+ * A changed default language or time zone applies to what is shown and entered from
+ * then on. It rewrites no stored record: timestamps are stored as instants, and every
+ * branch keeps the time zone it was given.
+ *
+ * Organisations provisioned before this entry keep the set they were given.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at run
+ * time; by the same decision it is run only for the previously authorised QA
+ * organisations, and it skips and reports every administrator role an organisation
+ * has customised. Other existing organisations are left unchanged for now. The run is
+ * an operator act, not performed by this change.
+ *
+ * ## The four appointment codes — by Owner decision
+ *
+ * The Owner decided on 2026-09-29 that the standard tenant administrator holds all
+ * four appointment codes, and that the appointment setup screen is built so the
+ * organisation can enter its own appointment types, booking channels and
+ * cancellation reasons. The four already exist in the permission catalogue seed, so
+ * nothing is minted. The scope was measured before they were carried: twenty-one
+ * operations declare them, every one of them in the reception module, and every one
+ * of them bound to the caller's own organisation by the database:
+ *
+ *  - `apt.appointment.read` — `apt.appointment-list`, `apt.appointment-detail` and
+ *    the three booking pickers (`apt.catalogue-*-list`). They read appointments and
+ *    the active catalogue entries. The list and the detail also show the vehicle's
+ *    number and the requesting customer's display name, read-only, through a join
+ *    on the same organisation; nothing else of the customer or the vehicle is read.
+ *  - `apt.appointment.manage` — `apt.appointment-create` and
+ *    `apt.appointment-reschedule`, branch-scoped and audited.
+ *  - `apt.appointment.lifecycle.manage` — `apt.appointment-cancel` (a catalogued
+ *    reason is required) and `apt.appointment-no-show`, branch-scoped and audited.
+ *  - `apt.catalogue.manage` — the create, rename and retire-or-restore commands and
+ *    the full lists of the three appointment catalogues. A new entry is always the
+ *    organisation's own; a shared platform entry cannot be changed here, and each
+ *    change is audited.
+ *
+ * None of them reaches another organisation, a platform setting, a subscription or
+ * plan, sign-in or session policy, roles and grants, or a financial control, and none
+ * writes a customer or a vehicle.
+ *
+ * Carried HERE and nowhere else: `first_owner` stays frozen at its three IAM codes,
+ * and no front-desk or reception role gains anything by this entry — whether they
+ * should is a later decision. An administrator can now delegate the codes to the
+ * roles it builds, which is the point.
+ *
+ * Organisations provisioned before this entry keep the set they were given.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at run
+ * time; by the same decision it is run only for the previously authorised QA
+ * organisations, and it skips and reports every administrator role an organisation
+ * has customised. Other existing organisations are left unchanged. The run is an
+ * operator act, not performed by this change.
  */
 
 export interface BootstrapRoleDefinition {
@@ -130,7 +646,7 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
   code: 'tenant_administrator',
   name: 'Tenant Administrator',
   description:
-    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29 and P1-30 personas need, so that they can be delegated.',
+    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29, P1-30, P1-31 and P1-32 personas need, so that they can be delegated.',
   permissionCodes: Object.freeze([
     // Session reachability and IAM administration (direct).
     'iam.user.read',
@@ -143,13 +659,38 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'org.tenant.read',
     'org.company.read',
     'org.branch.read',
+    // Owner directive 2026-09-16: `org.company-create` and `org.branch-create`
+    // declare these, and the Owner decided the first administrator holds them.
+    'org.company.manage',
+    'org.branch.manage',
     'org.department.read',
     'org.department.manage',
+    // Owner decision 2026-09-27 (closes W9-R2): the administrator edits its own
+    // organisation's settings — display name, default language and time zone, the
+    // company and branch settings, branch status and message templates. Tenant-bound
+    // by `upd_tenants_settings` and the settings policies; no platform, subscription,
+    // security or financial control is reachable through it. See the section above.
+    'org.settings.manage',
+    // P1-31 prerequisite P-17. Both codes are MINTED by that slice and both are
+    // carried, on the P-1 rule this bundle is built from: a code is held when a
+    // SHIPPED operation declares it and the administrator needs it to exercise
+    // or delegate the journey. Four operations declare them — the register's
+    // list, detail, create and status command — and withholding either would
+    // leave a freshly provisioned organisation unable to create ANY delivery at
+    // all, because `sal.delivery-create` now refuses an employee that does not
+    // exist and nothing else in the product can create one. That is the same
+    // consequence `wty.policy.manage` was carried to avoid.
+    'org.employee.read',
+    'org.employee.manage',
     'tech.technician.manage',
     // The W1–W8 journey: held to be exercised and to be delegated to the personas.
     'wo.work_order.read',
     'wo.work_order.transition',
     'wo.work_order.close',
+    // Owner directive 2026-09-17: the QA campaign's DEF-M-01. `wo.service-line-record`
+    // and `wo.required-part-record` declare it, and without it no work order in any
+    // provisioned organisation could ever state what work is on it or require a part.
+    'wo.work_order.line.manage',
     'wo.job.manage',
     'wo.job.transition',
     'wo.additional_work.request',
@@ -175,16 +716,34 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // creation path, held so the receptionist persona can be established.
     'crm.customer.read',
     'crm.customer.create',
+    // Owner directive 2026-09-17: the QA campaign's DEF-T-01. `crm.contact-add`,
+    // `crm.address-add` and `crm.preference-set` declare it; without it a customer
+    // could be registered and then never given a telephone number or an address.
+    'crm.customer.profile.write',
     'crm.customer.vehicle.manage',
     'veh.vehicle.read',
     'veh.vehicle.manage',
     'rec.reception.read',
     'rec.reception.manage',
     'rec.reception.party.manage',
+    // Owner directive 2026-09-17: the QA campaign's DEF-T-12 and DEF-M-06.
+    // `rec.reception-condition-evidence`, `rec.reception-evidence-binding` and
+    // `rec.reception-evidence-binding-finalize` declare it. The bundle already
+    // carries check-in through conversion; this was the one step in the middle
+    // of that path nobody in a provisioned organisation could perform.
+    'rec.reception.evidence.manage',
     'rec.reception.authorization.verify',
     'rec.reception.signature.manage',
     'rec.reception.approve',
     'rec.reception.convert',
+    // Owner decision 2026-09-29: appointments. Read, book and reschedule, cancel or
+    // record a no-show, and set up the organisation's own appointment types, booking
+    // channels and cancellation reasons. Twenty-one reception operations declare
+    // them, all bound to the caller's own organisation; see the section above.
+    'apt.appointment.read',
+    'apt.appointment.manage',
+    'apt.appointment.lifecycle.manage',
+    'apt.catalogue.manage',
     // The P1-30 commercial chain: held to be exercised and to be delegated to
     // the commercial personas. Each is declared by a shipped P1-30 screen or
     // gates one of its navigation entries; none is minted here.
@@ -206,6 +765,11 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'inv.item.manage',
     'inv.stock.read',
     'inv.stock.operate',
+    // `inv.cost.view` is deliberately NOT here. The QA campaign measured its
+    // absence as DEF-T-03 — nobody in a provisioned organisation can record a unit
+    // cost, and an unheld code cannot be delegated — but the exclusion is a
+    // recorded decision (change-control CC-12, open; register gap E-14), so
+    // carrying it is the Owner's call. See the section above.
     // Held so the Owner can DELEGATE it: an opening batch is maker–checker
     // (`ck_opening_inventory_batches_maker`), so the administrator who counts
     // cannot also approve, and an approver role can only be built out of a
@@ -213,10 +777,85 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // fresh organisation — the F-02 remeasurement of 2026-09-06 found this
     // the one AUTHORIZATION gap left after PR #321.
     'inv.adjustment.approve',
+    // P1-32 slice 3c (P1-32-PRE-134): the material codes, on the split recorded above.
+    // Every reservation and issue for a work order now draws on an approved material
+    // requirement, so without these no part could be issued to a job in a freshly
+    // provisioned organisation, and no requester, approver or reference-data role
+    // could be delegated. REQUESTER: held because the bundle holds inv.stock.operate.
+    'inv.material.request',
+    // APPROVERS: held because the bundle already approves (inv.adjustment.approve).
+    'inv.material.approve',
+    'inv.material.exception.approve',
+    // REFERENCE DATA: held because the bundle maintains the catalogue (inv.item.manage).
+    'inv.unit_conversion.manage',
+    'inv.specification.manage',
     'sal.invoice.manage',
     'sal.invoice.issue',
     'sal.finance.view',
+    // Owner decision (QA result matrix part 5 row 6.19): credit notes. Declared by the
+    // four credit-note operations, each alongside `sal.finance.view`; branch-scoped,
+    // born pending, and approved only by a second person. See the section above.
+    'sal.credit.manage',
+    // Owner decision D13 (ADR-023): approving and rejecting a credit note, within a
+    // credit-note approval limit somebody else sets. See the section above.
+    'sal.credit.approve',
     'sal.payment.record',
     'sal.payment.allocate',
+    // Owner decision D4 (ADR-023): approving and rejecting a receipt reversal that
+    // somebody else requested. See the section above.
+    'sal.reversal.approve',
+    // Owner decision D2, part 2 (ADR-023, P1-32-PRE-OD-FD2B): approving and rejecting
+    // a refund request somebody else raised. See the section above.
+    'sal.refund.approve',
+    // Owner decision D14 (ADR-023): a receipt applied to another customer's
+    // invoice as an explicit, authorised third-party payment. Consulted, not
+    // declared, by `sal.payment-allocate`. See the section above.
+    'sal.payment.third_party',
+    // The P1-31 delivery, warranty and reporting chain (prerequisite P-1). Held
+    // to be exercised and to be delegated to a delivery officer, a warranty
+    // clerk and a reporting reader; each is declared by a SHIPPED operation.
+    // The six P-1 codes all pre-existed in the permission catalogue seed and P-1
+    // minted nothing; the seventh, added by P-7 below, is the phase's one minted
+    // code; the eighth is added by P-10 below and the ninth by P-11 below. ONE
+    // of P-1's nine candidates remains deliberately EXCLUDED: `rpt.export` —
+    // which two shipped operations DO declare — on least-privilege grounds by
+    // Owner decision, because it is the platform-wide export switch and the
+    // bundle already holds every entitlement it pairs with (P1-31 CC-04). The
+    // other two, `wty.policy.manage` and `rpt.report.configure`, WERE excluded
+    // on the "nothing declares it" rule (CC-01, CC-02) and are now held: see
+    // P-10 and P-11 below.
+    'sal.delivery.manage',
+    'sal.delivery.view',
+    'sal.delivery.complete',
+    'wty.warranty.issue',
+    // P1-31 prerequisite P-7 (CC-07), the phase's ONLY minted code. Declared by
+    // `wty.warranty-list` and by `wty.warranty-detail`, which was re-pointed off
+    // the write code above on the same day. Carried rather than withheld because
+    // withholding it would REMOVE a capability this bundle already confers —
+    // the administrator can read a warranty today through `wty.warranty.issue`
+    // — which is the one thing CC-01, CC-02 and CC-04 never do.
+    'wty.warranty.read',
+    // P1-31 prerequisite P-10 (CC-01, now CLOSED). Declared by the five write
+    // operations that publish the warranty policy and coverage surface PPD-04
+    // measured as absent. Excluded until 2026-09-09 on the "nothing declares it"
+    // rule, and carried the moment that stopped being true — the same sequence
+    // `inv.item.manage` went through in #322. Withholding it now would leave a
+    // freshly provisioned administrator unable to issue ANY warranty, because
+    // warranty generation refuses a company that has no active policy and no
+    // other code can create one. The code was already in the catalogue seed;
+    // nothing is minted here.
+    'wty.policy.manage',
+    'rpt.report.read',
+    // P1-31 prerequisite P-11 (CC-02, now CLOSED). Declared by the seven
+    // operations that publish the report CONFIGURATION surface A0 measured as
+    // absent. Excluded until 2026-09-09 on the "nothing declares it" rule, and
+    // carried the moment that stopped being true — the same sequence
+    // `inv.item.manage` went through in #322. Withholding it now would leave a
+    // freshly provisioned administrator with an empty report catalogue it could
+    // never fill: both published report reads filter on `status = 'published'`
+    // and no other code can set that value. The code was already in the catalogue
+    // seed; nothing is minted here.
+    'rpt.report.configure',
+    'iam.audit.view',
   ]),
 });

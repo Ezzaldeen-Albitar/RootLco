@@ -46,3 +46,35 @@ VALUES
   ('d1500000-0000-4000-8000-000000000006','platform',NULL,'reception_refusal_evidence','Reception refusal evidence','Optional refusal supporting evidence',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','evidence',true),
   ('d1500000-0000-4000-8000-000000000007','platform',NULL,'reception_damage_map_template','Reception damage-map template','Versioned damage-map template image',ARRAY['image/jpeg','image/png','image/webp'],10485760,'internal','evidence-audit','active','00000000-0000-4000-8000-000000000001','inspection_media',false)
 ON CONFLICT DO NOTHING;
+
+-- =============================================================================
+-- P1-31 Owner decision D-18: the approved optional identity-evidence category.
+--
+-- The receiver's identity evidence at a delivery handover is filed under its OWN
+-- category, never under a reception category that happens to accept the same
+-- media: a person's proof of identity filed as reception evidence would be a
+-- classification defect (docs/phase-1/phase-1-31/owner-decisions-2026-09-10.md
+-- section 5). Collection is optional by default; nothing here makes it required.
+--
+-- It carries the identity_document purpose and the same restricted
+-- classification, evidence-audit retention class, size ceiling and image content
+-- types as the existing identity-purpose row, so it inherits the posture the
+-- category system already enforces and widens nobody's access: documents filed
+-- under it are READ under the same tenant-scoped document policies, and WRITTEN
+-- under the same permission-scoped ones, as every other category. Platform scope
+-- only; structural reference, not tenant or business data.
+--
+-- A populated database receives this row by applying this file as it stands
+-- (idempotent through ON CONFLICT DO NOTHING); see the P1-31 change-control
+-- register, section 72.
+-- =============================================================================
+
+INSERT INTO shared.document_categories (
+  id, scope, tenant_id, category_code, name, description,
+  allowed_content_types, max_size_bytes, default_classification,
+  default_retention_class, status, created_by,
+  business_link_purpose, device_capture_timestamp_required
+)
+VALUES
+  ('d1500000-0000-4000-8000-000000000008','platform',NULL,'delivery_receiver_identity','Delivery receiver identity','Optional identity evidence of the person receiving a vehicle at handover',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','identity_document',true)
+ON CONFLICT DO NOTHING;

@@ -364,12 +364,15 @@ describe('gate metadata moves in the same change as the file that changes it', (
     for (const value of Object.values(MODULE_DISPOSITION)) {
       expect(['in-surface', 'platform-transport']).toContain(value);
     }
-    // Named individually: `components/overlays` is the entry the appointment
-    // adoption required, and it is the confirmation dialog an operator reads
-    // immediately before a cancellation or a no-show write.
+    // Named individually: the confirmation dialog an operator reads immediately
+    // before a cancellation or a no-show write. It was `components/overlays`
+    // when the appointment tree was adopted and is `components/dialogs` since
+    // the appointment screens moved onto the Material UI wrappers (ADR-022);
+    // the gate's own equality is what refuses a stale `overlays` record.
     expect(decided, 'the appointment tree imports an undecided module').toContain(
-      'apps/web/src/components/overlays'
+      'apps/web/src/components/dialogs'
     );
-    expect(MODULE_DISPOSITION['apps/web/src/components/overlays']).toBe('in-surface');
+    expect(MODULE_DISPOSITION['apps/web/src/components/dialogs']).toBe('in-surface');
+    expect(decided).not.toContain('apps/web/src/components/overlays');
   });
 });

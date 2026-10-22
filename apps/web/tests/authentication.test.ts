@@ -225,6 +225,17 @@ describe('action results', () => {
       'network',
     ] as const) {
       const state = fromFailure(failure(kind), 1);
+      /*
+       * A cancellation carries NO key, deliberately. The operator pressed
+       * Cancel; there is nothing to tell them, and the state that used to say
+       * "Something went wrong" said something untrue. Every other kind must
+       * still resolve to a key the catalogue carries.
+       */
+      if (kind === 'cancelled') {
+        expect(state.status, 'a caller abort is its own status').toBe('cancelled');
+        expect(state.messageKey, 'a cancellation must say nothing').toBeUndefined();
+        continue;
+      }
       expect(Object.keys(en), `${kind} → ${state.messageKey}`).toContain(state.messageKey);
     }
   });

@@ -29,6 +29,26 @@ beforeEach(() => {
 });
 
 describe('accepted declarations', () => {
+  it('accepts a parameter custom action while rejecting malformed action suffixes', () => {
+    const operation = defineOperation({
+      ...BASE,
+      id: 'rpt.report-export',
+      method: 'POST',
+      path: '/reports/{reportCode}:export',
+      permissions: ['rpt.export'],
+    });
+    expect(operation.path).toBe('/reports/{reportCode}:export');
+    for (const path of [
+      '/reports/{reportCode}:',
+      '/reports/{reportCode}:export:other',
+      '/reports/{reportCode}:../export',
+    ]) {
+      expect(() =>
+        defineOperation({ ...BASE, id: 'rpt.invalid', path, permissions: ['rpt.export'] })
+      ).toThrow(OperationRegistrationError);
+    }
+  });
+
   it('registers a permissioned operation and applies the documented defaults', () => {
     const registered = defineOperation({
       ...BASE,
@@ -238,5 +258,87 @@ describe('registry isolation', () => {
     expect(() =>
       defineOperation({ ...BASE, id: 'meta.ping', permissions: ['meta.ping.read'] })
     ).not.toThrow();
+  });
+});
+
+/**
+ * P1-32-PRE-OD-FRX — the authenticated self-read.
+ *
+ * The one kind that is authenticated and declares no permission code. It is a
+ * reviewed exception, so the registry holds it to a closed list of ids and to
+ * the narrowest shape: a tenant-scope GET with a written reason, no audit, no
+ * write semantics and no target.
+ */
+describe('self-read declarations', () => {
+  const SELF = {
+    module: 'iam',
+    method: 'GET',
+    path: '/auth/session',
+    summary: 'Describe the current session.',
+    id: 'iam.auth-session',
+    selfRead: true,
+    selfReadReason: 'Answers the caller its own identity and nothing about anybody else.',
+  } as const;
+
+  it('accepts a listed self-read with no permission code, authenticated and not public', () => {
+    const registered = defineOperation(SELF);
+    expect(registered.selfRead).toBe(true);
+    expect(registered.public).toBe(false);
+    expect(registered.permissions).toEqual([]);
+    expect(registered.scope).toBe('tenant');
+    expect(registered.auditClass).toBe('none');
+  });
+
+  it('marks every other registration as not a self-read', () => {
+    expect(defineOperation({ ...BASE, id: 'meta.ping', permissions: ['a.b.c'] }).selfRead).toBe(
+      false
+    );
+  });
+
+  it('refuses the kind for an id that is not on the closed list', () => {
+    expect(() => defineOperation({ ...SELF, id: 'iam.user-list', path: '/iam/users' })).toThrow(
+      /not in SELF_READ_OPERATION_IDS/
+    );
+  });
+
+  it.each([
+    { label: 'public as well', extra: { public: true, publicReason: 'x' } },
+    { label: 'permission codes as well', extra: { permissions: ['iam.user.read'] } },
+    { label: 'a write method', extra: { method: 'POST' as const } },
+    { label: 'a branch scope', extra: { scope: 'branch' as const } },
+    {
+      label: 'an audit class',
+      extra: { auditClass: 'privileged' as const, auditAction: 'iam.grant.issued' },
+    },
+    { label: 'idempotency', extra: { idempotent: true } },
+    { label: 'a version guard', extra: { versionGuarded: true } },
+    { label: 'a feature flag', extra: { featureFlag: 'x' } },
+    { label: 'branch narrowing', extra: { branchNarrowing: 'authorized-union' as const } },
+  ])('refuses a self-read with $label', ({ extra }) => {
+    expect(() => defineOperation({ ...SELF, ...extra })).toThrow(OperationRegistrationError);
+  });
+
+  it('refuses a self-read that gives no reason', () => {
+    expect(() =>
+      defineOperation({
+        module: SELF.module,
+        method: SELF.method,
+        path: SELF.path,
+        summary: SELF.summary,
+        id: SELF.id,
+        selfRead: true,
+      })
+    ).toThrow(/gives no selfReadReason/);
+  });
+
+  it('refuses a self-read reason on an operation that is not a self-read', () => {
+    expect(() =>
+      defineOperation({
+        ...BASE,
+        id: 'meta.ping',
+        permissions: ['a.b.c'],
+        selfReadReason: 'stray',
+      })
+    ).toThrow(/not a self-read/);
   });
 });

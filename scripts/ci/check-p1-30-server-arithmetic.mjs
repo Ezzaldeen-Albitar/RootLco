@@ -144,6 +144,7 @@ export const SANCTIONED_CALLS = Object.freeze([
   'isZeroMoney',
   'isNegativeMoney',
   'formatMoney',
+  'fitsMinorUnit',
   'trimTrailingZeros',
 ]);
 

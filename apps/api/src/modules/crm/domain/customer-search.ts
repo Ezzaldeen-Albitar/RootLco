@@ -1,5 +1,5 @@
 /**
- * CRM customer search — domain contract (Phase 1-16, FR-CRM-001).
+ * CRM customer search — domain contract (Phase 1-16, FR-CRM-001; widened P1-32).
  *
  * Pure decision-making only: this file decides *what* a customer search is
  * allowed to filter on and *how* the result is ordered. It touches no database
@@ -9,12 +9,54 @@
  *
  * Privacy posture (NFR-PRV-001): the searchable surface is a closed allow-list.
  * A caller may match on the customer's own display number (an exact,
- * non-sensitive business key), on a normalised prefix of the display name, and
- * on two controlled discriminators (party type and lifecycle status). Sensitive
- * identifiers — national id, date of birth, raw contact values — are never a
- * search input and are never projected by this contract. Widening the surface is
- * a visible change to this allow-list, reviewed on its own merits.
+ * non-sensitive business key), on a folded fragment of the display name, on a
+ * phone number, on a single free-text fragment that tries all three, and on two
+ * controlled discriminators (party type and lifecycle status). Sensitive
+ * identifiers — national id, date of birth — are never a search input and are
+ * never projected. Widening the surface is a visible change to this allow-list.
+ *
+ * ## What P1-32 added, and the two rules that keep it bounded
+ *
+ * The Owner directive asked that a receptionist be able to find a customer the
+ * way the customer identifies themselves: by phone, and by typing part of a name
+ * rather than its first letters. Three things changed.
+ *
+ *  1. **Folding.** The name fragment is folded by the same rule the column side
+ *     is (`shared.fold_search_text` / `foldSearchText`): tashkeel and tatweel
+ *     removed, the alef forms collapsed, Arabic-Indic digits folded to ASCII. A
+ *     name typed on an Arabic keyboard and the same name typed on a Latin one
+ *     now produce one key.
+ *  2. **Contains, not prefix.** `name` and `q` match a substring. That is only
+ *     defensible because pg_trgm is installed and a GIN trigram index answers it
+ *     — the fragment is still length-bounded and the page is still clamped, so
+ *     the work is bounded above by the same limit as every other list.
+ *  3. **Phone.** Matched against `crm.contact_points`, never against a free-text
+ *     column. An exact normalized match always counts; a SUFFIX match counts
+ *     only from `MIN_PHONE_SUFFIX` digits up, because a shorter tail matches too
+ *     many people to be a lookup and would turn a search box into an enumeration
+ *     tool.
+ *
+ * ## One Jordanian number, however it is written (Browser QA part 7, 2.3b/2.3c)
+ *
+ * A number stored as `0797001122` was not found by `+962 79 700 1122` or
+ * `00962797001122`, and a customer number typed in Arabic-Indic digits was not
+ * found at all. So the phone fragment is reduced to the national form
+ * (`toNationalPhoneDigits`: `+962` / `00962` / `962` followed by eight or nine
+ * digits becomes `0` followed by them) for the exact comparison, and the SUFFIX
+ * comparison uses the national significant number — the national form without
+ * its trunk `0` (`phoneSuffixKey`) — so a number stored in either spelling is
+ * found by either. Only a FULL national number loses the `0`; a shorter tail is
+ * compared exactly as typed, so a tail that starts with `0` still finds it. The customer number is compared after its digits are folded
+ * to ASCII. None of this widens WHO may search or WHAT is searched: the same
+ * three arms, the same `MIN_PHONE_SUFFIX` floor on the suffix, the same page.
+ *
+ * The projected phone is MASKED to its last four digits unless the caller holds
+ * `iam.sensitive.view`. Four digits is what a person confirms out loud when they
+ * are asked to identify themselves, so it is enough to choose the right row and
+ * not enough to harvest a contact list from a result page.
  */
+import { foldDigits, foldSearchText, normalizePhoneDigits } from '@/shared/text/normalization';
+
 /** The two party kinds `crm.business_partners.party_type` permits. */
 export const CUSTOMER_PARTY_TYPES = ['individual', 'organization'] as const;
 export type CustomerPartyType = (typeof CUSTOMER_PARTY_TYPES)[number];
@@ -47,16 +89,70 @@ export const CUSTOMER_SEARCH_ORDERING = {
  */
 export const MAX_NAME_FRAGMENT = 80;
 
+/** The maximum length of a phone fragment. Longer than any dialled number. */
+export const MAX_PHONE_FRAGMENT = 32;
+
+/**
+ * The shortest phone tail that may be matched as a SUFFIX.
+ *
+ * Below this a tail is not a lookup: four digits are shared by thousands of
+ * numbers, so a shorter fragment would return a page of unrelated people and
+ * make the search box an enumeration tool. Seven is also the width of the
+ * database index key (`ix_contact_points_phone_tail`), so the two move together.
+ */
+export const MIN_PHONE_SUFFIX = 7;
+
+/**
+ * The shortest free-text fragment accepted.
+ *
+ * A one-character fragment matches nearly every row, so the page it returns says
+ * nothing; it is refused at the edge rather than answered badly.
+ */
+export const MIN_SEARCH_FRAGMENT = 2;
+
+/** How many trailing digits of a phone number survive masking. */
+export const PHONE_VISIBLE_DIGITS = 4;
+
+/** The character a masked digit is replaced with. */
+export const PHONE_MASK_CHARACTER = '*';
+
 /** A validated, already-normalised search request handed to the repository. */
 export interface CustomerSearchFilter {
   /**
-   * Normalised name prefix (via `crm.normalize_name` semantics), or null. The
-   * repository matches it as a **prefix**, never a leading-wildcard substring, so
-   * the query stays bounded and cannot be turned into a full-table scan.
+   * Folded name fragment, LIKE-escaped, or null. The repository matches it as a
+   * CONTAINS over `crm.normalize_name(display_name)`, which is the expression
+   * `ix_business_partners_name_folded_trgm` indexes.
    */
-  readonly namePrefix: string | null;
+  readonly nameFragment: string | null;
   /** Exact customer display number, or null. */
   readonly customerNumber: string | null;
+  /**
+   * The caller's phone fragment reduced to ASCII digits (no leading `+`), or
+   * null when none was supplied. An empty string is kept rather than collapsed
+   * to null: a caller who sent `?phone=` asked a question with no answer, and the
+   * honest reply is an empty page rather than the tenant's whole first page.
+   */
+  readonly phoneDigits: string | null;
+  /**
+   * The tail the suffix arm compares — `phoneSuffixKey(phoneDigits)` — or null
+   * when no phone was supplied.
+   */
+  readonly phoneSuffix: string | null;
+  /** Whether `phoneSuffix` is long enough to be matched as a suffix. */
+  readonly phoneSuffixEligible: boolean;
+  /** Folded, LIKE-escaped free-text fragment, or null. */
+  readonly freeText: string | null;
+  /** The free-text fragment reduced to digits, for its phone arm. Empty when it held none. */
+  readonly freeTextDigits: string;
+  /** The tail the free-text phone arm compares — `phoneSuffixKey(freeTextDigits)`. */
+  readonly freeTextPhoneSuffix: string;
+  /** Whether `freeTextPhoneSuffix` is long enough to be matched as a phone suffix. */
+  readonly freeTextPhoneEligible: boolean;
+  /**
+   * The free-text fragment trimmed, with its digits folded to ASCII and nothing
+   * else changed, for the exact customer-number arm.
+   */
+  readonly freeTextRaw: string;
   readonly partyType: CustomerPartyType | null;
   readonly lifecycleStatus: CustomerLifecycleStatus | null;
 }
@@ -69,42 +165,155 @@ export interface CustomerSearchHit {
   readonly partyType: CustomerPartyType;
   readonly lifecycleStatus: CustomerLifecycleStatus;
   readonly createdAt: string;
+  /**
+   * The customer's primary phone number, masked to its last
+   * `PHONE_VISIBLE_DIGITS` digits unless the caller holds `iam.sensitive.view`.
+   * Null when the customer has no phone contact point.
+   */
+  readonly primaryPhone: string | null;
+  /** Whether `primaryPhone` was masked. Stated so a screen never has to guess. */
+  readonly phoneMasked: boolean;
+  /** How many live vehicles this customer currently holds a relationship to. */
+  readonly vehicleCount: number;
 }
 
 /** Raw (edge-validated) inputs before domain normalisation. */
 export interface CustomerSearchInput {
   readonly name?: string | undefined;
   readonly customerNumber?: string | undefined;
+  readonly phone?: string | undefined;
+  readonly q?: string | undefined;
   readonly partyType?: CustomerPartyType | undefined;
   readonly lifecycleStatus?: CustomerLifecycleStatus | undefined;
 }
 
 /**
- * Normalises a free-text name fragment to the same rules the frozen SQL
- * `crm.normalize_name` applies to stored names: NFC is assumed upstream, then
- * casefold and collapse internal whitespace, trim. Kept deliberately in step with
- * the database function so a prefix computed here lines up with a stored value;
- * the repository still calls the SQL function on the column side so the two can
- * never silently diverge on a single row.
+ * Escapes the LIKE metacharacters so a caller can never inject a wildcard: a
+ * `%`, `_` or `\` in the fragment becomes a literal (matched with `ESCAPE '\'`
+ * in the repository), and the `%` the repository appends is the ONLY wildcard.
  */
-export function normalizeNameFragment(raw: string): string {
-  const collapsed = raw.trim().replace(/\s+/g, ' ').toLowerCase();
-  // Escape LIKE metacharacters so a caller can never inject a wildcard: a `%` or
-  // `_` in the fragment becomes a literal (matched with `ESCAPE '\'` in the
-  // repository), and the trailing `%` the repository appends is the ONLY
-  // wildcard — keeping the match a bounded prefix, never a full-table scan.
-  return collapsed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 /**
- * Turns edge-validated input into the closed filter contract. Empty/whitespace
- * fragments collapse to null (an empty search is a listing, not an error).
+ * Normalises a free-text name fragment to the same rule the SQL
+ * `crm.normalize_name` applies to stored names, then escapes it for LIKE.
+ *
+ * The repository still calls the SQL function on the COLUMN side, so the two can
+ * never silently diverge on a single row; this side exists so the fragment the
+ * caller typed is folded identically before it is bound as a parameter.
+ */
+export function normalizeNameFragment(raw: string): string {
+  return escapeLike(foldSearchText(raw) ?? '');
+}
+
+/** Jordan's country calling code. */
+export const JORDAN_COUNTRY_CODE = '962';
+
+/**
+ * Rewrites an international Jordanian number to its national form.
+ *
+ * `962` followed by eight digits (a landline) or nine (a mobile) — typed as
+ * `+962`, `00962` or bare — becomes `0` followed by those digits, which is how a
+ * number is written and stored in the country. Anything else is returned as it
+ * came: a national number already starts with `0`, and a number from another
+ * country is not rewritten by a rule written for this one.
+ */
+export function toNationalPhoneDigits(digits: string): string {
+  const international = digits.startsWith('00') ? digits.slice(2) : digits;
+  if (!international.startsWith(JORDAN_COUNTRY_CODE)) return digits;
+  const national = international.slice(JORDAN_COUNTRY_CODE.length);
+  return national.length === 8 || national.length === 9 ? `0${national}` : digits;
+}
+
+/** A full Jordanian national number: trunk `0`, then eight or nine digits. */
+const NATIONAL_NUMBER = /^0[1-9]\d{7,8}$/;
+
+/**
+ * The tail a phone is matched by as a SUFFIX: the national significant number.
+ *
+ * A national number's trunk `0` is dropped, so `0797001122` matches a stored
+ * `0797001122` and a stored `+962797001122` alike through
+ * `normalized_value LIKE '%797001122'`. Only a FULL national number — `0`
+ * followed by eight (landline) or nine (mobile) digits, the shapes
+ * `toNationalPhoneDigits` produces — loses its `0`. Any other fragment is a tail
+ * and is its own key exactly as typed: `0712345` is the last seven digits of a
+ * stored `0790712345`, and dropping its `0` would both lose that customer and
+ * match numbers the operator did not type.
+ */
+export function phoneSuffixKey(digits: string): string {
+  return NATIONAL_NUMBER.test(digits) ? digits.slice(1) : digits;
+}
+
+/**
+ * Reduces a phone fragment to the ASCII digits the stored normalized value is
+ * built from, in the national form. The leading `+` of an E.164 value is
+ * dropped, because a caller quoting a number rarely types it, and a Jordanian
+ * international number is rewritten to `0…` (`toNationalPhoneDigits`).
+ */
+export function normalizePhoneFragment(raw: string): string {
+  return toNationalPhoneDigits((normalizePhoneDigits(raw) ?? '').replace(/^\+/, ''));
+}
+
+/**
+ * Masks a phone number to its last `PHONE_VISIBLE_DIGITS` characters.
+ *
+ * Every earlier character becomes `PHONE_MASK_CHARACTER`, so the length is
+ * preserved and the shape of the number is still recognisable — which is what
+ * lets a person confirm "yes, that's mine" without the page carrying a
+ * dialable number. A value at or below the visible width is masked ENTIRELY
+ * rather than shown: a four-digit contact point would otherwise be published in
+ * full by a rule written to hide it.
+ */
+export function maskPhone(value: string): string {
+  if (value.length <= PHONE_VISIBLE_DIGITS) {
+    return PHONE_MASK_CHARACTER.repeat(value.length);
+  }
+  const hidden = value.length - PHONE_VISIBLE_DIGITS;
+  return `${PHONE_MASK_CHARACTER.repeat(hidden)}${value.slice(hidden)}`;
+}
+
+/**
+ * Turns edge-validated input into the closed filter contract.
+ *
+ * Two different treatments of a blank fragment, and the difference is deliberate.
+ *
+ *  - A `name` or `q` fragment that folds to nothing collapses to `null`, i.e. no
+ *    filter at all. That is the contract this operation has always had ("an empty
+ *    search is a listing, not an error"), and it is kept because a CONTAINS match
+ *    on an empty fragment would otherwise match every row anyway — the two are
+ *    the same answer, and the null says so honestly instead of by accident.
+ *  - A `phone` fragment holding no digits is kept as the empty string, which is
+ *    an IMPOSSIBLE predicate rather than a dropped one:
+ *    `ck_contact_points_normalized_not_blank` guarantees no stored contact point
+ *    is blank, so `normalized_value = ''` can never hold. A caller who searched
+ *    for a phone number and typed letters must receive an empty page, never the
+ *    tenant's first page of customers, which they could not tell apart from a
+ *    lookup that matched everything.
  */
 export function toCustomerSearchFilter(input: CustomerSearchInput): CustomerSearchFilter {
-  const name = input.name ? normalizeNameFragment(input.name) : '';
+  const name = input.name === undefined ? '' : normalizeNameFragment(input.name);
+  const freeText = input.q === undefined ? '' : normalizeNameFragment(input.q);
+  // Digits folded, nothing else: a display number is stored in ASCII digits, and
+  // one typed on an Arabic keyboard is the same number.
+  const freeTextRaw = input.q === undefined ? '' : foldDigits(input.q.trim());
+  const freeTextDigits = input.q === undefined ? '' : normalizePhoneFragment(input.q);
+  const freeTextPhoneSuffix = phoneSuffixKey(freeTextDigits);
+  const phoneDigits = input.phone === undefined ? null : normalizePhoneFragment(input.phone);
+  const phoneSuffix = phoneDigits === null ? null : phoneSuffixKey(phoneDigits);
+  const customerNumber = foldDigits(input.customerNumber?.trim() ?? '');
   return {
-    namePrefix: name.length > 0 ? name : null,
-    customerNumber: input.customerNumber?.trim() ? input.customerNumber.trim() : null,
+    nameFragment: name === '' ? null : name,
+    customerNumber: customerNumber === '' ? null : customerNumber,
+    phoneDigits,
+    phoneSuffix,
+    phoneSuffixEligible: phoneSuffix !== null && phoneSuffix.length >= MIN_PHONE_SUFFIX,
+    freeText: freeText === '' ? null : freeText,
+    freeTextDigits,
+    freeTextPhoneSuffix,
+    freeTextPhoneEligible: freeTextPhoneSuffix.length >= MIN_PHONE_SUFFIX,
+    freeTextRaw,
     partyType: input.partyType ?? null,
     lifecycleStatus: input.lifecycleStatus ?? null,
   };

@@ -91,6 +91,11 @@ describe('the issue-to-message map', () => {
       ['', ''],
       [`x${'y'.repeat(70)}Z`, '2026-08-21T10:00:00Z'],
       ['2026-08-21T09:00:00', '2026-08-21T10:00:00Z'],
+      // An entry that ALREADY ends in an offset, mistyped and then impossible.
+      // Both used to answer `missing_offset`, which told the operator to add the
+      // thing they had just written.
+      ['2026-08-21T09:00:00+09', '2026-08-21T10:00:00Z'],
+      ['2026-08-21T09:00:00+16:00', '2026-08-21T10:00:00Z'],
       ['not-a-time+03:00', '2026-08-21T10:00:00Z'],
       ['2026-08-21T10:00:00Z', '2026-08-21T09:00:00Z'],
     ];

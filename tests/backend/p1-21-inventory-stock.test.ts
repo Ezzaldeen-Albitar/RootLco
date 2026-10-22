@@ -36,26 +36,37 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
+  BRANCH_A1,
+  COMPANY_A1,
+  IDENTITY_PROVIDER,
+  TENANT_A,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
   ensureTestLogins,
 } from './helpers';
 import {
+  BRANCH_A2,
   FULL,
+  type Principal,
   advance,
   createOpenWorkOrder,
   createWorkOrder,
   establishP1_19Fixtures,
 } from './p1-19-helpers';
 import {
+  FINANCE_VIEW,
+  INV_COUNTER,
   INV_FULL,
   INV_PERMISSION_ELSEWHERE,
   INV_READER,
   ITEM_A,
   ITEM_A_ALT,
+  ITEM_A_ARCHIVED,
   ITEM_A_UNTRACKED,
   QUARANTINE_A1,
+  QUARANTINE_A2,
   STORAGE_A1,
   WAREHOUSE_A1,
   auditCountFor,
@@ -63,23 +74,94 @@ import {
   balanceOf,
   cleanP1_21Fixtures,
   establishP1_21Fixtures,
+  freshLocation,
   movementCountFor,
   outboxCountFor,
   countRowsOf,
   reservationStatusOf,
+  seedApprovedMaterialRequirement,
   seedStock,
+  WORK_ORDER_READ,
 } from './p1-21-helpers';
 import { Quantity } from '@/modules/inventory';
+import { MAX_READINESS_PAGE_SIZE } from '@/modules/delivery';
 import { POST as RESERVE } from '@/app/api/v1/stock-reservations/route';
 import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]/release/route';
 import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
 import { POST as RETURN } from '@/app/api/v1/stock-returns/route';
 import { POST as DAMAGE } from '@/app/api/v1/damaged-stock/route';
+import { POST as TRANSFER_CREATE } from '@/app/api/v1/stock-transfers/route';
 import { GET as ELIGIBILITY } from '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
 import { POST as CLOSURE } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as TRANSITION } from '@/app/api/v1/work-orders/[workOrderId]/transition/route';
+import { POST as SALES_RETURN_CREATE } from '@/app/api/v1/sales-returns/route';
+import { GET as LIST_READINESS } from '@/app/api/v1/delivery-readiness/route';
+
+/**
+ * Every reservation and issue for a work order draws on an APPROVED material
+ * requirement since P1-32-PRE-132, and one with none is refused. These cases are about
+ * stock, so each work order they draw for is given approved demand for both fixture
+ * items, created and approved by two different people (`seedApprovedMaterialRequirement`),
+ * and each draw names it. The allowance is generous on purpose: what is refused here
+ * is refused for a stock reason, never for want of an allowance.
+ */
+async function approvedDemandFor(workOrderId: string): Promise<Record<string, string>> {
+  return {
+    [ITEM_A]: await seedApprovedMaterialRequirement({ workOrderId, itemId: ITEM_A }),
+    [ITEM_A_ALT]: await seedApprovedMaterialRequirement({ workOrderId, itemId: ITEM_A_ALT }),
+  };
+}
 
 let admin: Pool;
+
+/**
+ * The delivery-readiness queue's three declared codes and nothing else. The queue's
+ * part fact reads the same `openCommitmentsFor` the closure gate does, so a work
+ * order whose issue has come back must be clear in both places.
+ */
+const READINESS_READER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000003e1',
+  userId: 'e1000000-0000-4000-8000-0000000003e2',
+  subject: 'fx_p1_21_readiness_reader',
+  tenantId: TENANT_A,
+  permissions: ['sal.delivery.view', WORK_ORDER_READ, FINANCE_VIEW],
+};
+
+async function seedReadinessReader(): Promise<void> {
+  const principal = READINESS_READER;
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1,$2,$3,$4,$4||'@example.test','P1-21 readiness reader','active',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [principal.userId, principal.tenantId, IDENTITY_PROVIDER, principal.subject, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'P1-21 readiness fixture',$4) ON CONFLICT (id) DO NOTHING`,
+    [principal.roleId, principal.tenantId, principal.subject, USER_A]
+  );
+  for (const code of principal.permissions) {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [principal.tenantId, principal.roleId, USER_A, code]
+    );
+  }
+  const existing = await admin.query(
+    `SELECT 1 FROM iam.role_grants WHERE tenant_id = $1 AND user_id = $2 AND role_id = $3`,
+    [principal.tenantId, principal.userId, principal.roleId]
+  );
+  if (existing.rowCount === 0) {
+    await admin.query(
+      `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,'unrestricted',$4,$4)`,
+      [principal.tenantId, principal.userId, principal.roleId, USER_A]
+    );
+  }
+}
 
 const post = (
   handler: (request: Request) => Promise<Response>,
@@ -120,12 +202,19 @@ const releaseCall = (reservationId: string, body: unknown = {}): Promise<Respons
 
 const bodyOf = async <T>(response: Response): Promise<T> => (await response.json()) as T;
 
+/** The problem document, as far as the refusal-token cases at the foot read it. */
+interface Problem {
+  readonly code?: string;
+  readonly violations?: readonly { readonly path?: string; readonly rule?: string }[];
+}
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
   await establishP1_21Fixtures(admin);
+  await seedReadinessReader();
 }, 180_000);
 
 afterAll(async () => {
@@ -392,6 +481,7 @@ describe('inv.stock-issue-create', () => {
     // still held and ck_stock_balances_available rejects it. Reserve 5 of 5 and issue
     // 5 is exactly that case, and it must SUCCEED.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '5.000' });
     authAs(INV_FULL);
     const balanceBefore = await balanceOf(ITEM_A_ALT, WAREHOUSE_A1);
@@ -403,6 +493,7 @@ describe('inv.stock-issue-create', () => {
         locationId: WAREHOUSE_A1,
         quantity: available,
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
       })
     );
     expect((await balanceOf(ITEM_A_ALT, WAREHOUSE_A1))?.available).toBe('0.000');
@@ -455,6 +546,7 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses a reservation belonging to a different item (closes D-03)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
@@ -464,6 +556,7 @@ describe('inv.stock-issue-create', () => {
         locationId: WAREHOUSE_A1,
         quantity: '4.000',
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
       })
     );
     const response = await post(ISSUE, '/api/v1/stock-issues', {
@@ -480,6 +573,7 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses an issue larger than the reservation holds (denial)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const reservation = await bodyOf<{ id: string }>(
@@ -488,6 +582,7 @@ describe('inv.stock-issue-create', () => {
         locationId: WAREHOUSE_A1,
         quantity: '2.000',
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
       })
     );
     // inv.consume_reservation releases the reservation IN FULL whatever the issued
@@ -506,11 +601,13 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses an issue that would drive stock negative (BE-012)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: STORAGE_A1, quantity: '1.000' });
     authAs(INV_FULL);
     const before = await balanceOf(ITEM_A_ALT, STORAGE_A1);
     const response = await post(ISSUE, '/api/v1/stock-issues', {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A_ALT],
       itemId: ITEM_A_ALT,
       locationId: STORAGE_A1,
       quantity: '999.000',
@@ -523,9 +620,11 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses a caller lacking inv.stock.operate (authorization)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     authAs(INV_READER);
     const response = await post(ISSUE, '/api/v1/stock-issues', {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
       itemId: ITEM_A,
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
@@ -535,9 +634,11 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses an issue in a branch the caller is not scoped to (isolation)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     authAs(INV_PERMISSION_ELSEWHERE);
     const response = await post(ISSUE, '/api/v1/stock-issues', {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
       itemId: ITEM_A,
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
@@ -547,11 +648,13 @@ describe('inv.stock-issue-create', () => {
 
   it('replays an idempotency key without issuing twice (idempotency)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const key = `fx-${randomUUID()}`;
     const payload = {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
       itemId: ITEM_A,
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
@@ -578,11 +681,13 @@ describe('inv.stock-issue-create', () => {
 describe('inv.stock-return-create', () => {
   it('returns an issued part and bounds the total at the issued quantity', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
         itemId: ITEM_A,
         locationId: WAREHOUSE_A1,
         quantity: '5.000',
@@ -651,11 +756,13 @@ describe('inv.stock-return-create', () => {
 
   it('refuses a return in a branch the caller is not scoped to (isolation)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
         itemId: ITEM_A,
         locationId: WAREHOUSE_A1,
         quantity: '1.000',
@@ -898,6 +1005,7 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     // parts — the D-02 rule this phase added — so the fixture has to walk the graph
     // in the same order a real branch would.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const created = await post(RESERVE, '/api/v1/stock-reservations', {
@@ -905,6 +1013,7 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
       locationId: WAREHOUSE_A1,
       quantity: '2.000',
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
     });
     expect(created.status).toBe(201);
     const reservation = await bodyOf<{ id: string }>(created);
@@ -927,7 +1036,17 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     expect(blocked.eligible).toBe(false);
 
     // And the COMMAND refuses, so eligibility and closure cannot disagree.
-    expect((await closeCall(wo.workOrderId, version)).status).toBe(409);
+    const refused = await closeCall(wo.workOrderId, version);
+    expect(refused.status).toBe(409);
+    // Owner directive, user-facing errors. The refusal message already named
+    // the remedy and no screen could ever show it, because no server prose
+    // reaches one. The token is what publishes it; the counts stay out of it,
+    // since they change between the refusal and the retry.
+    expect(
+      (await refused.json()) as { violations?: readonly { path: string; rule: string }[] }
+    ).toMatchObject({
+      violations: [{ path: 'path.workOrderId', rule: 'work_order_stock_still_held' }],
+    });
 
     authAs(INV_FULL);
     await releaseCall(reservation.id, { reason: 'not needed' });
@@ -947,11 +1066,13 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     // The work order must be open before it can receive parts, so the issue is made
     // mid-path rather than before it.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
         itemId: ITEM_A_ALT,
         locationId: WAREHOUSE_A1,
         quantity: '3.000',
@@ -986,11 +1107,143 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     expect((await closeCall(wo.workOrderId, version)).status).toBe(200);
   });
 
+  /** A part issued to a work order that is then walked to `ready_to_close`. */
+  async function issuedThenReady(
+    quantity: string
+  ): Promise<{ readonly workOrderId: string; readonly issueId: string; readonly version: number }> {
+    const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
+    await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '10.000' });
+    authAs(INV_FULL);
+    const issued = await post(ISSUE, '/api/v1/stock-issues', {
+      workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A_ALT],
+      itemId: ITEM_A_ALT,
+      locationId: WAREHOUSE_A1,
+      quantity,
+    });
+    expect(issued.status).toBe(201);
+    const issueId = (await bodyOf<{ id: string }>(issued)).id;
+    const version = await advance(wo.workOrderId, [
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+    return { workOrderId: wo.workOrderId, issueId, version };
+  }
+
+  /** `POST /sales-returns` against a part issue — the second way a part comes back. */
+  async function salesReturn(issueId: string, quantity: string): Promise<void> {
+    // INV_COUNTER, not INV_FULL: the operation also needs `sal.finance.view`.
+    authAs(INV_COUNTER);
+    const response = await post(SALES_RETURN_CREATE, '/api/v1/sales-returns', {
+      sourceKind: 'part_issue',
+      sourceId: issueId,
+      quantity,
+      condition: 'restockable',
+      receivedLocationId: WAREHOUSE_A1,
+    });
+    expect(response.status).toBe(201);
+  }
+
+  const openIssuesOf = async (
+    workOrderId: string
+  ): Promise<{ eligible: boolean; openIssues: number }> => {
+    authAs(FULL);
+    const body = await bodyOf<{
+      eligible: boolean;
+      inventoryCommitments: { openIssues: number };
+    }>(await eligibility(workOrderId));
+    return { eligible: body.eligible, openIssues: body.inventoryCommitments.openIssues };
+  };
+
+  interface ReadinessRow {
+    readonly workOrder: { readonly id: string };
+    readonly blockers: readonly string[];
+    readonly facts: readonly { readonly blocker: string; readonly established: boolean }[];
+  }
+
+  /** The work order's row in the branch's delivery-readiness queue, walked page by page. */
+  async function readinessRowOf(workOrderId: string): Promise<ReadinessRow> {
+    authAs(READINESS_READER);
+    let cursor: string | null = null;
+    for (;;) {
+      const query = new URLSearchParams({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        limit: String(MAX_READINESS_PAGE_SIZE),
+      });
+      if (cursor !== null) query.set('cursor', cursor);
+      const response = await LIST_READINESS(
+        new Request(`http://localhost/api/v1/delivery-readiness?${query.toString()}`)
+      );
+      expect(response.status).toBe(200);
+      const page = await bodyOf<{
+        items: readonly ReadinessRow[];
+        nextCursor: string | null;
+      }>(response);
+      const row = page.items.find((item) => item.workOrder.id === workOrderId);
+      if (row !== undefined) return row;
+      if (page.nextCursor === null) throw new Error(`${workOrderId} is not in the queue`);
+      cursor = page.nextCursor;
+    }
+  }
+
+  it('clears an issue brought back in full through POST /sales-returns, for closure and for the delivery queue', async () => {
+    const { workOrderId, issueId, version } = await issuedThenReady('3.000');
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: false, openIssues: 1 });
+
+    // The whole quantity back through the sales-return path. The stock-return route
+    // is then refused by the shared ceiling, so this is the only way the part comes
+    // back — and it must be enough.
+    await salesReturn(issueId, '3.000');
+
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: true, openIssues: 0 });
+    authAs(FULL);
+    expect((await closeCall(workOrderId, version)).status).toBe(200);
+
+    // The delivery queue composes its part fact from the same read: established, and
+    // not raised. No invoice exists, so the financial fact may block; that is not what
+    // this asserts.
+    const row = await readinessRowOf(workOrderId);
+    expect(row.facts.find((fact) => fact.blocker === 'part_obligation_outstanding')).toEqual(
+      expect.objectContaining({ established: true })
+    );
+    expect(row.blockers).not.toContain('part_obligation_outstanding');
+  });
+
+  it('keeps an issue open after a PARTIAL sales return', async () => {
+    const { workOrderId, issueId, version } = await issuedThenReady('3.000');
+    await salesReturn(issueId, '1.000');
+
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: false, openIssues: 1 });
+    authAs(FULL);
+    expect((await closeCall(workOrderId, version)).status).toBe(409);
+  });
+
+  it('counts a stock return and a sales return together toward the issued quantity', async () => {
+    const { workOrderId, issueId, version } = await issuedThenReady('3.000');
+    authAs(INV_FULL);
+    expect(
+      (await post(RETURN, '/api/v1/stock-returns', { partIssueId: issueId, quantity: '1.000' }))
+        .status
+    ).toBe(201);
+    // One of three back: still open.
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: false, openIssues: 1 });
+
+    await salesReturn(issueId, '2.000');
+
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: true, openIssues: 0 });
+    authAs(FULL);
+    expect((await closeCall(workOrderId, version)).status).toBe(200);
+  });
+
   it('does not block a CANCELLATION, which abandons work rather than certifying it', async () => {
     // wo.guard_work_order_closure exempts a cancellation from B1-B6, and the
     // inventory blocker follows the same rule: stock outstanding on an abandoned
     // order is a different problem from stock outstanding on a completed one.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '5.000' });
     authAs(INV_FULL);
     const reserved = await post(RESERVE, '/api/v1/stock-reservations', {
@@ -998,6 +1251,7 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
     });
     expect(reserved.status).toBe(201);
     const version = wo.recordVersion;
@@ -1032,6 +1286,7 @@ describe('H5 — quarantined stock is not reservable and not issuable', () => {
     // because /stock-availability excludes quarantine by default, the drawdown would
     // not even show in the operator's view. Measured before the fix: 201, 201, 201.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '8.000' });
     authAs(INV_FULL);
     const damaged = await post(DAMAGE, '/api/v1/damaged-stock', {
@@ -1053,6 +1308,7 @@ describe('H5 — quarantined stock is not reservable and not issuable', () => {
           locationId: QUARANTINE_A1,
           quantity: '2.000',
           workOrderId: wo.workOrderId,
+          materialRequirementId: demand[ITEM_A],
         })
       ).status
     ).toBe(409);
@@ -1060,6 +1316,7 @@ describe('H5 — quarantined stock is not reservable and not issuable', () => {
       (
         await post(ISSUE, '/api/v1/stock-issues', {
           workOrderId: wo.workOrderId,
+          materialRequirementId: demand[ITEM_A],
           itemId: ITEM_A,
           locationId: QUARANTINE_A1,
           quantity: '1.000',
@@ -1085,6 +1342,7 @@ describe('H4 — a release that changed nothing records nothing', () => {
     // locked, so the decision and the release are atomic. This is the sequential
     // shadow of that race: a consumed reservation must produce no release evidence.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '5.000' });
     authAs(INV_FULL);
     const reservation = await bodyOf<{ id: string }>(
@@ -1093,6 +1351,7 @@ describe('H4 — a release that changed nothing records nothing', () => {
         locationId: WAREHOUSE_A1,
         quantity: '2.000',
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
       })
     );
     await post(ISSUE, '/api/v1/stock-issues', {
@@ -1121,11 +1380,13 @@ describe('T1 — the declared idempotency of return and damage is real', () => {
     // `idempotency` was declared for this operation with no replay test behind it, so
     // deleting `idempotent: true` from the route left the block green.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
         itemId: ITEM_A,
         locationId: WAREHOUSE_A1,
         quantity: '4.000',
@@ -1174,11 +1435,13 @@ describe('T1 — the declared idempotency of return and damage is real', () => {
 describe('H3 — a return publishes its movement too', () => {
   it('publishes stock.movement.posted for the return leg', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '7.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
         itemId: ITEM_A_ALT,
         locationId: WAREHOUSE_A1,
         quantity: '3.000',
@@ -1196,5 +1459,219 @@ describe('H3 — a return publishes its movement too', () => {
     // Without this a consumer projecting availability sees stock leave on every issue
     // and never come back — a monotonically diverging projection.
     expect(published).toBe(1);
+  });
+});
+
+/**
+ * The refusal TOKENS the stock commands publish, driven through their routes.
+ *
+ * `STOCK_REFUSAL_RULES` names eighteen refusals a person can meet from a screen,
+ * and the web catalogue carries a sentence for each — but until these cases
+ * existed no backend test drove a single one of them, so nothing held the wire
+ * shape. A token renamed, a path moved from `body.locationId` to `body`, or a
+ * refusal downgraded to the general 409 would have changed which sentence an
+ * operator reads and no test would have noticed.
+ *
+ * Each case asserts the four things a screen depends on: the status, the
+ * catalogue code, the violation PATH — which is what decides the control the
+ * sentence appears beside — and the RULE, which is what selects the sentence.
+ *
+ * Seventeen of the eighteen are pinned here and in the two sibling suites. The
+ * eighteenth, `stock_location_not_active`, is UNREACHABLE: see the note where it
+ * would have gone, below.
+ */
+describe('the stock refusal tokens, on the wire', () => {
+  it('names the quarantine location that may not be reserved from', async () => {
+    await seedStock({ itemId: ITEM_A, locationId: QUARANTINE_A1, quantity: '4.000' });
+    authAs(INV_FULL);
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: QUARANTINE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.locationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_location_quarantine');
+  });
+
+  it('names the transit location that may not be reserved from', async () => {
+    // A transit location is system-owned: exactly one per branch, minted by
+    // `inv.dispatch_transfer`. So the only honest way to reach this refusal is to
+    // dispatch a real transfer and then name the cell it created.
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '6.000' });
+    authAs(INV_FULL);
+    const transfer = await bodyOf<{ transitLocationId: string }>(
+      await post(TRANSFER_CREATE, '/api/v1/stock-transfers', {
+        itemId: ITEM_A,
+        fromLocationId: WAREHOUSE_A1,
+        toLocationId: STORAGE_A1,
+        quantity: '2.000',
+      })
+    );
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: transfer.transitLocationId,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.locationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_location_transit');
+  });
+
+  // `stock_location_not_active` HAS NO CASE HERE, and it is the one refusal in
+  // this family that cannot get one. `inv.stock-location-create` is the only
+  // operation that writes `inv.stock_locations` and it always lands `active`; the
+  // catalogue mints no location-status authority, so no sequence of real requests
+  // puts a cell into the state the refusal is about. The only way to a green
+  // assertion is an admin UPDATE behind the operations, which would pin a state
+  // the product cannot produce and prove nothing about what a caller can reach.
+  // The refusal stays in the service because the column and its CHECK are real
+  // and an operator may yet deactivate a cell in the database.
+
+  it('names the archived item that takes no stock movement', async () => {
+    authAs(INV_FULL);
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A_ARCHIVED,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.itemId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_item_archived');
+  });
+
+  it('names the item that is not stock-tracked', async () => {
+    authAs(INV_FULL);
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A_UNTRACKED,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.itemId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_item_not_tracked');
+  });
+
+  it('names the work order that sits in another branch from the stock', async () => {
+    const elsewhere = await createOpenWorkOrder({ branchId: BRANCH_A2 });
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '5.000' });
+    authAs(INV_FULL);
+    const response = await post(ISSUE, '/api/v1/stock-issues', {
+      workOrderId: elsewhere.workOrderId,
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.workOrderId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_work_order_other_branch');
+  });
+
+  it('names the quantity that exceeds what the reservation holds', async () => {
+    const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '9.000' });
+    authAs(INV_FULL);
+    const reservation = await bodyOf<{ id: string }>(
+      await post(RESERVE, '/api/v1/stock-reservations', {
+        itemId: ITEM_A,
+        locationId: WAREHOUSE_A1,
+        quantity: '2.000',
+        workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
+      })
+    );
+    const response = await post(ISSUE, '/api/v1/stock-issues', {
+      workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A1,
+      quantity: '5.000',
+      reservationId: reservation.id,
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.quantity');
+    expect(problem.violations?.[0]?.rule).toBe('stock_issue_exceeds_reservation');
+  });
+
+  it('names the quantity that exceeds what was issued', async () => {
+    const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '8.000' });
+    authAs(INV_FULL);
+    const issued = await bodyOf<{ id: string }>(
+      await post(ISSUE, '/api/v1/stock-issues', {
+        workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
+        itemId: ITEM_A,
+        locationId: WAREHOUSE_A1,
+        quantity: '2.000',
+      })
+    );
+    const response = await post(RETURN, '/api/v1/stock-returns', {
+      partIssueId: issued.id,
+      quantity: '5.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.quantity');
+    expect(problem.violations?.[0]?.rule).toBe('stock_return_exceeds_issue');
+  });
+
+  it('names the quarantine cell that lies in another branch from the damage', async () => {
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '5.000' });
+    authAs(INV_FULL);
+    const response = await post(DAMAGE, '/api/v1/damaged-stock', {
+      itemId: ITEM_A,
+      fromLocationId: WAREHOUSE_A1,
+      quarantineLocationId: QUARANTINE_A2,
+      quantity: '1.000',
+      reason: 'Dropped during handling',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.quarantineLocationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_damage_other_branch');
+  });
+
+  it('refuses a damage that would release whole reservations for a fraction', async () => {
+    // A reservation is released WHOLE, so a 0.001 damage at a cell whose stock is
+    // entirely reserved would void the reservation for a thousandth of its size.
+    const cell = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: cell, quantity: '4.000' });
+    authAs(INV_FULL);
+    await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '4.000',
+    });
+    const response = await post(DAMAGE, '/api/v1/damaged-stock', {
+      itemId: ITEM_A,
+      fromLocationId: cell,
+      quarantineLocationId: QUARANTINE_A1,
+      quantity: '0.001',
+      reason: 'Corner of one box crushed',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    // Published against the request: the cure is to release the reservation, which
+    // is not a control on the damage form.
+    expect(problem.violations?.[0]?.path).toBe('body');
+    expect(problem.violations?.[0]?.rule).toBe('stock_damage_releases_reservations');
   });
 });

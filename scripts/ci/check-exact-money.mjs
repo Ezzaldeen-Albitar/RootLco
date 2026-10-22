@@ -53,6 +53,10 @@ export const MONEY_TREES = Object.freeze([
   `${API_SRC_PATH}/modules/delivery`,
   `${API_SRC_PATH}/modules/warranty`,
   `${API_SRC_PATH}/modules/pricing/domain`,
+  // P1-31 P-11 slice 4: the report engine publishes invoice, receipt, allocation
+  // and outstanding amounts, so the module that assembles them is on the surface
+  // this gate defends.
+  `${API_SRC_PATH}/modules/reporting`,
   `${API_SRC_PATH}/app/api/v1/invoices`,
   `${API_SRC_PATH}/app/api/v1/payments`,
   `${API_SRC_PATH}/app/api/v1/payment-methods`,

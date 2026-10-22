@@ -18,15 +18,40 @@ import { pageMetadata } from '@/lib/page-metadata';
  * no operation that returns those numbers, and a screen full of plausible zeros
  * reads as a working product that happens to be empty.
  *
- * Each card is shown only when the actor holds the permission its screen needs —
- * the same rule the sidebar uses, and for the same reason. An entry an operator
- * cannot open is a door with no handle.
+ * Each card is shown only when the actor holds what its screen needs, so an
+ * entry an operator cannot open is never offered: a door with no handle.
+ *
+ * ## Every code its page asks for (`P1-32-PRE-OD-ADM6`)
+ *
+ * `permission` and `orPermissions` are taken from the entry's navigation item
+ * (`config/navigation.ts`). Each `orPermissions` code stands in for
+ * `permission`: holding any one of them is enough. `alsoRequires` is all-of:
+ * every code in it is needed besides. An entry may ask for more than its
+ * navigation item where its page refuses without a further code (departments
+ * and employees list one branch's records and need the branch read), so the hub
+ * is not claimed to match the sidebar entry for entry. The hub cases in
+ * `tests/audit-log.dom.test.tsx` render the gated pages and hold the hub to
+ * what they draw.
+ *
+ * No technician roster entry: technicians sit in the sidebar outside
+ * `/administration`, where the entry opens the technician's own workspace
+ * (`/technicians/me`); no roster page exists yet (`config/navigation.ts`).
  */
 
 interface Entry {
   readonly href: string;
   readonly labelKey: string;
-  readonly permission: string;
+  readonly permission: AdministrationPermission;
+  /**
+   * Codes that each stand in for `permission`, exactly as the sidebar entry's
+   * `orPermissions`: for a screen that shows something to any one of them.
+   */
+  readonly orPermissions?: readonly AdministrationPermission[];
+  /**
+   * Codes that are ALL required as well, exactly as the sidebar entry's
+   * `alsoRequires`.
+   */
+  readonly alsoRequires?: readonly AdministrationPermission[];
 }
 
 const SECTIONS: readonly {
@@ -39,6 +64,20 @@ const SECTIONS: readonly {
     bodyKey: 'admin.section.identityBody',
     entries: [
       { href: '/administration/users', labelKey: 'nav.users', permission: PERMISSIONS.userRead },
+      {
+        href: '/administration/departments',
+        labelKey: 'nav.departments',
+        permission: PERMISSIONS.departmentRead,
+        // The page lists one branch's departments and refuses without the
+        // branch read (`administration/departments/page.tsx`).
+        alsoRequires: [PERMISSIONS.branchRead],
+      },
+      {
+        href: '/administration/employees',
+        labelKey: 'nav.employees',
+        permission: PERMISSIONS.employeeRead,
+        alsoRequires: [PERMISSIONS.branchRead],
+      },
       { href: '/administration/roles', labelKey: 'nav.roles', permission: PERMISSIONS.roleRead },
       {
         href: '/administration/permissions',
@@ -49,6 +88,11 @@ const SECTIONS: readonly {
         href: '/administration/approval-limits',
         labelKey: 'nav.approvalLimits',
         permission: PERMISSIONS.approvalManage,
+      },
+      {
+        href: '/administration/discount-threshold',
+        labelKey: 'nav.discountThreshold',
+        permission: PERMISSIONS.priceRead,
       },
     ],
   },
@@ -64,19 +108,25 @@ const SECTIONS: readonly {
       {
         href: '/administration/numbering-rules',
         labelKey: 'nav.numberingRules',
-        permission: PERMISSIONS.settingsManage,
+        // See navigation.ts: read only, the company settings or the branch
+        // settings, whichever the session may read.
+        permission: PERMISSIONS.companyRead,
+        orPermissions: [PERMISSIONS.branchRead],
       },
       {
         href: '/administration/taxes',
         labelKey: 'nav.taxes',
-        // See navigation.ts: the screen's operations require settings
-        // management, not `org.tax.manage` (P1-26-F-029).
-        permission: PERMISSIONS.settingsManage,
+        // See navigation.ts: read only, as Numbering rules; never
+        // `org.tax.manage` (P1-26-F-029).
+        permission: PERMISSIONS.companyRead,
+        orPermissions: [PERMISSIONS.branchRead],
       },
       {
         href: '/administration/currencies',
         labelKey: 'nav.currencies',
-        permission: PERMISSIONS.settingsManage,
+        // The company's enabled codes, or the platform's currency list.
+        permission: PERMISSIONS.companyRead,
+        orPermissions: [PERMISSIONS.tenantRead],
       },
       {
         href: '/administration/languages',
@@ -86,7 +136,15 @@ const SECTIONS: readonly {
       {
         href: '/administration/system-settings',
         labelKey: 'nav.systemSettings',
-        permission: PERMISSIONS.settingsManage,
+        // See navigation.ts: the company settings or the branch settings,
+        // whichever the session may read; saving needs settings management.
+        permission: PERMISSIONS.companyRead,
+        orPermissions: [PERMISSIONS.branchRead],
+      },
+      {
+        href: '/administration/appointment-setup',
+        labelKey: 'nav.appointmentSetup',
+        permission: PERMISSIONS.appointmentCatalogueManage,
       },
     ],
   },
@@ -117,8 +175,13 @@ export default async function AdministrationPage({
 
   const sections = SECTIONS.map((section) => ({
     ...section,
-    entries: section.entries.filter((entry) =>
-      holds(session.permissions, entry.permission as AdministrationPermission)
+    // The sidebar's rule (`isVisible`): the entry's permission or any one of
+    // its `orPermissions`, and then every one of its `alsoRequires`.
+    entries: section.entries.filter(
+      (entry) =>
+        (holds(session.permissions, entry.permission) ||
+          (entry.orPermissions ?? []).some((code) => holds(session.permissions, code))) &&
+        (entry.alsoRequires ?? []).every((code) => holds(session.permissions, code))
     ),
   })).filter((section) => section.entries.length > 0);
 

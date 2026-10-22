@@ -251,3 +251,31 @@ export function scopeTargetOption(body: unknown): {
   // on, so an absent target must be an absent KEY, not a key holding undefined.
   return { authorizationTarget: { companyId, branchId } };
 }
+
+/**
+ * Reads a company or a branch authorization target out of the not-yet-validated
+ * route parameters (DX-4, finance QA fixes E).
+ *
+ * A route whose path names the company or the branch it is about passes that
+ * identifier as its `authorizationTarget`, and the target is built BEFORE the
+ * operation runs. It used to be read off parameters that `parseOrFail` had
+ * already validated outside `handleOperation`, so a malformed identifier threw
+ * past the pipeline and the caller received a bare 500 with no correlation id.
+ * The parse now runs inside the operation, which answers 422 like every other
+ * validation failure, and this builds the target without throwing.
+ *
+ * The same one-way argument as `scopeTargetOption` makes that safe: a
+ * well-formed identifier narrows the permission evaluation to it, and a missing
+ * or malformed one yields NO target — the scope-blind evaluation that applies to
+ * an empty target — after which the parse inside the operation refuses the
+ * request. A malformed identifier can therefore never widen what a caller may do.
+ */
+export function pathScopeTarget(
+  params: unknown,
+  key: 'companyId' | 'branchId'
+): { companyId?: string; branchId?: string } {
+  if (typeof params !== 'object' || params === null) return {};
+  const value = (params as Record<string, unknown>)[key];
+  if (typeof value !== 'string' || !UUID.test(value)) return {};
+  return key === 'companyId' ? { companyId: value } : { branchId: value };
+}

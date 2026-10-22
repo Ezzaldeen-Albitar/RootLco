@@ -47,7 +47,7 @@
  * `RETURNING` would be refused. The affected-row count is the evidence.
  */
 import { Repository } from '@/server/db/repository';
-import type { PlatformTargetHandle } from '@/server/db/transaction';
+import type { DbHandle, PlatformTargetHandle } from '@/server/db/transaction';
 import { SEQUENCE_DEFINITIONS } from '../domain/sequence-registry';
 
 /** The company and branch `org.provision_organization` created in this transaction. */
@@ -92,5 +92,55 @@ export class NumberSequenceBootstrapRepository extends Repository {
       ]
     );
     return result.rowCount ?? 0;
+  }
+
+  /**
+   * Creates the BRANCH-scoped numbering runs for one branch, on the tenant's own
+   * connection.
+   *
+   * The sibling above runs as `app_platform` during provisioning and its policy
+   * requires a tenant still in `provisioning`, so it cannot serve a branch
+   * created afterwards. This statement is the request-path equivalent:
+   * `ins_number_sequences_branch_authority` is the authority, it is gated on
+   * `org.branch.manage`, and it admits only a row naming a real company/branch
+   * pair of the session's own tenant.
+   *
+   * `ON CONFLICT DO NOTHING` on `uq_number_sequences_scope`: a replayed create
+   * must not raise on rows a first attempt already wrote, and the affected-row
+   * count is therefore a floor rather than an assertion — which is why the
+   * service checks the resulting SET of codes rather than this number.
+   */
+  async provisionBranchSequences(db: DbHandle, scope: SequenceBootstrapScope): Promise<void> {
+    const codes = SEQUENCE_DEFINITIONS.filter(
+      (definition) => definition.provisioningScope === 'branch'
+    ).map((definition) => definition.code);
+    await this.run(
+      db,
+      `INSERT INTO shared.number_sequences
+         (tenant_id, company_id, branch_id, sequence_code, created_by)
+       SELECT $1, $2::uuid, $3::uuid, run.code, $4
+         FROM unnest($5::text[]) AS run(code)
+       ON CONFLICT ON CONSTRAINT uq_number_sequences_scope DO NOTHING`,
+      [
+        db.context.principal.tenantId,
+        scope.companyId,
+        scope.branchId,
+        db.context.principal.userId,
+        codes,
+      ]
+    );
+  }
+
+  /** The branch-scoped sequence codes actually configured for a branch. */
+  async branchSequenceCodes(db: DbHandle, scope: SequenceBootstrapScope): Promise<string[]> {
+    const result = await this.run<{ sequence_code: string }>(
+      db,
+      `SELECT sequence_code
+         FROM shared.number_sequences
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+        ORDER BY sequence_code`,
+      [db.context.principal.tenantId, scope.companyId, scope.branchId]
+    );
+    return result.rows.map((row) => row.sequence_code);
   }
 }

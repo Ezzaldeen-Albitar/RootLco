@@ -45,6 +45,7 @@ const ALL_PERMISSIONS = [
   'apt.appointment.read',
   'apt.appointment.manage',
   'apt.appointment.lifecycle.manage',
+  'apt.catalogue.manage',
   'rec.reception.read',
   'rec.reception.manage',
   'rec.reception.party.manage',
@@ -267,6 +268,9 @@ const ROUTES: readonly RouteCase[] = [
       canManage: 'apt.appointment.manage',
       // ENDING an appointment is a different authority from arranging one.
       canEndLifecycle: 'apt.appointment.lifecycle.manage',
+      // The cancel dialog's "Open appointment setup" link leads to the
+      // appointment catalogue, so it is gated on that catalogue's own code.
+      canSetUpCatalogue: 'apt.catalogue.manage',
     },
   },
   {
@@ -400,11 +404,11 @@ describe('P1-28-SEC-001 — every capability comes from its OWN permission', () 
         expect(ALL_PERMISSIONS, `${code} is not in ALL_PERMISSIONS`).toContain(code);
       }
     }
-    // Anti-vacuity: the eight routes together decide twenty-six capabilities,
+    // Anti-vacuity: the eight routes together decide twenty-seven capabilities,
     // and six of them decide at least one. Both halves are stated, so adding a
     // capability-free route can never weaken the first number.
     const total = ROUTES.reduce((sum, route) => sum + Object.keys(route.capabilities).length, 0);
-    expect(total).toBe(26);
+    expect(total).toBe(27);
     expect(ROUTES.length).toBe(8);
     expect(ROUTES.filter((route) => Object.keys(route.capabilities).length > 0)).toHaveLength(6);
   });

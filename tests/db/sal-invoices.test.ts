@@ -1,8 +1,9 @@
 /**
  * Phase 1-11 — sal invoices: draft assembly, issue primitive, freeze + numbering guards.
  * Proves H-fin-5 (number iff issued), L-fin-1/L-fin-3 (header reconciles to Σ line amounts),
- * FR-SAL-001 (one live invoice per work order), FR-WTY-004 (payer split), BR-SAL-001
- * (idempotent re-issue).
+ * FR-SAL-001 (one live invoice per work order among invoices that name no quotation revision —
+ * uq_invoices_work_order_unsourced, with uq_invoices_work_order_draft, since P1-32-PRE-OD-FD5),
+ * FR-WTY-004 (payer split), BR-SAL-001 (idempotent re-issue).
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
@@ -122,7 +123,7 @@ describe('p1-11 sal.invoices', () => {
     });
   });
 
-  it('enforces one live invoice per work order (uq_invoices_work_order_active 23505)', async () => {
+  it('enforces one live unsourced invoice per work order (uq_invoices_work_order_draft / _unsourced 23505)', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { wo } = await makeWorkOrder(c, 'onewo');
       await seedDraftInvoice(c, { wo, payer: P9.SR });

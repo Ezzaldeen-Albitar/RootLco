@@ -471,7 +471,7 @@ describe('P1-30 — the payment methods a provisioned tenant is given', () => {
     // sal.finance.view. Before the slice each of the three was independently
     // fatal.
     expect(recorded.status).toBe(201);
-    expect(recorded.body.money).toEqual({ amount: '25.0000', currency: 'JOD' });
+    expect(recorded.body.money).toEqual({ amount: '25.0000', currency: 'JOD', minorUnit: 3 });
     expect(recorded.body.reference).toMatch(/\d/);
   });
 

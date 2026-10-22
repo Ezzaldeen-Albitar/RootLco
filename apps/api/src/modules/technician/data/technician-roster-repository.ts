@@ -295,6 +295,38 @@ export class TechnicianRosterRepository extends Repository {
   }
 
   /**
+   * The user behind each of these profiles (Owner directive — the dashboard).
+   *
+   * BATCHED, and soft-deleted rows are excluded: a retired profile holds no open
+   * assignment, so a row that appears here for one would be an attribution with
+   * nothing behind it.
+   *
+   * No company or branch predicate. A profile id reaches this method from a
+   * consumer that already resolved it inside a branch it authorized, and the
+   * tenant predicate plus `sel_technician_profiles_scope` are what bound the
+   * read; adding a second, differently-shaped scope here would let an id that is
+   * legitimately held resolve to nothing for the caller that holds it.
+   *
+   * An id this caller cannot see is simply ABSENT from the result rather than
+   * present with a null, so a consumer cannot read existence out of the shape of
+   * the answer.
+   */
+  async userIdsForProfiles(
+    db: DbHandle,
+    technicianProfileIds: readonly string[]
+  ): Promise<readonly { readonly technicianProfileId: string; readonly userId: string }[]> {
+    if (technicianProfileIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string; user_id: string }>(
+      db,
+      `SELECT id, user_id FROM tech.technician_profiles
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+      [context.principal.tenantId, technicianProfileIds]
+    );
+    return result.rows.map((row) => ({ technicianProfileId: row.id, userId: row.user_id }));
+  }
+
+  /**
    * The CALLER's own live technician profile id, bounded to one company/branch.
    *
    * BR-01. The subject is `context.principal.userId` — resolved from the session

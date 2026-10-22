@@ -371,7 +371,7 @@ const MUTATIONS = Object.freeze([
     target: `${API_SRC_PATH}/modules/payments/data/payments-repository.ts`,
     claim:
       'an allocation is created by sal.allocate_receipt and by nothing else — app_runtime holds raw INSERT on sal.payment_allocations and no constraint bounds the sum',
-    from: 'const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4) AS id`;',
+    from: 'const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4, $5) AS id`;',
     to: 'const ALLOCATE_RECEIPT_SQL = `INSERT INTO sal.payment_allocations (tenant_id) VALUES ($1) RETURNING id`;',
     verify: PAYMENTS,
   },

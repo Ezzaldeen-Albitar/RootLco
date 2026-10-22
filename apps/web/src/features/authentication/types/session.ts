@@ -39,8 +39,9 @@ export type SessionProblem =
    */
   | 'expired'
   /**
-   * The token is valid and the account may not read its own session — it does
-   * not hold `iam.user.read`. The cookie is **kept**: it is a permissions
+   * The token is valid and the account holds nothing the workspace opens — its
+   * session read was refused, or answered with no permission code at all
+   * (P1-32-PRE-OD-FRX). The cookie is **kept**: it is a permissions
    * problem for an administrator, not an expired credential, and clearing it
    * produced an unbreakable sign-in loop (`P1-26-F-022`).
    */

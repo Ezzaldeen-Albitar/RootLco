@@ -1,0 +1,972 @@
+'use client';
+
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type Ref,
+  type RefObject,
+} from 'react';
+import { flushSync } from 'react-dom';
+import { useForkRef } from '@mui/material/utils';
+import dayjs, { type Dayjs } from 'dayjs';
+import timezonePlugin from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import type {
+  DateValidationError,
+  DateTimeValidationError,
+  FieldRef,
+} from '@mui/x-date-pickers/models';
+import { PickersTextField, type PickersTextFieldProps } from '@mui/x-date-pickers/PickersTextField';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import {
+  useWorkingContext,
+  type WorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import type { Messages } from '@/i18n/get-messages';
+import { formatMessage, translate } from '@/i18n/get-messages';
+import { isCalendarDay, isKnownZone, type CalendarDay } from '@/lib/branch-time';
+import { FOCUS_REQUEST_EVENT } from '@/lib/forms/use-focus-first-invalid';
+import {
+  FieldHelper,
+  useFieldWiring,
+  type FieldWiring,
+  type MuiFieldBaseProps,
+} from './field-wiring';
+
+/**
+ * Dates and moments on the MIT date pickers, with the `FieldFrame` contract —
+ * ADR-022 PR1.
+ *
+ * ## Two kinds of value, and neither is a `Dayjs`
+ *
+ *   - `DateField` holds a CALENDAR DAY, `YYYY-MM-DD` — the same string a native
+ *     `type="date"` input produces and every day-valued route accepts. `''` is
+ *     "no day": nothing typed, a day half typed, or one that is not a day.
+ *   - `DateTimeField` holds an INSTANT WITH ITS OFFSET —
+ *     `2026-09-22T09:30:00+03:00` — the one form `components/forms/instant.ts`
+ *     accepts, because a local timestamp without an offset is resolved against
+ *     the server's zone and lands on the wrong hour. `''` again means none.
+ *
+ * The picker's `Dayjs` never leaves this file, so a screen cannot come to
+ * depend on the date library, and a value a screen holds is always one the API
+ * already reads.
+ *
+ * ## Whose clock
+ *
+ * Business days are decided on the BRANCH's clock (`lib/branch-time.ts`), not
+ * the laptop's. The pickers are given `timezone`: the zone the caller names, or
+ * else the working branch's own zone from the working context. A moment is
+ * shown and typed as the branch's wall clock and emitted with the branch's
+ * offset for that moment, so daylight-saving is answered per instant, never per
+ * page load.
+ *
+ * ## A moment needs a concrete branch
+ *
+ * A `DateTimeField` is a WRITE input — an appointment's start, a promised
+ * handover — and writes need a concrete branch. Under "All my branches" (or
+ * before any branch is chosen) there is no one clock the typed wall time could
+ * mean, and the browser's clock would be a silent guess that moves the moment
+ * by hours. So when the caller names no `timezone` and no single branch with a
+ * known zone is in force, the field is NOT drawn: its label and the shared
+ * "choose one branch" sentence (`RequiresConcreteBranch`) are, instead —
+ * `data-zone-refused` marks it. A screen that genuinely means another clock
+ * passes `timezone` explicitly — or renders `ZonedDateTimeField`, the same
+ * field on a clock the caller must name, which reads no working context at all
+ * (a record reached by its address, on its own branch's clock, has no business
+ * reading the working branch). `DateField` holds a calendar day, which names
+ * no instant, and keeps the browser's calendar only for drawing the picker
+ * (`pickerZone`): the day it hands back is the day typed, on any machine.
+ *
+ * ## One picker per clock
+ *
+ * The picker decides once, when it mounts, which date the typed parts are laid
+ * over — today's midnight on the clock it was mounted with — and keeps that
+ * for as long as it holds no whole value. A field that was empty when its
+ * clock changed (the working branch switched, a filter's zone replaced) went
+ * on building the typed day on the OLD clock, and reading that midnight on the
+ * new one moved it: a day typed after a switch from a Riyadh clock to UTC came
+ * out as the day before, and a moment came out three hours early (measured,
+ * on every machine, UTC included). So each clock gets a picker of its own —
+ * the picker is keyed on its clock. A whole day or moment the caller holds is
+ * untouched by that, because the caller's string is what the new picker is
+ * given; a day only partly typed when the clock changes is dropped, as no
+ * clock could say which day it would have been.
+ *
+ * ## The hour that happens twice
+ *
+ * When the clocks go back, one wall-clock hour happens twice (01:00–01:59 on
+ * the first Sunday of November in New York). A typed time in that hour is read
+ * as the EARLIER of the two — the one before the change, on the summer offset —
+ * and the field then says so under itself, naming the offset of the moment it
+ * holds (`repeatedWallClock`). Entering the later one is not offered: no
+ * screen has needed it, and a disambiguation control on every moment field
+ * would be a cost paid for an hour a year. A value handed in that IS the later
+ * one is shown with that later offset named, so the note is always true.
+ *
+ * ## Texts and digits
+ *
+ * Month and weekday names, the section placeholders and every button come from
+ * the product catalogue through the foundation provider (`mui-locale.ts`,
+ * `dayjs-locale.ts`); Arabic uses `ar-jo-latn`, so digits are Latin in both
+ * languages, as everywhere else in the product.
+ *
+ * ## The FieldFrame contract
+ *
+ * The field is a group of spin buttons, one per part of the date. The group is
+ * named by the label; it carries `aria-invalid="true"` only when there is an
+ * error (Material writes `"false"` otherwise, which is removed); its
+ * `aria-describedby` lists the description, then the error, then the caller's
+ * ids; and the error is an alert drawn with a shape as well as a colour. A
+ * required field is marked for the eye and with `aria-required`, never with the
+ * native `required`. Typing is entry by keyboard, part by part, in the order
+ * the locale writes a date; the calendar is optional.
+ *
+ * Whether a typed day is inside `min`/`max` is reported through `onProblem`
+ * (`'minDate'`, `'maxDate'`, `'invalidDate'`, …); the SENTENCE is the caller's,
+ * passed back as `error`, because only the caller knows what the bound means.
+ *
+ * ## A day half typed is reported, not dropped
+ *
+ * A `DateField` that starts empty and has only some of its parts typed
+ * (`01/03/YYYY`) holds no day, so its value stays `''` — the same as a field
+ * nobody touched. The picker says nothing while that is so: it publishes no
+ * value and no validation error until every part is filled (measured on MUI X
+ * 9.14), so a caller listening to `onChange` and `onError` alone cannot tell
+ * "no end date" from "an end date not finished" and would send the form
+ * without it. So `DateField` watches the parts themselves and reports
+ * `onProblem('incomplete')` while some are typed and there is still no day,
+ * and `onProblem(null)` once the entry is whole or emptied again. The native
+ * `type="date"` box this replaced refused such a submission through the
+ * browser's own check; this is that refusal, handed to the caller to word.
+ *
+ * A moment is no different: `DateTimeField` and `ZonedDateTimeField` report
+ * `'incomplete'` the same way while some of the date and time is typed and
+ * there is still no moment, so a caller cannot mistake an unfinished expiry
+ * for none and send the form without it.
+ *
+ * ## Nothing wrong is never said over a day half typed
+ *
+ * `onProblem(null)` means the entry is whole or empty, and a caller may act on
+ * it: the service catalogue drops its day filter when the field says nothing
+ * is wrong and holds no day. One render used to say so falsely. Clearing a
+ * part publishes "no value"; the first digit typed into it that still makes no
+ * day (the `0` of `01`, the `2` of `2026`) publishes a value that is NOT a
+ * date — an object, not "no value" — and the picker names that
+ * (`'invalidDate'`) only in an effect, after the render that first holds it.
+ * For that render the field held parts, no day and no named problem, and
+ * reported `null`: 'incomplete', then `null`, then `'invalidDate'`. The
+ * catalogue dropped its filter on that `null` in the middle of every part
+ * retyped, and read the whole catalogue while the field showed a day
+ * (`P1-32-PRE-OD-LFD`).
+ *
+ * So parts that make no day are `'incomplete'` until the picker names the
+ * problem itself. `null` is reported only when the picker holds a real day or
+ * every part is blank.
+ *
+ * ## After a refusal the cursor lands on the part to finish
+ *
+ * A refused form moves the cursor to its first invalid field
+ * (`lib/forms/use-focus-first-invalid.ts`). This field answers that hook's
+ * focus request itself, through the picker's own field API (`fieldRef` →
+ * `focusField`), on the FIRST EMPTY PART — the year of `01/03/YYYY` — or on the
+ * first part when every part is filled but the day is still refused. Focused
+ * from outside instead, the picker could keep believing it held focus on the
+ * part the operator had left, and then a click on the year highlighted it and
+ * dropped every digit typed (checkpoint browser QA, DEF-02). Entered this way,
+ * typing edits at once, and the caller's error clears as soon as the day is
+ * whole and valid.
+ *
+ * The part is also left SELECTED, as the picker leaves a part it enters. The
+ * picker selects a part's text only when it re-renders, and `focusField` can
+ * cause no re-render at all: when the refusal lands before the picker has
+ * applied its own delayed blur, the picker still believes it holds focus on
+ * that same part, nothing it tracks changes, and the cursor sits collapsed at
+ * the start of the year. The next digit then makes `2YYYY`, which the picker
+ * discards, and `2026` arrives as `0261`. So after `focusField` the answer
+ * selects the focused part's text itself whenever no selection already spans
+ * it — the same selection the picker makes, through the browser's own
+ * selection and no picker internals.
+ *
+ * ## A key pressed is never lost to an effect that ran late
+ *
+ * Clearing one part of a day, or typing a digit that makes the parts no day
+ * at all, the picker publishes "no value" and leaves itself a note of which
+ * part changed, so that when the value comes back empty it blanks that part
+ * and keeps the others. It reads the note while it renders — and wipes it in
+ * an effect after EVERY one of its renders. React runs the effects of a
+ * render made for a key at once; the effects of a render made for anything
+ * else (a report kept in state by the form, an error that appeared, data that
+ * arrived) it leaves for a moment later, and it runs any still waiting just
+ * before the next render. A key that landed in that moment lost its note
+ * between the handler that wrote it and the render that needed it, and the
+ * picker then rebuilt every part from the empty value: all of them blank. With
+ * 01/03/2028 held, the month cleared and 01 typed at once, the field showed
+ * DD/01/YYYY and handed back nothing (measured, with this form's own report
+ * kept in state as the callers keep it). It needed the key within a few
+ * milliseconds of the one before: a script, a paste, a fast hand.
+ *
+ * So the field lets nothing wait: before the picker hears a key, a paste or
+ * any other input, the effects still pending are run (`useSettledBeforeInput`).
+ * The note is then written and read with nothing in between.
+ */
+
+// The foundation extends these too (`ui-foundation/dayjs-locale.ts`); a
+// second `extend` is a no-op, and this file must not depend on import order.
+dayjs.extend(utc);
+dayjs.extend(timezonePlugin);
+
+/** Why the picker rejects what is in it, or `null` when nothing is wrong. */
+export type DateProblem = DateValidationError | DateTimeValidationError;
+
+interface PickerFieldProps extends MuiFieldBaseProps {
+  /** An IANA zone. Defaults to the working branch's zone. */
+  readonly timezone?: string | undefined;
+}
+
+/**
+ * What a `DateField` finds wrong: the picker's own findings, or `'incomplete'`
+ * — some parts of the day typed and the day not yet whole.
+ */
+export type DayProblem = DateValidationError | 'incomplete';
+
+export interface DateFieldProps extends PickerFieldProps {
+  /**
+   * Reports what is wrong with the entry, `null` once nothing is, including a
+   * day only partly typed (`'incomplete'`). Called when the finding changes.
+   */
+  readonly onProblem?: ((problem: DayProblem) => void) | undefined;
+  /** `YYYY-MM-DD`, or `''` for none. */
+  readonly value: CalendarDay | '';
+  readonly onChange: (next: CalendarDay | '') => void;
+  /** The earliest day that may be chosen, `YYYY-MM-DD`. */
+  readonly min?: CalendarDay | undefined;
+  /** The latest day that may be chosen, `YYYY-MM-DD`. */
+  readonly max?: CalendarDay | undefined;
+}
+
+/**
+ * What a `DateTimeField` finds wrong: the picker's own findings, or
+ * `'incomplete'` — some parts of the moment typed and the moment not yet whole.
+ */
+export type MomentProblem = DateTimeValidationError | 'incomplete';
+
+export interface DateTimeFieldProps extends PickerFieldProps {
+  /**
+   * Reports what is wrong with the entry, `null` once nothing is, including a
+   * moment only partly typed (`'incomplete'`). Called when the finding changes.
+   */
+  readonly onProblem?: ((problem: MomentProblem) => void) | undefined;
+  /** For the refusal under "All my branches" and the repeated-hour note. */
+  readonly messages: Messages;
+  /** An instant with an explicit offset (or `Z`), or `''` for none. */
+  readonly value: string;
+  readonly onChange: (next: string) => void;
+  /** The earliest moment that may be chosen, an instant. */
+  readonly min?: string | undefined;
+  /** The latest moment that may be chosen, an instant. */
+  readonly max?: string | undefined;
+}
+
+/**
+ * The zone of the one branch in force, or `undefined` when there is none or it
+ * is not known — no zone named, or a name this browser does not recognise as an
+ * IANA zone (`isKnownZone`). A name the browser cannot resolve is no clock at
+ * all: handed to a picker it would draw a field on a clock nobody can read, so
+ * it is refused exactly as a missing zone is (`P1-32-PRE-OD-INV1C`).
+ */
+export function workingZone(context: WorkingContext): string | undefined {
+  const selection = context.selection;
+  if (selection === null || selection.allBranches) return undefined;
+  const zone = context.branches.find((branch) => branch.id === selection.branchId)?.timezone;
+  return zone === undefined || !isKnownZone(zone) ? undefined : zone;
+}
+
+/**
+ * The picker's zone name: an IANA zone, or `'system'` for the browser's own
+ * calendar when there is no zone to name.
+ *
+ * ## Why `'system'` and never the picker's `'default'`
+ *
+ * To the pickers' dayjs adapter `'default'` means "the zone set with
+ * `dayjs.tz.setDefault`", and nothing here sets one. The adapter then asks
+ * dayjs for a zone named `undefined`, on every render, for the value it is
+ * about to draw. dayjs answers with whatever offset it measures for the
+ * machine at that instant and no zone name at all — and for a year below 1000
+ * the offset it measures is zero on every machine (it writes the year as
+ * `202`, which its own parser does not read and the engine's reads on the
+ * machine's clock), so it takes the value for a UTC one and hands it back on
+ * UTC. A year is typed a digit at a time and passes through 202 on its way to
+ * 2026, so on any machine whose clock is not UTC the day being typed was
+ * redrawn on UTC half way through, and the finished entry was read back from
+ * there: on a Riyadh machine a typed day came out as the day before, on an
+ * Amman machine the first of January came out a year late, and on a Los
+ * Angeles machine a day on its winter clock came out as the day before
+ * (measured, MUI X 9.14 with dayjs 1.11). A UTC machine cannot show it, which
+ * is how it passed every hosted run.
+ *
+ * `'system'` is the adapter's name for a plain machine-local value: it builds
+ * one with `dayjs(value)` and never converts it, so the parts typed are the
+ * parts held. A zone-less `DateField` reads the day back from those parts and
+ * never from an instant, so no machine clock can move it.
+ */
+function pickerZone(zone: string | undefined): string {
+  return zone ?? 'system';
+}
+
+const MS_PER_MINUTE = 60_000;
+const MS_PER_DAY = 86_400_000;
+
+/** An instant on a zone: when, and the zone's offset then in minutes east of UTC. */
+interface ZonedInstant {
+  readonly at: number;
+  readonly offset: number;
+}
+
+/**
+ * `zone`'s offset at an instant, in minutes east of UTC — measured the way
+ * dayjs measures it for every value the picker holds, from the zone's rules
+ * and no clock: not the machine's, and not today's.
+ */
+function offsetOnZone(at: number, zone: string): number {
+  return dayjs(at).tz(zone).utcOffset();
+}
+
+/**
+ * Where `zone`'s wall clock reads the given digits (the wall clock written as
+ * if it were UTC's own): every instant at which it does, EARLIEST FIRST, and
+ * the two offsets the zone is on either side of it.
+ *
+ * One instant for an ordinary wall clock; two where the clocks went back over
+ * it and the hour happens twice; none where they went forward over it and the
+ * hour is skipped.
+ *
+ * The zone is on one of two offsets at that wall clock: the one it was on a
+ * day earlier or the one it is on a day later (no zone changes its clock twice
+ * in that span). Each is tried — the digits less the offset is an instant, and
+ * it is one of the answers when the zone really is on that offset then. The
+ * greater offset gives the earlier instant, so it is tried first.
+ */
+function occurrencesOnZone(
+  digits: number,
+  zone: string
+): { readonly found: readonly ZonedInstant[]; readonly lesser: number; readonly greater: number } {
+  const dayBefore = offsetOnZone(digits - MS_PER_DAY, zone);
+  const dayAfter = offsetOnZone(digits + MS_PER_DAY, zone);
+  const greater = Math.max(dayBefore, dayAfter);
+  const lesser = Math.min(dayBefore, dayAfter);
+  const found: ZonedInstant[] = [];
+  for (const offset of greater === lesser ? [greater] : [greater, lesser]) {
+    const at = digits - offset * MS_PER_MINUTE;
+    if (offsetOnZone(at, zone) === offset) found.push({ at, offset });
+  }
+  return { found, lesser, greater };
+}
+
+/**
+ * The instant a wall clock names on `zone`, and the zone's offset there in
+ * minutes east of UTC — `null` when the wall clock is not one. The wall clock
+ * is `YYYY-MM-DD` (that day's midnight) or `YYYY-MM-DDTHH:mm:ss`.
+ *
+ * The answer depends on the wall clock and the zone and on nothing else: not
+ * on the machine's clock, and not on the day it is asked.
+ *
+ *  - A wall clock that happens ONCE is that instant.
+ *  - One that happens TWICE — the clocks went back over it — is the EARLIER of
+ *    the two, on the offset before the change. See "The hour that happens
+ *    twice".
+ *  - One the zone SKIPS — the clocks went forward over it — is carried on by
+ *    the size of the change, on the offset after it: 02:30 on the morning New
+ *    York's clocks go forward is 03:30 on the summer offset.
+ *
+ * ## Why this is not `dayjs.tz(wall, zone)`
+ *
+ * It answers the same question, and three things about its answer are not the
+ * zone's:
+ *
+ *  - WHICH of two instants it picks. It starts its search from the offset the
+ *    zone is on NOW, and an hour that happens twice is settled by where the
+ *    search started. Asked in summer it gave the earlier 01:30 on the night
+ *    New York's clocks go back; asked after that night, the later one. The
+ *    same typed moment would have been sent an hour apart on two different
+ *    days;
+ *  - its PARTS. It stores the instant as a machine-local date moved by the
+ *    difference between the two clocks, and every part — the year, the day,
+ *    the hour — is read from that moved date on the MACHINE's clock. When the
+ *    machine's own zone changes offset between the instant and the moved date
+ *    the reading is an hour out, and an hour before midnight is the day
+ *    before: on an Auckland machine 2026-09-27, the day Auckland's clocks go
+ *    forward, was drawn as the 26th on a Riyadh branch while the form went on
+ *    holding the 27th (measured);
+ *  - its INSTANT. To give the instant back it undoes that move with the
+ *    machine offset it recorded — and takes a recorded offset of zero for
+ *    "none recorded", measuring the machine again at the moved date. On a
+ *    machine that is on UTC at the instant and not at the moved date the
+ *    instant comes back an hour off: on a Europe/London machine 02:30 typed on
+ *    a Riyadh branch for 29/03/2026 was sent as 03:30, and on an
+ *    Atlantic/Azores machine 2026-03-29 on a New York branch was drawn as the
+ *    28th (measured).
+ *
+ * So the instant is built here from the wall clock's own digits and the
+ * zone's offsets, by UTC arithmetic.
+ */
+export function wallClockOnZone(wall: string, zone: string): ZonedInstant | null {
+  // The digits read as UTC's own: parts only, no clock.
+  const parsed = dayjs.utc(wall);
+  if (!parsed.isValid()) return null;
+  const digits = parsed.valueOf();
+  const { found, lesser, greater } = occurrencesOnZone(digits, zone);
+  const earliest = found[0];
+  if (earliest !== undefined) return earliest;
+  // Skipped: counted from the offset before the change, named on the one after.
+  return { at: digits - lesser * MS_PER_MINUTE, offset: greater };
+}
+
+/** An offset in minutes east of UTC as `±HH:MM`. */
+function offsetText(minutes: number): string {
+  const size = Math.abs(minutes);
+  const hours = String(Math.floor(size / 60)).padStart(2, '0');
+  const rest = String(size % 60).padStart(2, '0');
+  return `${minutes < 0 ? '-' : '+'}${hours}:${rest}`;
+}
+
+/**
+ * A calendar day as the picker's value: that day's midnight on `zone`'s clock.
+ *
+ * The instant of that midnight comes from `wallClockOnZone`, and is then shown
+ * on the zone the way any instant is (`instantToPicker`): dayjs reads the
+ * zone's wall clock for it and keeps those parts, moving nothing.
+ *
+ * ## What the value cannot hold
+ *
+ * dayjs keeps a zone's wall clock as a date on the MACHINE's calendar, so a
+ * wall clock the machine's own calendar skips cannot be kept: on an
+ * Asia/Beirut machine, whose clocks go from midnight to 01:00 on 29/03/2026,
+ * that day's midnight on a New York branch is held as 01:00 and its instant is
+ * an hour late (measured). The day is the same day, which is all a day field
+ * draws or hands back.
+ */
+export function dayToPicker(day: string, zone: string | undefined): Dayjs | null {
+  if (!isCalendarDay(day)) return null;
+  if (zone === undefined) {
+    const local = dayjs(day);
+    return local.isValid() ? local : null;
+  }
+  const midnight = wallClockOnZone(day, zone);
+  if (midnight === null) return null;
+  const value = dayjs(midnight.at).tz(zone);
+  return value.isValid() ? value : null;
+}
+
+/** Reads which zone a picker value belongs to, the way the pickers do. */
+const ADAPTER = new AdapterDayjs();
+
+const WALL_CLOCK = 'YYYY-MM-DDTHH:mm:ss';
+
+/**
+ * The wall clock a picker value shows on `zone`'s clock — what the operator
+ * typed or chose.
+ *
+ * ## Why the wall clock and not the instant
+ *
+ * A value the picker built itself carries the zone's name but can carry a
+ * STALE offset: typing 08/03/2026 on America/New_York — the day daylight
+ * saving starts — produced midnight labelled `-04:00`, an offset that only
+ * begins at 02:00, so the instant it names is 23:00 on the 7th (measured).
+ * Converting that instant to the zone gives the wrong day; the wall clock the
+ * picker shows is the one the operator meant. So a value already in `zone` is
+ * read by its wall clock, and only a value from another zone is converted.
+ */
+function wallClockIn(value: Dayjs, zone: string | undefined): string {
+  if (zone === undefined || ADAPTER.getTimezone(value) === zone) return value.format(WALL_CLOCK);
+  return value.tz(zone).format(WALL_CLOCK);
+}
+
+/** The picker's value as a calendar day on `zone`'s clock; `''` when not a whole day. */
+export function pickerToDay(value: Dayjs | null, zone: string | undefined): CalendarDay | '' {
+  if (value === null || !value.isValid()) return '';
+  return wallClockIn(value, zone).slice(0, 10);
+}
+
+/**
+ * An instant as the picker's value, shown on `zone`'s clock.
+ *
+ * The same limit as a day's (`dayToPicker`, "What the value cannot hold"), and
+ * here it reaches what is drawn: a moment whose wall clock the MACHINE's own
+ * calendar skips is drawn an hour late, and typing that hour is refused as not
+ * a date. On a Europe/Berlin machine, whose clocks go from 02:00 to 03:00 on
+ * 29/03/2026, a Riyadh branch's 02:30 that day is drawn as 03:30 (measured).
+ * One hour a year, on a machine whose zone changes its clock; not fixed here —
+ * the picker would have to hold its value some other way.
+ */
+export function instantToPicker(instant: string, zone: string | undefined): Dayjs | null {
+  if (instant.trim() === '') return null;
+  const parsed = dayjs(instant);
+  if (!parsed.isValid()) return null;
+  return zone === undefined ? parsed : parsed.tz(zone);
+}
+
+/**
+ * The picker's value as an instant carrying `zone`'s offset AT THAT MOMENT —
+ * `YYYY-MM-DDTHH:mm:ss±HH:MM`. `''` when it is not a whole moment.
+ */
+export function pickerToInstant(value: Dayjs | null, zone: string | undefined): string {
+  if (value === null || !value.isValid()) return '';
+  if (zone === undefined) return value.format('YYYY-MM-DDTHH:mm:ssZ');
+  // The wall clock, resolved afresh on the zone: the offset is the one in force
+  // at THAT wall clock, whatever the picker's object was carrying.
+  const resolved = wallClockOnZone(wallClockIn(value, zone), zone);
+  if (resolved === null) return '';
+  // The digits are written from the instant by UTC arithmetic, in which no
+  // machine clock takes part (see `wallClockOnZone`).
+  const shown = dayjs.utc(resolved.at + resolved.offset * MS_PER_MINUTE);
+  return `${shown.format(WALL_CLOCK)}${offsetText(resolved.offset)}`;
+}
+
+/**
+ * Whether an instant's wall clock on `zone` happens twice that day (the clocks
+ * went back), and if so the offsets of both occurrences, earlier first, and
+ * the offset of the instant itself.
+ *
+ * The two occurrences are the two instants `occurrencesOnZone` finds for the
+ * wall clock the zone shows at that instant — the same two `wallClockOnZone`
+ * chooses between — so which is the earlier is settled by the instants
+ * themselves, on every machine and on every day.
+ */
+export function repeatedWallClock(
+  instant: string,
+  zone: string
+): { readonly earlier: string; readonly later: string; readonly shown: string } | null {
+  if (instant.trim() === '') return null;
+  const parsed = dayjs(instant);
+  if (!parsed.isValid()) return null;
+  const at = parsed.valueOf();
+  const shown = offsetOnZone(at, zone);
+  const [first, second] = occurrencesOnZone(at + shown * MS_PER_MINUTE, zone).found;
+  if (first === undefined || second === undefined) return null;
+  return {
+    earlier: offsetText(first.offset),
+    later: offsetText(second.offset),
+    shown: offsetText(shown),
+  };
+}
+
+/**
+ * The picker's own value, held between edits.
+ *
+ * A date is typed one part at a time, and the picker reports every
+ * intermediate value — the year passes through `0002`, `0020` and `0202` on its
+ * way to `2026`. Rebuilding the picker's value from the emitted STRING after
+ * each keystroke loses what the picker was holding: a year-202 midnight on a
+ * zone's historical clock carries that era's offset, and the next keystroke
+ * then moved the day as well as the year (measured: typing 22/09/2026 on
+ * Asia/Amman produced 2026-09-21). So the picker is handed back exactly the
+ * value it reported, for as long as the caller's string is the one this field
+ * last emitted; a different string from the caller — or another zone —
+ * replaces it.
+ */
+function useHeldPickerValue(
+  value: string,
+  zone: string | undefined,
+  toPicker: (value: string, zone: string | undefined) => Dayjs | null
+): readonly [Dayjs | null, (next: Dayjs | null, emitted: string) => void] {
+  const key = `${zone ?? ''}|${value}`;
+  const [held, setHeld] = useState<{ readonly key: string; readonly picker: Dayjs | null }>(() => ({
+    key,
+    picker: toPicker(value, zone),
+  }));
+  let current = held;
+  if (held.key !== key) {
+    current = { key, picker: toPicker(value, zone) };
+    setHeld(current);
+  }
+  const keep = (next: Dayjs | null, emitted: string) =>
+    setHeld({ key: `${zone ?? ''}|${emitted}`, picker: next });
+  return [current.picker, keep] as const;
+}
+
+/** The props every picker field passes Material's text field. */
+function textFieldSlot(wiring: FieldWiring, props: MuiFieldBaseProps): Record<string, unknown> {
+  return {
+    id: wiring.controlId,
+    name: props.name,
+    error: wiring.invalid,
+    fullWidth: true,
+    size: 'small',
+    // Marked with the asterisk by Material; the native `required` is never
+    // set, so the browser's own bubble cannot pre-empt the server.
+    required: props.required,
+    helperText:
+      props.description || props.error ? (
+        <FieldHelper description={props.description} error={props.error} wiring={wiring} />
+      ) : undefined,
+    'data-testid': props.testId,
+    slotProps: {
+      input: {
+        'aria-invalid': wiring.invalid || undefined,
+        'aria-describedby': wiring.describedBy,
+        'aria-errormessage': wiring.errorId,
+        /*
+         * `aria-required` is not an attribute a `group` may carry (WAI-ARIA 1.2;
+         * axe `aria-allowed-attr`, serious), so a required picker is announced
+         * on each of its parts — every one a `spinbutton`, which may — and the
+         * group keeps only the attributes it is allowed.
+         */
+        slotProps: {
+          sectionContent: { 'aria-required': props.required || undefined },
+        },
+      },
+      htmlInput: { required: undefined },
+      formHelperText: { component: 'div' },
+    },
+  };
+}
+
+type PartsReportingProps = PickersTextFieldProps & {
+  /** Told whether every part of the entry is blank, each time that changes. */
+  readonly onPartsBlank?: ((blank: boolean) => void) | undefined;
+  /**
+   * Places the cursor inside the field when a refused form asks for it
+   * (`FOCUS_REQUEST_EVENT`); returns whether the field took it.
+   */
+  readonly onFocusRequest?: (() => boolean) | undefined;
+};
+
+/**
+ * Material's own text field for a picker, which also passes on whether every
+ * part of the entry is blank — the one fact the picker publishes nowhere else
+ * while a day is only partly typed. See "A day half typed is reported".
+ *
+ * It also answers a refused form's focus request, so the cursor is placed by
+ * the picker and not from outside it. See "After a refusal the cursor lands on
+ * the part to finish".
+ *
+ * And it runs the effects still pending before the picker takes any input. See
+ * "A key pressed is never lost to an effect that ran late".
+ */
+function PartsReportingTextField({
+  onPartsBlank,
+  onFocusRequest,
+  ref,
+  ...props
+}: PartsReportingProps & { readonly ref?: Ref<HTMLDivElement> | undefined }) {
+  const blank = props.areAllSectionsEmpty;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  // The picker hands its text field a ref of its own (the anchor its calendar
+  // opens from), so this one is added beside it, never in its place.
+  const handleRef = useForkRef(ref, rootRef);
+  useEffect(() => {
+    onPartsBlank?.(blank);
+  }, [blank, onPartsBlank]);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (root === null || onFocusRequest === undefined) return undefined;
+    const answer = (event: Event) => {
+      if (onFocusRequest()) event.preventDefault();
+    };
+    root.addEventListener(FOCUS_REQUEST_EVENT, answer);
+    return () => root.removeEventListener(FOCUS_REQUEST_EVENT, answer);
+  }, [onFocusRequest]);
+  useSettledBeforeInput(rootRef);
+  return <PickersTextField {...props} ref={handleRef} />;
+}
+
+/** Every event through which the picker takes input from the operator. */
+const INPUT_EVENTS = ['keydown', 'beforeinput', 'input', 'paste', 'cut', 'drop'] as const;
+
+/**
+ * Runs React's pending effects before the picker inside `root` handles an
+ * input event. See "A key pressed is never lost to an effect that ran late".
+ *
+ * The listeners are on the capturing phase of the field's own root, which the
+ * event reaches before the picker's handlers do. React offers no call that
+ * only runs pending effects; a synchronous update does it as its first step,
+ * so one is made — to a counter nothing reads, in this component alone.
+ */
+function useSettledBeforeInput(root: RefObject<HTMLElement | null>): void {
+  const [, turn] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => {
+    const element = root.current;
+    if (element === null) return undefined;
+    const settle = () => flushSync(turn);
+    for (const type of INPUT_EVENTS) element.addEventListener(type, settle, true);
+    return () => {
+      for (const type of INPUT_EVENTS) element.removeEventListener(type, settle, true);
+    };
+  }, [root]);
+}
+
+/**
+ * Selects the text of the part that holds the cursor, unless a selection
+ * already spans it. See "After a refusal the cursor lands on the part to
+ * finish".
+ */
+function selectFocusedPart(): void {
+  const part = document.activeElement;
+  if (part === null) return;
+  const selection = part.ownerDocument.getSelection();
+  if (selection === null) return;
+  const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+  const spansPart =
+    range !== null &&
+    !range.collapsed &&
+    part.contains(range.startContainer) &&
+    part.contains(range.endContainer);
+  if (!spansPart) selection.selectAllChildren(part);
+}
+
+/**
+ * The focus request's answer for one picker: its first empty part, or its first
+ * part when none is empty, focused through the picker's own field API and left
+ * selected.
+ */
+function useEnterFirstUnfinishedPart(
+  fieldRef: RefObject<FieldRef<Dayjs | null> | null>
+): () => boolean {
+  return useCallback(() => {
+    const field = fieldRef.current;
+    if (field === null) return false;
+    const firstEmpty = field.getSections().findIndex((section) => section.value === '');
+    field.focusField(firstEmpty === -1 ? 0 : firstEmpty);
+    if (!field.isFieldFocused()) return false;
+    selectFocusedPart();
+    return true;
+  }, [fieldRef]);
+}
+
+/**
+ * Whether the picker holds parts that make no day and has not yet named why.
+ * See "Nothing wrong is never said over a day half typed".
+ */
+function unnamedNoDay(picker: Dayjs | null, partsBlank: boolean): boolean {
+  return !partsBlank && picker !== null && !picker.isValid();
+}
+
+export function DateField(props: DateFieldProps) {
+  const context = useWorkingContext();
+  return <DayField {...props} zone={props.timezone ?? workingZone(context)} />;
+}
+
+export interface ZonedDateFieldProps extends DateFieldProps {
+  /** The IANA zone the picker is drawn on. Required. */
+  readonly timezone: string;
+}
+
+/**
+ * `DateField` on a clock the caller NAMES, and nothing else: it reads no
+ * working context, as `ZonedDateTimeField` does for a moment. For a screen that
+ * has no working branch at all — the Platform Owner Console, whose days are UTC
+ * days — and so must not reach for one. Everything else is `DateField`'s: the
+ * calendar day as `YYYY-MM-DD`, a day half typed reported as `'incomplete'`,
+ * the `FieldFrame` wiring and the cursor on the first unfinished part after a
+ * refusal.
+ */
+export function ZonedDateField(props: ZonedDateFieldProps) {
+  return <DayField {...props} zone={props.timezone} />;
+}
+
+/** The day picker both fields draw, on the zone its caller settled. */
+function DayField(props: DateFieldProps & { readonly zone: string | undefined }) {
+  const { label, value, onChange, min, max, zone, onProblem, onEdit, disabled, readOnly } = props;
+  const clock = pickerZone(zone);
+  const wiring = useFieldWiring(props.description, props.error, props.describedBy);
+  const minDay = min === undefined ? null : dayToPicker(min, zone);
+  const maxDay = max === undefined ? null : dayToPicker(max, zone);
+  const [picker, keep] = useHeldPickerValue(value, zone, dayToPicker);
+  const [partsBlank, setPartsBlank] = useState(true);
+  const [pickerProblem, setPickerProblem] = useState<DateValidationError>(null);
+  // A new clock is a new picker (`key` below), and a new picker reports only
+  // what it finds, so its findings start again from "nothing typed, nothing
+  // wrong". See "One picker per clock".
+  const [followedClock, setFollowedClock] = useState(clock);
+  if (followedClock !== clock) {
+    setFollowedClock(clock);
+    setPartsBlank(true);
+    setPickerProblem(null);
+  }
+  // Parts typed and still no day at all: the picker is silent about this case.
+  // A day typed whole but impossible is not null, and the picker names it.
+  const problem: DayProblem =
+    !partsBlank && picker === null
+      ? 'incomplete'
+      : (pickerProblem ?? (unnamedNoDay(picker, partsBlank) ? 'incomplete' : null));
+  const reported = useRef<DayProblem>(null);
+  const fieldRef = useRef<FieldRef<Dayjs | null> | null>(null);
+  const enterField = useEnterFirstUnfinishedPart(fieldRef);
+  const textField: Record<string, unknown> = {
+    ...textFieldSlot(wiring, props),
+    onPartsBlank: setPartsBlank,
+    onFocusRequest: enterField,
+  };
+  useEffect(() => {
+    if (reported.current === problem) return;
+    reported.current = problem;
+    onProblem?.(problem);
+  }, [problem, onProblem]);
+
+  return (
+    <DatePicker
+      key={clock}
+      label={label}
+      value={picker}
+      timezone={clock}
+      onChange={(next) => {
+        const emitted = pickerToDay(next, zone);
+        keep(next, emitted);
+        onEdit?.();
+        onChange(emitted);
+      }}
+      onError={setPickerProblem}
+      disabled={disabled ?? false}
+      readOnly={readOnly ?? false}
+      {...(minDay === null ? {} : { minDate: minDay })}
+      {...(maxDay === null ? {} : { maxDate: maxDay })}
+      slots={{ textField: PartsReportingTextField }}
+      slotProps={{ field: { fieldRef }, textField }}
+    />
+  );
+}
+
+export function DateTimeField(props: DateTimeFieldProps) {
+  const context = useWorkingContext();
+  const zone = props.timezone ?? workingZone(context);
+
+  if (zone === undefined) {
+    // No clock the typed time could honestly mean. See "A moment needs a
+    // concrete branch" above.
+    return (
+      <MomentZoneRefusal messages={props.messages} label={props.label} testId={props.testId} />
+    );
+  }
+
+  return <ZonedDateTimeField {...props} timezone={zone} />;
+}
+
+/**
+ * What a moment field draws in place of a picker when there is no clock the
+ * typed time could mean: its label and the shared sentence — "choose one
+ * branch" under "All my branches", or "this branch's time zone is not known" —
+ * marked `data-zone-refused`. `DateTimeField` draws it for the working branch;
+ * a screen addressed to a branch of its own draws it where that branch's zone
+ * is missing or not recognised, rather than letting the field fall back to any
+ * other clock (`P1-32-PRE-OD-INV1C`).
+ */
+export function MomentZoneRefusal({
+  messages,
+  label,
+  testId,
+}: {
+  readonly messages: Messages;
+  readonly label: string;
+  readonly testId?: string | undefined;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5" data-testid={testId} data-zone-refused="true">
+      <span className="text-label font-medium text-text-primary">{label}</span>
+      <RequiresConcreteBranch
+        messages={messages}
+        fallbackKey="dateField.zoneUnknown"
+        testId="date-time-requires-branch"
+      />
+    </div>
+  );
+}
+
+export interface ZonedDateTimeFieldProps extends DateTimeFieldProps {
+  /** The IANA zone the moment is shown, typed and emitted on. Required. */
+  readonly timezone: string;
+}
+
+/**
+ * `DateTimeField` on a clock the caller NAMES, and nothing else: it reads no
+ * working context, so a screen addressed to a record rather than to the
+ * working branch — an appointment reached by its address, whose clock is its
+ * own branch's — can take a moment without reaching the working branch at all.
+ * Everything else is `DateTimeField`'s: the wall clock on that zone, the
+ * offset of that moment, the repeated hour named, the `FieldFrame` wiring and
+ * the cursor on the first unfinished part after a refusal.
+ */
+export function ZonedDateTimeField(props: ZonedDateTimeFieldProps) {
+  const {
+    messages,
+    label,
+    value,
+    onChange,
+    min,
+    max,
+    timezone: zone,
+    onProblem,
+    onEdit,
+    disabled,
+    readOnly,
+  } = props;
+  const repeated = repeatedWallClock(value, zone);
+  const repeatedNote =
+    repeated === null
+      ? undefined
+      : formatMessage(translate(messages, 'dateField.repeatedTime'), {
+          offset: `UTC${repeated.shown}`,
+        });
+  const description =
+    [props.description, repeatedNote].filter((part) => part !== undefined).join(' ') || undefined;
+  const wiring = useFieldWiring(description, props.error, props.describedBy);
+  const minMoment = min === undefined ? null : instantToPicker(min, zone);
+  const maxMoment = max === undefined ? null : instantToPicker(max, zone);
+  const [picker, keep] = useHeldPickerValue(value, zone, instantToPicker);
+  const [partsBlank, setPartsBlank] = useState(true);
+  const [pickerProblem, setPickerProblem] = useState<DateTimeValidationError>(null);
+  // A new clock is a new picker (`key` below); its findings start again. See
+  // "One picker per clock".
+  const [followedClock, setFollowedClock] = useState(zone);
+  if (followedClock !== zone) {
+    setFollowedClock(zone);
+    setPartsBlank(true);
+    setPickerProblem(null);
+  }
+  // Parts typed and still no moment at all: the picker is silent about this
+  // case, exactly as for a day (see "A day half typed is reported").
+  const problem: MomentProblem =
+    !partsBlank && picker === null
+      ? 'incomplete'
+      : (pickerProblem ?? (unnamedNoDay(picker, partsBlank) ? 'incomplete' : null));
+  const reported = useRef<MomentProblem>(null);
+  const fieldRef = useRef<FieldRef<Dayjs | null> | null>(null);
+  const enterField = useEnterFirstUnfinishedPart(fieldRef);
+  const textField: Record<string, unknown> = {
+    ...textFieldSlot(wiring, { ...props, description }),
+    onPartsBlank: setPartsBlank,
+    onFocusRequest: enterField,
+  };
+  useEffect(() => {
+    if (reported.current === problem) return;
+    reported.current = problem;
+    onProblem?.(problem);
+  }, [problem, onProblem]);
+
+  return (
+    <DateTimePicker
+      key={zone}
+      label={label}
+      value={picker}
+      timezone={zone}
+      onChange={(next) => {
+        const emitted = pickerToInstant(next, zone);
+        keep(next, emitted);
+        onEdit?.();
+        onChange(emitted);
+      }}
+      onError={setPickerProblem}
+      disabled={disabled ?? false}
+      readOnly={readOnly ?? false}
+      {...(minMoment === null ? {} : { minDateTime: minMoment })}
+      {...(maxMoment === null ? {} : { maxDateTime: maxMoment })}
+      slots={{ textField: PartsReportingTextField }}
+      slotProps={{ field: { fieldRef }, textField }}
+    />
+  );
+}

@@ -290,7 +290,9 @@ describe('the empty set is reported, never passed off as proof', () => {
     // only screen — so the live tree is asserted non-vacuous here, by name.
     const { code, out } = run(join(ROOT, 'apps', 'web', 'src', 'app'));
     expect(code).toBe(0);
-    expect(out).not.toMatch(/0 route page\(s\) examined/);
+    // Anchored on the digit before it: unanchored, "10 route page(s) examined"
+    // matched as a zero-page run the day the tree reached ten pages.
+    expect(out).not.toMatch(/(?<!\d)0 route page\(s\) examined/);
     expect(out).toMatch(/[1-9]\d* route page\(s\) examined/);
     expect(out).not.toMatch(/ZERO pages exist yet/);
   });
@@ -304,6 +306,19 @@ describe('the empty set is reported, never passed off as proof', () => {
 
 describe('the P1-28 gates are untouched', () => {
   it('are byte-unchanged against develop, even though this gate imports them', () => {
+    /*
+     * scripts/ci/check-p1-28-access.mjs is deliberately absent from this list.
+     * Under the Owner directive of 2026-09-16 the Owner accepted commit
+     * 7d0dcfc6 as a completed review fix: its linked-route derivation now reads
+     * a link the way a URL is read (the path is what precedes the first `?` or
+     * `#`, and a constant that resolves to a plain literal is resolved). That
+     * behaviour is pinned in tests/ci/p1-28-access-gate.test.ts by
+     *   'follows a link that carries a query string, and one whose path is a named constant'
+     *   'puts the check-in wizard one link from the customer-first entry point'
+     * both of which fail when the query-string handling is reverted, and it is
+     * bounded by 'does not let a query string smuggle in a route outside the
+     * phase'. The other two P1-28 gates stay frozen.
+     */
     const diff = execFileSync(
       'git',
       [
@@ -311,7 +326,6 @@ describe('the P1-28 gates are untouched', () => {
         '--name-only',
         'origin/develop',
         '--',
-        'scripts/ci/check-p1-28-access.mjs',
         'scripts/ci/check-p1-28-write-reachability.mjs',
         'scripts/ci/check-p1-28-adapter-reachability.mjs',
       ],

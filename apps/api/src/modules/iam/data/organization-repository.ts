@@ -39,8 +39,78 @@ export interface SettingRow {
   readonly effectiveFrom: string;
 }
 
+/** One ACTIVE row of `shared.currencies`. */
+export interface ReferenceCurrencyRow {
+  readonly code: string;
+  readonly name: string;
+  readonly minorUnit: number;
+}
+
+/** One ACTIVE row of `shared.timezones`. */
+export interface ReferenceTimezoneRow {
+  readonly zoneName: string;
+}
+
+/** One ACTIVE row of `shared.languages`. */
+export interface ReferenceLanguageRow {
+  readonly localeCode: string;
+  readonly name: string;
+  readonly direction: string;
+}
+
 export class OrganizationRepository extends Repository {
   protected readonly module = 'iam';
+
+  /**
+   * The ACTIVE rows of the three reference registers, each in code order
+   * (org.reference-values-read, P1-32-PRE-OD-REF).
+   *
+   * Read as `app_runtime` through `sel_currencies_all`, `sel_timezones_all` and
+   * `sel_languages_all`, which hold no tenant term because the registers hold no
+   * tenant data — so there is deliberately no tenant, company or branch
+   * predicate here. An inactive row is left out of the list; the foreign key
+   * still accepts it, and this read does not decide whether it should.
+   */
+  async listReferenceValues(db: DbHandle): Promise<{
+    readonly currencies: readonly ReferenceCurrencyRow[];
+    readonly timezones: readonly ReferenceTimezoneRow[];
+    readonly languages: readonly ReferenceLanguageRow[];
+  }> {
+    const currencies = await this.run<{ code: string; name: string; minor_unit: number }>(
+      db,
+      `SELECT code, name, minor_unit
+         FROM shared.currencies
+        WHERE status = 'active'
+        ORDER BY code ASC`
+    );
+    const timezones = await this.run<{ zone_name: string }>(
+      db,
+      `SELECT zone_name
+         FROM shared.timezones
+        WHERE status = 'active'
+        ORDER BY zone_name ASC`
+    );
+    const languages = await this.run<{ locale_code: string; name: string; direction: string }>(
+      db,
+      `SELECT locale_code, name, direction
+         FROM shared.languages
+        WHERE status = 'active'
+        ORDER BY locale_code ASC`
+    );
+    return {
+      currencies: currencies.rows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        minorUnit: r.minor_unit,
+      })),
+      timezones: timezones.rows.map((r) => ({ zoneName: r.zone_name })),
+      languages: languages.rows.map((r) => ({
+        localeCode: r.locale_code,
+        name: r.name,
+        direction: r.direction,
+      })),
+    };
+  }
 
   async readTenant(db: DbHandle): Promise<TenantRow | null> {
     const row = await this.runOne<{

@@ -64,6 +64,53 @@ export const DIAGNOSTICS_PERMISSIONS = {
 /** The document link entity a report's evidence is captured against. */
 export const REPORT_DOCUMENT_ENTITY_TYPE = 'dia.diagnostic_report';
 
+/* ------------------------------------------------------------------ *
+ * The refusals these screens must say out loud
+ * ------------------------------------------------------------------ */
+
+/**
+ * The rule tokens whose violation names something no control here can hold
+ * (Owner directive, user-facing errors).
+ *
+ * A violation is a path and a token, and the browser files the path's last
+ * segment as a control name. Three of the diagnostics refusals name no control
+ * at all, so each of their sentences was being written and never read:
+ *
+ * - `versionId` — publishing an empty version. The button carries the version;
+ *   there is no box for it.
+ * - `items.<itemCode>` — completing a report with required items unanswered.
+ *   One violation per unanswered item, keyed by the item's own code.
+ * - `reviewer` — a report reviewed by the person who wrote it. The reviewer is
+ *   the signed-in user, so the form has no control naming them.
+ *
+ * All three belong in the form's own alert, where every whole-request refusal
+ * on these screens already goes.
+ */
+export const DIAGNOSTICS_UNATTACHED_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.no_items',
+  'form.violation.mandatory_item_unresolved',
+  'form.violation.self_review',
+]);
+
+/**
+ * The first sentence among a failure's field errors that no control will show.
+ *
+ * Membership, not trust: only a key this module has been told about is
+ * returned, so an unfamiliar token leaves the banner as it was rather than
+ * putting a rule name in front of a technician. `rendered` names the controls
+ * the calling form really shows, so a sentence is never printed twice.
+ */
+export function unattachedRefusalKey(
+  fieldErrors: Readonly<Record<string, string>> | undefined,
+  rendered: readonly string[]
+): string | null {
+  for (const [control, key] of Object.entries(fieldErrors ?? {})) {
+    if (rendered.includes(control)) continue;
+    if (DIAGNOSTICS_UNATTACHED_REFUSAL_KEYS.includes(key)) return key;
+  }
+  return null;
+}
+
 /** `DiagnosticTypeView`. */
 export interface DiagnosticType {
   readonly id: string;

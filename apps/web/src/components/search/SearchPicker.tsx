@@ -1,0 +1,341 @@
+'use client';
+
+import { useEffect, useId, useRef, useState } from 'react';
+
+import { SearchBox } from '@/components/search/SearchBox';
+import { SearchStates } from '@/components/search/SearchStates';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
+import type { Locale } from '@/i18n/config';
+import type { Messages } from '@/i18n/get-messages';
+import { translate } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { useSearchRequest } from '@/lib/api/use-search-request';
+
+/**
+ * The props of a server-searched record picker.
+ *
+ * Exported so the Material UI picker (`components/pickers/EntityPicker`) takes
+ * exactly these props: a call site moves from one to the other by changing its
+ * import, and a prop added to one without the other is a type error here.
+ */
+export interface SearchPickerProps<Row extends { readonly id: string }> {
+  readonly messages: Messages;
+  readonly locale?: Locale | undefined;
+  /** The question this picker asks. */
+  readonly label: string;
+  /** The chosen record, or null. */
+  readonly value: Row | null;
+  readonly onChange: (next: Row | null) => void;
+  /** What a person recognises the record by. Never its identifier. */
+  readonly labelOf: (row: Row) => string;
+  /**
+   * One page of the read for a term already long enough to send. `signal`
+   * aborts when the term moves on; a loader over a cancellable read passes it
+   * on, so the superseded request is cancelled rather than only ignored.
+   */
+  readonly load: (
+    term: string,
+    cursor: string | null,
+    signal: AbortSignal
+  ) => Promise<ReadState<CursorPage<Row>>>;
+  /** Whether the read can be answered at all for this caller. */
+  readonly canSearch: boolean;
+  /** Why there is no box, when `canSearch` is false. */
+  readonly notPermitted: string;
+  /** The id given to that sentence, so a caller can describe a disabled submit with it. */
+  readonly unavailableId?: string | undefined;
+  /** The caller's own refusal — nothing chosen yet, for instance. */
+  readonly error?: string | undefined;
+  readonly minLength: number;
+  readonly maxLength: number;
+  readonly placeholder: string;
+  readonly example: string;
+  /** Said on the box while the term is shorter than the read accepts. */
+  readonly tooShort: string;
+  /** The accessible name of the list of matches. */
+  readonly resultsLabel: string;
+  /** The words on the control that puts a choice back. */
+  readonly change: string;
+  /**
+   * The id of a choice the form OPENED with (a payer taken from the work
+   * order, for instance). Holding it is not unsaved work; changing it is.
+   */
+  readonly pristineId?: string | null;
+  /**
+   * Whether a choice is work the operator would lose. True for a picker inside a
+   * form that writes; a LIST FILTER passes false, because narrowing a list is
+   * not something a branch switch should stop to ask about.
+   */
+  readonly countsAsUnsaved?: boolean;
+  /** Further ids describing the choice, added to the box or the change control. */
+  readonly describedBy?: string | undefined;
+  readonly testId: string;
+}
+
+/**
+ * One record, FOUND by what a person holds and chosen by name — never typed as
+ * a reference (Owner directive, `P1-32-PRE-OD-UX`).
+ *
+ * `WorkOrderPicker` settled the shape on the quotation builder and the invoice
+ * desk; the payment desk, the invoice payer and the quotation's requester need
+ * the same one over different reads. This is that shape once, so a customer, an
+ * invoice and a colleague are chosen the same way everywhere they are chosen:
+ *
+ * - **The search is the server's, and it never reaches the address.**
+ *   `useSearchRequest` sends one read per pause and drops a superseded answer;
+ *   the term lives in memory only.
+ * - **A working-context switch forgets the term and the choice**, asking first
+ *   when something was chosen inside a form that writes (`countsAsUnsaved`; a
+ *   list filter forgets without asking): every change of the working context increments
+ *   `version`, and the term remembers the version it was typed under, so the
+ *   render on which the version moves already treats an old term as empty.
+ * - **Permission-aware.** Without the read's code the picker offers no box and
+ *   says why, in a sentence whose id the caller may point a disabled submit at.
+ * - **Errors are the field's own.** The caller's refusal lands on the box
+ *   (`aria-invalid`, described by the sentence) or, once something is chosen,
+ *   on the control that changes it — so `useFocusFirstInvalid` moves the cursor
+ *   to the thing to fix, and the refusal disappears once it is corrected.
+ * - **It is not a `<form>`.** Every button is `type="button"`, and Enter in the
+ *   box searches rather than submitting the caller's form with nothing chosen.
+ * - **Choosing keeps the cursor.** The match that was pressed is replaced by
+ *   the chosen record, and a focused element that leaves the page drops the
+ *   cursor to the document body — the next Tab starts again at the top (browser
+ *   QA part 7, row 10.4). So the cursor moves to the control that changes the
+ *   choice, which is described by the chosen record's name and therefore
+ *   announces what was chosen.
+ */
+export function SearchPicker<Row extends { readonly id: string }>({
+  messages,
+  locale,
+  label,
+  value,
+  onChange,
+  labelOf,
+  load,
+  canSearch,
+  notPermitted,
+  unavailableId,
+  error,
+  minLength,
+  maxLength,
+  placeholder,
+  example,
+  tooShort,
+  resultsLabel,
+  change,
+  pristineId = null,
+  countsAsUnsaved = true,
+  describedBy,
+  testId,
+}: SearchPickerProps<Row>) {
+  const base = useId();
+  const errorId = `${base}-error`;
+  const chosenId = `${base}-chosen`;
+
+  /*
+   * The cursor, after a choice. A ref flag rather than state: it is set by the
+   * click that chose, read once by the effect that follows that click, and
+   * never rendered. A choice the PARENT makes (a form opening on a payer) does
+   * not set it, so arriving on a pre-filled form moves nobody's cursor.
+   *
+   * The flag lives for ONE commit — the one the press produced, counted by
+   * `pressed`. A parent may refuse the choice and keep the value null; keyed on
+   * the value alone the effect never ran, the flag survived, and whatever value
+   * the parent set LATER — a form re-opened on a record, say — pulled the cursor
+   * away from wherever the operator had gone since (QA round three). Now the
+   * press is answered once, accepted or not, and then forgotten.
+   */
+  const changeRef = useRef<HTMLButtonElement | null>(null);
+  const focusChosen = useRef(false);
+  const [pressed, setPressed] = useState(0);
+  useEffect(() => {
+    if (!focusChosen.current) return;
+    focusChosen.current = false;
+    if (value !== null) changeRef.current?.focus();
+  }, [value, pressed]);
+  const context = useWorkingContext();
+  const [typed, setTyped] = useState(() => ({ text: '', version: context.version }));
+  const term = typed.version === context.version ? typed.text : '';
+  const setTerm = (text: string) => setTyped({ text, version: context.version });
+
+  // A chosen record in a write form is work the operator would lose: a branch
+  // switch asks first. A filter's choice is not. Putting back the record the
+  // form OPENED with — none chosen where it opened on one — is a change too,
+  // the rule `WorkOrderPicker` follows (route sweep B3).
+  useUnsavedGuard(countsAsUnsaved && (value?.id ?? null) !== pristineId);
+
+  // Forget the choice and the term when the working context changes.
+  useWorkingContextChange(() => {
+    setTerm('');
+    if (value !== null) onChange(null);
+  });
+
+  const trimmed = term.trim();
+  const short = trimmed.length > 0 && trimmed.length < minLength;
+  const criteria = canSearch && value === null && trimmed.length >= minLength ? trimmed : null;
+
+  const search = useSearchRequest<Row, string>({
+    criteria,
+    load: (asked, cursor, signal) => load(asked, cursor, signal),
+    version: context.version,
+  });
+
+  const heading = (
+    <span id={`${base}-label`} className="text-label font-medium text-text-primary">
+      {label}
+    </span>
+  );
+  const refusal = error ? (
+    <p id={errorId} role="alert" className="text-supporting text-error">
+      {error}
+    </p>
+  ) : null;
+
+  if (value !== null) {
+    return (
+      <div className="flex flex-col gap-1.5" data-testid={testId}>
+        {heading}
+        <div
+          aria-labelledby={`${base}-label`}
+          role="group"
+          className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-subtle px-3 py-2"
+        >
+          <bdi
+            id={chosenId}
+            className="text-body text-text-primary"
+            data-testid={`${testId}-chosen`}
+          >
+            {labelOf(value)}
+          </bdi>
+          {/*
+            A refused choice is marked WITHOUT `aria-invalid`: ARIA 1.2 does not
+            support it on the button role, so it would be announced nowhere and
+            is an error in itself. The refusal instead reaches assistive
+            technology twice over — this control is DESCRIBED by the sentence,
+            and the sentence is its own `role="alert"` — and `data-invalid` is
+            the non-ARIA marker `useFocusFirstInvalid` also looks for, so the
+            cursor still lands here after a refused submit.
+          */}
+          <button
+            ref={changeRef}
+            type="button"
+            data-invalid={error ? 'true' : undefined}
+            aria-describedby={
+              [chosenId, error ? errorId : undefined, describedBy].filter(Boolean).join(' ') ||
+              undefined
+            }
+            onClick={() => {
+              onChange(null);
+              setTerm('');
+            }}
+            className={`shrink-0 rounded-md border ${error ? 'border-error' : 'border-border'} px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring`}
+          >
+            {change}
+          </button>
+        </div>
+        {refusal}
+      </div>
+    );
+  }
+
+  if (!canSearch) {
+    return (
+      <div className="flex flex-col gap-1.5" data-testid={testId}>
+        {heading}
+        <p id={unavailableId} role="status" className="text-supporting text-text-secondary">
+          {notPermitted}
+        </p>
+        {refusal}
+      </div>
+    );
+  }
+
+  const retry = (
+    <button
+      type="button"
+      onClick={search.submit}
+      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+    >
+      {translate(messages, 'state.retry')}
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col gap-3" data-testid={testId}>
+      <SearchBox
+        messages={messages}
+        label={label}
+        placeholder={placeholder}
+        example={example}
+        value={term}
+        onChange={setTerm}
+        onSubmit={search.submit}
+        busy={search.phase === 'loading'}
+        maxLength={maxLength}
+        error={short ? tooShort : error}
+        describedBy={describedBy}
+        testId={`${testId}-search`}
+      />
+      {search.phase === 'idle' ? null : (
+        <div aria-live="polite" className="flex flex-col gap-3">
+          {search.phase !== 'ready' ? (
+            <SearchStates
+              messages={messages}
+              locale={locale}
+              phase={search.phase}
+              correlationId={search.correlationId}
+              {...(search.phase === 'unavailable' || search.phase === 'failed' ? { retry } : {})}
+            />
+          ) : (
+            <ul
+              aria-label={resultsLabel}
+              className="flex flex-col divide-y divide-border rounded-md border border-border"
+            >
+              {search.rows.map((row) => (
+                <li key={row.id}>
+                  <button
+                    // Choosing a record must not submit the caller's form.
+                    type="button"
+                    onClick={() => {
+                      focusChosen.current = true;
+                      setPressed((count) => count + 1);
+                      onChange(row);
+                      setTerm('');
+                    }}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-start text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    <bdi>{labelOf(row)}</bdi>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {search.phase === 'ready' && (search.hasMore || search.pageNumber > 1) ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={search.pageNumber <= 1}
+                onClick={search.previous}
+                className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                {translate(messages, 'table.previousPage')}
+              </button>
+              <button
+                type="button"
+                disabled={!search.hasMore}
+                onClick={search.next}
+                className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                {translate(messages, 'table.nextPage')}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}

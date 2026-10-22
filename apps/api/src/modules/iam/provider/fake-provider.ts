@@ -70,6 +70,20 @@ export interface FakeDelivery {
 export class FakeIdentityProvider implements IdentityProvider {
   readonly name = 'supabase';
   readonly supportsDisable = true;
+  readonly supportsDelete = true;
+  /** Set to make the next `deleteIdentity` fail, so the compensation gap is testable. */
+  refuseDelete = false;
+  /**
+   * The double's own credential policy, modelled rather than injected.
+   *
+   * GoTrue refuses a password below a configured minimum with a 422 and a
+   * sentence of its own. A double that accepted everything would leave the
+   * refusal path untested and would let a test believe RootLco has no strength
+   * rule *because nothing ever refused*, rather than because the provider owns
+   * the rule. The number is the double's, not a RootLco policy: no application
+   * code reads it.
+   */
+  passwordMinLength = 8;
 
   private readonly identities = new Map<string, FakeIdentityRecord>();
   private readonly revokedSessions = new Set<string>();
@@ -220,9 +234,7 @@ export class FakeIdentityProvider implements IdentityProvider {
       };
       if (payload.sub === subject) this.revokedSessions.add(sessionRef);
     }
-    for (const [refresh, owner] of this.refreshTokens) {
-      if (owner === subject) this.refreshTokens.delete(refresh);
-    }
+    this.forgetRefreshTokensOf(subject);
   }
 
   async requestPasswordReset(request: PasswordResetRequest): Promise<void> {
@@ -240,6 +252,23 @@ export class FakeIdentityProvider implements IdentityProvider {
     });
   }
 
+  /**
+   * Completes a reset, ending exactly what the adapter ends.
+   *
+   * The adapter verifies the recovery token, writes the credential, and then
+   * calls `signOutEverywhere` with the session it just verified
+   * (`supabase-provider.ts`). That ends the identity's REFRESH tokens and
+   * nothing else, so an access token already issued to another device keeps
+   * verifying until its own expiry — the same residual the change-password path
+   * carries, reached by a different route.
+   *
+   * This double used to call `revokeAllSessions` here, which in the double also
+   * refuses issued access tokens. A test written against it proved that a reset
+   * had signed every other device out, which the deployed adapter does not do;
+   * the screen that trusted the test said so to the operator. Revoking only the
+   * refresh tokens is what lets a case measure the residual instead of hiding
+   * it.
+   */
   async completePasswordReset(
     recoveryToken: string,
     newPassword: string
@@ -253,18 +282,44 @@ export class FakeIdentityProvider implements IdentityProvider {
     record.confirmed = true;
     // Single use. A replayed link finds no matching token and is refused.
     record.recoveryToken = null;
-    await this.revokeAllSessions(record.subject);
+    this.forgetRefreshTokensOf(record.subject);
     return this.toIdentity(record);
   }
 
+  /**
+   * Invites, or re-sends to an identity that never finished accepting.
+   *
+   * The re-send arm is not a convenience: it is what the real provider does.
+   * GoTrue's invite endpoint looks the address up first and refuses only an
+   * identity that is already **confirmed**; an unconfirmed one is re-issued a
+   * fresh link under its existing subject. A double that refused every known
+   * address would have made the orphan-recovery path look impossible when the
+   * deployed adapter handles it, which is the shape of double that turns a test
+   * suite into evidence for the wrong system. A disabled identity is refused
+   * here as well — a cancelled invitation disables its identity, and reviving one
+   * by re-invitation would undo an administrator's decision.
+   */
   async invite(request: InviteRequest): Promise<ProviderIdentity> {
     this.assertUp();
     const existing = this.byEmail(request.email);
     if (existing) {
-      throw new ProviderFailure(
-        'identity-conflict',
-        'An identity already exists for that address.'
-      );
+      if (existing.confirmed || existing.disabled) {
+        throw new ProviderFailure(
+          'identity-conflict',
+          'An identity already exists for that address.'
+        );
+      }
+      // Same subject, fresh link, and the binding rewritten exactly as the
+      // adapter's own `invite` rewrites it through `bindTenant`.
+      existing.tenantId = request.tenantId;
+      existing.recoveryToken = randomUUID();
+      this.deliveries.push({
+        kind: 'invite',
+        email: existing.email,
+        redirectTo: request.redirectTo,
+        token: existing.recoveryToken,
+      });
+      return this.toIdentity(existing);
     }
     const record = this.seed({
       email: request.email,
@@ -323,6 +378,98 @@ export class FakeIdentityProvider implements IdentityProvider {
     return this.toIdentity(record);
   }
 
+  /**
+   * Removes one identity, addressed by subject. Removing an unknown subject is a
+   * no-op, matching the adapter's treatment of a 404 as the end state already
+   * reached, so a retried compensation is idempotent in both implementations.
+   */
+  async deleteIdentity(subject: string): Promise<void> {
+    this.assertUp();
+    if (this.refuseDelete) {
+      throw new ProviderFailure('identity-unavailable', 'The identity could not be removed.');
+    }
+    this.identities.delete(subject);
+    await this.revokeAllSessions(subject);
+  }
+
+  /**
+   * Capability 14 — write a new credential for `subject`.
+   *
+   * Refuses by its own policy exactly as the adapter reports GoTrue's: a
+   * `credential-policy-rejected` carrying the provider's sentence, which the
+   * one caller writes to the operator log and never to a response. Sessions are
+   * NOT ended here, matching the adapter — ending them is capability 15, called
+   * explicitly, so a reader can see that it happens.
+   */
+  async setPassword(subject: string, newPassword: string): Promise<ProviderIdentity> {
+    this.assertUp();
+    const record = this.identities.get(subject);
+    if (!record) throw new ProviderFailure('identity-unavailable', 'Identity does not exist.');
+    if (newPassword.length < this.passwordMinLength) {
+      throw new ProviderFailure(
+        'credential-policy-rejected',
+        'The identity provider refused the new password.',
+        false,
+        `Password should be at least ${this.passwordMinLength} characters.`
+      );
+    }
+    record.password = newPassword;
+    return this.toIdentity(record);
+  }
+
+  /**
+   * Capability 15 — the identity provider's GLOBAL SIGN-OUT, modelled as the
+   * real one behaves and not as the name suggests.
+   *
+   * The adapter sends `POST /auth/v1/logout?scope=global` with the identity's
+   * own token. That call **revokes the identity's refresh tokens**. It does not
+   * and cannot reach an access token that has already been issued: those are
+   * self-contained signed documents, and the provider keeps no per-token
+   * register to consult. An access token held by another device therefore keeps
+   * verifying until its own expiry.
+   *
+   * This double used to add every one of the subject's sessions to
+   * `revokedSessions`, which made `verifyToken` refuse another device's access
+   * token immediately — a behaviour the real provider does not have. Tests
+   * written against it proved a sign-out that does not happen, and the screen
+   * that trusted them told the operator their other devices had been signed
+   * out. Modelling the weaker truth is what lets a test measure the residual
+   * instead of hiding it.
+   *
+   * The subject is read out of the token's payload without re-verifying it, the
+   * same thing the adapter's HTTP sign-out lets the provider do. An unreadable
+   * or unknown token ends nothing and is not an error: the desired end state is
+   * already reached for any session it could have named.
+   */
+  async signOutEverywhere(accessToken: string): Promise<void> {
+    this.assertUp();
+    const payload = accessToken.split('.')[1];
+    if (!payload) return;
+    let subject: string | undefined;
+    try {
+      subject = (JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { sub?: string })
+        .sub;
+    } catch {
+      return;
+    }
+    if (!subject) return;
+    // Refresh tokens only. Nothing is added to `revokedSessions`: an access
+    // token already in a caller's hands outlives this call, by the design of
+    // the provider rather than by an omission here.
+    this.forgetRefreshTokensOf(subject);
+  }
+
+  /**
+   * What the provider's global sign-out actually ends: the subject's refresh
+   * tokens. Written once, so the sign-out path and the reset path cannot drift
+   * into modelling two different guarantees.
+   */
+  private forgetRefreshTokensOf(subject: string): void {
+    for (const [refresh, owner] of this.refreshTokens) {
+      if (owner === subject) this.refreshTokens.delete(refresh);
+    }
+  }
+
   /** Test helper: simulates the invitee following their link and setting a password. */
   async acceptInvitation(email: string, password: string): Promise<ProviderIdentity> {
     const record = this.byEmail(email);
@@ -339,5 +486,7 @@ export class FakeIdentityProvider implements IdentityProvider {
     this.refreshTokens.clear();
     this.deliveries.length = 0;
     this.outage = false;
+    this.refuseDelete = false;
+    this.passwordMinLength = 8;
   }
 }

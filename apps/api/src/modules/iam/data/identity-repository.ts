@@ -118,24 +118,32 @@ export class IdentityRepository extends Repository {
    * employee record is current" rather than "who did this" — going wrong for
    * exactly the historical rows a ledger exists to preserve.
    *
-   * A soft-deleted account still resolves. The alternative is that every record
-   * written by somebody who has since left becomes anonymous, which is the
-   * opposite of what an audit trail is for.
+   * A soft-deleted account still resolves by default. The alternative is that
+   * every record written by somebody who has since left becomes anonymous,
+   * which is the opposite of what an audit trail is for.
+   *
+   * `listedOnly` is for a screen that names a CURRENT subject rather than a
+   * past actor — an approval limit's person (`P1-32-PRE-OD-ADM4`). It applies
+   * the user list's own visibility (`iam.user-list`: `deleted_at IS NULL`, any
+   * status, archived included), so such a screen never names an account the
+   * user list would not show.
    */
   async findDisplayIdentities(
     db: DbHandle,
-    userIds: readonly string[]
+    userIds: readonly string[],
+    options: { readonly listedOnly?: boolean | undefined } = {}
   ): Promise<ReadonlyMap<string, UserDisplayIdentity>> {
     const unique = [...new Set(userIds)];
     // No ids means no statement. Sending an empty array would be a round trip
     // that can only return nothing.
     if (unique.length === 0) return new Map();
 
+    const listed = options.listedOnly === true ? ' AND deleted_at IS NULL' : '';
     const result = await this.run<{ id: string; display_name: string }>(
       db,
       `SELECT id, display_name
          FROM iam.user_accounts
-        WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[])${listed}`,
       [db.context.principal.tenantId, unique]
     );
 
@@ -159,6 +167,34 @@ export class IdentityRepository extends Repository {
       `SELECT iam.has_permission('iam.user.read') AS allowed`
     );
     return result.rows[0]?.allowed === true;
+  }
+
+  /**
+   * Serializes every invitation of one address, across every tenant, for the
+   * rest of the caller's transaction.
+   *
+   * The provider is one directory for the whole platform, so two invitations of
+   * the same address — in one organisation or in two — would otherwise both read
+   * "no identity", both call the provider, and both be handed the SAME subject.
+   * If one of them is then refused, the identity it believes it created is the
+   * identity the other one's account now references, and removing it would strand
+   * that account. Holding this lock from before the first read until COMMIT or
+   * ROLLBACK means the second invitation reads the outcome of the first, never
+   * its middle.
+   *
+   * `pg_advisory_xact_lock` needs no table privilege and cannot outlive the
+   * transaction. The key is a hash of the lower-cased address: a collision only
+   * serializes two unrelated invitations, it never merges their outcomes. It is
+   * always taken before the per-tenant capacity lock `tg_user_accounts_capacity`
+   * takes at the INSERT, so the two locks have one order and cannot deadlock.
+   */
+  async lockInvitationAddress(db: DbHandle, email: string): Promise<void> {
+    await this.run(
+      db,
+      `SELECT pg_catalog.pg_advisory_xact_lock(
+                pg_catalog.hashtextextended('iam.invitation.address:' || pg_catalog.lower($1::text), 0))`,
+      [email]
+    );
   }
 
   /** Reads an account by its provider identity within the context tenant. */

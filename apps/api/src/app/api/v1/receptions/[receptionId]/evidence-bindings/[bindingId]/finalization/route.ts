@@ -53,18 +53,21 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ receptionId: string; bindingId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     RECEPTION_EVIDENCE_BINDING_FINALIZE_OPERATION,
     request,
-    async ({ db, authorizeScope }) => ({
-      body: await receptionModule().receptionCapture.finalizeEvidenceBinding(
-        db,
-        params.receptionId,
-        params.bindingId,
-        authorizeScope
-      ),
-    }),
-    { params }
+    async ({ db, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: await receptionModule().receptionCapture.finalizeEvidenceBinding(
+          db,
+          params.receptionId,
+          params.bindingId,
+          authorizeScope
+        ),
+      };
+    },
+    { params: raw }
   );
 }

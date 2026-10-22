@@ -73,7 +73,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ receptionId: string; signatureId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -81,16 +81,19 @@ export async function POST(
   return handleOperation(
     RECEPTION_SIGNATURE_EVENT_OPERATION,
     request,
-    async ({ db, request: raw, authorizeScope }) => ({
-      status: 201,
-      body: await receptionModule().receptionCapture.recordSignatureEvent(
-        db,
-        params.receptionId,
-        params.signatureId,
-        await parseJsonBody(raw, Body),
-        authorizeScope
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw, authorizeScope }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await receptionModule().receptionCapture.recordSignatureEvent(
+          db,
+          params.receptionId,
+          params.signatureId,
+          await parseJsonBody(raw, Body),
+          authorizeScope
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }

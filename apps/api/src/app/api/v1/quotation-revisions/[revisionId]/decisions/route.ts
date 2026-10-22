@@ -42,6 +42,8 @@ import {
   DECISIONS,
   DECISION_CHANNELS,
   EVIDENCE_KINDS,
+  MAX_CONTACT_NAME,
+  MAX_CONTACT_PHONE_INPUT,
   MAX_REFERENCE_NOTE,
   quotationModule,
 } from '@/modules/quotation';
@@ -65,6 +67,10 @@ export const Body = z
     channel: z.enum(DECISION_CHANNELS),
     decidingPartyRef: schemas.uuid.optional(),
     evidence: Evidence.optional(),
+    // Who spoke for the customer, kept on the acceptance record when this decision
+    // completes an acceptance (ADR-023 D11); refused on a rejection.
+    contactName: z.string().min(1).max(MAX_CONTACT_NAME).optional(),
+    contactPhone: z.string().min(1).max(MAX_CONTACT_PHONE_INPUT).optional(),
     /**
      * The revision the caller believes it is deciding.
      *
@@ -101,9 +107,18 @@ export const Body = z
  *
  * No storage key — evidence carries a `shared.document_versions` id, and turning
  * that into a downloadable object is a separate read with its own authorization.
- * No actor name — `recordedBy` is an id for navigation; resolving it would
- * publish a user directory to every holder of `quo.quotation.read`.
+ * No actor name on a line decision — `recordedBy` is an id for navigation;
+ * resolving it would publish a user directory to every holder of
+ * `quo.quotation.read`.
  * No money — amounts belong to the revision and are read there.
+ *
+ * ## The acceptance record (P1-32-PRE-OD-FD11, ADR-023 D11)
+ *
+ * `acceptance` is the revision's acceptance record, or `null`. The recorder is
+ * named through the identity directory, which names nobody to a caller without
+ * `iam.user.read` — so the narrowing above still holds. `null` beside an
+ * `accepted` outcome is a revision accepted before records existed; it is not
+ * backfilled.
  */
 export const QUOTATION_REVISION_DECISIONS_READ_OPERATION = defineOperation({
   id: 'quo.quotation-revision-decisions-read',
@@ -183,6 +198,8 @@ export async function POST(
           channel: parsed.channel,
           decidingPartyRef: parsed.decidingPartyRef,
           evidence: parsed.evidence,
+          contactName: parsed.contactName,
+          contactPhone: parsed.contactPhone,
           presentedRevisionId: parsed.presentedRevisionId,
         },
         authorizeScope

@@ -13,13 +13,16 @@
 //   node scripts/db/schema-inventory.mjs --json out.json # also writes full JSON
 //   node scripts/db/schema-inventory.mjs --hash-only     # prints only the schema hash
 //
-// Connection: PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE env or the local default
-// (127.0.0.1:54322 postgres/postgres/postgres). Never writes to the database.
+// Connection: PGPORT or DB_PORT (required, and equal when both are set),
+// PGHOST/DB_HOST, PGUSER/PGPASSWORD/PGDATABASE (default postgres). The target is
+// resolved by scripts/lib/db-target.mjs, which has no default port and refuses the
+// local acceptance database without authorisation. Never writes to the database.
 // ============================================================================
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 const MODULE_SCHEMAS = [
   'org',
@@ -41,13 +44,18 @@ const MODULE_SCHEMAS = [
   'rpt',
 ];
 
-const cfg = {
-  host: process.env.PGHOST ?? '127.0.0.1',
-  port: Number(process.env.PGPORT ?? 54322),
-  user: process.env.PGUSER ?? 'postgres',
-  password: process.env.PGPASSWORD ?? 'postgres',
-  database: process.env.PGDATABASE ?? 'postgres',
-};
+// Resolved when the command runs, never at import: other scripts and the unit
+// tier import collectInventory/computeSchemaHash from this module.
+function connectionConfig() {
+  const target = resolveDatabaseTargetOrExit({ consumer: 'schema-inventory' });
+  return {
+    host: target.host,
+    port: target.port,
+    user: process.env.PGUSER ?? 'postgres',
+    password: process.env.PGPASSWORD ?? 'postgres',
+    database: process.env.PGDATABASE ?? 'postgres',
+  };
+}
 
 const sortKeys = (v) => {
   if (Array.isArray(v)) return v.map(sortKeys);
@@ -208,7 +216,7 @@ export async function collectInventory(client, S = MODULE_SCHEMAS) {
 }
 
 async function main() {
-  const client = new pg.Client(cfg);
+  const client = new pg.Client(connectionConfig());
   await client.connect();
   let result;
   try {

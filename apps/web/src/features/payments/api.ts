@@ -1,6 +1,6 @@
 'use server';
 
-import type { TableRequest } from '@/components/data-table/table-state';
+import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
@@ -13,14 +13,23 @@ import {
   type ReadState,
 } from '@/lib/api/read-operation';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
-import type { PaymentAllocateBody, PaymentRecordBody } from '@/lib/contracts/payments-contract';
+import type {
+  PaymentAllocateBody,
+  PaymentRecordBody,
+  ReceiptReplacementRecordBody,
+  ReceiptReversalRejectBody,
+  ReceiptReversalRequestBody,
+} from '@/lib/contracts/payments-contract';
 import type { BranchOption } from '@/features/services/services-contract';
 import type { Outstanding } from '@/features/billing/billing-contract';
+import { OVER_ALLOCATION_KEYS } from './payments-contract';
 import type {
   Allocation,
   PaymentMethod,
-  Receipt,
   ReceiptDetail,
+  ReceiptReversalEcho,
+  ReceiptListEntry,
+  ReceiptPayer,
   ReceiptStatus,
   RecordedReceipt,
 } from './payments-contract';
@@ -44,11 +53,14 @@ import type {
  * another branch's cash. `sal.receipt-detail` names its receipt in the path and
  * takes no query. `sal.payment-method-list` is tenant-wide and takes neither.
  *
- * ## Neither write is version-guarded, and no `If-Match` is ever sent
+ * ## Recording and allocating are not version-guarded
  *
- * `sal.payment-record` and `sal.payment-allocate` declare no version guard.
- * Nothing here sends `If-Match` — a present but malformed one would be refused
- * (428) even though the operation ignores a valid one. A refused allocation is
+ * `sal.payment-record` and `sal.payment-allocate` declare no version guard, and
+ * neither adapter sends `If-Match` — a present but malformed one would be
+ * refused (428) even though the operation ignores a valid one. The reversal
+ * request, rejection and withdrawal (ADR-023 D4) ARE version-guarded, and each
+ * sends the version the receipt read published — the receipt's for a request,
+ * the reversal's for a decision — never one it computed. A refused allocation is
  * therefore a BOUND, not a stale version: the receipt's remainder and the
  * invoice's open balance are recomputed under row locks and compared exactly,
  * and exceeding either is a 409 the screen states as such.
@@ -82,23 +94,60 @@ const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
 
 const expired = (attempt: number): ActionState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 
 const receiptPath = (paymentId: string, suffix = '') =>
   `/api/v1/payments/${encodeURIComponent(paymentId)}${suffix}`;
 
-/** The receipts of ONE branch (`sal.receipt-list`), newest received first. */
+/**
+ * Files the currency refusal under the control the form actually renders.
+ *
+ * The route reads the body field `currency`, but `payment-service` publishes the
+ * violation against its own internal name — `body.currencyCode` — so the key the
+ * client derives is `currencyCode` and the control on `PaymentsScreen` is
+ * `currency`. Written to a name no field reads, the sentence renders nowhere,
+ * which on screen cannot be told apart from having been dropped.
+ *
+ * Renamed rather than duplicated: two entries for one control would let a later
+ * reader believe there are two problems. An existing `currency` entry wins,
+ * because it was filed against the name the form sent.
+ */
+function underFormControl(state: ActionState): ActionState {
+  const published = state.fieldErrors;
+  if (!published || published['currencyCode'] === undefined) return state;
+  const { currencyCode, ...rest } = published;
+  return { ...state, fieldErrors: { currency: currencyCode, ...rest } };
+}
+
+/**
+ * An over-allocation is a refusal ABOUT THE AMOUNT: the field carries the reason,
+ * so the line under the form says only that the form could not be saved (with
+ * its reference), rather than a second, vaguer sentence about the same refusal.
+ */
+function overBoundAtForm(state: ActionState): ActionState {
+  const amount = state.fieldErrors?.['amount'];
+  if (amount !== OVER_ALLOCATION_KEYS.receipt && amount !== OVER_ALLOCATION_KEYS.invoice) {
+    return state;
+  }
+  return { ...state, messageKey: 'form.formError' };
+}
+
+/**
+ * The receipts of ONE branch (`sal.receipt-list`), newest received first. Each
+ * row names its payer beside the id where the caller may read customers
+ * (`ReceiptListEntry.payer`).
+ */
 export async function listReceipts(
   target: BranchTarget,
   criteria: ReceiptCriteria,
   request: TableRequest,
   cursor: string | null
-): Promise<ServerPage<Receipt>> {
+): Promise<ServerPage<ReceiptListEntry>> {
   const client = await authorizedClient();
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
-  const result = await client.get<CursorPage<Receipt>>(
+  const result = await client.get<CursorPage<ReceiptListEntry>>(
     '/api/v1/payments' +
       branchTargetQuery(target, {
         payerPartnerId: criteria.payerPartnerId,
@@ -118,6 +167,32 @@ export async function listReceipts(
     hasMore: result.data.hasMore,
     correlationId: result.correlationId,
   };
+}
+
+/**
+ * Who paid one receipt, by name — asked of `sal.receipt-list`, the one receipt
+ * read that names a payer (Owner directive, browser QA row 5.6b).
+ *
+ * `sal.receipt-detail` publishes the payer's id only. The list, narrowed to that
+ * payer in the receipt's own branch, answers the name under exactly the rules the
+ * list applies — the branch authorized server-side, the name withheld (`null`)
+ * without `crm.customer.read` — and one row is enough: every row of a payer
+ * names the same payer. An empty page (the receipt was deleted meanwhile) or any
+ * refusal answers `null`, and the screen says the name is not shown rather than
+ * printing the id.
+ */
+export async function readReceiptPayer(
+  target: BranchTarget,
+  payerPartnerId: string
+): Promise<ReceiptPayer | null> {
+  const page = await listReceipts(
+    target,
+    { payerPartnerId, status: null, invoiceId: null },
+    { ...INITIAL_REQUEST, pageSize: 1 },
+    null
+  );
+  if (page.status !== 'ok') return null;
+  return page.rows[0]?.payer ?? null;
 }
 
 /**
@@ -185,7 +260,7 @@ export async function recordPayment(
   const result = await client.send<RecordedReceipt>('POST', '/api/v1/payments', body, {
     idempotencyKey,
   });
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: underFormControl(fromFailure(result, attempt)), created: null };
   return {
     state: { ...success('payments.record.success', attempt), correlationId: result.correlationId },
     created: result.data,
@@ -213,10 +288,177 @@ export async function allocatePayment(
     body,
     { idempotencyKey }
   );
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) {
+    return {
+      state: overBoundAtForm(underFormControl(fromFailure(result, attempt))),
+      created: null,
+    };
+  }
   return {
     state: {
       ...success('payments.allocate.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * The receipt reversal and its replacement (ADR-023 D4)
+ * ------------------------------------------------------------------ */
+
+/**
+ * A refused reversal command, as the screen states it. A named rule keeps its
+ * own sentence (`form.violation.<rule>`); a conflict with no rule is the version
+ * guard — the receipt or the reversal changed since it was read — and is said
+ * as that, so the screen offers the latest version instead of a refusal.
+ */
+function reversalFailure(result: Parameters<typeof fromFailure>[0], attempt: number): ActionState {
+  const state = fromFailure(result, attempt);
+  if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+    return { ...state, messageKey: 'payments.reversal.conflict' };
+  }
+  return state;
+}
+
+/**
+ * Ask for the WHOLE receipt to be reversed (`sal.receipt-reversal-request`),
+ * stating why. The body is the reason only — the amount is the receipt's.
+ * `ifMatch` is the RECEIPT's `recordVersion` from the detail read, required. A
+ * second live request and a reversed receipt are refused by name.
+ */
+export async function requestReceiptReversal(
+  paymentId: string,
+  body: ReceiptReversalRequestBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<ReceiptReversalEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReceiptReversalEcho>(
+    'POST',
+    `/api/v1/payments/${encodeURIComponent(paymentId)}/reversals`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: reversalFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('payments.reversal.requested', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Approve a reversal somebody else requested (`sal.receipt-reversal-approve`).
+ * No body: the approver is the session. The requester is refused with
+ * `receipt_reversal_self_approval`; a decided reversal with
+ * `receipt_reversal_decision_frozen`.
+ */
+export async function approveReceiptReversal(
+  reversalId: string,
+  attempt = 1
+): Promise<CreateOutcome<ReceiptReversalEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReceiptReversalEcho>(
+    'POST',
+    `/api/v1/receipt-reversals/${encodeURIComponent(reversalId)}/approval`
+  );
+  if (!result.ok) return { state: reversalFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('payments.reversal.approved', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Reject a reversal somebody else requested (`sal.receipt-reversal-reject`),
+ * stating why. `ifMatch` is the REVERSAL's `recordVersion`, required. A blank
+ * reason is refused on the reason itself (`fieldErrors.reason`).
+ */
+export async function rejectReceiptReversal(
+  reversalId: string,
+  body: ReceiptReversalRejectBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<ReceiptReversalEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReceiptReversalEcho>(
+    'POST',
+    `/api/v1/receipt-reversals/${encodeURIComponent(reversalId)}/rejection`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: reversalFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('payments.reversal.rejected', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Withdraw your own pending reversal (`sal.receipt-reversal-withdraw`). No body.
+ * `ifMatch` is the REVERSAL's `recordVersion`, required. Anyone but the
+ * requester is refused with `receipt_reversal_withdraw_not_requester`.
+ */
+export async function withdrawReceiptReversal(
+  reversalId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<ReceiptReversalEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReceiptReversalEcho>(
+    'POST',
+    `/api/v1/receipt-reversals/${encodeURIComponent(reversalId)}/withdrawal`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: reversalFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('payments.reversal.withdrawn', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Record the receipt that replaces a reversed one
+ * (`sal.receipt-replacement-record`). `idempotencyKey` is the transport key for
+ * THIS form, as on the record form: pressing again after a lost answer replays
+ * the stored answer instead of taking the money twice. The echo names the
+ * receipt it replaces.
+ */
+export async function recordReplacementReceipt(
+  paymentId: string,
+  body: ReceiptReplacementRecordBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<RecordedReceipt>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<RecordedReceipt>(
+    'POST',
+    receiptPath(paymentId, '/replacement'),
+    body,
+    { idempotencyKey }
+  );
+  if (!result.ok) return { state: underFormControl(fromFailure(result, attempt)), created: null };
+  return {
+    state: {
+      ...success('payments.replacement.success', attempt),
       correlationId: result.correlationId,
     },
     created: result.data,

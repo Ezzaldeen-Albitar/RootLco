@@ -1,12 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 /**
- * Vehicle search and catalogue ADAPTERS (`FE-017`, `FE-018`).
+ * The vehicle search core and the catalogue ADAPTERS (`FE-017`, `FE-018`).
  *
- * A DOM test that mocks these modules exercises the screens and cannot exercise
- * the adapters — proven in Wave 5, where mutating an adapter left twenty green
- * component tests untouched. This file talks to them directly with only the HTTP
- * client mocked.
+ * A DOM test that mocks these modules exercises the screens, not the adapters —
+ * proven in Wave 5, where mutating an adapter left twenty green component tests
+ * untouched. This file talks to them directly with only the HTTP client mocked.
  */
 
 const get = vi.fn();
@@ -18,7 +17,8 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-const { searchVehicles, createVehicleAction } = await import('@/features/vehicles/api');
+const { createVehicleAction } = await import('@/features/vehicles/api');
+const { readVehicleSearch } = await import('@/features/vehicles/vehicle-search-read.server');
 const { ApiClient } = await import('@/lib/api/client');
 const { listMakes, listModels, listTrims, listBodyTypes, listPowertrainTypes } =
   await import('@/features/vehicles/catalogue-api');
@@ -49,14 +49,14 @@ beforeEach(() => {
 
 describe('search never issues a request it was not asked for', () => {
   it('sends NOTHING for empty criteria', async () => {
-    const result = await searchVehicles(EMPTY_CRITERIA, REQUEST, null);
+    const result = await readVehicleSearch(EMPTY_CRITERIA, REQUEST, null);
     expect(get).not.toHaveBeenCalled();
     expect(result.status).toBe('ok');
     expect(result.rows).toEqual([]);
   });
 
   it('sends nothing when every criterion is whitespace', async () => {
-    await searchVehicles({ ...EMPTY_CRITERIA, vin: '   ', plate: '\t' }, REQUEST, null);
+    await readVehicleSearch({ ...EMPTY_CRITERIA, vin: '   ', plate: '\t' }, REQUEST, null);
     expect(get).not.toHaveBeenCalled();
   });
 });
@@ -64,7 +64,7 @@ describe('search never issues a request it was not asked for', () => {
 describe('the search request carries only what the strict schema accepts', () => {
   it('sends the supplied criteria and omits the rest', async () => {
     get.mockResolvedValue(page([]));
-    await searchVehicles(
+    await readVehicleSearch(
       { ...EMPTY_CRITERIA, vin: ' 1HGCM8 ', lifecycleStatus: 'active' },
       REQUEST,
       null
@@ -80,7 +80,7 @@ describe('the search request carries only what the strict schema accepts', () =>
 
   it('never sends a sort, page, offset or total parameter', async () => {
     get.mockResolvedValue(page([]));
-    await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
+    await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
     const [path] = get.mock.calls[0] as [string];
     for (const forbidden of ['sort=', 'page=', 'offset=', 'total=', 'order=']) {
       expect(path).not.toContain(forbidden);
@@ -89,7 +89,7 @@ describe('the search request carries only what the strict schema accepts', () =>
 
   it('never retries — search is expensive-read at 30/min', async () => {
     get.mockResolvedValue(page([]));
-    await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
+    await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
     const [, options] = get.mock.calls[0] as [string, { retries: number }];
     expect(options.retries).toBe(0);
   });
@@ -97,7 +97,7 @@ describe('the search request carries only what the strict schema accepts', () =>
   it('propagates the cursor verbatim', async () => {
     get.mockResolvedValue(page([]));
     const cursor = 'eyJrIjoidmVoLnZlaGljbGVzOmNyZWF0ZWRfYXRfZGVzYyJ9';
-    await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, cursor);
+    await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, cursor);
     const [path] = get.mock.calls[0] as [string];
     // Encoded, never reconstructed. A cursor rebuilt from a published
     // millisecond timestamp is exactly the row loss `P1-27-INT-008` fixed.
@@ -108,7 +108,7 @@ describe('the search request carries only what the strict schema accepts', () =>
 describe('the search response is passed through without embellishment', () => {
   it('publishes no total', async () => {
     get.mockResolvedValue(page([{ id: 'v1' }], 'cur', true));
-    const result = await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
+    const result = await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
     expect(result).not.toHaveProperty('total');
     expect(result.hasMore).toBe(true);
     expect(result.nextCursor).toBe('cur');
@@ -116,13 +116,13 @@ describe('the search response is passed through without embellishment', () => {
 
   it('preserves mergedIntoId so a merged vehicle is distinguishable', async () => {
     get.mockResolvedValue(page([{ id: 'v1', mergedIntoId: 'v2', lifecycleStatus: 'merged' }]));
-    const result = await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
+    const result = await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
     expect(result.rows[0]).toMatchObject({ mergedIntoId: 'v2' });
   });
 
   it('preserves a null VIN and a null model year rather than coercing them', async () => {
     get.mockResolvedValue(page([{ id: 'v1', vin: null, modelYear: null, makeId: null }]));
-    const result = await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
+    const result = await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
     expect(result.rows[0]).toMatchObject({ vin: null, modelYear: null, makeId: null });
   });
 
@@ -141,7 +141,7 @@ describe('the search response is passed through without embellishment', () => {
       'network',
     ]) {
       get.mockResolvedValue(failure(kind));
-      const result = await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
+      const result = await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
       expect(result.status, `kind ${kind}`).toBeTypeOf('string');
       expect(result.rows, `kind ${kind}`).toEqual([]);
     }
@@ -149,7 +149,7 @@ describe('the search response is passed through without embellishment', () => {
 
   it('reports an expired session without calling the API', async () => {
     authorizedClient.mockResolvedValue(null);
-    const result = await searchVehicles({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
+    const result = await readVehicleSearch({ ...EMPTY_CRITERIA, vin: 'X' }, REQUEST, null);
     expect(result.status).toBe('expired');
     expect(get).not.toHaveBeenCalled();
   });

@@ -110,12 +110,28 @@ export const ROSTER_TENANT_B: Principal = {
   permissions: ROSTER_PERMISSIONS,
 };
 
+/**
+ * A roster reader who may also read user accounts (`P1-32-PRE-OD-ADM2B`). The
+ * roster's display name is resolved through the iam directory, which answers
+ * only a caller holding `iam.user.read`; `ROSTER_READER` is the same reader
+ * without it, so the pair proves the name is published to one and withheld from
+ * the other.
+ */
+export const ROSTER_DIRECTORY: Principal = {
+  roleId: 'f3000000-0000-4000-8000-000000000151',
+  userId: 'f3000000-0000-4000-8000-000000000152',
+  subject: 'fx_br_03_directory',
+  tenantId: TENANT_A,
+  permissions: [TECHNICIAN_READ, 'iam.user.read'],
+};
+
 export const BR03_PRINCIPALS: readonly Principal[] = [
   ROSTER_ADMIN,
   ROSTER_READER,
   ROSTER_SENSITIVE,
   ROSTER_SCOPED_A2,
   ROSTER_TENANT_B,
+  ROSTER_DIRECTORY,
 ];
 
 // ---- Free user accounts, holding no live technician profile ----------------

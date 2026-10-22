@@ -76,6 +76,19 @@ export interface ApprovalLimitRow {
   readonly recordVersion: number;
 }
 
+/**
+ * An approval limit as the LIST publishes it: the row, and the role's name when
+ * the subject is a role (`P1-32-PRE-OD-ADM4`, route checklist prerequisite 9).
+ *
+ * `roleName` is resolved in the list's own statement and is published only to a
+ * caller holding `iam.role.read` — the code the role list itself declares — and
+ * is `null` otherwise, and `null` for a person's limit. Read-only; the stored
+ * row is unchanged.
+ */
+export interface ApprovalLimitListRow extends ApprovalLimitRow {
+  readonly roleName: string | null;
+}
+
 export const ROLE_ORDERING: OrderingContract = Object.freeze({
   key: 'iam.roles:created_at_desc',
   direction: 'desc',
@@ -186,6 +199,35 @@ export class AuthorizationRepository extends Repository {
       branchId: row.branch_id,
       departmentId: row.department_id,
     }));
+  }
+
+  /**
+   * Whether the CALLER holds `roleId` through a grant that is live now or will
+   * become live later.
+   *
+   * The separation-of-duties question behind an approval limit for a role
+   * (QA row 7.1d): a limit on a role the administrator holds is a limit they
+   * would approve against themselves. A grant that starts in the future is
+   * counted on purpose — the limit would reach its holder the day it starts,
+   * with nobody having looked again. Any scope counts, for the same reason: a
+   * grant's places can be widened later by a scope add, without the limit being
+   * looked at again. `iam.current_user_id()` is the server-set actor; RLS keeps
+   * the read inside the caller's tenant.
+   */
+  async callerHoldsRole(db: DbHandle, roleId: string): Promise<boolean> {
+    const result = await this.run<{ held: boolean }>(
+      db,
+      `SELECT EXISTS (
+         SELECT 1
+           FROM iam.role_grants g
+          WHERE g.user_id = iam.current_user_id()
+            AND g.role_id = $1
+            AND g.status = 'active'
+            AND (g.valid_to IS NULL OR g.valid_to > now())
+       ) AS held`,
+      [roleId]
+    );
+    return result.rows[0]?.held === true;
   }
 
   // ---- Roles -------------------------------------------------------------
@@ -738,19 +780,26 @@ export class AuthorizationRepository extends Repository {
     db: DbHandle,
     filters: { companyId?: string | undefined; userId?: string | undefined },
     limit: number
-  ): Promise<readonly ApprovalLimitRow[]> {
+  ): Promise<readonly ApprovalLimitListRow[]> {
     const values: unknown[] = [db.context.principal.tenantId];
-    let predicate = 'WHERE tenant_id = $1';
+    let predicate = 'WHERE al.tenant_id = $1';
     if (filters.companyId) {
       values.push(filters.companyId);
-      predicate += ` AND company_id = $${values.length}`;
+      predicate += ` AND al.company_id = $${values.length}`;
     }
     if (filters.userId) {
       values.push(filters.userId);
-      predicate += ` AND user_id = $${values.length}`;
+      predicate += ` AND al.user_id = $${values.length}`;
     }
     values.push(limit);
 
+    /*
+     * The role's name is read in the same statement and published only when
+     * `iam.has_permission('iam.role.read')` answers yes — the code the role
+     * list declares — so this read never hands a role name to a caller who
+     * could not list the roles. The LEFT JOIN keeps a limit whose role this
+     * caller cannot see (or a person's limit) with a NULL name, never drops it.
+     */
     const result = await this.run<{
       id: string;
       company_id: string;
@@ -762,14 +811,19 @@ export class AuthorizationRepository extends Repository {
       effective_from: string;
       effective_to: string | null;
       record_version: number;
+      role_name: string | null;
     }>(
       db,
-      `SELECT id, company_id, role_id, user_id, limit_type, amount::text AS amount,
-              currency_code, effective_from::text AS effective_from,
-              effective_to::text AS effective_to, record_version
-         FROM iam.approval_limits
+      `SELECT al.id, al.company_id, al.role_id, al.user_id, al.limit_type,
+              al.amount::text AS amount, al.currency_code,
+              al.effective_from::text AS effective_from,
+              al.effective_to::text AS effective_to, al.record_version,
+              CASE WHEN al.role_id IS NOT NULL AND iam.has_permission('iam.role.read')
+                   THEN r.name END AS role_name
+         FROM iam.approval_limits al
+         LEFT JOIN iam.roles r ON r.tenant_id = al.tenant_id AND r.id = al.role_id
         ${predicate}
-        ORDER BY effective_from DESC, id DESC
+        ORDER BY al.effective_from DESC, al.id DESC
         LIMIT $${values.length}`,
       values
     );
@@ -786,6 +840,7 @@ export class AuthorizationRepository extends Repository {
       effectiveFrom: row.effective_from,
       effectiveTo: row.effective_to,
       recordVersion: row.record_version,
+      roleName: row.role_name,
     }));
   }
 

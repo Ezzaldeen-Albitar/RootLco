@@ -39,7 +39,11 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { searchFragment } from '@/server/db/search-predicate';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
+import { halfOpenLocalDayRange, type LocalDayPeriod } from '@/server/db/period';
 import type { ReceptionStatus } from '../domain/reception';
+import { SERVICE_REQUESTER } from './party-context-repository';
 
 /** Renders a nullable timestamptz as millisecond ISO, or null. */
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
@@ -121,10 +125,31 @@ export interface ReceptionDetailRow {
   readonly recordVersion: number;
   readonly createdAt: string;
   readonly updatedAt: string | null;
+  /**
+   * The live ORDINARY work order this visit was converted into, or `null`
+   * (Owner directive, Browser QA part 7 row 5.3). Added so a visit revisited
+   * after its conversion can name and link its work order — the conversion's
+   * own answer is gone with the session that received it. The predicate is the
+   * one `ReceptionConversionRepository.workOrderForVisit` and
+   * `uq_work_orders_ordinary_origin` use (`kind = 'ordinary'`, live), so a
+   * rework order carrying the same visit is never reported here. Read under the
+   * caller's own row security, like every column of this statement.
+   */
+  readonly workOrderId: string | null;
+  /** That work order's human label; nullable where no sequence is provisioned. */
+  readonly workOrderDisplayNumber: string | null;
 }
 
 export interface ReceptionListEntry {
   readonly id: string;
+  /**
+   * The branch the visit was received in (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Added when `branchId` became an optional filter: a page that can now span
+   * several branches has to say which one each row is from, or the board reads
+   * as one branch's day with another branch's cars in it.
+   */
+  readonly branchId: string;
   readonly displayNumber: string | null;
   readonly receptionStatus: ReceptionStatus;
   readonly origin: 'appointment' | 'walk_in';
@@ -134,6 +159,48 @@ export interface ReceptionListEntry {
   readonly custodyReleasedAt: string | null;
   /** Per row, because the guarded writes are addressed from the list. */
   readonly recordVersion: number;
+  /**
+   * The party who brought the car, or null when the visit names none (Owner
+   * directive, P1-32-PRE-OD-UX).
+   *
+   * **The null case is real.** `rec.reception_party_roles` requires a
+   * `service_requester` before a visit is ACTIVATED, as a deferred contract — so
+   * a visit can legitimately exist without one and a board must render the
+   * absence rather than fail on it.
+   *
+   * `displayName` is null ON ITS OWN for a caller who does not hold
+   * `crm.customer.read`: the role is a reception fact and the person's name is
+   * the CRM module's to withhold, so the row is published either way. Same rule
+   * as the work-order board's technician column, and resolved through the CRM
+   * module's own published read rather than by joining `crm.business_partners`
+   * here — that read checks the capability itself and returns nothing to a
+   * caller who lacks it.
+   */
+  readonly customer: ReceptionListCustomer | null;
+  /**
+   * The plate the vehicle carries TODAY, or null when no interval is open
+   * (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `veh.plate_history` is dated and a vehicle holds at most one plate at any
+   * instant (`ex_plate_history_no_overlap`), so "current" is the interval with
+   * no `valid_to`. A vehicle registered but not yet plated has none, and that is
+   * an ordinary row rather than a fault.
+   *
+   * `plate_raw` — the same column the work-order board publishes as
+   * `registrationPlate`. `plate_normalized` is the generated search key, and
+   * showing it here would put two different renderings of one plate on two
+   * boards that an operator reads side by side.
+   */
+  readonly plate: string | null;
+}
+
+/**
+ * The customer block of a board row. A named type rather than an inline object
+ * because the web mirror is compared against it field by field.
+ */
+export interface ReceptionListCustomer {
+  readonly id: string;
+  readonly displayName: string | null;
 }
 
 /** A currently selectable IAM identity for one reception branch. */
@@ -207,13 +274,101 @@ export interface ReceptionHistoryEntry {
 
 export interface ReceptionListFilter {
   readonly companyId: string;
-  readonly branchId: string;
+  /**
+   * Inclusive lower bound on `custody_accepted_at` (Owner directive,
+   * P1-32-PRE-OD-UX).
+   *
+   * `custody_accepted_at` and not `created_at`: the business fact a reception
+   * board is dated by is WHEN THE VEHICLE WAS TAKEN IN, which is also the column
+   * the list already orders on, so the filter and the ordering describe the same
+   * instant. A row-metadata timestamp would date the paperwork instead.
+   */
+  readonly from?: string | undefined;
+  /** Inclusive upper bound on `custody_accepted_at`. */
+  readonly to?: string | undefined;
+  /** One free-text box, already reduced by `toEntitySearchTerms`. */
+  readonly search?: EntitySearchTerms | undefined;
+  /**
+   * The branches the page may cover (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `undefined` means every branch of the company — which is only ever reached
+   * by a caller row-level security imposes no branch narrowing on, because the
+   * route resolves it through `authorizedBranches` and that refuses rather than
+   * returning an empty set. A list is the branches the caller was authorized in,
+   * so it is a NARROWING of the policy and never a widening of it.
+   */
+  readonly branchIds?: readonly string[] | undefined;
   readonly status?: string | undefined;
+  /**
+   * A SET of statuses, resolved by the SERVICE from the frozen vocabulary when
+   * the caller asked for a `statusGroup` (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Beside `status` rather than replacing it, on the `WorkOrderListFilter.states`
+   * precedent: `status` is the caller's single value and this one is never read
+   * from a request. The two AND together, and the route refuses a caller that
+   * sends both, so the intersection is never reached from the wire.
+   *
+   * An EMPTY array matches nothing. `undefined` means no group was asked for.
+   */
+  readonly statuses?: readonly string[] | undefined;
   readonly vehicleId?: string | undefined;
 }
 
 export class ReceptionReadRepository extends Repository {
   protected readonly module = 'reception';
+
+  /**
+   * How many reception visits were OPENED in the period (Owner directive).
+   *
+   * ## Why this is an aggregate and not a page
+   *
+   * `listReceptions` answers "which visits", bounded by a keyset page. A
+   * dashboard asks "how many", and a count taken from the rows of a page is a
+   * count bounded by the page size — a number that reads as a fact and is really
+   * a truncation. One `count(*)` over the same table, never a `length` over a
+   * list.
+   *
+   * ## `custody_accepted_at`, and not `created_at`
+   *
+   * The visit's own instant is the one the platform already sorts this table by
+   * (`RECEPTION_LIST_ORDERING` is `custody_accepted_at_desc`). `created_at` is
+   * when the row was written, which is the same thing in ordinary use and is not
+   * the same thing at all for a visit recorded after the fact.
+   *
+   * The calendar day is resolved in the branch's own zone by
+   * `halfOpenLocalDayRange`, the one helper every reported period composes, so
+   * "opened on the 3rd" means the 3rd where the workshop is (D-17).
+   *
+   * ## No authorization here
+   *
+   * The company and the branch array are the caller's claim, and the caller
+   * authorizes each pair before it asks — an aggregate has no row to take a
+   * scope from, and a zero must not be able to report whether a branch exists.
+   */
+  async overviewVisitsOpened(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    period: LocalDayPeriod
+  ): Promise<number> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ total: number }>(
+      db,
+      `SELECT count(*)::int AS total
+         FROM rec.reception_visits
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+          AND deleted_at IS NULL
+          AND ${halfOpenLocalDayRange('custody_accepted_at', 4, 5, 6)}`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchIds,
+        period.from,
+        period.toExclusive,
+        period.timezoneName,
+      ]
+    );
+    return row?.total ?? 0;
+  }
 
   /**
    * The live visit's scope facts, or null. NOT `FOR UPDATE`: a read locks
@@ -263,6 +418,8 @@ export class ReceptionReadRepository extends Repository {
       record_version: number;
       created_at: Date;
       updated_at: Date | null;
+      work_order_id: string | null;
+      work_order_display_number: string | null;
     }>(
       db,
       `SELECT rv.id, rv.display_number, rv.reception_status, rv.appointment_id, rv.walk_in_id,
@@ -273,10 +430,18 @@ export class ReceptionReadRepository extends Repository {
               rv.ev_soc_percent::text AS ev_soc_percent,
               rv.receiving_employee_id, rv.receiving_employee_display_name,
               rv.custody_accepted_at, rv.custody_released_at,
-              rv.record_version, rv.created_at, rv.updated_at
+              rv.record_version, rv.created_at, rv.updated_at,
+              wo.id AS work_order_id, wo.display_number AS work_order_display_number
          FROM rec.reception_visits rv
          LEFT JOIN veh.vehicles v ON v.tenant_id = rv.tenant_id AND v.id = rv.vehicle_id
          LEFT JOIN rec.fuel_levels fl ON fl.id = rv.fuel_level_id
+         LEFT JOIN LATERAL (
+                SELECT w.id, w.display_number
+                  FROM wo.work_orders w
+                 WHERE w.tenant_id = rv.tenant_id AND w.reception_visit_id = rv.id
+                   AND w.kind = 'ordinary' AND w.deleted_at IS NULL
+                 LIMIT 1
+              ) wo ON true
         WHERE rv.tenant_id = $1 AND rv.id = $2 AND rv.deleted_at IS NULL`,
       [context.principal.tenantId, receptionVisitId]
     );
@@ -304,6 +469,8 @@ export class ReceptionReadRepository extends Repository {
       recordVersion: row.record_version,
       createdAt: row.created_at.toISOString(),
       updatedAt: iso(row.updated_at),
+      workOrderId: row.work_order_id,
+      workOrderDisplayNumber: row.work_order_display_number,
     };
   }
 
@@ -395,18 +562,45 @@ export class ReceptionReadRepository extends Repository {
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
-      filter.branchId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.status ?? null,
       filter.vehicleId ?? null,
+      filter.from ?? null,
+      filter.to ?? null,
+      filter.statuses === undefined ? null : [...filter.statuses],
+      // Bound rather than spliced. It is a module constant with no caller
+      // influence, so this is not an injection fix — it is this layer's standing
+      // convention, and a literal inside the SQL would be the one place a reader
+      // has to stop and prove that for themselves.
+      SERVICE_REQUESTER,
     ];
+    // The search values are bound BEFORE the keyset's, so the keyset's first
+    // placeholder accounts for both.
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'rv.tenant_id',
+        vehicleId: 'rv.vehicle_id',
+        // Any role on the visit, not only the service requester: someone looking
+        // for a customer wants every car that customer is connected to.
+        partnerIds: `SELECT r.partner_id
+                       FROM rec.reception_party_roles r
+                      WHERE r.tenant_id = rv.tenant_id
+                        AND r.reception_visit_id = rv.id
+                        AND r.deleted_at IS NULL`,
+        reference: 'rv.display_number',
+      },
+      values.length + 1
+    );
     const keyset = keysetFragment(
       page,
       { sort: 'rv.custody_accepted_at', id: 'rv.id' },
       RECEPTION_LIST_ORDERING,
-      values.length + 1
+      values.length + search.values.length + 1
     );
     const result = await this.run<{
       id: string;
+      branch_id: string;
       display_number: string | null;
       reception_status: ReceptionStatus;
       appointment_id: string | null;
@@ -415,28 +609,83 @@ export class ReceptionReadRepository extends Repository {
       custody_accepted_at: Date;
       custody_released_at: Date | null;
       record_version: number;
+      customer_partner_id: string | null;
+      plate: string | null;
       custody_accepted_at_cursor: string;
     }>(
       db,
-      `SELECT rv.id, rv.display_number, rv.reception_status, rv.appointment_id,
+      `SELECT rv.id, rv.branch_id, rv.display_number, rv.reception_status, rv.appointment_id,
               rv.vehicle_id, v.display_number AS vehicle_display_number,
               rv.custody_accepted_at, rv.custody_released_at, rv.record_version,
+              -- The party who brought the car (Owner directive, P1-32-PRE-OD-UX).
+              -- A correlated scalar and not a join: a visit names several parties
+              -- in several roles, and a join would return the visit once per role
+              -- and turn a page of ten into a page of thirty.
+              --
+              -- The CURRENT holder of the role — the interval with no valid_to —
+              -- because a reception board is a live board. The work-order row
+              -- dates its customer at the work order's opened_at instead, and the
+              -- difference is deliberate: that row is a historical record of one
+              -- job, this one is today's queue.
+              --
+              -- Ordered and LIMITed rather than left to chance:
+              -- uq_reception_party_roles_active is unique on (visit, partner,
+              -- role), so two different partners may legitimately hold the role
+              -- at once, and an unordered scalar subquery would pick an arbitrary
+              -- one of the two on every page.
+              --
+              -- Only the ID is read here. The NAME comes from the CRM module's
+              -- own published read, which checks crm.customer.read for itself;
+              -- joining crm.business_partners in this statement would hand a name
+              -- to a caller that module refuses.
+              (SELECT r.partner_id
+                 FROM rec.reception_party_roles r
+                WHERE r.tenant_id = rv.tenant_id
+                  AND r.reception_visit_id = rv.id
+                  AND r.relationship_role = $9
+                  AND r.valid_to IS NULL
+                  AND r.deleted_at IS NULL
+                ORDER BY r.valid_from ASC, r.partner_id ASC
+                LIMIT 1)                                  AS customer_partner_id,
+              -- The plate the vehicle carries today. veh.plate_history is dated
+              -- and ex_plate_history_no_overlap admits at most one open interval
+              -- per vehicle, so "no valid_to" is the current plate rather than a
+              -- best guess; the ORDER BY is defence, not arbitration.
+              (SELECT ph.plate_raw
+                 FROM veh.plate_history ph
+                WHERE ph.tenant_id = rv.tenant_id
+                  AND ph.vehicle_id = rv.vehicle_id
+                  AND ph.valid_to IS NULL
+                ORDER BY ph.valid_from DESC
+                LIMIT 1)                                  AS plate,
               ${cursorTimestamp('rv.custody_accepted_at')} AS custody_accepted_at_cursor
          FROM rec.reception_visits rv
          LEFT JOIN veh.vehicles v ON v.tenant_id = rv.tenant_id AND v.id = rv.vehicle_id
-        WHERE rv.tenant_id = $1 AND rv.company_id = $2 AND rv.branch_id = $3
+        WHERE rv.tenant_id = $1 AND rv.company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach; the route refuses
+          -- rather than sending an empty set, so this can never widen a page.
+          AND ($3::uuid[] IS NULL OR rv.branch_id = ANY($3::uuid[]))
           AND rv.deleted_at IS NULL
           AND ($4::text IS NULL OR rv.reception_status = $4)
           AND ($5::uuid IS NULL OR rv.vehicle_id = $5)
+          -- Closed on both ends, over the instant custody was accepted.
+          AND ($6::timestamptz IS NULL OR rv.custody_accepted_at >= $6)
+          AND ($7::timestamptz IS NULL OR rv.custody_accepted_at <= $7)
+          -- statusGroup, resolved by the service into the statuses it covers.
+          -- An EMPTY array matches nothing; NULL is "no group asked".
+          AND ($8::text[] IS NULL OR rv.reception_status = ANY($8::text[]))
+          ${search.predicate}
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
-      [...values, ...keyset.values]
+      [...values, ...search.values, ...keyset.values]
     );
     return buildPageWithCursors(
       result.rows.map((row) => ({
         item: {
           id: row.id,
+          branchId: row.branch_id,
           displayNumber: row.display_number,
           receptionStatus: row.reception_status,
           origin: (row.appointment_id !== null ? 'appointment' : 'walk_in') as
@@ -446,6 +695,16 @@ export class ReceptionReadRepository extends Repository {
           custodyAcceptedAt: row.custody_accepted_at.toISOString(),
           custodyReleasedAt: iso(row.custody_released_at),
           recordVersion: row.record_version,
+          // The name is left null here on purpose: this layer knows the id and
+          // the SERVICE names the whole page in one call through the CRM
+          // module's capability-checked read. Filling it in with a join would
+          // put a second, unchecked definition of "may this caller see a
+          // customer" in the codebase.
+          customer:
+            row.customer_partner_id === null
+              ? null
+              : { id: row.customer_partner_id, displayName: null },
+          plate: row.plate,
         },
         sortValue: row.custody_accepted_at_cursor,
         id: row.id,

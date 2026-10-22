@@ -35,7 +35,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<Record<string, string>> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await context.params, 'params');
+  const rawParams = await context.params;
   const body = await request
     .clone()
     .json()
@@ -44,6 +44,7 @@ export async function POST(
     ATTACHMENT_VERSION_REJECT_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'params');
       const input = await parseJsonBody(raw, Body);
       return {
         body: await sharedServicesModule().attachments.rejectVersion(
@@ -53,6 +54,6 @@ export async function POST(
         ),
       };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }

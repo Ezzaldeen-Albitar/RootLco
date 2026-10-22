@@ -1,0 +1,451 @@
+#!/usr/bin/env node
+/**
+ * `gate-before-read` for P1-31 route pages.
+ *
+ * A P1-31 screen must deny and RETURN on a permission before it awaits anything
+ * that costs a request. A page that reads first and denies second has already
+ * fetched the data it then declines to show; the backend would refuse the
+ * request, but the request was made, and a screen that leans on that is one
+ * backend regression away from leaking.
+ *
+ * ## Why a third file and not a widened second one
+ *
+ * The P1-29 gate derives its segments from the `wo|dia|qms|tech` operations and
+ * the P1-30 gate from the `svc|quo|inv|sal|wty` ones. Both are what a closed
+ * phase's closure rests on, so widening either changes a gate somebody else's
+ * evidence depends on. This is a sibling with its own derivation, and it reuses
+ * the JUDGEMENT — `judgePage`, and through it the P1-28 gate's
+ * `denyAndReturnGate` — so the shapes an adversarial review of the first P1-29
+ * version found (a negated check that falls through, a docblock quoting the
+ * rule, `await Promise.all([...])` reads, a `holds` that only computes a
+ * capability) cannot silently regress here.
+ *
+ * ## The derivation is an ALLOW-LIST of ids, not a namespace
+ *
+ * This is the one structural difference from its two siblings, and it is forced:
+ * P1-30 already owns the whole `sal.` and `wty.` namespaces, so a namespace
+ * regular expression here would either claim P1-30's operations or claim
+ * nothing.
+ *
+ * **The rule the list follows is EVERY OPERATION A P1-31 SCREEN CONSUMES** —
+ * not every operation P1-31 published, and not only the ones it did. An operation
+ * a P1-31 screen calls that is absent from this list is one this gate does not
+ * own, which is why the branch and company directories, the employee register and
+ * the audit-event reads are all named here despite belonging to other phases'
+ * publications. The list was described as "the operations P1-31 published" while
+ * it already carried three it did not, and that wording is what let eight
+ * operations its own screens send go unclaimed.
+ *
+ * Each is looked up in the operation register and its route's RESOURCE ROOT is
+ * taken — `/api/v1/deliveries/{deliveryId}/eligibility` gives `deliveries` — for
+ * the reason the P1-29 gate records: every segment would pull in `eligibility`,
+ * `signatures`, `status-history` and a dozen more, and a rule that reaches outside
+ * its lane produces violations nobody in that lane can act on.
+ *
+ * An id named here that the register does not carry is a VIOLATION, not a
+ * silently skipped row. An allow-list that can quietly go stale is an allow-list
+ * that stops owning anything, which is the failure mode this shape trades for.
+ *
+ * ## What is judged on a page, and what is NOT
+ *
+ * `judgePage` reads a page's SHAPE — does it deny and RETURN on a permission
+ * before it awaits anything that costs a request — and nothing whatever about
+ * which operations that page consumes. Owning an operation is therefore a claim
+ * about the register and the segments; it is not the thing being checked on a
+ * page. A page is examined because it lives under an owned segment, and it is then
+ * held to the shape rule in full.
+ *
+ * That distinction had a consequence worth stating rather than leaving to be
+ * discovered: taking the resource root of `sal.work-order-delivery-read`, a
+ * SUB-resource at `/work-orders/{id}/delivery`, admitted the whole `work-orders`
+ * area — seven pages, six of which consume no P1-31 operation at all. See
+ * `deferredSegments`: their pages are handed to the gate that owns that area, and
+ * the hand-over is CHECKED rather than assumed.
+ *
+ * ## The dashboard areas are named as well as derived
+ *
+ * `P1_31_AREAS` names the route segments P1-31's screens live under. It is not
+ * redundant with the derivation: the href already committed in navigation is the
+ * SINGULAR `/delivery`, while every delivery operation is addressed under the
+ * plural `deliveries`, so a page under `(dashboard)/delivery/**` matches no
+ * derived root and would escape a purely derived rule. That is exactly how the
+ * first P1-31 screen would have escaped the P1-30 gate.
+ *
+ * ## It must find pages
+ *
+ * Its siblings shipped over an empty set and said so out loud. This one ships
+ * BESIDE the first P1-31 screen, so a run over the repository that examines zero
+ * pages means the derivation stopped matching, not that the phase has not
+ * started. That is a red.
+ *
+ * The floor is a NUMBER rather than a hidden rule: it defaults to one over the
+ * repository's own app root and to zero when `--app-root` points somewhere else,
+ * because a run over a scratch directory is a test of the judgement rather than
+ * a measurement of the phase. `--min-pages` states it explicitly, which is what
+ * lets the floor itself be proved rather than asserted.
+ *
+ * Usage: node scripts/ci/check-p1-31-access.mjs [--app-root <dir>] [--min-pages <n>]
+ * Exit: 0 clean · 1 a violation · 2 IO.
+ */
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import {
+  judgePage,
+  ownedSegments as p1_29OwnedSegments,
+  p1_29PagesUnder,
+} from './check-p1-29-access.mjs';
+
+const HERE = fileURLToPath(new URL('.', import.meta.url));
+export const ROOT = join(HERE, '..', '..');
+const slash = (p) => p.split(sep).join('/');
+
+const REGISTER = join(ROOT, 'docs', 'phase-1', 'phase-1-24', 'evidence', 'operation-register.json');
+
+/**
+ * Every operation a P1-31 screen consumes, by id.
+ *
+ * That is the rule, stated here as it is stated in the docblock above and in the
+ * register: EVERY operation a P1-31 screen consumes, whether or not P1-31
+ * published it. This heading read "the operations P1-31 published" while the list
+ * already carried operations it had not.
+ *
+ * The delivery read seam (P-2 through P-5), the readiness queue the FE-001 screen
+ * consumes, the warranty list the phase's chapter declares — and, on the same
+ * rule, the delivery writes, the checklist-template reads, the organisation
+ * directories and the audit-event reads. An operation reached by a P1-31 screen
+ * belongs here in the same change that first calls it: that is one line, and it is
+ * the line that makes the screen's segment owned.
+ */
+export const P1_31_OPERATION_IDS = Object.freeze([
+  'sal.delivery-read',
+  'sal.delivery-eligibility-read',
+  'sal.delivery-receiver-read',
+  'sal.delivery-signature-list',
+  'sal.delivery-checklist-result-list',
+  'sal.delivery-status-history',
+  'sal.work-order-delivery-read',
+  'sal.delivery-readiness-list',
+  // The five delivery WRITES the handover screens send — opening the handover,
+  // verifying its receiver, recording a checklist outcome, binding a signature and
+  // completing the release. They were the largest omission this allow-list has
+  // carried: every one is addressed under the `deliveries` root the reads above
+  // already contribute, so none of them widened the segment set and nothing about
+  // the derived half changed when they landed — which is exactly how an allow-list
+  // stops owning an operation without any diff saying so. Naming them here is the
+  // only thing that makes them owned.
+  'sal.delivery-create',
+  'sal.delivery-receiver-verify',
+  'sal.delivery-checklist-record',
+  'sal.delivery-signature-attach',
+  'sal.delivery-complete',
+  // The two checklist-template READS the handover assembles its checklist from. No
+  // operation publishes "the checklist of this handover", so the delivery adapter
+  // walks the company's active templates and reads each one — two operations, one
+  // resource root, and that root is NEW: `delivery-checklist-templates` is derived
+  // by nothing else this list names. It is the segment half of this correction, and
+  // it means a future checklist-template configuration page meets the
+  // gate-before-read rule on the day it lands.
+  'sal.delivery-checklist-template-list',
+  'sal.delivery-checklist-template-read',
+  'wty.warranty-list',
+  // FE-008 added the warranty record screen and its issue surface. The detail read
+  // shares the `warranties` resource root the list already contributes, and the
+  // generation is addressed under `deliveries`, so neither widens the segment set —
+  // they are named because the rule is an allow-list of OPERATIONS, and an operation
+  // a P1-31 screen calls that is absent here is one this gate does not own.
+  'wty.warranty-detail',
+  'wty.warranty-generate',
+  // FE-009's transition ledger, published by P-18 and consumed by the history panel on
+  // the same record screen. It is addressed under the `warranties` resource root the
+  // list and the detail read already contribute, so it widens nothing about the
+  // segments — it is named because an operation a P1-31 screen calls that is absent
+  // from this list is one this gate does not own.
+  'wty.warranty-status-history',
+  // The two policy READS P-10 published. The list feeds the plan picker on the issue
+  // surface — its own route docblock names that picker as the reason it exists — and
+  // the single-policy read is named beside it because they share one resource root:
+  // owning `warranty-policies` is what makes a future policy screen meet this rule on
+  // the day it lands, exactly as `reports` below was named before it had a page.
+  // These two DO widen the segment set, unlike the two above.
+  'wty.warranty-policy-list',
+  'wty.warranty-policy-read',
+  // The five policy and coverage WRITES P-10 published, added with the plan
+  // administration screens that reach them. None of them widens the segment set —
+  // every one is addressed under the `warranty-policies` root the two reads above
+  // already contributed — so naming them here is the only thing that makes them
+  // owned. An allow-list that omits an operation its own phase's screens call is an
+  // allow-list that has quietly stopped owning it, which is the failure mode this
+  // shape trades a namespace for.
+  'wty.warranty-policy-create',
+  'wty.warranty-policy-rename',
+  'wty.warranty-policy-status-set',
+  'wty.warranty-coverage-create',
+  'wty.warranty-coverage-status-set',
+  // The four reporting operations the FE-011 … FE-014 screens consume. Their
+  // resource root is `reports`, which `P1_31_AREAS` already names — so these
+  // entries widen nothing about the segments and everything about the CLAIM:
+  // this gate's docblock requires an operation to be listed in the same change
+  // that first consumes it, and an id that stops existing must be a violation
+  // rather than a quiet shrink.
+  'rpt.report-catalogue',
+  'rpt.report-read',
+  'rpt.report-run',
+  'rpt.report-export',
+  // The employee register READ the FE-002 handover form consumes. P-17 published
+  // four operations on that register; this is the one this phase's screens call.
+  // The single-employee read was claimed here too and has been WITHDRAWN with the
+  // adapter that had no consumer (CC-39(b)); the two administration commands were
+  // never claimed, because nothing in P1-31 administers a roster. An allow-list
+  // that names an operation no screen of its phase reaches is owning a surface it
+  // does not have.
+  //
+  // It DOES widen the segment set, and by a root no P1-31 page lives under today:
+  // the register is addressed under `org`, and `(dashboard)` has no such area. That
+  // is the point of naming an operation in the change that first consumes it — the
+  // day an organisation screen lands under that segment it meets this rule already
+  // written, exactly as `warranty` and `reports` did.
+  'org.employee-list',
+  // The branch DIRECTORY the same form consumes. It is not an operation P1-31
+  // published — it has been serving every other picker in the product since
+  // PRE-P1-29 Wave C — and it is claimed here on the rule this gate states for
+  // itself: an operation a P1-31 screen calls that is absent from this list is one
+  // the gate does not own. It shares the `org` root the register contributes, so it
+  // widens nothing about the segments and everything about the claim.
+  'org.branch-list',
+  // The company DIRECTORY the readiness queue and the report scope selector both
+  // consume to offer a company before a branch. Same root as the two entries above
+  // and the same rule: an operation a P1-31 screen calls that is absent from this
+  // list is one this gate does not own.
+  'org.company-list',
+  // The audit-event register READ and the single-event read the audit-log screen
+  // consumes. P1-31 modified that screen and it carries its own committed browser
+  // specification, so it is a P1-31 screen under the rule this list follows —
+  // EVERY operation a P1-31 screen consumes is named here, whether or not P1-31
+  // published it, because an operation absent from this list is one the gate does
+  // not own. Their root is `audit-events`, which nothing else here derives, and the
+  // screen itself lives under the `audit-log` area named below: the pair is added
+  // together on purpose, since claiming the operations without the area would name
+  // a surface whose page no rule then judges.
+  'iam.audit-event-list',
+  'iam.audit-event-detail',
+]);
+
+/**
+ * The dashboard route segments P1-31's screens live under.
+ *
+ * `delivery` is singular and deliberately so — it is the href already committed
+ * in navigation. `warranty` was named before its screens existed and now carries
+ * them, which is the point of naming an area early: FE-008's two pages met a rule
+ * that predated them. `reports` was named on the same grounds and now HAS pages
+ * too: the FE-011 … FE-014 catalogue and report screens. Its resource root is also
+ * `reports`, so the derived and the named halves agree on that segment — which is
+ * why adding the three reporting operations moved the page count and not the
+ * segment count.
+ *
+ * `audit-log` is the fourth, and it is the leaf rather than `administration` on
+ * purpose. The audit screen this phase modified lives at
+ * `(dashboard)/administration/audit-log`, and its two operations are addressed
+ * under `audit-events` — so, exactly as with `delivery`, no derived root matches
+ * the page and a purely derived rule would never judge it. Naming the PARENT
+ * would instead pull every administration screen in the product into this gate's
+ * subject: roles, users, taxes, currencies and eight more that P1-31 neither owns
+ * nor modified. A gate that reaches outside its lane produces violations nobody in
+ * that lane can act on, which is the reason this file exists at all.
+ */
+export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports', 'audit-log']);
+
+/** The route segments P1-31 owns: the derived resource roots plus the named areas. */
+export function ownedSegments(registerPath = REGISTER) {
+  const { segments } = deriveSegments(registerPath);
+  return segments;
+}
+
+/**
+ * The derivation, with the reasons it could not be trusted alongside it.
+ *
+ * Returned together rather than thrown, so `main` can report every problem at
+ * once and a test can assert on either half.
+ */
+export function deriveSegments(registerPath = REGISTER) {
+  const problems = [];
+  const segments = new Set();
+
+  if (!existsSync(registerPath)) {
+    problems.push(`the operation register is missing at ${slash(relative(ROOT, registerPath))}`);
+    return { segments: [], problems };
+  }
+
+  const raw = JSON.parse(readFileSync(registerPath, 'utf8'));
+  const operations = Array.isArray(raw) ? raw : (raw.operations ?? []);
+  const byId = new Map(operations.map((op) => [op.id, op]));
+
+  for (const id of P1_31_OPERATION_IDS) {
+    const operation = byId.get(id);
+    if (operation === undefined) {
+      // Stale allow-list. Skipping it quietly would shrink this gate's reach
+      // without any diff saying so.
+      problems.push(`${id} is named as a P1-31 operation but the register does not carry it`);
+      continue;
+    }
+    const parts = String(operation.route ?? '')
+      .split('/')
+      .filter((p) => p && p !== 'api' && p !== 'v1' && !p.startsWith('{'));
+    if (parts.length === 0) {
+      problems.push(`${id} has no resource root in its route`);
+      continue;
+    }
+    segments.add(parts[0]);
+  }
+
+  for (const area of P1_31_AREAS) segments.add(area);
+
+  return { segments: [...segments].sort(), problems };
+}
+
+function walk(dir, out = []) {
+  if (!existsSync(dir)) return out;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) walk(p, out);
+    else if (entry.isFile() && entry.name === 'page.tsx') out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Segments this gate owns as OPERATION roots but whose PAGES it defers.
+ *
+ * Derived from the P1-29 gate rather than hand-listed, so it cannot rot: any
+ * segment that gate already owns is a segment whose pages it already judges,
+ * with `judgePage` — the very function this file imports. Judging them here too
+ * is the same opinion computed twice, and it has a cost: a regression on a P1-29
+ * screen would turn THIS gate red, and a P1-31 lane would be holding a finding it
+ * cannot act on. That is the exact shape the docblock above refuses.
+ *
+ * Only `work-orders` is in the intersection today, and it got here honestly:
+ * `sal.work-order-delivery-read` is addressed at `/work-orders/{id}/delivery`, a
+ * SUB-resource, so taking its resource root claims a whole area P1-29 owns and
+ * six pages that consume no P1-31 operation at all.
+ *
+ * The deferral is NOT extended to the P1-30 gate, and the asymmetry is the reason
+ * this file exists. That gate owns `deliveries` and `warranties` as roots and
+ * matches none of the SINGULAR dashboard areas the screens actually live under —
+ * deferring to it would recreate the hole this gate was written to close. The
+ * P1-29 gate owns the whole `work-orders` area and demonstrably judges those
+ * pages, which is checked below rather than assumed.
+ */
+export function deferredSegments() {
+  return new Set(p1_29OwnedSegments());
+}
+
+/**
+ * Every P1-31 route page under an app root, as `{ judged, deferred }`.
+ *
+ * A page is judged when at least one segment admitting it is NOT deferred, so a
+ * page under both — say a delivery panel routed beneath a work order — stays
+ * this gate's business.
+ *
+ * Two named lists rather than one array wearing a property. The deferred set was
+ * hung off the judged array as `judged.deferred`, and an expando on an array is
+ * the kind of state that survives exactly until somebody writes `.filter(...)` or
+ * `[...pages]` — at which point the hand-over silently becomes empty, the "is
+ * every deferred page judged next door" check passes over nothing, and the report
+ * line says `0 deferred`. A shape that can be destroyed by a spread is not a
+ * shape to hold a safety check in.
+ */
+export function p1_31PagesUnder(
+  appRoot,
+  segments = ownedSegments(),
+  deferredRoots = deferredSegments()
+) {
+  const judged = [];
+  const deferred = [];
+  for (const page of walk(appRoot)) {
+    const rel = slash(page);
+    const matched = segments.filter((seg) => rel.includes(`/${seg}/`));
+    if (matched.length === 0) continue;
+    if (matched.some((seg) => !deferredRoots.has(seg))) judged.push(page);
+    else deferred.push(page);
+  }
+  return { judged, deferred };
+}
+
+function main() {
+  const i = process.argv.indexOf('--app-root');
+  const overridden = i !== -1;
+  const appRoot = overridden ? process.argv[i + 1] : join(ROOT, 'apps', 'web', 'src', 'app');
+  const m = process.argv.indexOf('--min-pages');
+  const minPages = m === -1 ? (overridden ? 0 : 1) : Number(process.argv[m + 1]);
+
+  const { segments, problems } = deriveSegments();
+  const violations = [...problems];
+
+  if (segments.length === 0) {
+    violations.push(
+      'the P1-31 segment derivation is EMPTY — a gate that owns no segments examines no pages ' +
+        'and passes everything'
+    );
+  }
+
+  const { judged, deferred } = p1_31PagesUnder(appRoot, segments);
+  for (const page of judged) {
+    const why = judgePage(readFileSync(page, 'utf8'));
+    if (why) violations.push(`gate-before-read: ${slash(relative(ROOT, page))} ${why}`);
+  }
+
+  /*
+   * A deferral is only honest if somebody really does judge the page. So the
+   * sibling's own page set is computed and every deferred page must be in it —
+   * a page this gate hands over and that gate does not take is a page judged by
+   * NOBODY, which is worse than the double judgement the deferral removes.
+   *
+   * Skipped when `--app-root` points elsewhere: the sibling resolves its own set
+   * against the repository, and a scratch directory is a test of the judgement
+   * rather than a measurement of the tree.
+   */
+  if (!overridden) {
+    const sibling = new Set(p1_29PagesUnder(appRoot).map((p) => slash(p)));
+    for (const page of deferred) {
+      if (!sibling.has(slash(page))) {
+        violations.push(
+          `${slash(relative(ROOT, page))} is deferred to the P1-29 gate and that gate does not ` +
+            'judge it. A page handed over and not taken is a page no gate-before-read rule ' +
+            'examines at all.'
+        );
+      }
+    }
+  }
+
+  console.log(
+    `P1-31 gate-before-read: ${judged.length} route page(s) examined across ` +
+      `${segments.length} owned segment(s) (${segments.join(', ')}); ` +
+      `${deferred.length} deferred to the P1-29 gate, which judges them with the same rule.`
+  );
+
+  if (judged.length < minPages) {
+    // Unlike its two siblings, this gate ships beside a screen. Falling under
+    // the floor over the repository's own app root means the derivation stopped
+    // matching, and a pass over an empty set would report that as health.
+    violations.push(
+      `FEWER than ${minPages} P1-31 route page(s) were found under the application root — this ` +
+        'gate ships beside a screen, so an examination under the floor is a broken derivation ' +
+        'rather than an unstarted phase'
+    );
+  }
+
+  if (violations.length) {
+    for (const v of violations) console.error(`::error::${v}`);
+    console.error(`  ${violations.length} violation(s).`);
+    process.exit(1);
+  }
+  console.log('  0 violation(s).');
+}
+
+// Entry-point check, not a filename check — a Windows drive letter makes a
+// hand-built `file://` URL wrong, and a gate that only runs under one exact
+// spelling of its own path is a gate a test cannot copy or wrap.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

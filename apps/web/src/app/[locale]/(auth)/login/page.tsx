@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { AuthCard } from '@/features/authentication/components/AuthCard';
 import { LoginForm } from '@/features/authentication/components/LoginForm';
+import { INTENDED_PATH_PARAM, safeIntendedPath } from '@/features/authentication/api/intended-path';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -10,11 +11,24 @@ import { pageMetadata } from '@/lib/page-metadata';
  *
  * ## The `reason` parameter
  *
- * `?reason=expired|signed-out|unavailable`, and nothing else. It changes one
+ * `?reason=expired|signed-out|unavailable|forbidden`, and nothing else. It changes one
  * sentence so an operator who was thrown out mid-task is told why rather than
  * being silently returned to a form. It is a fixed enum, matched exactly: an
  * unrecognised value renders no notice at all, so the query string cannot become
- * a way to put arbitrary text on the page.
+ * a way to put arbitrary text on the page. Exactly means one of the map's OWN
+ * keys, given once as a string — not a name every object inherits (`toString`,
+ * `constructor`, `__proto__`), and not a repeated parameter.
+ *
+ * ## The `intended` parameter
+ *
+ * The page the operator was opening when sign-in was asked for
+ * (P1-32-PRE-OD-AUTHB). It is checked against the application-path allow-list
+ * (`safeIntendedPath`) before it is used at all; a value that fails is ignored
+ * as if it were absent — no notice, no hidden field. This page never navigates
+ * to it: it is handed to the sign-in action, which follows it only after the
+ * new session proves it may open that page. The sentence it adds says that the
+ * operator will return to the page, never which page, so the address is not
+ * echoed into the document.
  *
  * ## No session check here
  *
@@ -27,10 +41,13 @@ const REASONS = {
   expired: 'auth.login.reason.expired',
   'signed-out': 'auth.login.reason.signedOut',
   unavailable: 'auth.login.reason.unavailable',
-  // The credentials were accepted and the account may not read its own session
-  // — it does not hold `iam.user.read`. Signing in again will not help, so the
-  // message says so rather than inviting an operator to try the same thing
-  // repeatedly (`P1-26-F-022`).
+  // The credentials were accepted and the account holds nothing the workspace
+  // opens — its session read was refused, or (since P1-32-PRE-OD-FRX, when that
+  // read stopped requiring `iam.user.read`) it answered with no permission code
+  // at all. Signing in again will not help, so the message says so rather than
+  // inviting an operator to try the same thing repeatedly (`P1-26-F-022`). The
+  // sentence says the account has been given access to nothing yet, which is
+  // what an account with no permission code is (P1-32-PRE-OD-AUTHB).
   forbidden: 'auth.login.reason.forbidden',
 } as const;
 
@@ -46,9 +63,18 @@ export default async function LoginPage({
   const messages = getMessages(locale);
 
   const query = await searchParams;
-  const rawReason = Array.isArray(query.reason) ? query.reason[0] : query.reason;
+  // One of the four words, given once, and nothing else (P1-32-PRE-OD-AUTHB-05).
+  // An OWN key of the map: `in` also answers for every name an object inherits,
+  // so `?reason=toString` drew an empty notice and `?reason=__proto__` handed
+  // React an object and broke the page. A repeated parameter arrives as an array
+  // and is not a reason either.
+  const rawReason = query.reason;
   const reasonKey =
-    rawReason && rawReason in REASONS ? REASONS[rawReason as keyof typeof REASONS] : null;
+    typeof rawReason === 'string' && Object.hasOwn(REASONS, rawReason)
+      ? REASONS[rawReason as keyof typeof REASONS]
+      : null;
+  const rawIntended = query[INTENDED_PATH_PARAM];
+  const intendedPath = safeIntendedPath(Array.isArray(rawIntended) ? rawIntended[0] : rawIntended);
 
   return (
     <AuthCard
@@ -64,7 +90,16 @@ export default async function LoginPage({
             {translate(messages, reasonKey)}
           </p>
         ) : null}
-        <LoginForm locale={locale} messages={messages} />
+        {intendedPath ? (
+          <p
+            role="status"
+            data-testid="sign-in-intended"
+            className="rounded-lg border border-info-border bg-info-subtle p-3 text-supporting text-text-primary"
+          >
+            {translate(messages, 'auth.login.intended')}
+          </p>
+        ) : null}
+        <LoginForm locale={locale} messages={messages} intendedPath={intendedPath} />
       </div>
     </AuthCard>
   );

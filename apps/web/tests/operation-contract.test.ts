@@ -48,6 +48,22 @@ describe('the generated table reflects the published contract', () => {
 });
 
 describe('resolving a concrete path', () => {
+  it('resolves the report action suffix to its explicit export audit contract', () => {
+    const path = '/api/v1/reports/work_orders_by_status:export';
+    expect(resolveOperation('POST', path)).toMatchObject({
+      operationId: 'rpt.report-export',
+      auditClass: 'export',
+      idempotent: false,
+    });
+    expect(requiresIdempotencyKey('POST', path)).toBe(false);
+    for (const wrong of [
+      '/api/v1/reports/:export',
+      `${path}extra`,
+      '/api/v1/reports/work_orders_by_status:other',
+    ]) {
+      expect(resolveOperation('POST', wrong)).toBeNull();
+    }
+  });
   it('resolves a real call-site path, WITH the /api/v1 prefix', () => {
     // Call sites pass the full path because the base URL is an origin. The first
     // draft of the resolver stripped the prefix from the table but not from the

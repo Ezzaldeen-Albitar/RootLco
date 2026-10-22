@@ -81,7 +81,8 @@
  *   iam.auth-logout: route service unauthenticated
  *   iam.auth-password-reset: route service unauthenticated
  *   iam.auth-password-reset-completion: route service unauthenticated
- *   iam.auth-session: route service authorization success
+ *   iam.auth-session: route service success self-read
+ *   iam.working-context-read: route service success self-read
  *   iam.branch-settings-read: route service authorization success cross-tenant isolation
  *   iam.branch-settings-write: route service authorization cross-tenant isolation
  *   iam.company-settings-read: route service authorization success cross-tenant isolation
@@ -146,6 +147,10 @@ import { PING_OPERATION, GET as pingRoute } from '@/app/api/v1/meta/ping/route';
 import { LOGIN_OPERATION, POST as loginRoute } from '@/app/api/v1/auth/login/route';
 import { LOGOUT_OPERATION, POST as logoutRoute } from '@/app/api/v1/auth/logout/route';
 import { SESSION_OPERATION, GET as sessionRoute } from '@/app/api/v1/auth/session/route';
+import {
+  WORKING_CONTEXT_OPERATION,
+  GET as workingContextRoute,
+} from '@/app/api/v1/auth/working-context/route';
 import {
   PASSWORD_RESET_OPERATION,
   POST as passwordResetRoute,
@@ -281,6 +286,14 @@ const U24_ADMIN_B = 'd4000000-0000-4000-8000-00000000000b';
  * operation the two are indistinguishable.
  */
 const U24_PARTIAL = 'd4000000-0000-4000-8000-000000000005';
+/**
+ * Tenant A caller holding ONLY quotation and work-order read codes — no
+ * `iam.user.read`. The role shape that could not open the product before the
+ * session and working-context reads became self-reads (P1-32-PRE-OD-FRX).
+ */
+const U24_QUOTATIONS = 'd4000000-0000-4000-8000-000000000006';
+/** Tenant A account holding NO role grant at all (P1-32-PRE-OD-FRX). */
+const U24_NO_ROLE = 'd4000000-0000-4000-8000-000000000007';
 /** A plain tenant-A account used as the TARGET of user reads and writes. */
 const U24_TARGET = 'd4000000-0000-4000-8000-000000000003';
 /** A plain tenant-B account. Its id is what tenant A must not be able to read. */
@@ -288,6 +301,8 @@ const U24_TARGET_B = 'd4000000-0000-4000-8000-00000000000c';
 
 const ROLE24_A = 'd4100000-0000-4000-8000-000000000001';
 const ROLE24_B = 'd4100000-0000-4000-8000-00000000000b';
+/** Carries `quo.quotation.read`, `quo.quotation.manage` and `wo.work_order.read` only. */
+const ROLE24_QUOTATIONS = 'd4100000-0000-4000-8000-000000000006';
 /** Carries `iam.user.manage` only — the half of the conjunction. */
 const ROLE24_PARTIAL = 'd4100000-0000-4000-8000-000000000005';
 /** A tenant-A role that exists only to be the target of role reads and writes. */
@@ -312,6 +327,14 @@ const SUBJECT24_ADMIN = 'fx_p24_rt_admin';
 const SUBJECT24_SCOPED = 'fx_p24_rt_scoped';
 const SUBJECT24_ADMIN_B = 'fx_p24_rt_admin_b';
 const SUBJECT24_PARTIAL = 'fx_p24_rt_partial';
+const SUBJECT24_QUOTATIONS = 'fx_p24_rt_quotations';
+const SUBJECT24_NO_ROLE = 'fx_p24_rt_no_role';
+/** The codes the quotations-only role holds. None of them is an `iam.` code. */
+const QUOTATIONS_ONLY_CODES = [
+  'quo.quotation.read',
+  'quo.quotation.manage',
+  'wo.work_order.read',
+] as const;
 
 /** The twelve codes the iam./meta. surface declares. Reconciled below. */
 const PERMISSIONS24 = [
@@ -428,6 +451,8 @@ const asPartial = (): void => authenticateAs(SUBJECT24_PARTIAL);
 const asScoped = (): void => authenticateAs(SUBJECT24_SCOPED);
 const asAdminB = (): void => authenticateAs(SUBJECT24_ADMIN_B, TENANT_B);
 const asUnpermitted = (): void => authenticateAs(SUBJECT_UNPERMITTED);
+const asQuotationsOnly = (): void => authenticateAs(SUBJECT24_QUOTATIONS);
+const asNoRole = (): void => authenticateAs(SUBJECT24_NO_ROLE);
 /** No session at all — the state a public route must answer in. */
 const asNobody = (): void => {
   currentClaims = undefined;
@@ -460,7 +485,9 @@ async function seedSuiteFixtures(): Promise<void> {
             ($3, $7, $9,  $12, 'fx-p24-rt-admin-b@example.test', 'P1-24 Route Admin B', 'active', $8),
             ($4, $6, $9,  'fx_p24_rt_target',   'fx-p24-rt-target@example.test',   'P1-24 Target A', 'active', $8),
             ($5, $7, $9,  'fx_p24_rt_target_b', 'fx-p24-rt-target-b@example.test', 'P1-24 Target B', 'active', $8),
-            ($13, $6, $9, $14, 'fx-p24-rt-partial@example.test', 'P1-24 Route Partial', 'active', $8)
+            ($13, $6, $9, $14, 'fx-p24-rt-partial@example.test', 'P1-24 Route Partial', 'active', $8),
+            ($15, $6, $9, $16, 'fx-p24-rt-quotations@example.test', 'P1-24 Route Quotations', 'active', $8),
+            ($17, $6, $9, $18, 'fx-p24-rt-no-role@example.test', 'P1-24 Route No Role', 'active', $8)
      ON CONFLICT (id) DO NOTHING`,
     [
       U24_ADMIN,
@@ -477,6 +504,10 @@ async function seedSuiteFixtures(): Promise<void> {
       SUBJECT24_ADMIN_B,
       U24_PARTIAL,
       SUBJECT24_PARTIAL,
+      U24_QUOTATIONS,
+      SUBJECT24_QUOTATIONS,
+      U24_NO_ROLE,
+      SUBJECT24_NO_ROLE,
     ]
   );
 
@@ -486,9 +517,20 @@ async function seedSuiteFixtures(): Promise<void> {
             ($2, $6, 'fx_p24_rt_admin',   'P1-24 route administration', $7),
             ($3, $5, 'fx_p24_rt_target',  'P1-24 route target role',    $7),
             ($4, $6, 'fx_p24_rt_target',  'P1-24 route target role',    $7),
-            ($8, $5, 'fx_p24_rt_partial', 'P1-24 route partial role',   $7)
+            ($8, $5, 'fx_p24_rt_partial', 'P1-24 route partial role',   $7),
+            ($9, $5, 'fx_p24_rt_quotations', 'P1-24 route quotations role', $7)
      ON CONFLICT (id) DO NOTHING`,
-    [ROLE24_A, ROLE24_B, ROLE24_TARGET, ROLE24_TARGET_B, TENANT_A, TENANT_B, USER_A, ROLE24_PARTIAL]
+    [
+      ROLE24_A,
+      ROLE24_B,
+      ROLE24_TARGET,
+      ROLE24_TARGET_B,
+      TENANT_A,
+      TENANT_B,
+      USER_A,
+      ROLE24_PARTIAL,
+      ROLE24_QUOTATIONS,
+    ]
   );
 
   for (const [roleId, tenantId, codes] of [
@@ -496,6 +538,7 @@ async function seedSuiteFixtures(): Promise<void> {
     [ROLE24_B, TENANT_B, PERMISSIONS24],
     // Deliberately ONE of the two codes `iam.user-status-change` declares.
     [ROLE24_PARTIAL, TENANT_A, ['iam.user.manage']],
+    [ROLE24_QUOTATIONS, TENANT_A, QUOTATIONS_ONLY_CODES],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
@@ -507,7 +550,16 @@ async function seedSuiteFixtures(): Promise<void> {
 
   // Grants carry no natural key, so a re-seed would otherwise stack duplicates.
   await admin.query('DELETE FROM iam.role_grants WHERE user_id = ANY($1::uuid[])', [
-    [U24_ADMIN, U24_SCOPED, U24_ADMIN_B, U24_TARGET, U24_TARGET_B, U24_PARTIAL],
+    [
+      U24_ADMIN,
+      U24_SCOPED,
+      U24_ADMIN_B,
+      U24_TARGET,
+      U24_TARGET_B,
+      U24_PARTIAL,
+      U24_QUOTATIONS,
+      U24_NO_ROLE,
+    ],
   ]);
   await admin.query(
     `INSERT INTO iam.role_grants
@@ -516,7 +568,8 @@ async function seedSuiteFixtures(): Promise<void> {
             (DEFAULT, $4, $5, $6, 'unrestricted', 'active', $8, $8),
             ($7,      $1, $9, $10, 'unrestricted', 'active', $8, $8),
             ($11,     $4, $12, $13, 'unrestricted', 'active', $8, $8),
-            (DEFAULT, $1, $14, $15, 'unrestricted', 'active', $8, $8)`,
+            (DEFAULT, $1, $14, $15, 'unrestricted', 'active', $8, $8),
+            (DEFAULT, $1, $16, $17, 'unrestricted', 'active', $8, $8)`,
     [
       TENANT_A,
       U24_ADMIN,
@@ -533,6 +586,8 @@ async function seedSuiteFixtures(): Promise<void> {
       ROLE24_TARGET_B,
       U24_PARTIAL,
       ROLE24_PARTIAL,
+      U24_QUOTATIONS,
+      ROLE24_QUOTATIONS,
     ]
   );
 
@@ -675,7 +730,12 @@ const REDIRECT_ALLOWED = 'https://app.test.local/invitation';
  */
 const denialCases: readonly DenialCase[] = [
   { operation: PING_OPERATION, handler: pingRoute, input: { path: '/meta/ping' } },
-  { operation: SESSION_OPERATION, handler: sessionRoute, input: { path: '/auth/session' } },
+  // `iam.auth-session` and `iam.working-context-read` are NOT here: since
+  // P1-32-PRE-OD-FRX they are authenticated self-reads that declare no code, so
+  // there is nothing for this table to refuse. Their contract — 401 without a
+  // session, 200 with the caller's own facts and nobody else's for a caller
+  // holding no code — is held by the self-read suite below, and the
+  // reconciliation names them as self-reads.
   { operation: USER_LIST_OPERATION, handler: userListRoute, input: { path: '/iam/users' } },
   {
     operation: USER_DETAIL_OPERATION,
@@ -1004,8 +1064,12 @@ const P1_24_AUTHENTICATED_IDS = [
   'iam.user-session-revoke-all',
   'iam.user-status-change',
   'iam.user-update',
+  'iam.working-context-read',
   'meta.ping',
 ] as const;
+
+/** The two authenticated self-reads (P1-32-PRE-OD-FRX), a subset of the list above. */
+const P1_24_SELF_READ_IDS = ['iam.auth-session', 'iam.working-context-read'] as const;
 
 /** The four unauthenticated ones, for the same reason. */
 const P1_24_PUBLIC_IDS = [
@@ -1017,15 +1081,28 @@ const P1_24_PUBLIC_IDS = [
 
 describe('P1-24 — the denial table covers the whole iam./meta. surface', () => {
   it('names every authenticated operation in the namespace exactly once', () => {
-    const registered = allOperations()
-      .filter((operation) => operation.id.startsWith('iam.') || operation.id.startsWith('meta.'))
+    const namespace = allOperations().filter(
+      (operation) => operation.id.startsWith('iam.') || operation.id.startsWith('meta.')
+    );
+    const registered = namespace
       .filter((operation) => !operation.public)
+      .map((operation) => operation.id)
+      .sort();
+    // A self-read declares no code, so it has no denial to table.
+    const guarded = namespace
+      .filter((operation) => !operation.public && !operation.selfRead)
+      .map((operation) => operation.id)
+      .sort();
+    const selfReads = namespace
+      .filter((operation) => operation.selfRead)
       .map((operation) => operation.id)
       .sort();
     const tabled = denialCases.map((entry) => entry.operation.id).sort();
 
-    expect(tabled).toEqual(registered);
+    expect(tabled).toEqual(guarded);
     expect([...P1_24_AUTHENTICATED_IDS].sort()).toEqual(registered);
+    expect([...P1_24_SELF_READ_IDS].sort()).toEqual(selfReads);
+    expect([...guarded, ...selfReads].sort()).toEqual(registered);
     expect(new Set(tabled).size).toBe(tabled.length);
   });
 
@@ -1065,6 +1142,187 @@ describe('P1-24-SEC-001 — a caller without the declared permission is refused 
       const document = JSON.stringify(response.body);
       for (const id of [U24_TARGET, ROLE24_TARGET, GRANT24_SCOPED, COMPANY_A1, BRANCH_A1]) {
         expect(document).not.toContain(id);
+      }
+    });
+  }
+});
+
+describe('P1-32-PRE-OD-FRX — the session and working-context reads are authenticated self-reads', () => {
+  const selfReads = [
+    { operation: SESSION_OPERATION, handler: sessionRoute, path: '/auth/session' },
+    {
+      operation: WORKING_CONTEXT_OPERATION,
+      handler: workingContextRoute,
+      path: '/auth/working-context',
+    },
+  ] as const;
+
+  it('both register as self-reads with no permission code, and nothing else does', () => {
+    for (const entry of selfReads) {
+      expect(entry.operation.selfRead, entry.operation.id).toBe(true);
+      expect(entry.operation.public, entry.operation.id).toBe(false);
+      expect(entry.operation.permissions, entry.operation.id).toEqual([]);
+    }
+    expect(
+      allOperations()
+        .filter((operation) => operation.selfRead)
+        .map((operation) => operation.id)
+        .sort()
+    ).toEqual(selfReads.map((entry) => entry.operation.id).sort());
+  });
+
+  for (const entry of selfReads) {
+    it(`${entry.operation.id} answers 401 with no session`, async () => {
+      asNobody();
+      const response = await call<ProblemBody>(entry.handler, { path: entry.path });
+      expect(response.status).toBe(401);
+      expect(response.body?.code).toBe('ERR-IAM-002');
+    });
+  }
+
+  it('answers a caller holding only quo.* and wo.work_order.read 200 with its own session', async () => {
+    asQuotationsOnly();
+    const response = await call<{
+      userId?: string;
+      tenantId?: string;
+      email?: string;
+      permissions?: string[];
+    }>(sessionRoute, { path: '/auth/session' });
+    expect(response.status).toBe(200);
+    expect(response.body.userId).toBe(U24_QUOTATIONS);
+    expect(response.body.tenantId).toBe(TENANT_A);
+    expect(response.body.email).toBe('fx-p24-rt-quotations@example.test');
+    expect([...(response.body.permissions ?? [])].sort()).toEqual(
+      [...QUOTATIONS_ONLY_CODES].sort()
+    );
+    expect(response.body.permissions).not.toContain('iam.user.read');
+  });
+
+  it('answers the same caller 200 with its own companies and branches', async () => {
+    asQuotationsOnly();
+    const response = await call<{
+      tenantId?: string;
+      unrestricted?: boolean;
+      companies?: { id: string }[];
+      branches?: { id: string }[];
+    }>(workingContextRoute, { path: '/auth/working-context' });
+    expect(response.status).toBe(200);
+    expect(response.body.tenantId).toBe(TENANT_A);
+    expect(response.body.unrestricted).toBe(true);
+    expect(response.body.companies?.map((company) => company.id)).toContain(COMPANY_A1);
+    // Its own tenant only: tenant B's real company never appears.
+    expect(response.body.companies?.map((company) => company.id)).not.toContain(COMPANY24_B);
+  });
+
+  it('answers a principal with NO role at all only its own facts', async () => {
+    asNoRole();
+    const session = await call<Record<string, unknown>>(sessionRoute, { path: '/auth/session' });
+    expect(session.status).toBe(200);
+    expect(Object.keys(session.body).sort()).toEqual([
+      'branchIds',
+      'companyIds',
+      'displayName',
+      'email',
+      'permissions',
+      'tenantId',
+      'userId',
+    ]);
+    expect(session.body.userId).toBe(U24_NO_ROLE);
+    expect(session.body.email).toBe('fx-p24-rt-no-role@example.test');
+    expect(session.body.permissions).toEqual([]);
+
+    const context = await call<Record<string, unknown>>(workingContextRoute, {
+      path: '/auth/working-context',
+    });
+    expect(context.status).toBe(200);
+    expect(context.body).toMatchObject({
+      tenantId: TENANT_A,
+      unrestricted: false,
+      companies: [],
+      branches: [],
+      companySettingsReadableIds: [],
+    });
+
+    // Nothing about another account: no other user id or address of the fixture
+    // population reaches either answer.
+    const both = JSON.stringify([session.body, context.body]);
+    for (const other of [U24_ADMIN, U24_TARGET, U24_QUOTATIONS, U24_TARGET_B, USER_A]) {
+      expect(both).not.toContain(other);
+    }
+    expect(both).not.toContain('fx-p24-rt-admin@example.test');
+    expect(both).not.toContain('fx-p24-rt-target@example.test');
+  });
+
+  it('answers the caller whose role maps no code, while the directory read still refuses it', async () => {
+    // The same real account the denial table uses: a role with no mappings.
+    asUnpermitted();
+    const session = await call<{ userId?: string; permissions?: string[] }>(sessionRoute, {
+      path: '/auth/session',
+    });
+    expect(session.status).toBe(200);
+    expect(session.body.userId).toBe(USER_UNPERMITTED);
+    expect(session.body.permissions).toEqual([]);
+    // Other people's accounts stay behind `iam.user.read`.
+    const directory = await call<ProblemBody>(userDetailRoute, {
+      path: `/iam/users/${U24_TARGET}`,
+      params: { userId: U24_TARGET },
+    });
+    expect(directory.status).toBe(403);
+    expect(directory.body?.code).toBe('ERR-IAM-001');
+  });
+
+  /**
+   * P1-32-PRE-OD-FRXR — FRX1-c of the CP-20261008-3 runtime retest. Both reads
+   * answered 200 and silently IGNORED `?userId=`, `?companyId=` and `?branchId=`,
+   * so a request could look as though it substituted another user, company or
+   * branch. They now refuse every query parameter with the standard validation
+   * error, and the refusal carries none of the caller's own facts either.
+   */
+  const substitutionProbes = [
+    { name: 'userId', value: U24_TARGET },
+    { name: 'companyId', value: COMPANY24_B },
+    { name: 'branchId', value: BRANCH24_B },
+    { name: 'tenantId', value: TENANT_B },
+    { name: 'unknownParameter', value: 'anything' },
+    // `searchParamsToObject` drops this key before the schema runs; the route
+    // must still refuse it from the raw query.
+    { name: '__proto__', value: 'fx-p24-proto-probe' },
+  ] as const;
+
+  for (const entry of selfReads) {
+    for (const probe of substitutionProbes) {
+      it(`${entry.operation.id} refuses a ${probe.name} query parameter with a validation error`, async () => {
+        asQuotationsOnly();
+        const response = await call<ProblemBody & Record<string, unknown>>(entry.handler, {
+          path: entry.path,
+          query: { [probe.name]: probe.value },
+        });
+        expect(response.status).toBe(422);
+        expect(response.body?.code).toBe('ERR-VAL-001');
+        // A problem document, not a session or a working context: none of the
+        // success shape's keys, and neither the caller's facts nor the value it
+        // tried to substitute.
+        for (const key of ['userId', 'tenantId', 'email', 'permissions', 'companies', 'branches']) {
+          expect(response.body, key).not.toHaveProperty(key);
+        }
+        const document = JSON.stringify(response.body);
+        expect(document).not.toContain(U24_QUOTATIONS);
+        expect(document).not.toContain('fx-p24-rt-quotations@example.test');
+        expect(document).not.toContain(TENANT_A);
+        expect(document).not.toContain(COMPANY_A1);
+        expect(document).not.toContain(probe.value);
+      });
+    }
+
+    it(`${entry.operation.id} still answers 200 with the caller's own facts when no parameter is sent`, async () => {
+      asQuotationsOnly();
+      const response = await call<{ userId?: string; tenantId?: string }>(entry.handler, {
+        path: entry.path,
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.tenantId).toBe(TENANT_A);
+      if (entry.operation === SESSION_OPERATION) {
+        expect(response.body.userId).toBe(U24_QUOTATIONS);
       }
     });
   }
@@ -1220,6 +1478,19 @@ describe('P1-24-QA-002 — the read surface answers on the runtime identity', ()
     });
     expect(response.status).toBe(200);
     expect(JSON.stringify(response.body)).toContain(U24_ADMIN);
+  });
+
+  it('iam.working-context-read answers the caller its own companies and branches', async () => {
+    asAdmin();
+    const response = await call<{
+      tenantId?: string;
+      unrestricted?: boolean;
+      companies?: { id: string }[];
+      branches?: { id: string; companyId: string }[];
+    }>(workingContextRoute, { path: '/auth/working-context' });
+    expect(response.status).toBe(200);
+    expect(response.body.companies?.map((company) => company.id)).toContain(COMPANY_A1);
+    expect(response.body.branches?.map((branch) => branch.id)).toContain(BRANCH_A1);
   });
 
   it('iam.user-list returns tenant-A accounts and no tenant-B account', async () => {

@@ -1,9 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useCallback, useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import type { ActionState } from '@/lib/forms/action-result';
 import { changeVehicleStatusAction, updateVehicleAction } from '../profile-api';
@@ -433,9 +435,13 @@ function ProfileHeader({
       {vehicle.mergedIntoId ? (
         <p className="mt-3 text-body text-text-secondary" lang={locale}>
           {translate(messages, 'vehicles.profile.mergedInto')}{' '}
-          <code className="font-mono text-caption" dir="ltr">
-            {vehicle.mergedIntoId}
-          </code>
+          {/* The surviving vehicle by a link in words, never its bare reference (route sweep B3). */}
+          <Link
+            href={`/${locale}/vehicles/${vehicle.mergedIntoId}`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'vehicles.profile.openMergedInto')}
+          </Link>
         </p>
       ) : null}
     </header>
@@ -875,7 +881,8 @@ function Outcome({
       role={failed ? 'alert' : 'status'}
       className={`text-body ${failed ? 'text-error' : 'text-success'}`}
     >
-      {translateDynamic(messages, state.messageKey)}
+      {translateWithValues(messages, state.messageKey, state.messageValues)}
+      <FailureExplanation messages={messages} messageKey={state.messageKey} />
       {state.correlationId ? (
         <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
       ) : null}

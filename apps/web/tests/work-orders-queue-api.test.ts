@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 /**
- * The work-order board ADAPTER (P1-29, `W1`) — `listWorkOrders`.
+ * The work-order board read (P1-29, `W1`) — `readWorkOrderList`, the server core
+ * the POST route at `/reads/work-orders` serves (P1-32-PRE-OD-READ).
  *
  * ## Why this file exists at all
  *
@@ -33,7 +36,10 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-const { listWorkOrders } = await import('@/features/work-orders/api');
+const { readWorkOrderCatalogue } = await import('@/features/work-orders/api');
+const { readWorkOrderList } = await import('@/features/work-orders/work-order-list-read.server');
+const { WORK_ORDER_KINDS, WORK_ORDER_STATE_GROUPS } =
+  await import('@/features/work-orders/work-orders-contract');
 
 const TARGET = {
   companyId: '11111111-1111-4111-8111-111111111111',
@@ -64,6 +70,12 @@ const ROW = {
     registrationPlate: 'ABC-1234',
     makeModel: 'A make and model',
   },
+  // The three fields the Owner directive added to the published row. Present
+  // here because they are present there: a fixture that omitted them would let
+  // an adapter that dropped them pass.
+  assignedTechnician: { id: '77777777-7777-4777-8777-777777777777', displayName: null },
+  completedAt: null,
+  qualityState: null,
 };
 
 const REQUEST = { pageSize: 25 } as never;
@@ -77,11 +89,11 @@ beforeEach(() => {
   authorizedClient.mockResolvedValue(client as unknown);
 });
 
-describe('listWorkOrders maps a published page onto table rows', () => {
+describe('readWorkOrderList maps a published page onto table rows', () => {
   it('carries the row through unchanged, with the server’s own end-of-set signals', async () => {
     get.mockResolvedValue(ok({ items: [ROW], nextCursor: 'cur-2', hasMore: true }));
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     expect(result.status).toBe('ok');
     expect(result.rows).toHaveLength(1);
@@ -103,7 +115,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
       ok({ items: [{ ...ROW, customer: null }], nextCursor: null, hasMore: false })
     );
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     expect(result.status).toBe('ok');
     expect(result.rows[0]?.customer).toBeNull();
@@ -112,7 +124,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('sends the branch pair as a TARGET, and the criteria beside it', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(
+    await readWorkOrderList(
       TARGET,
       { kind: 'rework', state: 'awaiting_parts' },
       REQUEST,
@@ -135,7 +147,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('omits a criterion that was not chosen rather than sending it empty', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(TARGET, {}, REQUEST, null);
+    await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     const path = String(get.mock.calls[0]?.[0]);
     expect(path).not.toContain('kind=');
@@ -143,12 +155,80 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     // `.strict()` at the backend means an empty-but-present parameter is a 422,
     // not a silent ignore, so "not sent" has to mean not sent.
     expect(path).not.toContain('customerId=');
+    expect(path).not.toContain('q=');
+    expect(path).not.toContain('stateGroup=');
+    expect(path).not.toContain('completedFrom=');
+    expect(path).not.toContain('completedTo=');
+  });
+
+  it('sends the state group and the completion window when they were chosen', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await readWorkOrderList(
+      TARGET,
+      {
+        stateGroup: 'active',
+        completedFrom: '2026-09-01T00:00:00.000Z',
+        completedTo: '2026-09-30T23:59:59.999Z',
+      },
+      REQUEST,
+      null
+    );
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('stateGroup')).toBe('active');
+    expect(url.searchParams.get('completedFrom')).toBe('2026-09-01T00:00:00.000Z');
+    expect(url.searchParams.get('completedTo')).toBe('2026-09-30T23:59:59.999Z');
+    // `stateGroup` and `state` are mutually exclusive at the backend, which
+    // answers 422 rather than intersecting them — so a screen that offers both
+    // controls must never send both, and this criteria object sent neither.
+    expect(url.searchParams.get('state')).toBeNull();
+  });
+
+  it('sends a day’s last instant to the microsecond, exactly as the board built it', async () => {
+    /*
+     * The board's day ends at `…T23:59:59.999999±HH:MM` (`endOfDayBound`) and
+     * the route now hands that string to a closed `<=` comparison unchanged
+     * (`tests/unit/p1-32-work-order-list-instants.test.ts`). This half is that
+     * the adapter does not round it on the way: no `Date`, no `toISOString()`.
+     */
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await readWorkOrderList(
+      TARGET,
+      {
+        openedFrom: '2026-09-21T21:00:00.000Z',
+        openedTo: '2026-09-22T23:59:59.999999+03:00',
+        completedTo: '2026-09-22T23:59:59.999999+03:00',
+      },
+      REQUEST,
+      null
+    );
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('openedFrom')).toBe('2026-09-21T21:00:00.000Z');
+    expect(url.searchParams.get('openedTo')).toBe('2026-09-22T23:59:59.999999+03:00');
+    expect(url.searchParams.get('completedTo')).toBe('2026-09-22T23:59:59.999999+03:00');
+  });
+
+  it('sends the P1-32 free-text criterion as typed, beside the target', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await readWorkOrderList(TARGET, { q: '١٢٣' }, REQUEST, null);
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
+    expect(url.searchParams.get('branchId')).toBe(TARGET.branchId);
+    // Sent exactly as the operator typed it: the backend folds Arabic-Indic
+    // digits itself, and folding them here as well would be two rules for one
+    // question with only one of them written down at the backend.
+    expect(url.searchParams.get('q')).toBe('١٢٣');
   });
 
   it('a REFUSAL is a refusal, never an empty board', async () => {
     get.mockResolvedValue(failure('forbidden'));
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     // Both halves asserted: the status must be the denial, AND it must not be
     // the success that an empty list would be rendered as.
@@ -169,7 +249,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     ] as const) {
       get.mockReset();
       get.mockResolvedValue(failure(kind));
-      const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+      const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
       expect(result.status, `${kind} mapped wrong`).toBe(expected);
       expect(result.rows).toEqual([]);
     }
@@ -178,9 +258,184 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('does not call the backend at all without a session', async () => {
     authorizedClient.mockResolvedValue(null);
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     expect(result.status).toBe('expired');
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The board scope and the board flags (Owner directive, `P1-32-PRE-OD-UX`).
+ *
+ * Two contract changes meet in this adapter and both are easy to get quietly
+ * wrong. An absent branch must be OMITTED rather than sent blank — the route
+ * reads an omission as "every branch of this company I may read" and a blank
+ * value as a malformed reference. And a flag turned OFF must travel as the
+ * literal word, because the route parses `'true'`/`'false'` and a coerced
+ * boolean would make every non-empty string true.
+ */
+describe('the branch may be left unnamed, and that is a request', () => {
+  it('sends the company alone when no branch is named', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await readWorkOrderList({ companyId: TARGET.companyId, branchId: null }, {}, REQUEST, null);
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
+    // Omitted, not blank. A blank one would be a malformed reference at the
+    // backend and a 422 far from the mistake.
+    expect(url.searchParams.has('branchId')).toBe(false);
+    expect(String(get.mock.calls[0]?.[0])).not.toContain('branchId=');
+  });
+
+  it('refuses a blank company rather than asking for everything', async () => {
+    await expect(
+      readWorkOrderList({ companyId: '', branchId: null }, {}, REQUEST, null)
+    ).rejects.toThrow(/companyId/);
+  });
+
+  it('still refuses a scope key smuggled among the filters', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    await expect(
+      readWorkOrderList(TARGET, { state: 'open', branchId: 'forged' } as never, REQUEST, null)
+    ).resolves.toBeDefined();
+    // The criteria are named one by one in the adapter, so an unknown key is
+    // never handed to the query builder at all — which is why the call above
+    // succeeds and the forged value simply does not travel.
+    expect(String(get.mock.calls[0]?.[0])).not.toContain('forged');
+  });
+});
+
+describe('a board flag is three-valued on the wire', () => {
+  it('sends the literal word for a flag that was asked for', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await readWorkOrderList(
+      TARGET,
+      {
+        assignedToMe: true,
+        awaitingParts: true,
+        awaitingApproval: true,
+        awaitingQuality: true,
+        readyForDelivery: true,
+      },
+      REQUEST,
+      null
+    );
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    for (const flag of [
+      'assignedToMe',
+      'awaitingParts',
+      'awaitingApproval',
+      'awaitingQuality',
+      'readyForDelivery',
+    ]) {
+      expect(url.searchParams.get(flag), flag).toBe('true');
+    }
+  });
+
+  it('distinguishes a flag turned OFF from a flag nobody asked about', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await readWorkOrderList(TARGET, { assignedToMe: false }, REQUEST, null);
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    // OFF is a request. The route reads the word, so this must be the word and
+    // not an omission — and not an empty value, which the query builder drops.
+    expect(url.searchParams.get('assignedToMe')).toBe('false');
+    // The four nobody mentioned are absent entirely.
+    for (const flag of [
+      'awaitingParts',
+      'awaitingApproval',
+      'awaitingQuality',
+      'readyForDelivery',
+    ]) {
+      expect(url.searchParams.has(flag), flag).toBe(false);
+    }
+  });
+});
+
+describe('the state catalogue read the board labels its rows from', () => {
+  it('asks the tenant-scoped catalogue with no parameters at all', async () => {
+    get.mockResolvedValue(
+      ok({
+        workOrderStates: [
+          { code: 'open', name: 'Open', isTerminal: false, isClosed: false, isCancellation: false },
+        ],
+        jobStates: [],
+        workOrderTransitions: [],
+        jobTransitions: [],
+      })
+    );
+
+    const read = await readWorkOrderCatalogue();
+
+    // `.strict()` and deliberately empty: a cursor or a limit here would imply a
+    // page boundary the catalogue does not have.
+    expect(String(get.mock.calls[0]?.[0])).toBe('/api/v1/work-order-catalogue');
+    expect(read.status).toBe('ok');
+    expect(read.status === 'ok' ? read.data.workOrderStates[0]?.code : null).toBe('open');
+  });
+
+  it('answers a refusal as a refusal, so a board can go on rendering codes', async () => {
+    get.mockResolvedValue(failure('forbidden'));
+    const read = await readWorkOrderCatalogue();
+    expect(read.status).toBe('denied');
+  });
+});
+
+/**
+ * The mirror gate the contract module promises (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * `work-orders-contract.ts` says of both vocabularies that they are "mirrored
+ * rather than imported" and that a test "holds this array against the route
+ * source so a third kind added in the Backend fails a test rather than a
+ * reviewer". Until now no such test existed and the sentence was a claim about
+ * a file that was never written — which is exactly the defect class this
+ * repository keeps finding: a docblock stating a rule the code does not
+ * implement.
+ *
+ * Held against the backend source as TEXT, not by importing it: `apps/web` may
+ * never import `apps/api`, and the boundary checker is right to say so. Reading
+ * a tracked file is what `receptions-contract.test.ts` already does with the
+ * migration that owns a CHECK constraint.
+ */
+describe('the mirrored vocabularies are held against the backend source', () => {
+  const DOMAIN = readFileSync(
+    join(process.cwd(), '..', 'api', 'src', 'modules', 'work-order', 'domain', 'work-order.ts'),
+    'utf8'
+  );
+
+  /**
+   * The members of an `export const NAME = [...] as const;` array literal.
+   *
+   * Sliced rather than matched with a built regular expression: a pattern
+   * assembled from a string needs its brackets escaped twice, and an
+   * over-escaped one throws at construction while an under-escaped one silently
+   * matches the wrong thing.
+   */
+  function exported(name: string): readonly string[] {
+    const opening = `export const ${name} = [`;
+    const from = DOMAIN.indexOf(opening);
+    expect(from, `${name} was renamed, moved or reshaped in the backend`).toBeGreaterThan(-1);
+    const to = DOMAIN.indexOf('] as const;', from);
+    expect(to, `${name} is no longer a closed array literal`).toBeGreaterThan(from);
+    const body = DOMAIN.slice(from + opening.length, to);
+    const members = [...body.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    // Anti-vacuity: a regular expression matching an empty group would compare
+    // two empty lists and report clean.
+    expect(members.length, `no member was read out of ${name}`).toBeGreaterThan(0);
+    return members as readonly string[];
+  }
+
+  it('WORK_ORDER_STATE_GROUPS matches the backend vocabulary exactly', () => {
+    expect([...WORK_ORDER_STATE_GROUPS]).toEqual(exported('WORK_ORDER_STATE_GROUPS'));
+  });
+
+  it('WORK_ORDER_KINDS matches the backend vocabulary exactly', () => {
+    expect([...WORK_ORDER_KINDS]).toEqual(exported('WORK_ORDER_KINDS'));
   });
 });

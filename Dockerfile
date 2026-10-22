@@ -45,6 +45,11 @@ RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
+# The lockfile resolves `braces` to a local tarball (the patched copy for
+# GHSA-vfj7-8cjw-p6xm, see scripts/vendor/braces/README.md), so `npm ci` needs
+# that one file as well. It is a development dependency; nothing from it
+# reaches the runner stage.
+COPY scripts/vendor/braces/braces-3.0.3-rootlco.1.tgz ./scripts/vendor/braces/
 # `npm ci` requires the lock file and installs exactly what it pins.
 #
 # The full graph is installed rather than `--workspace @rootlco/api`: the API

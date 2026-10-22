@@ -21,18 +21,33 @@
 # code, not an oversight — and `ci-gate` is told about it explicitly rather than
 # inferring it, so an ineligible skip is recorded as
 # `NOT_ELIGIBLE_FOR_SECURITY_REASON` and never rounded up to a pass.
+#
+# TDP-2026-10 — TEMPORARY DEVELOPMENT-PATH POLICY (Owner approval 2026-10-05).
+# A pull request whose BASE is `develop` is judged under the `development`
+# profile: the gate's check run is named `ci-gate (development)`, the two web
+# jobs and the specialist jobs run when the change classification requires them,
+# and the clean room runs its development profile unless the change escalates.
+# A pull request whose base is `main` is judged exactly as before: check run
+# `ci-gate`, every job, the full clean room, STRICT records. Every relaxation
+# below is keyed on `github.event.pull_request.base.ref == 'develop'` and falls
+# back to the full value when anything is missing. Policy, review point and
+# restoration order: docs/engineering/ci-automation/pr-gate.md.
 # =============================================================================
 
 name: PR CI
 
+# No `workflow_dispatch`: a dispatch has no pull request, so it always failed
+# at the promotion-source check and could only ever produce a red gate.
 on:
   pull_request:
     branches: [develop, main]
-  workflow_dispatch:
 
-# A newer push to the same pull request supersedes the older run. Safe here
-# because a pull-request run is not authoritative evidence for anything — the
-# protected-push workflow is, and it never cancels (CSA-01).
+# A newer push to the same pull request supersedes the older run, keyed on the
+# pull-request NUMBER — for a pull request into develop (TDP-2026-10 planner
+# decision 9) and, unchanged, for one into main. Safe because a pull-request run
+# is not authoritative evidence for anything — the protected verification run
+# is, and it never cancels (CSA-01). Nothing here deploys, releases or touches a
+# database other than an ephemeral CI container.
 concurrency:
   group: pr-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -54,6 +69,14 @@ jobs:
       run-code-security: ${{ steps.classify.outputs.run-code-security }}
       run-container-security: ${{ steps.classify.outputs.run-container-security }}
       documentation-only: ${{ steps.classify.outputs.documentation-only }}
+      profile: ${{ steps.classify.outputs.profile }}
+      clean-room-profile: ${{ steps.classify.outputs.clean-room-profile }}
+      run-database-block: ${{ steps.classify.outputs.run-database-block }}
+      run-container-block: ${{ steps.classify.outputs.run-container-block }}
+      run-web-quality: ${{ steps.classify.outputs.run-web-quality }}
+      run-authenticated-browser: ${{ steps.classify.outputs.run-authenticated-browser }}
+      records-mode: ${{ steps.classify.outputs.records-mode }}
+      records-only: ${{ steps.classify.outputs.records-only }}
       head-sha: ${{ steps.resolve.outputs.head }}
       base-sha: ${{ steps.resolve.outputs.base }}
 
@@ -109,25 +132,50 @@ jobs:
           printf 'base=%s\n' "${base}" >> "${GITHUB_OUTPUT}"
           printf 'head: %s\nbase: %s\n' "${head}" "${base}"
 
+      # TDP-2026-10. The HEAD's classifier is code this pull request may have
+      # edited, so the BASE branch's copy classifies the same diff as well and
+      # the stricter answer is kept. A base copy that is missing, fails, or
+      # predates the development profile cannot be compared and resolves to the
+      # FULL set. The base copy never writes a step output.
       - name: Classify the change
         id: classify
         env:
           HEAD_SHA: ${{ steps.resolve.outputs.head }}
           BASE_SHA: ${{ steps.resolve.outputs.base }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
           if [ -n "${BASE_SHA}" ]; then
             git diff --name-only "${BASE_SHA}...${HEAD_SHA}" > changed-files.txt
           else
-            # A manual dispatch has no base. Classifying against nothing would
-            # produce an empty change set, which classify-changes.mjs treats as
-            # "cannot prove a skip is safe" and runs everything. That is the
-            # correct behaviour, so it is left to happen rather than faked.
+            # No base means no diff. Classifying against nothing produces an
+            # empty change set, which classify-changes.mjs treats as "cannot
+            # prove a skip is safe" and runs everything. That is the correct
+            # behaviour, so it is left to happen rather than faked.
             : > changed-files.txt
           fi
           wc -l < changed-files.txt
+          base_copy="$(mktemp -d)"
+          mkdir -p "${base_copy}/scripts/ci" "${base_copy}/scripts/lib"
+          base_ok=true
+          for file in scripts/ci/classify-changes.mjs scripts/lib/development-profile.mjs scripts/lib/repository-paths.mjs; do
+            if [ -z "${BASE_SHA}" ] || ! git show "${BASE_SHA}:${file}" > "${base_copy}/${file}" 2> /dev/null; then
+              echo "the base branch has no copy of ${file}; the head's answer will not be trusted alone"
+              base_ok=false
+            fi
+          done
+          rm -f base-classification.json
+          if [ "${base_ok}" = true ]; then
+            if ! env -u GITHUB_OUTPUT node "${base_copy}/scripts/ci/classify-changes.mjs" \
+              --files changed-files.txt --event "${GITHUB_EVENT_NAME}" --base-ref "${BASE_REF}" \
+              --json base-classification.json > /dev/null; then
+              echo "the base copy of the classifier failed; the head's answer will not be trusted alone"
+              rm -f base-classification.json
+            fi
+          fi
           node scripts/ci/classify-changes.mjs \
-            --files changed-files.txt \
+            --files changed-files.txt --event "${GITHUB_EVENT_NAME}" --base-ref "${BASE_REF}" \
+            --base-classification base-classification.json \
             --json classification.json --markdown classification.md
 
       - name: Job summary
@@ -147,6 +195,7 @@ jobs:
             classification.json
             classification.md
             changed-files.txt
+            base-classification.json
 
   # ===========================================================================
   # Always required. These four run whatever changed.
@@ -165,9 +214,14 @@ jobs:
       # declaration (P1-27-DO-003).
       head-branch: ${{ github.event.pull_request.head.ref }}
 
+  # TDP-2026-10: conditional ONLY for a pull request into develop. For a pull
+  # request into main this `if:` is true and the job runs exactly as it always did.
   web-quality:
     name: Web quality
     needs: change-detection
+    if: >-
+      github.event.pull_request.base.ref != 'develop' ||
+      needs.change-detection.outputs.run-web-quality == 'true'
     uses: ./.github/workflows/_reusable-node-quality.yml
     with:
       task: web-quality
@@ -222,6 +276,11 @@ jobs:
   # The exact-SHA clean room is UNCONDITIONAL. It is the single proof the
   # acceptance criteria rest on, and a documentation-only gate pull request is
   # required to demonstrate it. A clean room that can be skipped is not one.
+  #
+  # TDP-2026-10: still unconditional, but for a pull request into develop it
+  # runs the profile change detection chose. Every input falls back to the FULL
+  # value ('full', 'true', 'strict') unless the base is develop, so a pull
+  # request into main runs exactly the clean room it always ran.
   hosted-clean-room:
     name: hosted-clean-room
     needs: change-detection
@@ -229,6 +288,10 @@ jobs:
     with:
       ref: ${{ needs.change-detection.outputs.head-sha }}
       expected-sha: ${{ needs.change-detection.outputs.head-sha }}
+      profile: ${{ github.event.pull_request.base.ref == 'develop' && needs.change-detection.outputs.clean-room-profile || 'full' }}
+      run-database-block: ${{ github.event.pull_request.base.ref == 'develop' && needs.change-detection.outputs.run-database-block || 'true' }}
+      run-container-block: ${{ github.event.pull_request.base.ref == 'develop' && needs.change-detection.outputs.run-container-block || 'true' }}
+      records-mode: ${{ github.event.pull_request.base.ref == 'develop' && needs.change-detection.outputs.records-mode || 'strict' }}
 
   # ===========================================================================
   # The AUTHENTICATED browser tier — required, and gated on TRUST rather than on
@@ -260,9 +323,15 @@ jobs:
   authenticated-browser:
     name: authenticated-browser
     needs: change-detection
+    #
+    # TDP-2026-10: for a pull request into develop it ALSO runs only when the
+    # change classification requires it. For a pull request into main the added
+    # clause is true and the condition is exactly what it was.
     if: >-
       success() && (github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository)
+      github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event.pull_request.base.ref != 'develop' ||
+      needs.change-detection.outputs.run-authenticated-browser == 'true')
     uses: ./.github/workflows/_reusable-authenticated-browser.yml
     with:
       ref: ${{ needs.change-detection.outputs.head-sha }}
@@ -338,8 +407,14 @@ jobs:
   # ===========================================================================
   # The single stable required check.
   # ===========================================================================
+  #
+  # TDP-2026-10: the check-run NAME depends on the base. Only a pull request into
+  # main can emit `ci-gate`, the name main's ruleset requires; a pull request
+  # into develop emits `ci-gate (development)`.
+  # tests/ci/workflow-context-producers.test.ts holds main's five required names
+  # to their only permitted producers.
   ci-gate:
-    name: ci-gate
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && 'ci-gate' || 'ci-gate (development)' }}
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -401,6 +476,10 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.change-detection.outputs.head-sha }}
           BASE_SHA: ${{ needs.change-detection.outputs.base-sha }}
+          # The profile is decided from the EVENT, never from the classification
+          # it is about to judge: `--event` and `--base-ref` select it, and a
+          # classification made under another profile is a No-Go.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           # THE SAME EXPRESSION that decides whether `authenticated-browser`
           # runs, so the gate cannot disagree with the workflow about why the job
           # is absent. It reaches the script through `env:` and never through the
@@ -431,6 +510,7 @@ jobs:
             --actual-sha "$(git rev-parse HEAD)" \
             --base-sha "${BASE_SHA}" \
             --trusted-context "${TRUSTED_CONTEXT}" \
+            --event "${GITHUB_EVENT_NAME}" --base-ref "${BASE_REF}" \
             --markdown ci-gate.md --json ci-gate.json
 
       - name: Publish the gate summary

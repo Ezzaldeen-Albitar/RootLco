@@ -47,7 +47,11 @@ export const Body = z
     city: z.string().trim().min(1).max(120).nullable().optional(),
     region: z.string().trim().min(1).max(120).nullable().optional(),
     postalCode: z.string().trim().min(1).max(32).nullable().optional(),
-    countryCode: z.string().length(2).nullable().optional(),
+    countryCode: z
+      .string()
+      .regex(/^[A-Z]{2}$/, 'must be a two-letter country code')
+      .nullable()
+      .optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {

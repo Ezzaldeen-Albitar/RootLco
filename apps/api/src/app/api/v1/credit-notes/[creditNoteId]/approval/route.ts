@@ -26,12 +26,28 @@
  * writes a second financial event — `uq_financial_events_source` would refuse the second
  * event with `23505` in any case, which is a free backstop.
  *
+ * ## Refusals are recorded
+ *
+ * A self-approval, an approval of a note that is no longer pending and an approval
+ * above the invoice's open amount are refused as before, and each refused attempt
+ * is now also recorded as one security event after the command rolls back
+ * (ADR-023, D12). The answer the caller receives is unchanged.
+ *
+ * ## The approver's own permission and limit (ADR-023, D13)
+ *
+ * Approving is its own authority, `sal.credit.approve`, authorized in the note's
+ * company and branch; `sal.credit.manage` only requests a note. The approver also
+ * needs a credit-note approval limit in the note's currency, set by somebody else,
+ * covering every approved credit on the invoice with this note included, so a large
+ * credit split into small notes cannot pass a low limit. A discount limit never
+ * counts. Each refusal names its rule and is recorded like the ones above, and
+ * `sal.guard_credit_note_decision` holds the same rules under the invoice lock.
+ *
  * ## What is NOT here
  *
- * No rejection route. `approval_state` admits `'rejected'` and
- * `guard_dual_control_approval` stamps it without the maker≠approver test, but the P1-22
- * operation inventory does not include a rejection authority — and a `pending` credit note
- * credits nothing, so leaving one unapproved is already the safe outcome.
+ * Rejection and withdrawal are their own operations since ADR-023 D3:
+ * `sal.credit-note-reject` (another authorised person, with a reason) and
+ * `sal.credit-note-withdraw` (the requester). Both are terminal, like an approval.
  *
  * No refund and no partial reversal: both are structurally absent from `sal`
  * (`P1-22-L-05`).
@@ -53,7 +69,7 @@ export const CREDIT_NOTE_APPROVE_OPERATION = defineOperation({
   method: 'POST',
   path: '/credit-notes/{creditNoteId}/approval',
   summary: 'Approve a pending credit note under dual control, reducing the open receivable.',
-  permissions: ['sal.credit.manage', 'sal.finance.view'],
+  permissions: ['sal.credit.approve', 'sal.finance.view'],
   scope: 'branch',
   auditClass: 'approval',
   auditAction: 'sal.credit_note.approved',

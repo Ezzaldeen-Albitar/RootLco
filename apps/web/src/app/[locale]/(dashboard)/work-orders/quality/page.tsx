@@ -26,7 +26,7 @@ export default async function QualityQueuePage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   const crumbs = [
-    { labelKey: 'nav.workOrders', href: '/work-orders' },
+    { labelKey: 'nav.workOrders', href: `/${locale}/work-orders` },
     { labelKey: 'nav.quality' },
   ];
 
@@ -56,12 +56,7 @@ export default async function QualityQueuePage({
         crumbs={crumbs}
       />
       <PageBody>
-        <QualityQueueScreen
-          locale={locale}
-          messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
-        />
+        <QualityQueueScreen locale={locale} messages={messages} />
       </PageBody>
     </>
   );

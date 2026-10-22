@@ -198,6 +198,122 @@ _exactly_ 8.4.31, and npm's only suggested remedy was downgrading Next to 9.3.3.
 **brace-expansion advisory: CLOSED on 2026-08-01. The exception has been removed and
 the tree carries zero advisories.**
 
+**braces advisory GHSA-vfj7-8cjw-p6xm (development tree): patched locally, because no
+upstream fix exists.** From P1-32-PRE-OD-DEP3, every dependent resolves to a
+RootLco-owned patched copy, `braces@3.0.3-rootlco.1` in `scripts/vendor/braces/`. npm
+audit does not verify that copy. It reports nothing for it only because the prerelease
+label falls outside the advisory range, so the evidence is
+`tests/ci/braces-patched-copy.test.ts`, not the audit. No exception was added. The
+record, including the replacement condition, is
+`docs/engineering/dependency-maintenance/ghsa-vfj7-8cjw-p6xm-braces/README.md`.
+
+**source-map-js and postcss-selector-parser advisories (2026-10-06): closed by an upgrade
+and one override.** GitHub reviewed both on 2026-10-05. GHSA-68fv-2mgg-jv7q (high) affects
+`source-map-js` below 1.2.2, which `next` reaches in production through `postcss`; the
+lockfile moves it to 1.2.2, which every parent range already admits, so it needs no
+override. GHSA-rj75-hqrm-r3gf (moderate, development only) affects `postcss-selector-parser`
+below 7.1.6. Upstream patched only the 7.x line, while `tailwindcss` 3.4.19 and
+`postcss-nested` 6.2.0 still ask for `^6`, so the root override `"postcss-selector-parser":
+"^7.1.6"` forces every copy to 7.1.6 across that major. A local API standalone build
+(not a CI-built image) carried neither package, and both are used only on
+repository-owned inputs at build, lint and test time. The limit: the override is a stopgap. Remove it when a `tailwindcss` v3 release
+depends on `^7`, when upstream publishes a patched 6.x, or when `apps/web` moves to
+`tailwindcss` v4 (change-control row CC-OD-56). No exception was added and no gate was
+changed. From P1-32-PRE-OD-DEP4.
+
+**sharp advisory GHSA-wq5f-xc86-pv6w (2026-10-06): closed by an upgrade.** GitHub published
+it on 2026-10-06 as high: sharp below 0.35.5 bundles a librsvg with a memory-safety defect
+(upstream CVE-2026-96889) that can lead to remote code execution on glibc-based Linux. sharp
+0.35.5 bundles librsvg 2.63.2. `sharp` is a production dependency: the API attachment scanner
+passes uploaded bytes to it, and sharp detects the format from the bytes before the service
+refuses anything that is not JPEG, PNG or WebP, so the SVG loader cannot be ruled out. It is
+also an optional dependency of `next`. The API image runs on `node:22-alpine` (musl), outside
+the glibc condition the advisory names, but development and test machines install the
+vulnerable binary too. `sharp` moves from 0.35.4 to 0.35.5 in lockstep — the root `overrides`
+entry, the root dependency and the `apps/api` dependency — and the lockfile moves the 26
+`@img/sharp-*` platform packages with it (libvips 1.3.3 to 1.3.4). No exception was added and
+no gate was changed (change-control row CC-OD-57). From P1-32-PRE-OD-DEP5.
+
+**vite advisories GHSA-587h-7wmj-h5pm, GHSA-698v-4r3x-3vcv and GHSA-r825-w8mm-5pxw
+(2026-10-20): closed by a lockfile update.** GitHub published and reviewed all three on
+2026-10-20 between 18:30 and 19:52 UTC: GHSA-587h-7wmj-h5pm (high, CWE-77),
+GHSA-698v-4r3x-3vcv (moderate, CWE-78) and GHSA-r825-w8mm-5pxw (moderate, CWE-88), Windows
+command-execution and argument-escaping defects in `launch-editor` up to 2.14.1, which vite
+bundles. They name vite 7.0.0 to 7.3.6 on the 7.x line, patched in 7.3.7. `vite` is
+development only and no manifest declares it: `vitest` 4.1.11 (dependency and peer,
+`^6.0.0 || ^7.0.0 || ^8.0.0`), `@vitest/mocker` 4.1.11 (peer, same range) and
+`@vitejs/plugin-react` 4.7.0 (peer, up to `^7.0.0`) reach it, and every one of those ranges
+admits 7.3.7. They turned the web audit step red, which blocks on any severity and reads no
+exception, while the root production and the api reports stayed at zero. The lockfile moves
+the single `vite` node from 7.3.6 to 7.3.7; vite 7.3.7 declares the same dependencies and
+engines as 7.3.6, so no other node moves. `npm update vite` keeps 7.3.6, so a temporary root
+override moved the node, and the lockfile was then regenerated with npm 11.13.0 without it;
+npm kept 7.3.7. vite 8 is outside the `@vitejs/plugin-react` 4.7.0 peer range and was not
+taken. No manifest, override or exception was added and no gate was changed (change-control
+row CC-OD-59). From P1-32-PRE-OD-DEP6.
+
+**Vitest advisories GHSA-qxg6-89mg-rqv8 and GHSA-xp26-3454-mjgp (2026-10-21): closed by a
+lockfile update.** Both name `@vitest/mocker` and both are rated medium by GitHub (npm audit
+reports them as moderate). GHSA-qxg6-89mg-rqv8 (CVE-2026-112949, CVSS 3.1 score 4.7, CWE-94,
+CWE-116, CWE-306) is code injection through unauthenticated manual mock registration and names
+`@vitest/mocker` from 2.1.0-beta.7 below 4.1.12. GHSA-xp26-3454-mjgp (CVE-2026-112950, CVSS 3.1
+score 5.9, CWE-22) is a Windows backslash traversal past the mocker redirect allow-list and names
+4.1.11 below 4.1.12. Each is patched in 4.1.12 on the 4.x line and in 5.0.3 on the 5.x line. The
+GitHub advisory records give publication and review times of 2026-10-21 19:48:38 UTC
+(GHSA-xp26-3454-mjgp) and 19:54:26 UTC (GHSA-qxg6-89mg-rqv8), and an NVD publication time of
+2026-10-20 16:17:05 UTC for both CVEs. The dependency-security job of the CP-20261021-1 dispatch
+run 39666043682 on develop `4cc558d4` printed zero advisories for the web production and full
+reports at 2026-10-21 19:57:31 UTC, which is after both GitHub publication times. The job of
+PR #596 (job 119503477247) printed `audit-web-full.json: 6 advisory/advisories` at 21:44:15 UTC
+and failed. Why the two audits differed is not established. The three affected package names
+come from the root `audit-full.json` in the dependency-security evidence artifact of PR #596
+(artifact 12383203842): `@vitest/mocker` is affected directly, `vitest` through
+`@vitest/mocker`, and `@vitest/coverage-v8` through `vitest`. The web full report's
+`metadata.vulnerabilities` object (moderate 3, total 3) matches those three packages. The
+printed 6 is the sum of every value in that object, `total` included; it counts packages twice
+and is not an advisory count. All three packages are development only. The root manifest
+declares `vitest` and `@vitest/coverage-v8` as `^4.1.11`, and the apps/web manifest declares
+only `vitest` as `^4.1.11`; both ranges admit 4.1.12, the lowest patched 4.x release. 5.x is a
+major version change and was not taken. The lockfile moves eleven nodes from 4.1.11 to 4.1.12: `vitest`, `@vitest/coverage-v8`,
+`@vitest/mocker`, `@vitest/expect`, `@vitest/runner`, `@vitest/snapshot`, `@vitest/spy`,
+`@vitest/utils`, and the three nested `@vitest/pretty-format` copies under `vitest`,
+`@vitest/snapshot` and `@vitest/utils`. The top-level `@vitest/pretty-format` 3.2.7 used by
+`vitest-axe` stays. Every new integrity value equals the registry's `dist.integrity` for 4.1.12.
+In the registry metadata of `vitest` 4.1.12, the optional peer `@vitest/browser-webdriverio`
+changed from exactly 4.1.11 to `^4.1.11`; that package is not installed, so the change is
+harmless. `npm update` keeps 4.1.11, because `vitest` and `@vitest/coverage-v8` require each other at the
+exact same version, and a root override is refused (EOVERRIDE) because both are root
+dependencies. The root devDependency floors were therefore raised to `^4.1.12` for one install,
+with temporary overrides holding `chai` at 6.2.2 and the 3.x `tinyrainbow` copies at 3.1.1, so
+that no node outside the family moved; the manifest was then restored byte for byte and the
+lockfile regenerated with npm 11.13.0, which kept the eleven nodes at 4.1.12. Without those
+holds npm also moved `chai` to 6.3.0 and four nested `tinyrainbow` copies to 3.2.0, which the
+4.1.12 ranges do not require. The Owner authorised the update in a message of 2026-10-22,
+quoted here in full and verbatim:
+
+> "2. Approved Vitest fix — I authorize the minimal compatible patch update of the Vitest family
+> from 4.1.11 to 4.1.12, including the necessary related lockfile entries and the usual
+> security/change-control documentation. The reported scope is 11 lockfile entries with no
+> package.json changes. Independently verify that scope, the affected advisory IDs, patched
+> versions, dependency compatibility and package integrity before treating it as established.
+> Prepare a focused PR. Do not use a blanket dependency update or npm audit fix --force. This
+> explicitly authorizes superseding the current checkpoint freeze after the security PR passes
+> independent review and the required checks. 3. Bounded authority for this closure — Until this
+> checkpoint-and-records closure is complete, I also authorize subsequent advisory-driven fixes
+> without another approval request only when all these conditions hold: They address an
+> advisory actually blocking the current required audit. The affected dependencies are
+> development/test tooling only. The fix stays within the existing major/minor version line and
+> declared dependency ranges. Changes are limited to necessary lockfile entries and security
+> records. No production dependency, manifest, override, gate, exception or security policy
+> changes. Independent review, required CI and the normal landing guard remain mandatory. Record
+> each use of this authority and its scope. If a fix exceeds these boundaries, prepare the
+> concrete proposal and ask only for that additional decision. This authority ends when the
+> current closure and handoff are finished."
+
+The bounded authority in point 3 was not used: no other advisory blocked the required audit. No
+manifest, override or exception was added and no gate was changed (change-control row CC-OD-60).
+From P1-32-PRE-OD-DEP7.
+
 ### The one development exception, and why it is gone
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this

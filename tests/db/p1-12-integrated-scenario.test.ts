@@ -113,10 +113,20 @@ beforeAll(async () => {
     // quotation revision on the work order (quo)
     const quotation = await seedQuotation(c, wo, tag);
     const revision = await draftRevision(c, quotation, 1);
-    await addServiceItem(c, revision, svc.service, 1, 100, 1);
+    const quoted = await addServiceItem(c, revision, svc.service, 1, 100, 1);
+    // An invoice that names a revision bills only what the customer approved on it
+    // (ADR-023 D5/D15, P1-32-PRE-OD-FD5): the revision is issued and its line approved
+    // before the invoice line names it as its source.
+    await c.query(`SELECT quo.issue_revision($1)`, [revision]);
+    await c.query(`SELECT quo.record_item_decision($1,'approved','in_person')`, [quoted]);
     // invoice bound to the quotation revision (quo → sal forward FK), one 100/0 line
     const invoice = await seedDraftInvoice(c, { wo, payer, quotationRevision: revision });
-    await addInvoiceLine(c, invoice, { lineNumber: 1, net: 100, tax: 0 });
+    await addInvoiceLine(c, invoice, {
+      lineNumber: 1,
+      net: 100,
+      tax: 0,
+      sourceQuotationItem: quoted,
+    });
     await issueInvoice(c, invoice);
     // full payment
     const receipt = await seedReceipt(c, { amount: 100, payer });

@@ -210,6 +210,52 @@ went red.
 **10 caught, 0 survived, 0 stillborn, 0 not applied** — every verdict a real assertion
 failure against a green baseline.
 
+That table is the P1-23 run, on the P1-23 code. **M7b and M8 attack different code since
+P1-31 P-11** and their verdicts above are not re-asserted for the new targets — see the
+re-target below.
+
+### M7b and M8 re-targeted, 2026-09-11 — the properties moved, the attack followed
+
+P1-31 prerequisite P-11 built the report engine, and two of the three things this phase
+pinned about reporting now live somewhere else. A mutation whose `from` pattern no longer
+occurs is reported NOT APPLIED and fails the matrix, which is what surfaced both. Neither
+property was dropped; each was re-stated where the code that decides it now is.
+
+| id      | before (P1-23)                                                                    | now                                                                                                           |
+| ------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **M7b** | `AND c.status = 'published'` in the by-code SELECT, `report-catalogue-repository` | the publication test in `report-configuration-policy.ts:29`, mutated by dropping `row.status !== 'published'` |
+| **M8**  | the literal `executable: false` in `report-catalogue-service`                     | `executable: isReportDatasetCode(row.report_code)` at `report-catalogue-service.ts:122`, mutated to `true`    |
+
+**Why the by-code SQL lost its status predicate.** The engine must SEE an unpublished
+configuration in order to refuse it. A read that hid a draft would leave the report code
+looking unconfigured, the code-registered baseline would answer for it, and a decision the
+tenant has not published would become runnable. So the row is read whatever its status and
+`assertReportConfiguration` refuses it with `ERR-RES-001` — the same answer the catalogue
+gives, so a refusal still discloses nothing about what a tenant has configured. The property
+is now stated as **a non-published configuration is never applied to a run**.
+
+**Why `executable` stopped being a constant.** It was `false` for every definition because
+the frozen `rpt` schema binds no data source to a report code. P-11 added a code-registered
+dataset registry, so the honest answer is registry membership: **the catalogue marks a report
+executable only when its code is registered**. A published tenant definition whose code the
+engine implements nothing for still reads `false`.
+
+Both mutants keep working code — the first still guards `version_number`, so a draft carrying
+a published version is applied rather than crashing; the second is the same type — and
+`tests/backend/p1-23-reporting.test.ts` carries the assertions that fail when either
+property breaks, so the P1-23 artefact stays self-contained. The suite gained a draft
+configuration under a registered code, carrying a published version, which is the only
+fixture shape that separates "nothing is published yet" from "this configuration is not
+published".
+
+**Measured on 2026-09-11**, against a disposable local clone database
+(`p131_report_controls_20260910` on `127.0.0.1:55432`), by applying each mutation by hand and
+running `tests/backend/p1-23-reporting.test.ts` alone: 13/13 green unmutated; the M7b mutant
+fails `never applies a configuration the tenant has not published` and the M8 mutant fails
+`claims executability only for a registered code`, both with an `AssertionError` and neither
+with a crash signature. **The matrix itself was NOT run for this record** — it executes the
+backend tier and defaults to the shared database; CI runs it.
+
 ### The two real survivors it found, both fixed
 
 - **Delivery inspection was confined by nothing.** Only one message in the tenant had

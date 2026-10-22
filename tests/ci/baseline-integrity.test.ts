@@ -8,9 +8,12 @@
  * noticing is a gate with an off switch nobody can see.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { evaluate as evaluateCoverage } from '../../scripts/ci/coverage-gate.mjs';
+import { API_SRC_PATH } from '../../scripts/lib/repository-paths.mjs';
+import rootConfig from '../../vitest.config';
+import backendConfig from '../../vitest.config.backend';
 
 const read = (name: string) =>
   JSON.parse(readFileSync(join(__dirname, '../../.github/ci-baselines', name), 'utf8'));
@@ -353,5 +356,352 @@ describe('committed baselines', () => {
     expect(baseline.migrationCount).toBeTypeOf('number');
     expect(baseline.migrationCount).toBeGreaterThan(0);
     expect(baseline.forbiddenMigrationPrefix).toBeTruthy();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The coverage DENOMINATOR, pinned for the root and backend tiers.
+ * ------------------------------------------------------------------ */
+
+/**
+ * ## The defect these cases exist for
+ *
+ * A coverage baseline guards the NUMERATOR. Nothing guarded the denominator.
+ *
+ * Vitest 3 spelled the untested-file guarantee `coverage.all: true`: every file
+ * matching `include` sat in the denominator whether a test imported it or not.
+ * Vitest 4 REMOVED that option and moved the guarantee onto `coverage.include`
+ * itself. So the include list is now the only thing deciding what "total" means,
+ * and narrowing it does not look like a regression — it looks like an
+ * improvement. Drop a root and the files under it stop existing: they are not
+ * reported as a gap, they are subtracted from the total, and every percentage in
+ * `coverage-baseline.unit.json` and `coverage-baseline.backend.json` RISES.
+ *
+ * `apps/web` documented that hazard and pinned its own list in
+ * `apps/web/tests/security.test.ts`. The repository-root and backend lists had
+ * no equivalent, so those two tiers could have been narrowed silently. These
+ * cases are that equivalent.
+ *
+ * ## Why the expansion is checked and not only the literal
+ *
+ * Pinning the literal alone would pass on a pattern that matches nothing —
+ * `.../cache/**` vs `.../caches/**` reads the same at a glance and measures a
+ * different amount of nothing. So each root is also expanded against the tree,
+ * and the union is required to cover EVERY `.ts` file beneath the roots. A
+ * pattern that stops matching a file that exists fails here rather than
+ * appearing as a coverage improvement three weeks later.
+ */
+
+const ROOT_DIRECTORY = join(__dirname, '..', '..');
+
+/** Repository-relative POSIX paths of every `.ts` file under a directory. */
+function typeScriptFilesUnder(relativeDirectory: string): string[] {
+  const absolute = join(ROOT_DIRECTORY, relativeDirectory);
+  const found: string[] = [];
+  const walk = (directory: string, prefix: string): void => {
+    for (const entry of readdirSync(directory).sort()) {
+      const child = join(directory, entry);
+      const relative = `${prefix}/${entry}`;
+      if (statSync(child).isDirectory()) walk(child, relative);
+      else if (entry.endsWith('.ts')) found.push(relative);
+    }
+  };
+  walk(absolute, relativeDirectory);
+  return found;
+}
+
+/**
+ * The include lists as they must be spelled. Written out in full rather than
+ * derived from the config, because a list derived from the thing it guards
+ * agrees with every narrowing.
+ */
+const ROOT_COVERAGE_INCLUDE = [
+  `${API_SRC_PATH}/config/**/*.ts`,
+  `${API_SRC_PATH}/lib/logging/**/*.ts`,
+  `${API_SRC_PATH}/server/errors/**/*.ts`,
+  `${API_SRC_PATH}/server/observability/**/*.ts`,
+  `${API_SRC_PATH}/server/cache/**/*.ts`,
+  `${API_SRC_PATH}/server/http/rate-limit.ts`,
+  `${API_SRC_PATH}/server/http/trusted-proxy.ts`,
+  `${API_SRC_PATH}/server/http/validation.ts`,
+  `${API_SRC_PATH}/server/db/pagination.ts`,
+  `${API_SRC_PATH}/server/db/concurrency.ts`,
+  `${API_SRC_PATH}/server/worker/backoff.ts`,
+];
+
+const BACKEND_COVERAGE_INCLUDE = [
+  `${API_SRC_PATH}/modules/**/*.ts`,
+  `${API_SRC_PATH}/server/**/*.ts`,
+];
+
+type CoverageBlock = { provider?: string; include?: string[]; exclude?: string[] } | undefined;
+
+const rootCoverage = rootConfig.test?.coverage as CoverageBlock;
+const backendCoverage = backendConfig.test?.coverage as CoverageBlock;
+
+describe('the coverage include lists are pinned, because they are the denominator', () => {
+  it('the root tier still declares every one of its eleven include entries', () => {
+    expect(rootCoverage?.provider).toBe('v8');
+    expect(rootCoverage?.include).toEqual(ROOT_COVERAGE_INCLUDE);
+  });
+
+  it('the backend tier still declares both of its include roots', () => {
+    expect(backendCoverage?.provider).toBe('v8');
+    expect(backendCoverage?.include).toEqual(BACKEND_COVERAGE_INCLUDE);
+  });
+
+  it('constrains every directory root to TypeScript rather than leaving a bare `**`', () => {
+    // A bare `**` admits anything that appears under the root — a generated
+    // artefact, a stray `.md` the provider then fails to parse. `**/*.ts` says
+    // what the tier measures. Single-file entries are exempt by construction.
+    for (const pattern of [...ROOT_COVERAGE_INCLUDE, ...BACKEND_COVERAGE_INCLUDE]) {
+      const ok =
+        pattern.endsWith('/**/*.ts') || (pattern.endsWith('.ts') && !pattern.includes('*'));
+      expect(ok, `\`${pattern}\` is neither a \`**/*.ts\` root nor a single file`).toBe(true);
+    }
+  });
+
+  it('leaves no TypeScript file under a root outside the root that claims it', () => {
+    /*
+     * The narrowing test. Every `.ts` file beneath a declared directory root
+     * must be matched by that root, so replacing `**\/*.ts` with `*.ts`, or
+     * deleting a root outright, fails here instead of shrinking a denominator.
+     */
+    const roots = [...ROOT_COVERAGE_INCLUDE, ...BACKEND_COVERAGE_INCLUDE]
+      .filter((pattern) => pattern.endsWith('/**/*.ts'))
+      .map((pattern) => pattern.slice(0, -'/**/*.ts'.length));
+    expect(roots.length).toBe(7);
+    for (const root of roots) {
+      const files = typeScriptFilesUnder(root);
+      expect(files.length, `${root} contains no TypeScript file`).toBeGreaterThan(0);
+      for (const file of files) {
+        expect(file.startsWith(`${root}/`), `${file} is not covered by \`${root}/**/*.ts\``).toBe(
+          true
+        );
+      }
+    }
+  });
+
+  it('measures the same 19 unit-tier files the unit baseline was established on', () => {
+    // `coverage-baseline.unit.json` records 407/449 lines across 19 instrumented
+    // files. If this count moves without that document moving, the baseline is
+    // describing a tier that no longer exists.
+    const directoryFiles = ROOT_COVERAGE_INCLUDE.filter((p) => p.endsWith('/**/*.ts')).flatMap(
+      (pattern) => typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
+    );
+    const singleFiles = ROOT_COVERAGE_INCLUDE.filter((p) => !p.includes('*'));
+    expect(new Set([...directoryFiles, ...singleFiles]).size).toBe(19);
+  });
+
+  it('measures the backend files the include list admits, and no others', () => {
+    /*
+     * 272 `.ts` files under the two roots, less `server/openapi/document.ts`,
+     * which `exclude` removes — 271, which is what
+     * `coverage-baseline.backend.json` records and what BOTH sides of the
+     * vitest 3 -> 4 control run measured. `modules/README.md` is the only
+     * non-TypeScript file under either root and the `**\/*.ts` spelling is what
+     * now keeps it, and anything like it, out by construction rather than by
+     * the provider failing to parse it.
+     */
+    const files = BACKEND_COVERAGE_INCLUDE.flatMap((pattern) =>
+      typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
+    );
+    expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
+    // P1-31 P-12 adds ReportExportService to the measured backend population.
+    // P1-32-PRE-021..026 add seven platform-module files (three repositories and
+    // four services), so 291 -> 298.
+    // The Owner directive organisation administration adds capacity-failure.ts,
+    // so the merge of both holds 299.
+    // P1-32-PRE-151 adds iam/application/identity-compensation.ts, the one place
+    // the provider identity of a refused write is undone, so 299 -> 300.
+    // 296 with the P1-32 preparatory inventory slice: the transfer, receipt,
+    // adjustment and count services and the shared failure mapper.
+    // 298 with P1-32 preparatory slice 2: the item identifier service and the
+    // sales-return service.
+    // 300 with P1-32 preparatory slice 3b: the material service and the reference
+    // data service.
+    // 301 with the Owner directive organisation administration merged in, which
+    // adds capacity-failure.ts.
+    // 309 at the integration of the two lines: 292 in the shared base, 9 more
+    // from this branch and 8 from the console line.
+    // 310 with the Owner directive operational stock alerts, which adds exactly one
+    // measured backend file: inventory/application/inventory-alert-service.ts. The
+    // shared capacity classifier lives under `src/shared`, which this include list
+    // does not admit, so it moves the count by nothing.
+    // 316 with the Owner directive tenant dashboard, which adds SIX measured
+    // backend files and no other kind: the four of the new `overview` module
+    // (`index.ts`, `domain/dashboard-period.ts`,
+    // `data/overview-clock-repository.ts` and
+    // `application/dashboard-summary-service.ts`) and the two ports the owning
+    // modules publish for it,
+    // `work-order/application/work-order-overview-port.ts` and
+    // `technician/application/technician-label-port.ts`. The route lives under
+    // `src/app`, which this include list does not admit, so it moves the count by
+    // nothing.
+    // 320 with the Owner directive UX backend, which adds FOUR more on top of
+    // those six: `modules/iam/data/working-context-repository.ts` (the
+    // working-context read only SQL), `modules/iam/application/working-context-service.ts`
+    // (the rule that tells an unrestricted caller from a grant-less one),
+    // `server/db/search-predicate.ts` (the single place the five-arm search
+    // disjunction is written) and
+    // `modules/quality/application/work-order-quality-port.ts` (the owning module
+    // answer for the board quality column). `shared/text/search-terms.ts` sits
+    // under `src/shared`, which this include list does not admit, so it moves the
+    // count by nothing. The baseline percentage floors are untouched:
+    // re-establishing them needs a hosted measurement run, which neither line
+    // performed and neither claims.
+    // 322 with the discount approval record (P1-32-PRE-OD-DISC-01), which adds TWO:
+    // `modules/quotation/application/discount-approval-service.ts` (the second step,
+    // decided by somebody other than the requester) and
+    // `modules/pricing/application/discount-threshold-service.ts` (the versioned
+    // company threshold). The routes live under `src/app`, which this include list
+    // does not admit. The floors are untouched for the reason above.
+    // 323 with the business-refusal record (P1-32-PRE-OD-FD2A, ADR-023 D12), which
+    // adds ONE: `server/audit/business-refusals.ts`, the seam that records a refusal
+    // by business rule after its command rolls back. The two credit-note decision
+    // routes live under `src/app`, which this include list does not admit. The
+    // floors are untouched for the reason above.
+    // 324 with the receipt reversal (P1-32-PRE-OD-FD4, ADR-023 D4), which adds ONE:
+    // `modules/payments/application/receipt-reversal-service.ts`. Its five routes
+    // live under `src/app`, which this include list does not admit. The floors are
+    // untouched for the reason above.
+    // 326 with the quotation part lines (P1-32-PRE-OD-FD6, ADR-023 D6), which add
+    // TWO: `modules/quotation/application/quotation-line-shape.ts` (the two shapes a
+    // requested line may take) and `modules/quotation/domain/part-price-source.ts`
+    // (the step that refuses, rather than chooses, between disagreeing authorised
+    // prices). The two quotation routes live under `src/app`, which this include
+    // list does not admit. The floors are untouched for the reason above.
+    // 328 with the report snapshots (P1-32-PRE-OD-FD16B, Owner decision D16), which
+    // add TWO: `modules/reporting/application/report-snapshot-service.ts` (the save,
+    // the list and the read of a frozen run and its restatements) and
+    // `modules/reporting/data/report-snapshot-repository.ts`. The two routes live
+    // under `src/app`, which this include list does not admit. The floors are
+    // untouched for the reason above.
+    // 330 with the refund requests (P1-32-PRE-OD-FD2B, Owner decision D2, part 2),
+    // which add TWO: `modules/billing/application/refund-service.ts` (the request,
+    // the decision, the payout record and the two reads) and
+    // `modules/billing/data/refund-repository.ts`. The seven routes live under
+    // `src/app`, which this include list does not admit. The floors are untouched
+    // for the reason above.
+    expect(files.length).toBe(330);
+    expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
+    const instrumented = files.filter(
+      (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
+    );
+    /*
+     * 277, six more than the 271 the hosted run that established
+     * `coverage-baseline.backend.json` measured, and the difference is six files:
+     * `modules/delivery/application/checklist-template-service.ts`, added by the
+     * P1-31 checklist template seam (P-9);
+     * `modules/warranty/application/warranty-policy-service.ts`, added by the
+     * P1-31 warranty policy and coverage seam (P-10); the three the P1-31
+     * report configuration seam (P-11) adds —
+     * `modules/reporting/domain/report-configuration.ts`,
+     * `modules/reporting/data/report-configuration-repository.ts` and
+     * `modules/reporting/application/report-configuration-service.ts`; and
+     * `modules/delivery/application/delivery-readiness-service.ts`, added by
+     * the P1-31 delivery-readiness queue (Owner decision D-3). The denominator is
+     * SUPPOSED to grow with the tier's source; what this case defends is that it
+     * only ever grows because a file was added, never because the include list
+     * quietly narrowed. The baseline's percentage floors are untouched:
+     * re-establishing them needs a hosted measurement run, which none of these
+     * slices performed and none claims.
+     *
+     * 282 with the P1-31 report engine (P-11): five more files, and each one is a
+     * layer this slice needed rather than a file it chose to add —
+     * `modules/reporting/domain/report-datasets.ts` (the dataset registry, which
+     * must be database-free to satisfy boundary rule B5),
+     * `modules/reporting/application/report-run-service.ts` (the resolvers, which
+     * are I/O and therefore may not sit beside the registry),
+     * `modules/reporting/application/report-configuration-policy.ts` (the tenant
+     * restriction the engine reads before it runs, and the parameter vocabulary
+     * the version writer validates against, which is why one module owns both),
+     * `modules/work-order/application/work-order-report-port.ts` (the owning
+     * module answering for `wo.*`) and
+     * `modules/iam/data/branch-context-repository.ts` (the branch timezone the
+     * period is resolved in). The floors are untouched for the reason above.
+     *
+     * 284 with the P1-31 report engine slice 2 (P-11, `technician_labor_time`):
+     * two more files, and both are a layer rather than a choice —
+     * `server/db/period.ts` (the half-open local-day predicate, written ONCE
+     * because Owner decision D-17 requires every report period to be converted
+     * consistently and a second copy is how two reports over one period stop
+     * adding up) and
+     * `modules/technician/application/labor-report-port.ts` (the technician
+     * module answering for `tech.*`, which the reporting module may not read).
+     * The floors are untouched for the reason above: re-establishing them needs
+     * a hosted measurement run, which this slice did not perform and does not
+     * claim.
+     *
+     * 285 with the P1-31 report engine slice 3 (P-11, `inventory_movements`):
+     * ONE more file, `modules/inventory/application/inventory-report-port.ts`,
+     * the inventory module answering for `inv.*` — which the reporting module may
+     * not read, and which could not be a method on `InventoryReadService` because
+     * that service writes an `inv.movement_history.read` audit row on every call
+     * and a report run is audited as itself.
+     *
+     * 287 with engine slice 4 (`invoice_payment_summary`): TWO more, one per
+     * module that owns part of the row — `modules/billing/application/
+     * billing-report-port.ts` for the invoices and credit notes, and
+     * `modules/payments/application/payments-report-port.ts` for the receipts and
+     * their allocations. Neither module reads the other's tables, which is what
+     * keeps an allocation from being published twice.
+     *
+     * 289 with the P1-31 employee register (P-17): TWO more, and both are a layer
+     * this slice needed rather than a file it chose —
+     * `modules/iam/data/employee-repository.ts` (the register's only SQL) and
+     * `modules/iam/application/employee-administration-service.ts` (the rules the
+     * four operations and the delivery write share).
+     *
+     * The floors are untouched for the reason above: re-establishing them needs a
+     * hosted measurement run, which these slices did not perform and do not claim.
+     *
+     * 296 with the P1-32 Platform Owner Console backend: SEVEN more, all in the
+     * platform module — `data/subscription-repository.ts`,
+     * `data/billing-repository.ts`, `data/insight-repository.ts` and the
+     * `application/` session, subscription, billing and insight services. The
+     * floors are untouched for the reason above.
+     *
+     * The 297 below is these 296 plus `server/openapi/document.ts`, which the
+     * include list admits and `exclude` then removes; the two numbers moving
+     * together by the same count is what says no file slipped in behind the
+     * exclusion.
+     *
+     * 295 with the P1-32 preparatory inventory slice, and 296 above: five new
+     * inventory application files, none under `server/openapi/`, so both numbers
+     * move by five. The floors are untouched for the same reason.
+     */
+    // 297 with P1-32 preparatory slice 2, for the same two files.
+    // 299 with P1-32 preparatory slice 3b, for the same two files.
+    // 300 with the Owner directive organisation administration merged in: ONE
+    // more, `modules/iam/application/capacity-failure.ts`, the single reader of
+    // the database capacity refusal that both organisation creation and
+    // invitation share. The floors stay untouched for the same reason.
+    // 308 at the integration of the two lines: 291 in the shared base, 9 more
+    // application files from this branch and 8 from the console line, none of
+    // them under `server/openapi/`. The floors stay untouched for that reason.
+    // 309 with the Owner directive operational stock alerts: the one added file,
+    // inventory/application/inventory-alert-service.ts, is not under
+    // `server/openapi/`, so it is instrumented as well as measured.
+    // 315 with the Owner directive tenant dashboard: none of its six added files
+    // is under `server/openapi/`, so both numbers move by six together — which is
+    // what says no file slipped in behind the exclusion. The floors stay
+    // untouched for the reason above: re-establishing them needs a hosted
+    // measurement run, which this slice did not perform and does not claim.
+    // 319 with the Owner directive UX backend, whose four added files are not
+    // under `server/openapi/` either, so the two numbers move by four together
+    // for the same reason. 321 with the discount approval record's two, for the
+    // same reason again. 322 with the business-refusal record's one
+    // (`server/audit/business-refusals.ts`, P1-32-PRE-OD-FD2A), which is not under
+    // `server/openapi/` either, so the two numbers move by one together.
+    // 323 with the receipt reversal service (P1-32-PRE-OD-FD4), which is not under
+    // `server/openapi/` either, so the two numbers move by one together.
+    // 325 with the quotation part lines' two (P1-32-PRE-OD-FD6), neither under
+    // `server/openapi/`, so the two numbers move by two together.
+    // 327 with the report snapshots' two (P1-32-PRE-OD-FD16B), neither under
+    // `server/openapi/`, so the two numbers move by two together.
+    // 329 with the refund requests' two (P1-32-PRE-OD-FD2B), neither under
+    // `server/openapi/`, so the two numbers move by two together.
+    expect(instrumented.length).toBe(329);
   });
 });

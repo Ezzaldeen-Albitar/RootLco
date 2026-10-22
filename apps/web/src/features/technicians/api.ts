@@ -80,7 +80,7 @@ function sessionPath(sessionId: string, tail = ''): string {
   return `/api/v1/labor-sessions/${encodeURIComponent(sessionId)}${tail}`;
 }
 
-const EXPIRED: ActionState = { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+const EXPIRED: ActionState = { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
 /* ------------------------------------------------------------------ *
  * Reads

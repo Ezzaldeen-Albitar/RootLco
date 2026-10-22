@@ -112,7 +112,9 @@ vi.mock('@/features/vehicles/profile-api', () => ({
   changeVehicleStatusAction: vi.fn(async () => ({ status: 'idle' })),
   checkVinAvailability: vi.fn(async () => ({ verdict: 'unavailable', holderId: null })),
 }));
-vi.mock('@/features/crm/customers/api', () => ({ searchCustomers: vi.fn(async () => EMPTY_PAGE) }));
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: vi.fn(async () => EMPTY_PAGE),
+}));
 
 const { CustomerProfileScreen } =
   await import('@/features/crm/customers/components/CustomerProfileScreen');

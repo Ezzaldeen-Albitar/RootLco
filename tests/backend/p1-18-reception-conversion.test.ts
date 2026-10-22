@@ -82,6 +82,13 @@ interface ConvertBody {
   readonly state?: string;
   readonly alreadyConverted?: boolean;
   readonly code?: string;
+  /**
+   * The published refusal reason (DEF-T-10). `assertStandingAuthorization`
+   * guards this command as well as approval, so the same tokens arrive here and
+   * the conversion screen renders them; asserting them on this path is what
+   * keeps that screen's sentence tied to what the API actually sends.
+   */
+  readonly violations?: readonly { readonly path: string; readonly rule: string }[];
 }
 
 interface SeededReception {
@@ -572,6 +579,28 @@ describe('authorization', () => {
     expect(await workOrderCount(reception.visitId)).toBe(0);
     expect((await receptionStatus(reception.visitId)).status).toBe('authorized');
   });
+
+  it('answers a malformed reception id with 422 and a correlation id, writing nothing', async () => {
+    // DX-4 (finance QA fixes E): a harness sent `/receptions/undefined/...` and
+    // the path parse, which ran before `handleOperation`, threw past it — HTTP
+    // 500, no correlation id, and an unstructured failure in the server log. The
+    // parse now runs inside the operation, so the answer is the validation
+    // failure every other malformed request gets.
+    authAs(SUBJ_A);
+    const before = await count(
+      `SELECT count(*)::text AS n FROM wo.work_orders WHERE tenant_id = $1`,
+      [TENANT_A]
+    );
+    const response = await convert('undefined', { version: 1 });
+    expect(response.status).toBe(422);
+    expect(response.headers.get('x-correlation-id')).toMatch(/^[0-9a-f-]{36}$/);
+    const body = (await response.json()) as ConvertBody;
+    expect(body.code).toBe('ERR-VAL-001');
+    expect(body.violations?.map((violation) => violation.path)).toEqual(['path.receptionId']);
+    expect(
+      await count(`SELECT count(*)::text AS n FROM wo.work_orders WHERE tenant_id = $1`, [TENANT_A])
+    ).toBe(before);
+  });
 });
 
 describe('rec.reception-convert-to-work-order', () => {
@@ -782,7 +811,15 @@ describe('rec.reception-convert-to-work-order: standing authorization', () => {
 
     const response = await convert(seeded.visitId, { version: seeded.recordVersion });
     expect(response.status).toBe(409);
-    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    const body = (await response.json()) as ConvertBody;
+    expect(body.code).toBe('ERR-TRN-001');
+    // DEF-T-10 on the conversion path. The shared rule refuses both commands,
+    // so this refusal carries the same token the approval refusal carries, and
+    // the screen can name the precondition instead of printing the generic
+    // sentence. The token names no party and no decision.
+    expect(body.violations).toEqual([
+      { path: 'path.receptionId', rule: 'authorization_withdrawn' },
+    ]);
 
     // The refusal performs no work: no work order, and the visit is still
     // authorized rather than converted.
@@ -804,7 +841,20 @@ describe('refusals', () => {
       });
       const response = await convert(reception.visitId, { version: reception.recordVersion });
       expect(response.status).toBe(409);
-      expect(((await response.json()) as ConvertBody).code).toBe('ERR-TRN-001');
+      const body = (await response.json()) as ConvertBody;
+      expect(body.code).toBe('ERR-TRN-001');
+      // Owner directive, user-facing errors. The interface renders no server
+      // prose, so this token is the ONLY thing that can make the refusal say
+      // "this visit has not been approved yet" instead of the generic state
+      // sentence. Pinned on the wire, because a token that stops being
+      // published fails nothing else: the request still answers 409 and every
+      // other assertion here still holds.
+      expect(body.violations).toEqual([
+        { path: 'path.receptionId', rule: 'reception_not_authorised' },
+      ]);
+      // It names the precondition and nothing about the visit's own state, so
+      // it discloses no more than the caller is already reading.
+      expect(JSON.stringify(body.violations)).not.toContain(status);
       expect(await workOrderCount(reception.visitId)).toBe(0);
       expect((await receptionStatus(reception.visitId)).status).toBe(status);
     }
@@ -823,7 +873,14 @@ describe('refusals', () => {
     // report as already done, so the lifecycle rule is what answers.
     const response = await convert(reception.visitId, { version: reception.recordVersion });
     expect(response.status).toBe(409);
-    expect(((await response.json()) as ConvertBody).code).toBe('ERR-TRN-001');
+    const body = (await response.json()) as ConvertBody;
+    expect(body.code).toBe('ERR-TRN-001');
+    // The second half of the pair: a visit that has already been converted has
+    // no cure, and the token is what lets the screen say so rather than invite
+    // a retry that would be refused identically.
+    expect(body.violations).toEqual([
+      { path: 'path.receptionId', rule: 'reception_already_converted' },
+    ]);
     expect(await workOrderCount(reception.visitId)).toBe(0);
   });
 

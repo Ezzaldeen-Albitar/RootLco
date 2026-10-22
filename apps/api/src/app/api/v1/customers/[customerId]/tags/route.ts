@@ -75,18 +75,21 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     TAG_LIST_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      body: await crmModule().customerRead.listTags(
-        db,
-        params.customerId,
-        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
-      ),
-    }),
-    { params }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        body: await crmModule().customerRead.listTags(
+          db,
+          params.customerId,
+          parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+        ),
+      };
+    },
+    { params: rawParams }
   );
 }
 
@@ -94,7 +97,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -103,6 +106,7 @@ export async function POST(
     TAG_ASSIGN_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const input = await parseJsonBody(raw, Body);
       const result = await crmModule().customerGovernance.assignTag(db, params.customerId, {
         segmentCode: input.segmentCode,
@@ -110,6 +114,6 @@ export async function POST(
       });
       return { status: result.assigned ? 201 : 200, body: result };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }

@@ -24,14 +24,50 @@ import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import { assertVersionMatched } from '@/server/db/concurrency';
 import { appendAudit } from '@/server/audit/audit';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
+import { isSqlState, referenceRefusal, SQLSTATE } from '@/server/db/repository';
 import {
   OrganizationRepository,
+  type ReferenceCurrencyRow,
+  type ReferenceLanguageRow,
+  type ReferenceTimezoneRow,
   type SettingRow,
   type TenantRow,
 } from '../data/organization-repository';
+import { callerHoldsPermissionInCompany } from '@/server/auth/authorization';
 import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
 import { AuthorizationRepository } from '../data/authorization-repository';
+
+/**
+ * The permission codes `iam.company-settings-read` declares, at company scope.
+ *
+ * The declaration itself stays a literal in its route, because the authorization
+ * gates read it from there. This copy exists only so the working-context read can
+ * publish where that read would be allowed, and
+ * `tests/foundation/p1-14-authentication-units.test.ts` pins it equal to the
+ * declaration, so a change to one without the other fails the unit tier.
+ */
+export const COMPANY_SETTINGS_READ_PERMISSIONS: readonly string[] = ['org.company.read'];
+
+/** The tenant's two reference columns, by their LIVE foreign-key names. */
+const TENANT_SETTINGS_REFERENCES = {
+  fk_tenants_default_locale: 'body.defaultLocale',
+  fk_tenants_default_timezone: 'body.defaultTimezone',
+};
+
+/**
+ * The ACTIVE rows of the three reference registers, each in code order — what a
+ * form offers as the choices for a currency, a time zone or a language.
+ *
+ * ONE named shape for both reads that serialise it: org.reference-values-read
+ * here, on the tenant connection, and platform.reference-values-read in the
+ * platform module, on the control-plane connection. Currency labels are the
+ * code; zone labels are the zone name; nothing here is translated.
+ */
+export interface ReferenceValuesView {
+  readonly currencies: readonly ReferenceCurrencyRow[];
+  readonly timezones: readonly ReferenceTimezoneRow[];
+  readonly languages: readonly ReferenceLanguageRow[];
+}
 
 export interface TenantSettingsView {
   readonly id: string;
@@ -95,6 +131,15 @@ export class OrganizationSettingsService extends ApplicationService {
     super();
   }
 
+  /**
+   * org.reference-values-read (P1-32-PRE-OD-REF): the registers a tenant form
+   * offers as choices. Active rows only; an inactive code is not refused here or
+   * anywhere else — the foreign key still accepts it.
+   */
+  async readReferenceValues(db: DbHandle): Promise<ReferenceValuesView> {
+    return this.organization.listReferenceValues(db);
+  }
+
   async readTenant(db: DbHandle): Promise<TenantSettingsView> {
     const tenant = await this.organization.readTenant(db);
     if (!tenant) {
@@ -144,15 +189,9 @@ export class OrganizationSettingsService extends ApplicationService {
           : {}),
       });
     } catch (error) {
-      if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
-        // `fk_tenants_default_locale` / `fk_tenants_default_timezone`: the value
-        // is not a registered language or IANA zone.
-        throw new AppFailure('ERR-VAL-001', {
-          message: 'Locale or timezone is not a registered platform value',
-          safeDetails: { violations: [{ path: 'body', rule: 'unknown_reference' }] },
-        });
-      }
-      throw error;
+      // The value is not a registered language or IANA zone: refused on the one
+      // field that carried it. Any other constraint is re-thrown.
+      throw referenceRefusal(error, TENANT_SETTINGS_REFERENCES) ?? error;
     }
     assertVersionMatched(affected);
 
@@ -195,6 +234,47 @@ export class OrganizationSettingsService extends ApplicationService {
     });
 
     return this.readTenant(db);
+  }
+
+  /**
+   * Of the given companies, the ones whose settings this caller may read
+   * (Owner directive, P1-32-PRE-OD-UNS).
+   *
+   * `iam.company-settings-read` is refused unless BOTH of its checks pass: the
+   * route's permission decision (`org.company.read` at the named company, through
+   * `iam.has_permission_in_scope`, which a branch-typed grant never satisfies) and
+   * this service's scope containment (`requireCompanyInScope`). A reader whose
+   * `org.company.read` comes only from a branch grant — the counter clerk — holds
+   * the code, so a screen deciding from the session's codes alone made a read that
+   * was refused on every load. This answers the same two questions with the same
+   * two functions, so the screen can skip that read instead of making it.
+   *
+   * The candidates are the caller's own working-context companies: active and
+   * visible under the caller's RLS inside its tenant, so `companyExists`, the
+   * read's third check, already holds for each of them and no other tenant's
+   * company can be named here.
+   */
+  async readableCompanySettingIds(
+    db: DbHandle,
+    candidateCompanyIds: readonly string[]
+  ): Promise<readonly string[]> {
+    if (candidateCompanyIds.length === 0) return [];
+    const facts = await this.scopeFacts(db);
+    const readable: string[] = [];
+    for (const companyId of candidateCompanyIds) {
+      if (!this.delegationPolicy.scopeWithinAuthority(facts, { scopeType: 'company', companyId })) {
+        continue;
+      }
+      let held = true;
+      for (const code of COMPANY_SETTINGS_READ_PERMISSIONS) {
+        if (!(await callerHoldsPermissionInCompany(db, code, companyId))) {
+          held = false;
+          break;
+        }
+      }
+      if (held) readable.push(companyId);
+    }
+    return readable;
   }
 
   async listCompanySettings(db: DbHandle, companyId: string): Promise<readonly SettingView[]> {

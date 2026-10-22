@@ -93,15 +93,16 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     VEHICLE_READ_OPERATION,
     request,
     async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
       const vehicle = await vehicleModule().vehicleRead.read(db, params.vehicleId);
       return { body: vehicle, recordVersion: vehicle.recordVersion };
     },
-    { params }
+    { params: raw }
   );
 }
 
@@ -109,7 +110,7 @@ export async function PATCH(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -117,14 +118,17 @@ export async function PATCH(
   return handleOperation(
     VEHICLE_UPDATE_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      status: 200,
-      body: await vehicleModule().vehicleWrite.update(
-        db,
-        params.vehicleId,
-        await parseJsonBody(raw, Body)
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 200,
+        body: await vehicleModule().vehicleWrite.update(
+          db,
+          params.vehicleId,
+          await parseJsonBody(raw, Body)
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }

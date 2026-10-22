@@ -33,13 +33,16 @@
 import { AppFailure } from '@/server/errors/app-failure';
 import { MAX_PAGE_SIZE, pageRequest, type Page } from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
-import { moneyView, type MoneyView } from '@/modules/pricing';
+import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
+import { CUSTOMER_SEARCH_PERMISSION } from '@/shared/text/search-terms';
+import { moneyView, type MinorUnits, type MoneyView } from '@/modules/pricing';
+import { iamDirectory } from '@/modules/iam';
 import { RECEIPT_ORDER } from '../data/payments-repository';
+import { toReversalView, type ReceiptReversalView } from './receipt-reversal-service';
 import type {
-  PaymentAllocationRow,
   PaymentMethodRow,
   PaymentsRepository,
+  ReceiptAllocationRow,
   ReceiptListRow,
 } from '../data/payments-repository';
 
@@ -79,8 +82,63 @@ export interface ReceiptAllocationView {
   /** `seq`, as a string — a `bigint` does not fit a JavaScript number. */
   readonly sequence: string;
   readonly invoiceId: string;
+  /**
+   * The invoice's number, so a screen names the invoice instead of printing its id
+   * (finance retest DF-R2-2). `null` only when the invoice is not visible in this
+   * scope; an allocation is only ever made to an issued invoice, which has one.
+   */
+  readonly invoiceNumber: string | null;
+  /**
+   * Who the invoice bills, by name — only for a caller holding `crm.customer.read`,
+   * asked the way `sal.receipt-list` asks it, and `null` otherwise or when the
+   * partner is not a live one. `sal.finance.view` reaches money, never a name.
+   */
+  readonly invoicePayerName: string | null;
   readonly money: MoneyView;
   readonly allocatedAt: string;
+  /**
+   * When the receipt's payer settled ANOTHER customer's invoice as a third-party
+   * payment (ADR-023 D14): the relationship, the authorisation and the reason, and
+   * who authorised it by name. `null` on an allocation to the payer's own invoice.
+   * The receipt still names its payer and the invoice its customer — nothing here
+   * moves either.
+   */
+  readonly thirdParty: ReceiptAllocationThirdPartyView | null;
+}
+
+/** A third-party allocation's record, as the receipt shows it (ADR-023 D14). */
+export interface ReceiptAllocationThirdPartyView {
+  /** `insurer`, `employer` or `other` — a fixed vocabulary. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  /**
+   * Who authorised it, by NAME — `null` for a caller who may not read users
+   * (resolved through `iamDirectory().directory`, which checks `iam.user.read`
+   * itself) and for a person who is not named. The id is never published.
+   */
+  readonly authorisedByName: string | null;
+}
+
+/**
+ * A receipt's reversal as its detail shows it (ADR-023 D4): the reversal, and the
+ * people on it by NAME.
+ *
+ * Each name is `null` for a caller who may not read users — resolved through
+ * `iamDirectory().directory`, which checks `iam.user.read` itself, so a payment
+ * read never becomes a staff directory — and for a person who is not named. The
+ * ids stay beside them: a screen compares `requestedBy` with the signed-in person
+ * to know whose request it is, and never prints an id.
+ */
+export interface ReceiptReversalDetailView extends ReceiptReversalView {
+  readonly requestedByName: string | null;
+  readonly decidedByName: string | null;
+}
+
+/** A receipt named by its id and its branch's receipt number. */
+export interface ReceiptLinkView {
+  readonly id: string;
+  readonly reference: string;
 }
 
 /**
@@ -138,6 +196,16 @@ export interface ReceiptDetailView {
    * between a bounded read and a silently incomplete one.
    */
   readonly allocationsTruncated: boolean;
+  /**
+   * The receipt's reversal (ADR-023 D4): its pending or approved one, else its most
+   * recent declined one; `null` when nobody asked to reverse it. While it is
+   * `pending` the receipt takes no new allocation.
+   */
+  readonly reversal: ReceiptReversalDetailView | null;
+  /** The reversed receipt this one replaces, or `null`. */
+  readonly replaces: ReceiptLinkView | null;
+  /** The receipt that replaces this reversed one, or `null`. */
+  readonly replacedBy: ReceiptLinkView | null;
 }
 
 const toPaymentMethodView = (row: PaymentMethodRow): PaymentMethodView => ({
@@ -151,12 +219,30 @@ const toPaymentMethodView = (row: PaymentMethodRow): PaymentMethodView => ({
   recordable: row.scope === 'tenant',
 });
 
-const toAllocationView = (row: PaymentAllocationRow): ReceiptAllocationView => ({
+const toAllocationView = (
+  row: ReceiptAllocationRow,
+  mayNamePayer: boolean,
+  units: MinorUnits,
+  nameOf: (userId: string | null) => string | null
+): ReceiptAllocationView => ({
   id: row.id,
   sequence: row.seq,
   invoiceId: row.invoiceId,
-  money: moneyView(row.amount, row.currencyCode),
+  invoiceNumber: row.invoiceNumber,
+  invoicePayerName: mayNamePayer ? row.invoicePayerDisplayName : null,
+  money: moneyView(row.amount, row.currencyCode, units),
   allocatedAt: row.allocatedAt.toISOString(),
+  thirdParty:
+    typeof row.thirdPartyRelationship !== 'string' ||
+    typeof row.thirdPartyAuthorisationReference !== 'string' ||
+    typeof row.thirdPartyReason !== 'string'
+      ? null
+      : {
+          relationship: row.thirdPartyRelationship,
+          authorisationReference: row.thirdPartyAuthorisationReference,
+          reason: row.thirdPartyReason,
+          authorisedByName: nameOf(row.thirdPartyAuthorisedBy),
+        },
 });
 
 /**
@@ -178,6 +264,29 @@ const toAllocationView = (row: PaymentAllocationRow): ReceiptAllocationView => (
  * `iam.current_user_id()`, it is never a client input, and who handled the money
  * is a question the audit trail answers.
  */
+/**
+ * Who paid, by name (Owner directive, browser QA row 5.6b).
+ *
+ * The same shape and the same rule as the invoice list's payer block
+ * (`InvoicePayerView`): every field is `null` exactly when the payer is not
+ * named to THIS caller - withheld because the caller does not hold
+ * `crm.customer.read`, or not a live partner (retired since the receipt was
+ * taken, or not visible). The block keeps its shape either way. The id is
+ * `payerPartnerId` on the row and is not repeated here.
+ */
+export interface ReceiptPayerView {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/** The payer block of a caller the payer may not be named to. Same shape, every field null. */
+const WITHHELD_PAYER: ReceiptPayerView = Object.freeze({
+  displayName: null,
+  displayNumber: null,
+  partyType: null,
+});
+
 export interface ReceiptListView {
   readonly id: string;
   /** `sal.receipts.receipt_number` - opaque text, never parsed or sorted by. */
@@ -185,6 +294,8 @@ export interface ReceiptListView {
   readonly companyId: string;
   readonly branchId: string;
   readonly payerPartnerId: string;
+  /** The payer's name, where this caller may read customers. See `ReceiptPayerView`. */
+  readonly payer: ReceiptPayerView;
   readonly method: {
     readonly id: string;
     readonly scope: string;
@@ -236,6 +347,16 @@ export class PaymentReadService {
    * loading the whole method set ONCE per page and labelling rows from it: one
    * extra statement, not one per receipt, and still no second copy of the
    * predicate.
+   *
+   * ## The payer, named only where the caller may read customers
+   *
+   * The gate is `sal.finance.view`, and that code reaches money, never a
+   * customer's name. So the page names the payer only for a caller holding
+   * `crm.customer.read`, asked ONCE per page with the scope-blind
+   * `iam.has_permission` statement the invoice list asks - the same answer, so a
+   * payer the invoice list would not name is not named here either. The answer
+   * can only withhold a name, never widen the page: the rows, their order and
+   * their ids are exactly those read before the question was asked.
    */
   public async listReceipts(
     db: DbHandle,
@@ -255,15 +376,22 @@ export class PaymentReadService {
     const methods = new Map<string, PaymentMethodRow>(
       (await this.repository.listPaymentMethods(db)).map((row) => [row.id, row])
     );
+    const mayNamePayer = await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION);
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
     return {
       ...result,
-      items: result.items.map((row) => this.toReceiptListView(row, methods)),
+      items: result.items.map((row) => this.toReceiptListView(row, methods, mayNamePayer, units)),
     };
   }
 
   private toReceiptListView(
     row: ReceiptListRow,
-    methods: ReadonlyMap<string, PaymentMethodRow>
+    methods: ReadonlyMap<string, PaymentMethodRow>,
+    mayNamePayer: boolean,
+    units: MinorUnits
   ): ReceiptListView {
     const method = methods.get(row.paymentMethodId);
     return {
@@ -272,6 +400,13 @@ export class PaymentReadService {
       companyId: row.companyId,
       branchId: row.branchId,
       payerPartnerId: row.payerPartnerId,
+      payer: mayNamePayer
+        ? {
+            displayName: row.payerDisplayName,
+            displayNumber: row.payerDisplayNumber,
+            partyType: row.payerPartyType,
+          }
+        : WITHHELD_PAYER,
       // `null` when the method is not visible to this tenant rather than a
       // fabricated label. `readReceipt` renders the same absence the same way.
       method:
@@ -284,10 +419,10 @@ export class PaymentReadService {
               displayName: method.displayName,
               status: method.status,
             },
-      money: moneyView(row.amount, row.currencyCode),
+      money: moneyView(row.amount, row.currencyCode, units),
       // Labelled with the receipt's OWN currency. A receipt has exactly one, so
       // no amount on this page is unlabelled and no two currencies are mixed.
-      unallocated: moneyView(row.unallocated, row.currencyCode),
+      unallocated: moneyView(row.unallocated, row.currencyCode, units),
       status: row.status,
       receivedAt: row.receivedAt.toISOString(),
       evidenceDocumentVersionId: row.evidenceDocumentVersionId,
@@ -359,6 +494,57 @@ export class PaymentReadService {
     // predicate in a second place.
     const method = await this.repository.findPaymentMethod(db, receipt.paymentMethodId);
 
+    // Each allocation names its invoice by number (finance retest DF-R2-2), and the
+    // customer that invoice bills only for a caller who may read customers — the
+    // question `sal.receipt-list` asks, asked once and only when there is a row.
+    const mayNamePayer =
+      allocations.length > 0 &&
+      (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
+    const units = await this.repository.minorUnitsFor(db, [
+      receipt.currencyCode,
+      remainder.currencyCode,
+      ...allocations.map((row) => row.currencyCode),
+    ]);
+
+    // The reversal and the two replacement links (ADR-023 D4), in the receipt's own
+    // scope. The people on the reversal are named only to a caller who may read users.
+    const reversal = await this.repository.findCurrentReversal(db, receipt.id, scope);
+    const replaces =
+      receipt.replacesReceiptId === null
+        ? null
+        : await this.repository.findReceiptReference(db, receipt.replacesReceiptId, scope);
+    const replacedBy =
+      receipt.status === 'reversed'
+        ? await this.repository.findReplacementOf(db, receipt.id, scope)
+        : null;
+    // The people on the reversal and on each third-party allocation (ADR-023 D14),
+    // named in ONE directory read, and only to a caller who may read users.
+    const decider =
+      reversal === null
+        ? null
+        : reversal.approvalState === 'approved'
+          ? reversal.approvedBy
+          : reversal.decidedBy;
+    const people = [
+      reversal?.requestedBy ?? null,
+      decider,
+      ...allocations.map((row) => row.thirdPartyAuthorisedBy),
+    ].filter((id): id is string => typeof id === 'string');
+    const names =
+      people.length === 0
+        ? new Map<string, { readonly displayName: string | null }>()
+        : await iamDirectory().directory.resolveDisplayIdentities(db, [...new Set(people)]);
+    const nameOf = (id: string | null): string | null =>
+      id === null ? null : (names.get(id)?.displayName ?? null);
+    let reversalView: ReceiptReversalDetailView | null = null;
+    if (reversal !== null) {
+      reversalView = {
+        ...toReversalView(reversal, units),
+        requestedByName: nameOf(reversal.requestedBy),
+        decidedByName: nameOf(decider),
+      };
+    }
+
     return {
       id: receipt.id,
       reference: receipt.receiptNumber,
@@ -375,18 +561,22 @@ export class PaymentReadService {
               displayName: method.displayName,
               status: method.status,
             },
-      money: moneyView(receipt.amount, receipt.currencyCode),
+      money: moneyView(receipt.amount, receipt.currencyCode, units),
       // Both amounts are labelled with the receipt's own currency. `sal.receipts`
       // carries `currency_code` on the row, so no aggregate here is ever unlabelled
       // and no two currencies are ever mixed — there is nothing to mix, because a
       // receipt has exactly one.
-      unallocated: moneyView(remainder.unallocated, remainder.currencyCode),
+      unallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
       status: receipt.status,
       receivedAt: receipt.receivedAt.toISOString(),
       evidenceDocumentVersionId: receipt.evidenceDocumentVersionId,
       recordVersion: receipt.recordVersion,
-      allocations: allocations.map(toAllocationView),
+      allocations: allocations.map((row) => toAllocationView(row, mayNamePayer, units, nameOf)),
       allocationsTruncated: truncated,
+      reversal: reversalView,
+      replaces: replaces === null ? null : { id: replaces.id, reference: replaces.receiptNumber },
+      replacedBy:
+        replacedBy === null ? null : { id: replacedBy.id, reference: replacedBy.receiptNumber },
     };
   }
 }

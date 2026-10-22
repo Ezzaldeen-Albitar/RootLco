@@ -1,7 +1,7 @@
 import type { ToastTone } from '@/components/overlays/Overlays';
-import type { ActionState } from '@/lib/forms/action-result';
+import { isFieldConflict, type ActionState } from '@/lib/forms/action-result';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { explanationFor, translate, translateWithValues } from '@/i18n/get-messages';
 import { notify } from './notification-store';
 
 /**
@@ -40,24 +40,39 @@ const TONE_BY_STATUS: Partial<Record<ActionState['status'], ToastTone>> = {
 export function notifyActionResult(state: ActionState, messages: Messages): boolean {
   const tone = TONE_BY_STATUS[state.status];
   if (!tone) return false;
+  // A conflict about one named field — a duplicate code — is refused input, and
+  // belongs beside that field like `invalid` does: no toast telling the operator
+  // someone else changed the record (P1-32-PRE-OD-INVF, SETUP-cat-errors).
+  if (isFieldConflict(state)) return false;
 
   // The key is a KEY. A server-authored sentence must never reach a toast: it
   // would arrive untranslated in Arabic and would bypass the catalogue
   // completeness gate entirely.
   const title = state.messageKey
-    ? translate(messages, state.messageKey as keyof Messages)
+    ? translateWithValues(messages, state.messageKey, state.messageValues)
     : translate(messages, tone === 'success' ? 'action.succeeded' : 'action.failed');
+
+  // The toast's supporting line, in the order a reader needs it: what to do
+  // about the refusal first, then the reference to quote if it persists.
+  //
+  // A heading key carries no next step — a refused permission arrives here as
+  // `state.denied.title`, which is a label. The card had nowhere to put one, so
+  // the whole notification was four words. The correlation ID keeps its old
+  // rule: only on a failure, because printing it after a success is noise.
+  const explanation =
+    tone === 'success' || state.messageKey === undefined
+      ? null
+      : explanationFor(messages, state.messageKey);
+  const reference =
+    tone === 'success' || !state.correlationId
+      ? null
+      : `${translate(messages, 'action.reference')} ${state.correlationId}`;
+  const supporting = [explanation, reference].filter((part) => part !== null).join(' ');
 
   notify({
     tone,
     title,
-    // The correlation ID is the only diagnostic a user ever sees, and it is the
-    // one thing worth carrying into a support conversation. It is shown only on
-    // a failure — printing it after a success is noise.
-    description:
-      tone === 'success' || !state.correlationId
-        ? undefined
-        : `${translate(messages, 'action.reference')} ${state.correlationId}`,
+    description: supporting.length > 0 ? supporting : undefined,
   });
   return true;
 }

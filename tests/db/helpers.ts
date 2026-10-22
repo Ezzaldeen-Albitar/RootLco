@@ -19,16 +19,18 @@
  *    on the admin connection.
  *
  * Credentials are the public Supabase local-dev defaults, overridable via
- * DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD. They are not secrets;
- * no production credential is ever read here.
+ * DB_NAME / DB_USER / DB_PASSWORD. They are not secrets; no production
+ * credential is ever read here. The host and port have NO default: DB_PORT (or
+ * PGPORT) must name a disposable test database, and `tests/database-target.ts`
+ * refuses a missing or inconsistent port and the local acceptance database.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client, Pool } from 'pg';
 import type { ClientConfig } from 'pg';
+import { resolveTestDatabaseTarget } from '../database-target';
 
-const HOST = process.env.DB_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.DB_PORT ?? 54322);
+const { host: HOST, port: PORT } = resolveTestDatabaseTarget('tests/db/helpers.ts');
 const DATABASE = process.env.DB_NAME ?? 'postgres';
 const ADMIN_USER = process.env.DB_USER ?? 'postgres';
 const ADMIN_PASSWORD = process.env.DB_PASSWORD ?? 'postgres';
@@ -360,6 +362,7 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // revisions, rec visits, veh vehicles/odometer) deleted below, so P1-11 unwinds
   // first. Children before parents. sal.financial_events has no FK into sal (its
   // source_id is a plain uuid), so it can go anywhere in this block.
+  await deleteFrom('rpt.report_snapshots');
   await deleteFrom('rpt.saved_filters');
   await deleteFrom('rpt.report_configuration_versions');
   await deleteFrom('rpt.report_configurations');
@@ -373,11 +376,26 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('sal.delivery_signatures');
   await deleteFrom('sal.delivery_checklist_results');
   await deleteFrom('sal.delivery_status_history');
+  // Its own tenant FK is ON DELETE RESTRICT, so a review row would block the
+  // tenant delete below. The product writes the table once, in migration 141,
+  // and no application role holds DELETE on it; this connection is the owner and
+  // does, which is what removes the isolation fixtures written by
+  // tests/db/org-employees.test.ts obligation 6.
+  await deleteFrom('sal.delivery_legacy_identity_review');
   await deleteFrom('sal.delivery_records');
   await deleteFrom('sal.delivery_checklist_template_items');
   await deleteFrom('sal.delivery_checklist_templates');
   await deleteFrom('sal.payment_allocations');
   await deleteFrom('sal.receipt_reversals');
+  // P1-32 preparatory slice 2: a sales return cites the credit note it raised
+  // (fk_sales_returns_credit_note is ON DELETE RESTRICT), so it goes before
+  // sal.credit_notes — and therefore before the inv block below, which removes
+  // the part issues and locations it also cites.
+  await deleteFrom('inv.sales_returns');
+  // P1-32-PRE-OD-FD2A (ADR-023 D2): an obligation cites its credit note and invoice
+  // (both ON DELETE RESTRICT), so it goes before them.
+  await deleteFrom('sal.refund_requests');
+  await deleteFrom('sal.refund_obligations');
   await deleteFrom('sal.credit_notes');
   await deleteFrom('sal.receipts');
   await deleteFrom('sal.invoice_status_history');
@@ -395,6 +413,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // quo.quotations + every wo-referencing inv row are removed before
   // wo.work_orders (below). The forward-FK TARGET catalogs (svc.services,
   // inv.item_master) are removed AFTER the wo block — see the second P1-10 block.
+  await deleteFrom('quo.acceptance_records');
+  await deleteFrom('quo.discount_approvals');
   await deleteFrom('quo.approval_evidence');
   await deleteFrom('quo.approval_decisions');
   await deleteFrom('quo.quotation_status_history');
@@ -403,12 +423,32 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('wo.customer_approvals');
   await deleteFrom('quo.quotation_revisions');
   await deleteFrom('quo.quotations');
+  // P1-32 preparatory slice 3a: a fulfillment link cites the part issue and the
+  // reservation it names, a request cites its requirement, and a requirement cites
+  // the work order, its service line and the specification it was derived from —
+  // so the four go, children first, before any of those parents below.
+  await deleteFrom('inv.material_request_fulfillments');
+  await deleteFrom('inv.material_requests');
+  await deleteFrom('inv.material_requirement_exceptions');
+  await deleteFrom('inv.material_requirements');
   await deleteFrom('inv.part_returns');
   await deleteFrom('inv.part_issues');
   await deleteFrom('inv.damaged_stock');
   await deleteFrom('inv.customer_supplied_parts');
   await deleteFrom('inv.external_purchase_part_details');
   await deleteFrom('inv.external_purchase_parts');
+  // P1-32 preparatory slice. Count lines cite the adjustments their variances
+  // raised, so they go before `inv.stock_adjustments`; receipt lines before their
+  // receipts; the append-only cost layers and the transfers cite items and
+  // locations and carry no child of their own.
+  await deleteFrom('inv.stock_count_lines');
+  await deleteFrom('inv.stock_counts');
+  await deleteFrom('inv.goods_receipt_lines');
+  await deleteFrom('inv.goods_receipts');
+  await deleteFrom('inv.item_cost_layers');
+  // Slice 3a: a settlement cites its transfer.
+  await deleteFrom('inv.stock_transfer_settlements');
+  await deleteFrom('inv.stock_transfers');
   await deleteFrom('inv.stock_adjustment_details');
   await deleteFrom('inv.stock_adjustments');
   await deleteFrom('inv.opening_inventory_lines');
@@ -493,6 +533,17 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('svc.services');
   await deleteFrom('svc.service_categories');
   await deleteFrom('inv.item_cost_details');
+  // P1-32 preparatory slice 2: identifiers cite the item and a unit.
+  await deleteFrom('inv.item_identifiers');
+  // Selling prices cite the item, a company, a branch and a tax class.
+  await deleteFrom('inv.item_sale_prices');
+  // Owner directive: a reorder level cites the item, a company, a branch and a
+  // stock location, and is cited by nothing.
+  await deleteFrom('inv.item_reorder_levels');
+  // Slice 3a: conversions cite the item and two units; specifications cite a unit,
+  // an item family and a vehicle make and model (removed further below).
+  await deleteFrom('inv.item_unit_conversions');
+  await deleteFrom('inv.vehicle_fluid_specifications');
   await deleteFrom('inv.item_master');
   await deleteFrom('inv.stock_locations');
   await deleteFrom('inv.item_categories');
@@ -677,6 +728,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('org.storage_locations');
   await deleteFrom('org.warehouses');
   await deleteFrom('org.departments');
+  // AFTER sal.delivery_records above and BEFORE iam.user_accounts and org.branches:
+  // fk_delivery_records_delivering_employee is ON DELETE RESTRICT in one direction
+  // and fk_employees_user_account in the other, so this row sits between them.
+  await deleteFrom('org.employees');
   await deleteFrom('org.cost_centers');
   await deleteFrom('org.branch_status_history');
   await deleteFrom('org.branches');
@@ -685,6 +740,12 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // the same shape as branch_status_history one line above.
   await deleteFrom('org.company_status_history');
   await deleteFrom('org.legal_companies');
+  // P1-32-PRE-023/024, children before parents: a receipt references its charge,
+  // a charge and an event reference the subscription, and all three are
+  // ON DELETE RESTRICT — so any of them surviving blocks the subscription delete.
+  await deleteFrom('org.subscription_receipts');
+  await deleteFrom('org.subscription_charges');
+  await deleteFrom('org.tenant_subscription_events');
   await deleteFrom('org.tenant_subscriptions');
   await deleteFrom('org.tenant_status_history');
   await admin.query('DELETE FROM org.tenants WHERE id = ANY($1::uuid[])', [tenantIds]);

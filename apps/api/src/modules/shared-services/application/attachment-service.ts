@@ -42,7 +42,7 @@ import type {
   RegisterVersionInput,
   UploadAuthorization,
 } from '@/server/contracts/file-service';
-import { DocumentRepository } from '../data/document-repository';
+import { DocumentRepository, type DocumentCategoryFacts } from '../data/document-repository';
 import {
   contentTypeAllowed,
   decodeUploadToken,
@@ -708,6 +708,7 @@ export class AttachmentService extends ApplicationService implements FileService
     if (!version || version.document_id !== input.documentId) {
       throw new AppFailure('ERR-RES-001', { message: 'Version not found in the caller scope' });
     }
+    await this.requireReachableByLiveLink(db, version.document_id);
     if (!DOWNLOADABLE_STATES.includes(version.status)) {
       metrics().increment(METRICS.attachmentAuthorizationCount, {
         purpose: 'download',
@@ -759,6 +760,66 @@ export class AttachmentService extends ApplicationService implements FileService
     this.logIssuance(db, 'download', ttl);
 
     return { url: signed.url, expiresAt: signed.expiresAt };
+  }
+
+  /**
+   * Refuses a document that is not reachable through a live link to an entity this
+   * caller may see (P1-31 CC-63 (c)).
+   *
+   * ## The contract this implements, quoted rather than paraphrased
+   *
+   * `docs/phase-1/phase-1-5/document-access-and-file-security.md` § 3: "A document
+   * is reachable through a live link to an entity the principal may see — never by
+   * merely knowing an identifier." Owner requirement H-13's normalised behaviour
+   * asks for a signed URL "for an accepted version reachable via a live link".
+   * `docs/phase-1/phase-1-15/attachment-lifecycle.md` already stated that the
+   * download path enforces it; until this method it did not, and a tenant member
+   * holding the file-access code and an identifier was issued a URL for a document
+   * linked to nothing.
+   *
+   * ## Why RLS on the document is not the answer
+   *
+   * `sel_documents_tenant` and `sel_document_versions_tenant` carry no predicate
+   * beyond the tenant, and the storage-key check below only proves the key names
+   * this tenant. Both are tenant isolation. Neither is caller authorization, and a
+   * tenant-scoped document is not thereby downloadable by every caller in the
+   * tenant.
+   *
+   * ## What counts, and what does not
+   *
+   *  - a withdrawn link does not count: `liveLinks` reads `deleted_at IS NULL`;
+   *  - an entity the caller cannot see does not count: the target row is selected
+   *    under the caller's own transaction, so each table's SELECT policy decides,
+   *    and no permission code is consulted here;
+   *  - **one** live, visible link is enough — a document legitimately reachable
+   *    through any of its entities is reachable.
+   *
+   * ## Why the refusal is the not-found
+   *
+   * It is thrown before the state check and before any signing call, and it is the
+   * same `ERR-RES-001` an invented identifier receives, with no safe details, so a
+   * refusal never discloses that the document exists. Nothing is signed and no
+   * audit record is written, because both happen after this point.
+   */
+  private async requireReachableByLiveLink(db: DbHandle, documentId: string): Promise<void> {
+    const links = await this.documents.liveLinks(db, documentId);
+    const idsByType = new Map<string, string[]>();
+    for (const link of links) {
+      const ids = idsByType.get(link.entity_type);
+      if (ids === undefined) idsByType.set(link.entity_type, [link.entity_id]);
+      else ids.push(link.entity_id);
+    }
+    for (const [entityType, entityIds] of idsByType) {
+      const visible = await this.documents.visibleEntityIds(db, entityType, entityIds);
+      if (visible.length > 0) return;
+    }
+    metrics().increment(METRICS.attachmentAuthorizationCount, {
+      purpose: 'download',
+      result: 'refused',
+    });
+    throw new AppFailure('ERR-RES-001', {
+      message: 'Document is not reachable through a live link to an entity this caller may see',
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -924,6 +985,10 @@ export class AttachmentService extends ApplicationService implements FileService
    *     caller can see could be attached as evidence for any record — the
    *     "forged attachment" case. The link must be live and name this exact
    *     `(entityType, entityId)`.
+   *  4. **Which category is the document filed under?** Returned so a consumer
+   *     whose evidence has a governed category — the receiver's identity evidence
+   *     at a delivery handover (P1-31 D-18) — can refuse a document filed under an
+   *     unrelated one rather than accept whatever happens to be linked.
    *
    * A caller passes a `versionId`, never a storage key. Storage keys are not
    * accepted anywhere on this surface, so a client cannot name raw object storage.
@@ -939,6 +1004,7 @@ export class AttachmentService extends ApplicationService implements FileService
     companyId: string | null;
     branchId: string | null;
     status: string;
+    category: DocumentCategoryFacts | null;
     linkedToEntity: boolean;
   }> {
     const version = await this.documents.findVersion(db, versionId);
@@ -952,6 +1018,7 @@ export class AttachmentService extends ApplicationService implements FileService
       companyId: version.company_id,
       branchId: version.branch_id,
       status: version.status,
+      category: await this.documents.documentCategory(db, version.document_id),
       linkedToEntity: links.some(
         (link) => link.entity_type === entityType && link.entity_id === entityId
       ),

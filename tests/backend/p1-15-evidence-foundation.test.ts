@@ -423,6 +423,25 @@ const serveGoodBytes = (): void => {
   storage.readBehaviour = { kind: 'bytes', bytes: pngBytes, contentType: CONTENT_TYPE };
 };
 
+/**
+ * Makes a document reachable, through the real link operation.
+ *
+ * Upload authorization records the entity it was asked about in an audit detail and
+ * writes no link, so a document created by `authorizeUpload` alone is attached to
+ * nothing. Since P1-31 CC-63 (c) the download path refuses that with the uniform
+ * not-found before it looks at the version's state, so every download fixture below
+ * that means to test something else has to establish reachability first.
+ */
+const linkToCompany = (documentId: string): Promise<unknown> =>
+  withTransaction(asFullA(), (db) =>
+    attachments.link(db, {
+      documentId,
+      entityType: 'org.legal_companies',
+      entityId: COMPANY_A1,
+      linkPurpose: 'attachment',
+    })
+  );
+
 // ===========================================================================
 
 describe('shared.document-category-list — the governed policy a client must obey', () => {
@@ -656,6 +675,7 @@ describe('a rejected or quarantined version can never satisfy evidence', () => {
     const uploaded = await authorizeUpload();
     const registered = await registerAndScan(uploaded);
     expect(registered.status).toBe('quarantined');
+    await linkToCompany(registered.documentId);
 
     const failure = await withTransaction(asFullA(), (db) =>
       attachments
@@ -703,6 +723,7 @@ describe('a rejected or quarantined version can never satisfy evidence', () => {
       attachments.rejectVersion(db, registered.versionId, 'fixture refusal')
     );
     expect(await versionRow(registered.versionId).then((row) => row?.status)).toBe('rejected');
+    await linkToCompany(registered.documentId);
 
     const failure = await withTransaction(asFullA(), (db) =>
       attachments
@@ -747,6 +768,7 @@ describe('access is authorized by the business link and the permission, never by
     serveGoodBytes();
     const uploaded = await authorizeUpload();
     const registered = await registerAndScan(uploaded);
+    await linkToCompany(registered.documentId);
 
     const before = Date.now();
     const grant = await withTransaction(asFullA(), (db) =>

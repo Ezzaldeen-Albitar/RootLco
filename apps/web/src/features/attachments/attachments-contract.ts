@@ -96,6 +96,32 @@ export function isTerminalVersion(status: string | undefined): boolean {
 export const SCAN_OUTCOMES = ['not_started', 'clean', 'infected', 'error'] as const;
 export type ScanOutcome = (typeof SCAN_OUTCOMES)[number];
 
+/**
+ * The document categories seeded at PLATFORM scope, transcribed from
+ * `supabase/seeds/05_shared_reference.sql`. The category read publishes a
+ * category's code and not its name, so these eight — a fact about the platform,
+ * not about a workshop — are said in the reader's language, and a category a
+ * workshop added keeps its code (Owner directive slice 4: the evidence forms of
+ * the diagnostics and technician screens offered the codes as their choices).
+ */
+export const PLATFORM_DOCUMENT_CATEGORIES = [
+  'reception_exterior',
+  'reception_dashboard',
+  'reception_vin',
+  'reception_damage',
+  'reception_signature',
+  'reception_refusal_evidence',
+  'reception_damage_map_template',
+  'delivery_receiver_identity',
+] as const;
+
+/** A document category in words for the platform's own, the code itself for any other. */
+export function documentCategoryLabel(code: string, translateKey: (key: string) => string): string {
+  return (PLATFORM_DOCUMENT_CATEGORIES as readonly string[]).includes(code)
+    ? translateKey(`attachments.category.${code}`)
+    : code;
+}
+
 /** One governed category, exactly as `shared.document-category-list` answers. */
 export interface DocumentCategory {
   readonly categoryCode: string;

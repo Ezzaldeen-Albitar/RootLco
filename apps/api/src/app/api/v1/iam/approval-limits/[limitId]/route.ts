@@ -42,11 +42,12 @@ export async function PATCH(
   request: Request,
   route: { params: Promise<{ limitId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     APPROVAL_LIMIT_END_OPERATION,
     request,
     async ({ db, request: raw, expectedVersion }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const body = await parseJsonBody(raw, PatchBody);
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -59,6 +60,6 @@ export async function PATCH(
       );
       return { body: { status: 'ended' } };
     },
-    { params }
+    { params: rawParams }
   );
 }

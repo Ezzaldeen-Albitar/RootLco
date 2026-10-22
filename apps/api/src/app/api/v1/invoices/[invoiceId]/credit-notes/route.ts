@@ -23,15 +23,12 @@
  * When supplied it is checked against the parent and refused on mismatch — and that check
  * is the ONLY defence in the entire system.
  *
- * Measured, not assumed: five triggers fire on `sal.credit_notes` and not one reads
- * `sal.invoices.currency_code`; `sal.approve_credit_note` compares the amount and never
- * the currency; and `sal.invoice_open_receivable` has no currency predicate either.
- * `tests/db/p1-22-protected-residuals.test.ts` inserts a JOD credit note against a USD
- * invoice, approves it, and shows 40 JOD subtracted from a USD gross — 100.0000 → 60.0000.
- *
- * So if `assertCurrencyMatches` is deleted, nothing else refuses the mismatch. Recorded as
- * `P1-22-L-02` and raised as change-control candidate CC-1; the fix is a migration, which
- * this phase does not author.
+ * P1-22 measured that nothing in the database compared the two codes (`P1-22-L-02`,
+ * change-control candidate CC-1). Migration `20260930090000_sal_finance_controls.sql`
+ * closes it: `sal.guard_credit_note_currency` refuses a mismatched insert and
+ * `sal.approve_credit_note` compares the codes under the invoice lock (GAP-13), which
+ * `tests/db/p1-22-protected-residuals.test.ts` now proves. `assertCurrencyMatches`
+ * still refuses first, on the `currency` field the caller sent.
  *
  * The amount is bounded by the invoice's open receivable. `sal.approve_credit_note` checks
  * that too, and it is re-checked here so the caller gets an actionable refusal rather than

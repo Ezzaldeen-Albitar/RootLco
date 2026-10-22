@@ -12,13 +12,22 @@
 # trade, because the alternative is discarding authoritative evidence.
 #
 # This is the run whose result is quoted in a gate record.
+#
+# TDP-2026-10 (temporary, Owner approval 2026-10-05). It no longer runs on a
+# push to develop: on 26 of 26 measured merges that run re-proved a tree
+# identical to the pull-request head. `develop-merge-integrity.yml` checks that
+# identity on every develop merge instead, and THIS workflow is dispatched on
+# develop once per coherent batch — a CHECKPOINT — pinned to the exact candidate
+# commit and named by a checkpoint id. A push to main is unchanged: every job,
+# every time, STRICT records. Restoration order:
+# docs/engineering/ci-automation/pr-gate.md.
 # =============================================================================
 
 name: Protected branch verification
 
 on:
   push:
-    branches: [develop, main]
+    branches: [main]
   # THE PRE-MERGE PATH, and it is not an afterthought.
   #
   # `push` alone would mean the `authenticated-browser` job below could only
@@ -66,9 +75,23 @@ on:
           commit it checked out is exactly this one.
         required: false
         type: string
+      # TDP-2026-10. A develop CHECKPOINT dispatch names itself: CP-YYYYMMDD-N.
+      # The id is what lets the P1-27 records validators defer a run record to
+      # the records pull request that follows; a dispatch without a valid id
+      # judges the records STRICT. A malformed id fails the run.
+      checkpoint-id:
+        description: >-
+          The checkpoint id, CP-YYYYMMDD-N, of a develop checkpoint dispatch.
+          Leave empty for any other dispatch.
+        required: false
+        type: string
 
+# Keyed on the CANDIDATE commit when one is named, so two checkpoint dispatches
+# of different commits never displace each other, and on the ref otherwise — on
+# a push to main this is exactly the group it always was. A cancelled or
+# displaced run is never evidence; it is re-dispatched.
 concurrency:
-  group: protected-${{ github.workflow }}-${{ github.ref }}
+  group: protected-${{ github.workflow }}-${{ inputs.candidate-sha || github.ref }}
   # NEVER cancel. See above.
   cancel-in-progress: false
 
@@ -160,12 +183,19 @@ jobs:
       severity: 'CRITICAL,HIGH'
       artifact-retention-days: 30
 
+  # Always the FULL profile here. On a checkpoint dispatch it proves the named
+  # candidate and requests deferred records (TDP-2026-10 case b); the records
+  # validators honour that only for this workflow, dispatched on develop, with a
+  # valid checkpoint id. A push to main judges records STRICT.
   hosted-clean-room:
     name: hosted-clean-room
     uses: ./.github/workflows/_reusable-clean-room.yml
     with:
-      expected-sha: ${{ github.sha }}
+      expected-sha: ${{ inputs.candidate-sha || github.sha }}
       artifact-retention-days: 90
+      profile: full
+      records-mode: ${{ github.event_name == 'workflow_dispatch' && 'checkpoint-deferred' || 'strict' }}
+      checkpoint-id: ${{ inputs.checkpoint-id }}
 
   # ===========================================================================
   # The AUTHENTICATED browser tier — `P1-27-DO-001`, and it is now GOVERNED.
@@ -196,12 +226,13 @@ jobs:
     uses: ./.github/workflows/_reusable-authenticated-browser.yml
     with:
       expected-sha: ${{ inputs.candidate-sha }}
-      # A dispatch of any ref OTHER than develop or main is the pre-merge case,
-      # so naming the commit is mandatory there: without it the run would say
-      # only "the tip of that branch, whenever it started", which is not a commit
-      # anybody can check. On a protected push the pushed commit IS the answer,
-      # so nothing has to be named.
-      require-pin: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/main' }}
+      # A dispatch of any ref OTHER than main must name its commit: without it
+      # the run would say only "the tip of that branch, whenever it started",
+      # which is not a commit anybody can check. TDP-2026-10 added develop to
+      # that rule, because a develop dispatch is now a CHECKPOINT and a
+      # checkpoint is evidence for one named commit. On a protected push the
+      # pushed commit IS the answer, so nothing has to be named.
+      require-pin: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
       artifact-retention-days: 30
 
   protected-gate:
@@ -230,6 +261,42 @@ jobs:
       - authenticated-browser
 
     steps:
+      # TDP-2026-10. FIRST, before any evidence is read: a dispatch is evidence
+      # only for the commit it names. Every job above checked out `github.sha`,
+      # so a Go here implies every check-run ran at the candidate only when the
+      # two are the same commit. A checkpoint id, when given, must be well formed.
+      - name: A dispatch is pinned to the commit it names
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
+          CHECKPOINT_ID: ${{ inputs.checkpoint-id }}
+          RUN_SHA: ${{ github.sha }}
+          RUN_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "${RUN_REF}" != "refs/heads/main" ]; then
+            if ! printf '%s' "${CANDIDATE_SHA}" | grep -qE '^[0-9a-f]{40}$'; then
+              echo "::error::A dispatch of ${RUN_REF} must name its candidate as a 40-character commit."
+              exit 1
+            fi
+          fi
+          if [ -n "${CANDIDATE_SHA}" ] && [ "${CANDIDATE_SHA}" != "${RUN_SHA}" ]; then
+            echo "::error::The run executed at ${RUN_SHA}, not at the named candidate ${CANDIDATE_SHA}. No result here describes the candidate."
+            exit 1
+          fi
+          if [ -n "${CHECKPOINT_ID}" ] && ! printf '%s' "${CHECKPOINT_ID}" | grep -qE '^CP-[0-9]{8}-[0-9]+$'; then
+            echo "::error::Checkpoint id '${CHECKPOINT_ID}' is not of the form CP-YYYYMMDD-N."
+            exit 1
+          fi
+          printf 'candidate: %s\ncheckpoint: %s\n' "${CANDIDATE_SHA:-none}" "${CHECKPOINT_ID:-none}"
+          {
+            printf '### Checkpoint dispatch (TDP-2026-10)\n\n'
+            printf '| Item | Value |\n| --- | --- |\n'
+            printf '| Checkpoint id | `%s` |\n' "${CHECKPOINT_ID:-none}"
+            printf '| Candidate | `%s` |\n' "${CANDIDATE_SHA:-none}"
+            printf '| Ref | `%s` |\n\n' "${RUN_REF}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       # A local `uses: ./…` action is resolved from the workspace, which is
       # empty when a job starts — so the composite action below cannot be
       # found without this. Sparse and shallow on purpose: it exists only to
@@ -247,6 +314,21 @@ jobs:
         with:
           install: 'false'
 
+      # Written AFTER the checkout above, which would otherwise delete it.
+      - name: Record the checkpoint this run proves
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
+          CHECKPOINT_ID: ${{ inputs.checkpoint-id }}
+          RUN_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          node -e '
+            const [id, sha, ref] = process.argv.slice(1);
+            const doc = { checkpointId: id || null, candidateSha: sha || null, ref };
+            require("node:fs").writeFileSync("checkpoint.json", JSON.stringify(doc, null, 2) + "\n");
+          ' "${CHECKPOINT_ID}" "${CANDIDATE_SHA}" "${RUN_REF}"
+
       - name: Collect every job's evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -256,7 +338,7 @@ jobs:
       - name: Evaluate
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          COMMIT: ${{ github.sha }}
+          COMMIT: ${{ inputs.candidate-sha || github.sha }}
         run: |
           set -euo pipefail
           printf '%s\n' "${NEEDS_JSON}" > needs.json
@@ -274,6 +356,7 @@ jobs:
             --needs needs.json --classification classification.json --evidence evidence \
             --expected-sha "${COMMIT}" --actual-sha "$(git rev-parse HEAD)" \
             --trusted-context true \
+            --event "${GITHUB_EVENT_NAME}" \
             --markdown protected-gate.md --json protected-gate.json
 
       - name: Publish the summary
@@ -295,3 +378,4 @@ jobs:
             protected-gate.md
             needs.json
             classification.json
+            checkpoint.json

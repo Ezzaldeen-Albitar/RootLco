@@ -16,7 +16,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import { parseJsonBody, parseOrFail, pathScopeTarget, schemas } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
 
 export const runtime = 'nodejs';
@@ -66,16 +66,19 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ companyId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     COMPANY_SETTINGS_READ_OPERATION,
     request,
-    async ({ db }) => ({
-      body: { items: await iamModule().organization.listCompanySettings(db, params.companyId) },
-    }),
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: { items: await iamModule().organization.listCompanySettings(db, params.companyId) },
+      };
+    },
     // The company is a *claim* checked against the caller's resolved scope, never
     // the scope itself: `narrowScope()` rejects one the caller does not hold.
-    { params, authorizationTarget: { companyId: params.companyId } }
+    { params: raw, authorizationTarget: pathScopeTarget(raw, 'companyId') }
   );
 }
 
@@ -83,7 +86,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ companyId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -91,14 +94,17 @@ export async function POST(
   return handleOperation(
     COMPANY_SETTINGS_WRITE_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      status: 201,
-      body: await iamModule().organization.writeCompanySetting(
-        db,
-        params.companyId,
-        await parseJsonBody(raw, SettingBody)
-      ),
-    }),
-    { params, body, authorizationTarget: { companyId: params.companyId } }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await iamModule().organization.writeCompanySetting(
+          db,
+          params.companyId,
+          await parseJsonBody(raw, SettingBody)
+        ),
+      };
+    },
+    { params: rawParams, body, authorizationTarget: pathScopeTarget(rawParams, 'companyId') }
   );
 }

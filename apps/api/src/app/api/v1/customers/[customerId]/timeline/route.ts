@@ -43,17 +43,18 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     CUSTOMER_TIMELINE_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const query = parseOrFail(Query, Object.fromEntries(new URL(raw.url).searchParams), 'query');
       return {
         status: 200,
         body: await crmModule().customerIdentity.timeline(db, params.customerId, query),
       };
     },
-    { params }
+    { params: rawParams }
   );
 }

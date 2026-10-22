@@ -175,6 +175,53 @@ export class TenantBootstrapRepository extends Repository {
   }
 
   /**
+   * How many ACTIVE administrators the organisation already has.
+   *
+   * Counted from the grants rather than from a flag: "is an administrator" is
+   * not a column anywhere, it is an active unrestricted grant of the
+   * tenant_administrator role held by an account that can sign in. An invited or
+   * locked account holds no authority and an archived one is terminal, so
+   * neither counts — which is what makes an organisation whose first owner never
+   * accepted answer "none" and be given one.
+   *
+   * Every column read here is inside the control plane's column-scoped grants:
+   * (id, tenant_id, status, deleted_at) on iam.user_accounts and
+   * (id, tenant_id, role_code, is_system, deleted_at) on iam.roles. The count can
+   * therefore never produce an identity.
+   */
+  async activeAdministratorCount(db: PlatformTargetHandle, roleCode: string): Promise<number> {
+    const row = await this.runOne<{ n: number }>(
+      db,
+      `SELECT count(*)::int AS n
+         FROM iam.role_grants g
+         JOIN iam.roles r
+           ON r.tenant_id = g.tenant_id AND r.id = g.role_id
+         JOIN iam.user_accounts u
+           ON u.tenant_id = g.tenant_id AND u.id = g.user_id
+        WHERE g.tenant_id = $1
+          AND g.status = 'active'
+          AND g.scope_mode = 'unrestricted'
+          AND r.role_code = $2
+          AND r.deleted_at IS NULL
+          AND u.status = 'active'
+          AND u.deleted_at IS NULL`,
+      [db.targetTenantId, roleCode]
+    );
+    return (row as { n: number }).n;
+  }
+
+  /** The tenant's own role with that code, or null when it holds none. */
+  async findRoleIdByCode(db: PlatformTargetHandle, roleCode: string): Promise<string | null> {
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT id FROM iam.roles
+        WHERE tenant_id = $1 AND role_code = $2 AND deleted_at IS NULL`,
+      [db.targetTenantId, roleCode]
+    );
+    return row === null ? null : row.id;
+  }
+
+  /**
    * What the window wrote for one account, read back through the SELECT the
    * §6.3 policy set admits on `iam.role_grants` — the same rows the deferred
    * scope trigger reads.

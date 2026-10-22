@@ -1,11 +1,16 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { brandTheme } from '@/components/brand';
 import { brandProductName } from '@/components/brand/theme';
 import { NotificationHost } from '@/components/notifications';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { DEFAULT_LOCALE, LOCALES, directionOf, isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
+import { EarlyChoiceScript } from '@/features/working-context/components/EarlyChoiceScript';
+import { NONCE_HEADER } from '@/lib/security/csp';
 
 export function generateStaticParams() {
   return LOCALES.map((locale) => ({ locale }));
@@ -62,6 +67,9 @@ export default async function LocaleLayout({
   if (!isLocale(locale)) notFound();
 
   const messages = getMessages(locale);
+  // Set per request by `src/proxy.ts`; absent only where the proxy did not run,
+  // and then no policy was sent either.
+  const nonce = (await headers()).get(NONCE_HEADER) ?? undefined;
 
   return (
     <html lang={locale} dir={directionOf(locale)} data-theme={brandTheme}>
@@ -73,10 +81,26 @@ export default async function LocaleLayout({
         unreachable rather than scrollable. See `_reset.scss`.
       */}
       <body className="app-viewport">
+        {/*
+          First in the body, so it runs before any branch select is parsed: it
+          records a person's choice in such a select made before React has
+          hydrated it, which a value the browser put back is not
+          (`EarlyChoiceScript`, F-1). It carries this request's CSP nonce.
+        */}
+        <EarlyChoiceScript nonce={nonce} />
         <a className="skip-link" href="#main">
           {translate(messages, 'app.skipToContent')}
         </a>
-        {children}
+        {/*
+          The Material UI foundation (ADR-022): the Emotion cache, the theme and
+          the date adapter, for every route group below. It is the one client
+          component this layout mounts for it, and it receives only the locale
+          and the `mui.*` catalogue entries, so the layout stays a Server
+          Component and the rest of the catalogue is not serialised twice.
+        */}
+        <UiFoundationProvider locale={locale} text={muiTextOf(messages)}>
+          {children}
+        </UiFoundationProvider>
         {/*
           The single notification authority, mounted ONCE and above every route
           group — `(auth)`, `(dashboard)` and `(design)` all inherit it, so a

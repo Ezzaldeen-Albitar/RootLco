@@ -36,13 +36,36 @@
  *   sal.payment-method-list: route service authorization success denial
  *   sal.payment-record: route service authorization success denial idempotency
  *   sal.payment-allocate: route service authorization success denial idempotency
+ *
+ * ## The payer each receipt row names
+ *
+ * `sal.receipt-list` carries a payer block read from the live partner row by a
+ * LATERAL join (Owner directive, the sales and finance Material UI slice). Its
+ * rules are proved here on the shipped route and the runtime login, never on a
+ * stand-in: a caller holding `crm.customer.read` is told the name; a caller
+ * holding `sal.finance.view` without it is told nothing (every field null); a
+ * partner retired since the receipt was taken is not named; and another
+ * tenant's partner is never named on this tenant's receipts. The mocked unit
+ * suite (`tests/unit/p1-32-receipt-payer-names.test.ts`) proves only what the
+ * service asks and hands back.
+ *
+ * ## The invoice each allocation names (finance retest DF-R2-2)
+ *
+ * `sal.receipt-detail` names each allocation's invoice by its number, and the
+ * customer that invoice bills only to a caller holding `crm.customer.read` — the
+ * receipt list's rule. Both are read beside the allocation in the receipt's own
+ * scope, so a reader in another branch or another tenant is told nothing, and
+ * every amount carries its currency's minor unit from `shared.currencies`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
   BRANCH_A1,
   COMPANY_A1,
+  TENANT_A,
+  TENANT_B,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -53,9 +76,11 @@ import {
   PARTNER_A,
   PAYMENT_METHOD_A,
   PAYMENT_METHOD_A_INACTIVE,
+  SAL_FINANCE_CUSTOMERS,
   SAL_FULL,
   SAL_NO_FINANCE,
   SAL_READER,
+  SAL_SCOPED_A2,
   SAL_TENANT_B,
   authAs,
   cleanP1_22Fixtures,
@@ -77,6 +102,7 @@ let admin: Pool;
 interface MoneyBody {
   readonly amount: string;
   readonly currency: string;
+  readonly minorUnit?: number;
 }
 interface ReceiptBody {
   readonly id: string;
@@ -84,6 +110,11 @@ interface ReceiptBody {
   readonly companyId: string;
   readonly branchId: string;
   readonly payerPartnerId: string;
+  readonly payer?: {
+    readonly displayName: string | null;
+    readonly displayNumber: string | null;
+    readonly partyType: string | null;
+  };
   readonly paymentMethodId?: string;
   readonly method?: {
     readonly id: string;
@@ -105,6 +136,8 @@ interface DetailBody extends ReceiptBody {
     readonly id: string;
     readonly sequence: string;
     readonly invoiceId: string;
+    readonly invoiceNumber: string | null;
+    readonly invoicePayerName: string | null;
     readonly money: MoneyBody;
     readonly allocatedAt: string;
   }[];
@@ -302,6 +335,137 @@ describe('the branch list the screen opens on', () => {
   }, 60_000);
 });
 
+/** One admin transaction with the actor and tenant GUCs the `crm` triggers read. */
+async function asTenant<T>(tenantId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+    const value = await work(client);
+    await client.query('COMMIT');
+    return value;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+describe('the payer each receipt row names (sal.receipt-list payer block)', () => {
+  const WITHHELD = { displayName: null, displayNumber: null, partyType: null };
+  const retiredPartnerId = randomUUID();
+  const retiredPartnerName = 'Retired Payer Wseven';
+  const foreignPartnerId = randomUUID();
+  const foreignPartnerName = 'Other Tenant Payer Wseven';
+  const branchQuery = `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=50`;
+  let named: ReceiptBody;
+  let retired: ReceiptBody;
+
+  const insertPartner = (tenantId: string, id: string, name: string) =>
+    asTenant(tenantId, (client) =>
+      client.query(
+        `INSERT INTO crm.business_partners
+           (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+         VALUES ($1,$2,'organization',$3,'active',$4)`,
+        [id, tenantId, name, USER_A]
+      )
+    );
+
+  const rowFor = async (query: string, receiptId: string): Promise<ReceiptBody | undefined> => {
+    const response = await listReceipts(query);
+    expect(response.status).toBe(200);
+    const body = await bodyOf<PageBody>(response);
+    return body.items.find((item) => item.id === receiptId);
+  };
+
+  beforeAll(async () => {
+    named = await recordedReceipt('13.0000');
+    await insertPartner(TENANT_A, retiredPartnerId, retiredPartnerName);
+    authAs(SAL_FULL);
+    const response = await record({ ...payment('14.0000'), payerPartnerId: retiredPartnerId });
+    if (response.status !== 201) {
+      throw new Error(`fixture receipt for the retired payer failed with ${response.status}`);
+    }
+    retired = await bodyOf<ReceiptBody>(response);
+    // Retired AFTER the receipt named it: the receipt keeps the id, the partner
+    // leaves the live set.
+    await asTenant(TENANT_A, (client) =>
+      client.query(
+        `UPDATE crm.business_partners SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`,
+        [TENANT_A, retiredPartnerId]
+      )
+    );
+    // A live partner of ANOTHER tenant, with a name no tenant-A row carries.
+    await insertPartner(TENANT_B, foreignPartnerId, foreignPartnerName);
+    __resetAuthenticatorForTests();
+  }, 120_000);
+
+  it('names the payer to a caller holding the customer read', async () => {
+    authAs(SAL_FINANCE_CUSTOMERS);
+    const row = await rowFor(`${branchQuery}&payerPartnerId=${PARTNER_A}`, named.id);
+    expect(row?.payerPartnerId).toBe(PARTNER_A);
+    expect(row?.payer?.displayName).toBe('Reception Requester');
+    expect(row?.payer?.partyType).toBe('organization');
+  }, 60_000);
+
+  it('withholds every field from a caller who may see money but not read customers', async () => {
+    // Both hold `sal.finance.view` and neither holds `crm.customer.read`.
+    for (const principal of [SAL_READER, SAL_FULL]) {
+      authAs(principal);
+      const row = await rowFor(`${branchQuery}&payerPartnerId=${PARTNER_A}`, named.id);
+      expect(row, principal.subject).toBeDefined();
+      // The id stays on the row; the block keeps its shape with nothing in it.
+      expect(row?.payerPartnerId).toBe(PARTNER_A);
+      expect(row?.payer, principal.subject).toEqual(WITHHELD);
+    }
+  }, 60_000);
+
+  it('names no payer retired since the receipt was taken, even to a caller holding the customer read', async () => {
+    authAs(SAL_FINANCE_CUSTOMERS);
+    const row = await rowFor(`${branchQuery}&payerPartnerId=${retiredPartnerId}`, retired.id);
+    expect(row?.payerPartnerId).toBe(retiredPartnerId);
+    expect(row?.payer).toEqual(WITHHELD);
+    const response = await listReceipts(branchQuery);
+    expect(JSON.stringify(await response.json())).not.toContain(retiredPartnerName);
+  }, 60_000);
+
+  it('never names another tenant’s partner on this tenant’s receipts', async () => {
+    // By construction: a receipt's payer is keyed on (tenant_id, payer_partner_id),
+    // so a tenant-A receipt cannot point at a tenant-B partner at all.
+    const constraint = await admin.query<{ columns: string; target: string }>(
+      `SELECT (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+                 FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+              ) AS columns,
+              c.confrelid::regclass::text AS target
+         FROM pg_constraint c
+        WHERE c.conname = 'fk_receipts_payer' AND c.conrelid = 'sal.receipts'::regclass`
+    );
+    expect(constraint.rows).toEqual([
+      { columns: 'tenant_id,payer_partner_id', target: 'crm.business_partners' },
+    ]);
+    // And on the live read: tenant A's page, to a caller who may be told names,
+    // carries neither the other tenant's partner nor its name.
+    authAs(SAL_FINANCE_CUSTOMERS);
+    const response = await listReceipts(branchQuery);
+    expect(response.status).toBe(200);
+    const text = JSON.stringify(await response.json());
+    expect(text).toContain(named.id);
+    expect(text).not.toContain(foreignPartnerId);
+    expect(text).not.toContain(foreignPartnerName);
+    // The other tenant, holding every sales code, is told nothing of tenant A's receipts.
+    authAs(SAL_TENANT_B);
+    const other = await listReceipts(branchQuery);
+    const otherText = JSON.stringify(await other.json());
+    expect(otherText).not.toContain(named.id);
+    expect(otherText).not.toContain('Reception Requester');
+  }, 60_000);
+});
+
 describe('recording a payment', () => {
   it('records once, and a SAME-key retry replays the stored answer with the same reference', async () => {
     const key = randomUUID();
@@ -486,7 +650,7 @@ describe('applying a receipt to an invoice', () => {
 });
 
 describe('the receipt the screen and its printed copy render', () => {
-  it('carries the reference, the method, both figures and the history — and no name, cashier or note', async () => {
+  it('carries the reference, the method, both figures and the history — and no cashier or note', async () => {
     const invoice = await seedIssuedInvoice('w7_detail');
     const receipt = await recordedReceipt('100.0000');
     authAs(SAL_FULL);
@@ -514,12 +678,78 @@ describe('the receipt the screen and its printed copy render', () => {
     expect(detail.allocations[0]?.invoiceId).toBe(invoice.invoiceId);
     expect(detail.allocations[0]?.money.amount).toBe('60.0000');
     expect(detail.allocationsTruncated).toBe(false);
+    // Named by its number (DF-R2-2); SAL_FULL holds no customer read, so no name.
+    expect(detail.allocations[0]?.invoiceNumber).toBe(invoice.invoiceNumber);
+    expect(detail.allocations[0]?.invoicePayerName).toBeNull();
+    // Every amount carries the minor unit `shared.currencies` records for USD.
+    expect(detail.money).toEqual({ amount: '100.0000', currency: 'USD', minorUnit: 2 });
+    expect(detail.unallocated).toEqual({ amount: '40.0000', currency: 'USD', minorUnit: 2 });
+    expect(detail.allocations[0]?.money).toEqual({
+      amount: '60.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
     // What the printed copy may NOT show, because it is not published.
     const raw = JSON.stringify(detail);
     expect(raw).not.toContain('receivedBy');
-    expect(raw).not.toContain('payerName');
-    expect(raw).not.toContain('invoiceNumber');
+    expect(raw).not.toContain('allocatedBy');
     expect(detail.payerPartnerId).toBe(PARTNER_A);
+  }, 90_000);
+
+  it('names the allocated invoice by number to every reader, its customer only to one who may read customers, and nothing outside the scope (DF-R2-2)', async () => {
+    const invoice = await seedIssuedInvoice('w7_named_allocation');
+    const receipt = await recordedReceipt('30.0000');
+    authAs(SAL_FULL);
+    expect(
+      (
+        await allocate(receipt.id, {
+          invoiceId: invoice.invoiceId,
+          amount: '10.0000',
+          currency: 'USD',
+        })
+      ).status
+    ).toBe(201);
+    const partner = await admin.query<{ display_name: string }>(
+      `SELECT display_name FROM crm.business_partners WHERE id = $1`,
+      [invoice.payerPartnerId]
+    );
+    const payerName = partner.rows[0]?.display_name;
+    expect(payerName).toBeDefined();
+
+    // A finance reader who may read customers: number and name.
+    authAs(SAL_FINANCE_CUSTOMERS);
+    const named = await readReceipt(receipt.id);
+    expect(named.status).toBe(200);
+    const [entry] = (await bodyOf<DetailBody>(named)).allocations;
+    expect(entry?.invoiceId).toBe(invoice.invoiceId);
+    expect(entry?.invoiceNumber).toBe(invoice.invoiceNumber);
+    expect(entry?.invoicePayerName).toBe(payerName);
+
+    // A finance reader without the customer read: the number, never the name.
+    authAs(SAL_READER);
+    const withheld = await readReceipt(receipt.id);
+    expect(withheld.status).toBe(200);
+    const withheldBody = await bodyOf<DetailBody>(withheld);
+    expect(withheldBody.allocations[0]?.invoiceNumber).toBe(invoice.invoiceNumber);
+    expect(withheldBody.allocations[0]?.invoicePayerName).toBeNull();
+    expect(JSON.stringify(withheldBody)).not.toContain(String(payerName));
+
+    // Another branch of the same tenant, holding every sales code there: the
+    // receipt is not visible, so neither is the invoice it names.
+    authAs(SAL_SCOPED_A2);
+    const elsewhere = await readReceipt(receipt.id);
+    expect(elsewhere.status).toBe(404);
+    expect(JSON.stringify(await elsewhere.json())).not.toContain(invoice.invoiceNumber);
+
+    // Another tenant, holding every sales code: told nothing.
+    authAs(SAL_TENANT_B);
+    const foreign = await readReceipt(receipt.id);
+    expect(foreign.status).toBe(404);
+    expect(JSON.stringify(await foreign.json())).not.toContain(invoice.invoiceNumber);
+
+    // Without finance view the receipt read is refused outright, as before.
+    authAs(SAL_NO_FINANCE);
+    expect((await readReceipt(receipt.id)).status).toBe(403);
   }, 90_000);
 
   it('refuses a malformed identifier before anything is looked up, and finance view is required', async () => {

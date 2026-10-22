@@ -4,11 +4,18 @@
  *
  * Cursor-paginated, tenant-scoped, deterministically ordered by
  * `(created_at DESC, id DESC)`. The searchable surface is a closed allow-list — an
- * exact normalised VIN, an exact normalised active plate, an exact vehicle number,
- * and the lifecycle and powertrain discriminators — and the projection carries no
- * restricted identifier (chassis / engine number). Page size is clamped to the
+ * exact normalised VIN, a normalised plate matched against the vehicle's WHOLE plate
+ * history, an exact vehicle number, folded make and model fragments, one free-text
+ * box, and the lifecycle and powertrain discriminators — and the projection carries
+ * no restricted identifier (chassis / engine number). Page size is clamped to the
  * platform `MAX_PAGE_SIZE`, so scraping is bounded by the same limit as every other
  * list.
+ *
+ * A hit that matched a plate carries `plateMatch`, naming the plate and whether it
+ * is still the vehicle's current one. The owner's name is resolved only for a
+ * caller who also holds `crm.customer.read`; that is a projection rule, not an
+ * access rule, so it is NOT declared in `permissions` below — declaring it would
+ * refuse the whole search to a caller who holds vehicle read alone.
  *
  * Everything cross-cutting (correlation, rate limit, authentication, context,
  * scoped session, authorization, problem-document errors, OpenAPI) lives in
@@ -27,10 +34,12 @@ import {
   MAX_COLOR,
   MAX_DISPLAY_NUMBER,
   MAX_PLATE_FRAGMENT,
+  MAX_VEHICLE_TEXT_FRAGMENT,
   MAX_VIN_FRAGMENT,
   MAX_VIN_INPUT,
   MODEL_YEAR_MAX,
   MODEL_YEAR_MIN,
+  MIN_VEHICLE_FRAGMENT,
   POWERTRAIN_CATEGORIES,
   VEHICLE_LIFECYCLE_STATUSES,
   vehicleModule,
@@ -45,10 +54,19 @@ const Query = z
     limit: schemas.limit.optional(),
     /** Matched as an exact normalised VIN; never a leading-wildcard scan. */
     vin: z.string().min(1).max(MAX_VIN_FRAGMENT).optional(),
-    /** Matched against the vehicle's active plate, normalised on the SQL side. */
+    /**
+     * Matched against EVERY plate the vehicle has carried, normalised on the SQL
+     * side. A historical match is reported in `plateMatch` with `active: false`.
+     */
     plate: z.string().min(1).max(MAX_PLATE_FRAGMENT).optional(),
     /** Exact vehicle display number. */
     vehicleNumber: z.string().min(1).max(64).optional(),
+    /** Folded CONTAINS over the make catalogue name. */
+    make: z.string().min(MIN_VEHICLE_FRAGMENT).max(MAX_VEHICLE_TEXT_FRAGMENT).optional(),
+    /** Folded CONTAINS over the model catalogue name. */
+    model: z.string().min(MIN_VEHICLE_FRAGMENT).max(MAX_VEHICLE_TEXT_FRAGMENT).optional(),
+    /** One box: make, model, vehicle number, part of a VIN, or part of any plate. */
+    q: z.string().min(MIN_VEHICLE_FRAGMENT).max(MAX_VEHICLE_TEXT_FRAGMENT).optional(),
     lifecycleStatus: z.enum(VEHICLE_LIFECYCLE_STATUSES).optional(),
     powertrainCategory: z.enum(POWERTRAIN_CATEGORIES).optional(),
   })
@@ -78,6 +96,9 @@ export async function GET(request: Request): Promise<Response> {
           vin: query.vin,
           plate: query.plate,
           vehicleNumber: query.vehicleNumber,
+          make: query.make,
+          model: query.model,
+          q: query.q,
           lifecycleStatus: query.lifecycleStatus,
           powertrainCategory: query.powertrainCategory,
         },

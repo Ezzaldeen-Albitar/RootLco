@@ -85,14 +85,17 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ userId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     USER_SESSION_LIST_OPERATION,
     request,
-    async ({ db }) => ({
-      body: { items: await iamModule().users.listSessions(db, params.userId) },
-    }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: { items: await iamModule().users.listSessions(db, params.userId) },
+      };
+    },
+    { params: raw }
   );
 }
 
@@ -100,15 +103,16 @@ export async function DELETE(
   request: Request,
   route: { params: Promise<{ userId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     USER_SESSION_REVOKE_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const body = await parseJsonBody(raw, RevokeBody);
       const revoked = await iamModule().users.revokeAllSessions(db, params.userId, body.reason);
       return { body: { revoked } };
     },
-    { params }
+    { params: rawParams }
   );
 }

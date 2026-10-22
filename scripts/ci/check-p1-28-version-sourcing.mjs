@@ -38,7 +38,12 @@
  *     and since P1-29 `W3` that tree also holds versioned adapters for `wo`
  *     operations — real, correct, and outside an apt/rec contract's subject.
  *     They are declared by name in `OUT_OF_SUBJECT_ADAPTERS`, never by a path
- *     rule that would admit the next one silently. Within the subject, an
+ *     rule that would admit the next one silently — or, since P1-32, excluded by
+ *     the CONTRACT rule `contractSubjectOfAdapter` states: an adapter whose own
+ *     body sends only to operations the published contract guards with
+ *     `If-Match` under an id outside `apt.`/`rec.`. That is a fact read off
+ *     the adapter and the contract, not a directory, and an adapter the rule
+ *     cannot attribute stays inside the subject. Within the subject, an
  *     operation the contract guards with no adapter demanding a version, or an
  *     adapter demanding one for an operation that is not guarded, is still a
  *     disagreement worth failing on.
@@ -61,6 +66,12 @@
  *     from a detail read or from a command's own response; or
  *   - an identifier bound by a function parameter — a version handed in from
  *     outside, which in this codebase is the shell's read.
+ *
+ * One member whose leaf is not `recordVersion` is FOLLOWED rather than refused:
+ * `edit.version` off the edit-baseline hook, traced to the `storedVersion` the
+ * hook is fed and to every `rebase` version on that binding, each judged by
+ * these same rules, with the hook's own source checked too — see
+ * `EDIT_BASELINE_HOOK`. The name `version` alone admits nothing.
  *
  * A conditional is traced through its BRANCHES only: `fresher ? changed.recordVersion
  * : detail.recordVersion` is the "read, or the immediately prior response,
@@ -97,12 +108,14 @@
  * Exit:   0 clean · 1 a violation · 2 the check could not run.
  */
 import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
+import ts from 'typescript';
 import { join, relative, sep } from 'node:path';
 import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
 import {
   callsToNode,
   declaredFunctionsOf,
   enclosingFunctionNode,
+  literalPathOf,
   parseModule,
 } from '../lib/typescript-source.mjs';
 import { recordedDecisions } from './check-p1-28-write-reachability.mjs';
@@ -348,7 +361,119 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   // P1-30 W6: both guard the INVOICE's record version, sourced from the detail read.
   issueInvoice: 'sal.invoice-issue — P1-30 W6, not an apt/rec operation',
   cancelInvoice: 'sal.invoice-cancel — P1-30 W6, not an apt/rec operation',
+  // P1-31 FE-008: the first two guard the PLAN's record version and the third guards
+  // the COVERAGE WINDOW's own, each sourced from the plan read the screen re-runs.
+  renameWarrantyPolicy: 'wty.warranty-policy-rename — P1-31 FE-008, not an apt/rec operation',
+  setWarrantyPolicyStatus:
+    'wty.warranty-policy-status-set — P1-31 FE-008, not an apt/rec operation',
+  setCoverageWindowStatus:
+    'wty.warranty-coverage-status-set — P1-31 FE-008, not an apt/rec operation',
+  // P1-32 stock operations: the first guards the RECEIPT's record version and the
+  // second the COUNT's, each sourced from the read or the write answer on screen.
 });
+
+/** An id inside this gate's subject: the apt/rec surface `guardedOperations` derives. */
+const IN_SUBJECT_ID = /^(apt|rec)\./;
+
+/**
+ * Whether one guarded adapter is outside this gate's subject BY THE CONTRACT, and
+ * which operations make it so (P1-32).
+ *
+ * The subject is stated once, in `guardedOperations`: the operations the published
+ * contract guards with `If-Match` whose id is `apt.*` or `rec.*`. The count
+ * equality asks whether THAT set and the adapters serving it agree. An adapter that
+ * provably serves a guarded operation of another namespace is not a member of either
+ * side, and counting it reports "an adapter demanding a version for an unguarded
+ * operation" about an operation that IS guarded.
+ *
+ * So the question is answered from the adapter's own body and the contract, never
+ * from its name or its directory:
+ *
+ *   - every `x.send(METHOD, PATH, body, { ifMatch })` in the exported function's
+ *     own body — the one shape the transport turns into an `If-Match` header — is
+ *     read with a literal method and a literal or template path;
+ *   - each is matched to a published operation by method and path template;
+ *   - the adapter is outside the subject only when it has at least one such send,
+ *     EVERY one resolves, and every resolved operation carries the `IfMatch`
+ *     parameter under an id outside `apt.`/`rec.`.
+ *
+ * Anything else stays inside the subject and is counted: a send through a helper
+ * this rule cannot read, a path the contract does not publish, a delegation with no
+ * send of its own, an operation the contract does not guard, and above all any send
+ * to an apt/rec operation. The rule narrows only the count equality. Every adapter
+ * it places outside is still held to every other rule here — `ifMatch` required and
+ * used, each call site's version traced to a read or a response, the outcome handed
+ * onward — exactly as the named declarations above are.
+ */
+export function contractSubjectOfAdapter(content, name, document) {
+  const inside = { outside: false, operations: [] };
+  const sourceFile = parseModule(content);
+  if (sourceFile === null) return inside;
+
+  let declaration = null;
+  ts.forEachChild(sourceFile, (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name && node.body) {
+      declaration = node;
+    }
+  });
+  if (declaration === null) return inside;
+
+  const templates = [];
+  for (const [path, methods] of Object.entries(document.paths ?? {})) {
+    for (const [method, operation] of Object.entries(methods ?? {})) {
+      if (typeof operation?.operationId !== 'string') continue;
+      templates.push({
+        template: path.replace(/\{[^}]+\}/g, ':p'),
+        method: method.toUpperCase(),
+        id: operation.operationId,
+        guarded: (operation.parameters ?? []).some((one) => one?.$ref === IF_MATCH_REF),
+      });
+    }
+  }
+
+  const sends = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'send'
+    ) {
+      const options = node.arguments[3];
+      const versioned =
+        options !== undefined &&
+        ts.isObjectLiteralExpression(options) &&
+        options.properties.some(
+          (property) =>
+            (ts.isShorthandPropertyAssignment(property) || ts.isPropertyAssignment(property)) &&
+            property.name.getText() === 'ifMatch'
+        );
+      if (versioned) {
+        const methodNode = node.arguments[0];
+        const method =
+          methodNode &&
+          (ts.isStringLiteral(methodNode) || ts.isNoSubstitutionTemplateLiteral(methodNode))
+            ? methodNode.text.toUpperCase()
+            : null;
+        const pathNode = node.arguments[1];
+        const path = pathNode === undefined ? null : literalPathOf(pathNode);
+        const bare = path === null ? null : path.split(/[?#]/)[0];
+        const match =
+          method === null || bare === null
+            ? undefined
+            : templates.find((one) => one.method === method && one.template === bare);
+        sends.push(match ?? null);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(declaration.body, visit);
+
+  if (sends.length === 0) return inside;
+  if (sends.some((one) => one === null || !one.guarded || IN_SUBJECT_ID.test(one.id))) {
+    return inside;
+  }
+  return { outside: true, operations: [...new Set(sends.map((one) => one.id))].sort() };
+}
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {
   const classified = manifest?.operations ?? {};
@@ -652,8 +777,19 @@ export function classifyVersionExpression(expression, context, depth = 0) {
   }
 
   if (MEMBER.test(trimmed)) {
-    const leaf = trimmed.split('.').pop();
+    const segments = trimmed.split('.').map((segment) => segment.replace(/\?$/, ''));
+    const leaf = segments[segments.length - 1];
     if (leaf === 'recordVersion') return { ok: true, kind: 'response' };
+    /*
+     * `edit.version` off the one edit-baseline hook is traced to what fed it,
+     * never accepted by its name: `traceEditBaseline` judges the hook's
+     * `storedVersion` and every `rebase` version on the same rules as a direct
+     * argument. Anything else named `version` is still refused below.
+     */
+    if (leaf === 'version' && segments.length === 2 && typeof context.baselineOf === 'function') {
+      const traced = context.baselineOf(segments[0]);
+      if (traced !== null) return traced;
+    }
     return {
       ok: false,
       reason: `"${trimmed}" is not a recordVersion the server stated`,
@@ -686,6 +822,308 @@ export function classifyVersionExpression(expression, context, depth = 0) {
   return { ok: false, reason: `"${trimmed}" is not a version this gate can trace` };
 }
 
+/* ------------------------------------------------------------------ *
+ * The edit-baseline hook: a version traced to what fed it
+ * ------------------------------------------------------------------ */
+
+/**
+ * The one hook whose `version` a call site may send, and where it lives.
+ *
+ * An edit form's write sends the version its BASELINE was stored at, not the
+ * page's latest read: a refresh that lands while the operator is typing must
+ * not lend its version to work built on the fields it replaced. The hook holds
+ * that version, so a call site reads `edit.version` — a member whose leaf is not
+ * `recordVersion`, and which this gate refused until it could follow it.
+ *
+ * It is followed, not trusted by name. The version the hook hands back can only
+ * have come from two places, and both are judged here on the same rules as a
+ * direct argument:
+ *
+ *   - the `storedVersion` the hook is fed, which must itself trace to a
+ *     `.recordVersion` the server stated (or a parameter the caller was handed);
+ *   - the second argument of every `rebase(values, version)` on that binding,
+ *     which must be a response's `.recordVersion` or be absent.
+ *
+ * The binding cannot escape the check: it must be a `const` initialised by one
+ * call to the hook imported, unaliased, from its module; every other use of it
+ * must be a member access or a destructuring that does not take `rebase`; and
+ * the hook's own source must derive every `version` it holds from those two
+ * inputs (`editBaselineHookProblems`). A computed or cached version fed in, a
+ * locally declared look-alike, or a hook that invents a number all stay red.
+ */
+export const EDIT_BASELINE_HOOK = Object.freeze({
+  name: 'useEditBaseline',
+  module: '@/lib/forms/use-edit-baseline',
+  file: 'apps/web/src/lib/forms/use-edit-baseline.ts',
+});
+
+/** Whether the module imports the hook, unaliased, from its own module. */
+function importsEditBaselineHook(sourceFile) {
+  return sourceFile.statements.some(
+    (statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text === EDIT_BASELINE_HOOK.module &&
+      statement.importClause?.namedBindings !== undefined &&
+      ts.isNamedImports(statement.importClause.namedBindings) &&
+      statement.importClause.namedBindings.elements.some(
+        (element) =>
+          element.name.text === EDIT_BASELINE_HOOK.name && element.propertyName === undefined
+      )
+  );
+}
+
+/**
+ * The nearest declaration of `name` visible from `node`: `{ declaration, scope }`,
+ * or `null` when a parameter binds it first or nothing does.
+ */
+function visibleConstDeclaration(node, name) {
+  for (let scope = node.parent; scope !== undefined; scope = scope.parent) {
+    if (isFunctionLikeNode(scope)) {
+      for (const parameter of scope.parameters) {
+        if (boundNames(parameter.getText()).includes(name)) return null;
+      }
+    }
+    if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue;
+    for (const statement of scope.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === name) {
+          const constant = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0;
+          return { declaration, scope, constant };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function isFunctionLikeNode(node) {
+  return (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node)
+  );
+}
+
+/** Whether an identifier node is a NAME slot (a property name), not a value use. */
+function isNameSlot(identifier) {
+  const parent = identifier.parent;
+  return (
+    (ts.isPropertyAccessExpression(parent) && parent.name === identifier) ||
+    (ts.isPropertyAssignment(parent) && parent.name === identifier) ||
+    (ts.isBindingElement(parent) && parent.propertyName === identifier) ||
+    (ts.isJsxAttribute(parent) && parent.name === identifier) ||
+    (ts.isPropertySignature(parent) && parent.name === identifier) ||
+    (ts.isMethodDeclaration(parent) && parent.name === identifier)
+  );
+}
+
+/**
+ * Where `name.version` at `node` came from, when `name` is bound to the
+ * edit-baseline hook: a verdict in `classifyVersionExpression`'s shape, or
+ * `null` when `name` is not such a binding at all (the caller then refuses the
+ * member as before). `flat` is the file's context with no baseline resolver, so
+ * a hook fed another hook's `version` is refused rather than followed.
+ */
+export function traceEditBaseline(sourceFile, node, name, flat) {
+  const found = visibleConstDeclaration(node, name);
+  if (found === null) return null;
+  const initializer = found.declaration.initializer;
+  if (
+    initializer === undefined ||
+    !ts.isCallExpression(initializer) ||
+    !ts.isIdentifier(initializer.expression) ||
+    initializer.expression.text !== EDIT_BASELINE_HOOK.name
+  ) {
+    return null;
+  }
+  const refuse = (why) => ({
+    ok: false,
+    reason: `"${name}.version" comes from ${EDIT_BASELINE_HOOK.name}, and ${why}`,
+  });
+
+  if (!importsEditBaselineHook(sourceFile)) {
+    return refuse(
+      `this module does not import it, unaliased, from "${EDIT_BASELINE_HOOK.module}". A hook ` +
+        'of the same name declared anywhere else is not the one this gate has read.'
+    );
+  }
+  if (!found.constant) return refuse(`"${name}" is not a const, so it can be rebound.`);
+
+  // The version it is FED.
+  const options = initializer.arguments[0];
+  if (
+    initializer.arguments.length !== 1 ||
+    options === undefined ||
+    !ts.isObjectLiteralExpression(options)
+  ) {
+    return refuse('it is not handed one object literal, so its storedVersion cannot be read.');
+  }
+  if (options.properties.some((property) => ts.isSpreadAssignment(property))) {
+    return refuse('its options spread another object, which could carry any storedVersion.');
+  }
+  const stored = options.properties.filter(
+    (property) =>
+      (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) &&
+      property.name.getText() === 'storedVersion'
+  );
+  if (stored.length !== 1) return refuse('it is not fed exactly one storedVersion.');
+  const storedText = ts.isPropertyAssignment(stored[0])
+    ? stored[0].initializer.getText()
+    : stored[0].name.getText();
+  const storedVerdict = classifyVersionExpression(storedText, flat);
+  if (!storedVerdict.ok)
+    return refuse(`the storedVersion it is fed is refused: ${storedVerdict.reason}`);
+
+  // Every other use of the binding, and every version a rebase hands it.
+  const problems = [];
+  const visit = (child) => {
+    if (
+      ts.isIdentifier(child) &&
+      child.text === name &&
+      child !== found.declaration.name &&
+      !isNameSlot(child)
+    ) {
+      const parent = child.parent;
+      if (ts.isPropertyAccessExpression(parent) && parent.expression === child) {
+        if (parent.name.text === 'rebase') {
+          const call = parent.parent;
+          if (!ts.isCallExpression(call) || call.expression !== parent) {
+            problems.push(
+              `"${name}.rebase" is taken as a value, so what it is handed cannot be read.`
+            );
+          } else if (
+            call.arguments.length > 2 ||
+            call.arguments.some((argument) => ts.isSpreadElement(argument))
+          ) {
+            problems.push(`"${call.getText()}" is not a rebase this gate can read.`);
+          } else if (call.arguments.length === 2) {
+            const verdict = classifyVersionExpression(call.arguments[1].getText(), flat);
+            if (!verdict.ok || verdict.kind !== 'response') {
+              problems.push(
+                `"${call.getText()}" re-bases on a version that is not a response's ` +
+                  `.recordVersion${verdict.ok ? '' : `: ${verdict.reason}`}`
+              );
+            }
+          }
+        }
+      } else if (
+        ts.isVariableDeclaration(parent) &&
+        parent.initializer === child &&
+        ts.isObjectBindingPattern(parent.name)
+      ) {
+        const takesRebase = parent.name.elements.some(
+          (element) =>
+            element.dotDotDotToken !== undefined ||
+            (element.propertyName ?? element.name).getText() === 'rebase'
+        );
+        if (takesRebase) {
+          problems.push(
+            `a destructuring of "${name}" takes rebase, so its calls cannot be traced.`
+          );
+        }
+      } else {
+        problems.push(
+          `"${name}" is used as a bare value (${parent.getText().slice(0, 60)}), so a rebase ` +
+            'elsewhere could hand it any version.'
+        );
+      }
+    }
+    ts.forEachChild(child, visit);
+  };
+  ts.forEachChild(found.scope, visit);
+  if (problems.length > 0) return refuse(problems[0]);
+
+  return { ok: true, kind: 'baseline' };
+}
+
+/**
+ * What is wrong with the hook's own source, as sentences — empty when every
+ * `version` it holds is `storedVersion`, the `version` its `rebase` was handed,
+ * or a held one carried forward (`x.version`).
+ *
+ * Without this the tracing above would trust the hook's name: a hook that
+ * wrote `version: storedVersion + 1` would launder a computed version through
+ * a call site this gate accepts.
+ */
+export function editBaselineHookProblems(content) {
+  const sourceFile = content === undefined ? null : parseModule(content);
+  if (sourceFile === null) {
+    return [
+      `${EDIT_BASELINE_HOOK.file} could not be read or parsed, so the hook cannot be vouched for.`,
+    ];
+  }
+  let hook = null;
+  ts.forEachChild(sourceFile, (node) => {
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text === EDIT_BASELINE_HOOK.name &&
+      node.body &&
+      hasExport(node)
+    ) {
+      hook = node;
+    }
+  });
+  if (hook === null) {
+    return [`${EDIT_BASELINE_HOOK.file} exports no ${EDIT_BASELINE_HOOK.name} function.`];
+  }
+  const problems = [];
+  let assignments = 0;
+  const bindsVersionParameter = (node) => {
+    for (let scope = node.parent; scope !== undefined && scope !== hook; scope = scope.parent) {
+      if (
+        isFunctionLikeNode(scope) &&
+        scope.parameters.some((p) => p.name.getText() === 'version')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const visit = (node) => {
+    if (ts.isPropertyAssignment(node) && node.name.getText() === 'version') {
+      assignments += 1;
+      const value = node.initializer;
+      const accepted =
+        (ts.isIdentifier(value) && value.text === 'storedVersion') ||
+        (ts.isIdentifier(value) && value.text === 'version' && bindsVersionParameter(node)) ||
+        (ts.isPropertyAccessExpression(value) &&
+          ts.isIdentifier(value.expression) &&
+          value.name.text === 'version');
+      if (!accepted) {
+        problems.push(
+          `${EDIT_BASELINE_HOOK.file}: the hook holds a version "${value.getText()}" that is ` +
+            'neither the storedVersion it was fed, a rebase answer, nor one it already held.'
+        );
+      }
+    } else if (ts.isShorthandPropertyAssignment(node) && node.name.text === 'version') {
+      assignments += 1;
+      if (!bindsVersionParameter(node)) {
+        problems.push(
+          `${EDIT_BASELINE_HOOK.file}: a shorthand "version" the hook holds is bound by no ` +
+            'rebase parameter.'
+        );
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(hook.body, visit);
+  if (assignments === 0) {
+    problems.push(
+      `${EDIT_BASELINE_HOOK.file}: the hook states no version at all, so nothing was read.`
+    );
+  }
+  return problems;
+}
+
+function hasExport(node) {
+  return (ts.getModifiers?.(node) ?? node.modifiers ?? []).some(
+    (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword
+  );
+}
+
 /**
  * The function a call site is INSIDE, with the names it binds and where it ends.
  *
@@ -707,7 +1145,7 @@ export function classifyVersionExpression(expression, context, depth = 0) {
  * parser describes it from inside. `end` is now the end of the function’s own
  * body, so the renewal search cannot leave it.
  */
-function enclosingFunctionAt(sourceFile, declarations, node) {
+export function enclosingFunctionAt(sourceFile, declarations, node) {
   /*
    * The nearest NAMED function-like ancestor, not simply the nearest one.
    *
@@ -893,7 +1331,8 @@ export function run(injected = {}) {
       continue;
     }
     for (const adapter of guardedAdaptersIn(content)) {
-      adapters.set(adapter.name, { ...adapter, file: path });
+      const contractSubject = contractSubjectOfAdapter(content, adapter.name, document);
+      adapters.set(adapter.name, { ...adapter, file: path, contractSubject });
     }
   }
 
@@ -949,7 +1388,11 @@ export function run(injected = {}) {
       if (call.args.length <= adapter.position) continue;
 
       const argument = call.args[adapter.position];
-      const verdict = classifyVersionExpression(argument, context);
+      // Per call: which `edit` an `edit.version` means depends on where the call is.
+      const verdict = classifyVersionExpression(argument, {
+        ...context,
+        baselineOf: (name) => traceEditBaseline(sourceFile, call.node, name, context),
+      });
       const enclosing = enclosingFunctionAt(sourceFile, fileDeclarations, call.node);
       const site = {
         file: path,
@@ -986,6 +1429,16 @@ export function run(injected = {}) {
 
       sites.push(site);
     }
+  }
+
+  /*
+   * A version traced through the edit-baseline hook is only as good as the
+   * hook. Its source is read whenever a call site leaned on it, and a hook
+   * missing from the sweep cannot vouch for anything.
+   */
+  if (sites.some((site) => site.kind === 'baseline')) {
+    const hook = sources.find(([path]) => path === EDIT_BASELINE_HOOK.file);
+    violations.push(...editBaselineHookProblems(hook?.[1]));
   }
 
   /* --- anti-vacuity ---------------------------------------------------- */
@@ -1034,7 +1487,21 @@ export function run(injected = {}) {
    * check below refuses a name that no longer exists — so this cannot outlive its
    * reason the way a satisfied exception does.
    */
-  const accountedFor = [...adapters.keys()].filter((name) => !(name in OUT_OF_SUBJECT_ADAPTERS));
+  /*
+   * …and since P1-32 an adapter is also outside when the CONTRACT says so, by the
+   * rule `contractSubjectOfAdapter` states: every versioned send in its own body
+   * reaches an operation the contract guards under an id outside apt/rec. That is
+   * derived per adapter from what it sends, so it cannot admit an adapter whose
+   * send it cannot read, and an apt/rec send keeps an adapter inside.
+   */
+  const outsideByContract = [...adapters.values()]
+    .filter((adapter) => !(adapter.name in OUT_OF_SUBJECT_ADAPTERS))
+    .filter((adapter) => adapter.contractSubject.outside)
+    .map((adapter) => ({ name: adapter.name, operations: adapter.contractSubject.operations }));
+  const outsideNames = new Set(outsideByContract.map((one) => one.name));
+  const accountedFor = [...adapters.keys()].filter(
+    (name) => !(name in OUT_OF_SUBJECT_ADAPTERS) && !outsideNames.has(name)
+  );
   // The rot check is about the REAL tree. A synthetic tree built by a test holds
   // none of these adapters by design, and reporting them missing there would
   // make every fixture fail for a fact about a repository it is not describing.
@@ -1065,6 +1532,7 @@ export function run(injected = {}) {
     withheld: subject.withheld,
     adapters: [...adapters.values()],
     accountedFor,
+    outsideByContract,
     sites,
     violations,
   };

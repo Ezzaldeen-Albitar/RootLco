@@ -7,6 +7,7 @@ import {
   CI_ENFORCED,
   REGISTER,
   TIERS,
+  classificationReachFailures,
   edgesOf,
   evaluate,
   key,
@@ -450,5 +451,44 @@ describe('formatter scope', () => {
     const reached = reachableFrom(scripts, key(ROOT, 'verify:workspaces'));
     expect(reached.has(key(WEB, 'format:check'))).toBe(true);
     expect(reached.has(key('@rootlco/api', 'format:check'))).toBe(true);
+  });
+});
+
+/**
+ * TDP-2026-10. The six domain classification validators had one hosted run, in
+ * the database job of `ci.yml`, and `ci.yml` no longer runs for a pull request
+ * into develop. They must therefore be reached through `verify:classifications`,
+ * run by the reusable clean room in a step with NO condition, so every develop
+ * pull request (development profile) and every checkpoint (full profile) runs
+ * them.
+ */
+describe('the classification validators are reached on develop pull requests and at checkpoints', () => {
+  const scripts = readScripts();
+  const cleanRoom = readFileSync(
+    join(__dirname, '../../.github/workflows/_reusable-clean-room.yml'),
+    'utf8'
+  );
+  const STEP = '      - name: Domain classification validators\n';
+
+  it('holds for the live workflow and scripts', () => {
+    expect(classificationReachFailures({ scripts, cleanRoom })).toEqual([]);
+  });
+
+  it('refuses a clean room that runs them under a condition, or not at all', () => {
+    const guarded = cleanRoom.replace(STEP, `${STEP}        if: inputs.profile == 'full'\n`);
+    expect(guarded).not.toBe(cleanRoom);
+    expect(classificationReachFailures({ scripts, cleanRoom: guarded })).not.toEqual([]);
+    const absent = cleanRoom.replace(
+      'run: npm run verify:classifications',
+      'run: npm run verify:contracts'
+    );
+    expect(absent).not.toBe(cleanRoom);
+    expect(classificationReachFailures({ scripts, cleanRoom: absent })).not.toEqual([]);
+  });
+
+  it('refuses a classification validator verify:classifications does not reach', () => {
+    const narrowed = new Map(scripts);
+    narrowed.set(key('root', 'verify:classifications'), 'npm run validate:crm-classification');
+    expect(classificationReachFailures({ scripts: narrowed, cleanRoom })).not.toEqual([]);
   });
 });

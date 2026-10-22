@@ -63,7 +63,18 @@
  * `app_runtime` grant.
  */
 import { Repository } from '@/server/db/repository';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
+import { searchFragment } from '@/server/db/search-predicate';
 import type { DbHandle } from '@/server/db/transaction';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
 
 /**
  * SQLSTATEs the `sal` primitives raise deliberately.
@@ -73,6 +84,56 @@ import type { DbHandle } from '@/server/db/transaction';
  * raise `no_data_found`, and only the position in the call sequence distinguishes
  * them (see `issueInvoice`).
  */
+/**
+ * Counter sales are listed newest-first by `created_at` (P1-32-PRE-110).
+ *
+ * `created_at` rather than the invoice number: a draft has no number, and a list
+ * whose order depended on one would page inconsistently across the moment a sale
+ * is issued.
+ */
+export const COUNTER_SALE_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.invoices:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * A branch's invoices of EVERY kind, newest first (Owner directive,
+ * P1-32-PRE-OD-UX, `sal.invoice-list`).
+ *
+ * `created_at` for the reason `COUNTER_SALE_ORDER` gives: a draft has no number
+ * and no issue moment, and a list whose order depended on either would page
+ * inconsistently across the moment an invoice is issued. A key of its OWN rather
+ * than `COUNTER_SALE_ORDER`'s: the two lists cover different sets, and a cursor
+ * minted by one must not be accepted by the other.
+ */
+export const INVOICE_LIST_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.invoices:all_kinds:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * Credit notes are listed newest-first by `created_at` (DEF-T-07).
+ *
+ * `created_at` rather than `issued_at`: a note is created `pending` and only an
+ * APPROVED one has an `issued_at` at all (`ck_credit_notes_approved_shape`), so
+ * ordering on the issue moment would leave every note awaiting approval — the
+ * ones the list exists to surface — with no position at all.
+ */
+export const CREDIT_NOTE_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.credit_notes:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * Refund obligations are listed newest-first by `created_at` (P1-32-PRE-OD-FD2A,
+ * `sal.refund-obligation-list`). A key of its own, so a cursor minted by another
+ * list is never accepted here.
+ */
+export const REFUND_OBLIGATION_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.refund_obligations:created_at_desc',
+  direction: 'desc',
+});
+
 export const BILLING_SQLSTATE = {
   /**
    * `RAISE … USING ERRCODE = 'no_data_found'`.
@@ -110,13 +171,20 @@ export const BILLING_SQLSTATE = {
  *
  * PostgreSQL reports the *index* name in the error's `constraint` field for a
  * unique-index violation, which is the only thing that distinguishes "this work
- * order already has a live invoice" from "this idempotency key is taken" from "the
- * sequence handed out a number that is already in use". All three are 409s, and all
- * three need different messages, because only one tells the caller to stop retrying
+ * order already has a draft invoice" from "this idempotency key is taken" from "the
+ * sequence handed out a number that is already in use". All are 409s, and they
+ * need different messages, because only one tells the caller to stop retrying
  * with the same key and only one is a platform fault rather than a client one.
  */
 export const INVOICE_UNIQUE_INDEX = {
-  workOrderActive: 'uq_invoices_work_order_active',
+  /**
+   * `uq_invoices_work_order_draft` — at most one DRAFT invoice per work order
+   * (P1-32-PRE-OD-FD5). With `uq_invoices_work_order_unsourced` and the sal invoice
+   * source guards it replaced `uq_invoices_work_order_active` (ADR-023 D5/D15).
+   */
+  workOrderDraft: 'uq_invoices_work_order_draft',
+  /** `uq_invoices_work_order_unsourced` — one live invoice naming no revision. */
+  workOrderUnsourced: 'uq_invoices_work_order_unsourced',
   idempotency: 'uq_invoices_idempotency',
   /**
    * `uq_invoices_number`, partial on `invoice_number IS NOT NULL`.
@@ -159,7 +227,13 @@ export interface InvoiceRow {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
-  readonly workOrderId: string;
+  /**
+   * The job this invoice bills — NULL exactly when `saleKind` is `counter_sale`
+   * (`ck_invoices_sale_kind_source`, P1-32 preparatory slice 2).
+   */
+  readonly workOrderId: string | null;
+  /** `work_order` or `counter_sale`. Frozen for the life of the document. */
+  readonly saleKind: string;
   readonly quotationRevisionId: string | null;
   readonly payerPartnerId: string;
   readonly currencyCode: string;
@@ -198,8 +272,55 @@ export interface InvoiceLineRow {
   readonly sourceServiceLineId: string | null;
   readonly sourcePartIssueId: string | null;
   readonly sourceQuotationItemId: string | null;
+  /**
+   * The item a counter-sale line sold (`sal.invoice_lines.item_id`); null on a
+   * work-order line, which is described by its quotation item instead.
+   */
+  readonly itemId: string | null;
+  /**
+   * What a work-order PART line was quoted as (ADR-023 D6): the item and unit
+   * the source quotation item captured, read through `source_quotation_item_id`
+   * because `sal.invoice_lines` has no unit column. `null` on every other line.
+   */
+  readonly quotedPart: QuotedPartRow | null;
+  /**
+   * The quotation line a work-order line was copied from, as it was quoted
+   * (ADR-023 D5/D15): its description, quoted quantity and discount. Read through
+   * `source_quotation_item_id`, so it describes THIS invoice's own source line
+   * whatever revision the work order bills now. `null` on a counter-sale line,
+   * and for a caller without `sal.finance.view` — the discount is money.
+   */
+  readonly quotedSource: QuotedSourceLineRow | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineAmountsRow | null;
+}
+
+/** A work-order line's source quotation line, as quoted. Amounts are decimal strings. */
+export interface QuotedSourceLineRow {
+  readonly description: string | null;
+  /** `numeric(12,3)`: the quantity the quotation line quoted, not what this line billed. */
+  readonly quotedQuantity: string;
+  readonly discount: string;
+}
+
+/**
+ * The quotation revision an invoice was made from, as quoted: how many lines it
+ * has and its before-discount and discount totals. Read only for a caller holding
+ * `sal.finance.view`.
+ */
+export interface SourceRevisionRow {
+  readonly lineCount: number;
+  readonly subtotal: string;
+  readonly discountTotal: string;
+}
+
+/** A quotation part line's snapshot, as the invoice line it was copied to reads it. */
+export interface QuotedPartRow {
+  readonly itemId: string;
+  readonly itemCode: string;
+  readonly itemName: string;
+  readonly unitCode: string;
+  readonly unitName: string;
 }
 
 /** The restricted 1:1 line money and FR-WTY-004 payer split. */
@@ -224,6 +345,197 @@ export interface OpenReceivableRow {
   readonly amount: string;
   readonly currencyCode: string;
   readonly status: string;
+  /**
+   * The database's clock when this statement computed the balance
+   * (`statement_timestamp()`): the moment the figure is true "as of" (Owner
+   * decision D10, ADR-023). Never the caller's clock.
+   */
+  readonly asOf: Date;
+}
+
+/**
+ * What has been credited and what has been paid against one invoice (Owner
+ * decision D7, ADR-023), as decimal STRINGS in the invoice's currency.
+ *
+ * The same predicates `sal.invoice_open_receivable` subtracts, and no others:
+ * `credited` is the sum of APPROVED credit notes, `paid` the sum of allocations
+ * whose receipt is not reversed. `gross` is `null` when the header amounts are
+ * hidden or absent. Nothing is stored.
+ */
+export interface CreditPositionRow {
+  readonly gross: string | null;
+  readonly credited: string;
+  readonly paid: string;
+}
+
+/**
+ * One third-party payment of an invoice (ADR-023 D14): an allocation of a receipt
+ * whose payer is not the invoice's customer, made as an explicit third-party
+ * allocation. `payerDisplayName` is the live partner's name, `null` when retired
+ * or not visible; whether the caller may be TOLD it is the read service's call.
+ */
+export interface ThirdPartyPaymentRow {
+  readonly allocationId: string;
+  readonly receiptId: string;
+  readonly receiptNumber: string;
+  readonly payerDisplayName: string | null;
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  readonly amount: string;
+  readonly currencyCode: string;
+  readonly allocatedAt: Date;
+}
+
+/**
+ * One invoice as the branch list returns it (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * The header exactly as `findInvoice` reads it — money folded to `null` where
+ * `sel_invoice_amounts_gated` hid it — plus the two facts a person choosing an
+ * invoice needs and the header does not carry: WHO it bills, by name, and what
+ * `sal.invoice_open_receivable` answered for it. That answer is carried raw; the
+ * read service decides whether it can be believed (`balanceIsTrustworthy`).
+ */
+export interface InvoiceListRow extends InvoiceRow {
+  /** `null` only when the payer row is not visible — never invented. */
+  readonly payerDisplayName: string | null;
+  readonly payerDisplayNumber: string | null;
+  readonly payerPartyType: string | null;
+  /** `round(sal.invoice_open_receivable(id), 4)` as a decimal STRING. */
+  readonly openAmount: string;
+  /**
+   * What the invoice can still be credited (ADR-023 D2, P1-32-PRE-OD-FD2B): the
+   * gross of an issued or credited invoice less its APPROVED credit notes, as a
+   * decimal STRING — the predicates `creditCeiling` and `sal.approve_credit_note`
+   * apply.
+   */
+  readonly creditableAmount: string;
+}
+
+/**
+ * The period, the branch and the cursor a report document read is bounded by
+ * (P1-31 P-11, engine slice 4).
+ *
+ * `toExclusive` rather than `to`, because the name is the contract: a reader who
+ * sees `to` assumes the last day reported, and that assumption is the off-by-one
+ * the half-open period exists to prevent (D-17).
+ */
+export interface InvoiceDocumentFilter {
+  /** REQUIRED. The authorized scope, and a predicate on every statement. */
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported, `YYYY-MM-DD`. */
+  readonly toExclusive: string;
+  /** An IANA zone name: the reporting branch's `org.branches.timezone_name`. */
+  readonly timezoneName: string;
+  /**
+   * The moment every amount is computed as of, an ISO-8601 instant (Owner decision
+   * D16). The period still chooses the documents; this decides what each had
+   * become by then. REQUIRED: the reporting module resolves the default.
+   */
+  readonly asOf: string;
+}
+
+/**
+ * Where the page starts and how many rows it may hold.
+ *
+ * A DECODED position rather than an encoded cursor, and that is the slice-4
+ * shape rather than the slice-3 one for a measured reason: this report's rows
+ * are a MERGE of two modules' documents, so the ordering contract — and
+ * therefore the cursor's identity, its decode and its minting — belongs to the
+ * reporting module that merges them. A second contract declared here would be a
+ * second definition of one order, and the two would drift.
+ *
+ * `limit` is the number of rows to return and includes whatever sentinel the
+ * caller intends: this statement adds none, because the merge decides `hasMore`
+ * over the combined stream and a per-stream sentinel would answer for the wrong
+ * selection.
+ */
+export interface ReportDocumentPage {
+  readonly after: { readonly sortValue: string; readonly id: string } | null;
+  readonly limit: number;
+}
+
+/**
+ * One billing document of the reported period: an invoice or a credit note.
+ *
+ * Two document types in one row shape because they are read in one statement and
+ * merged into one ordered stream. `documentType` is the discriminator and every
+ * field a credit note has no equivalent for is null rather than zero — a zero
+ * amount is a claim about money, and an absent column is not.
+ */
+export interface InvoiceDocumentRow {
+  readonly documentType: 'invoice' | 'credit_note';
+  readonly documentId: string;
+  /** `sal.invoices.invoice_number`; always null for a credit note, which has none. */
+  readonly documentNumber: string | null;
+  readonly documentDate: Date;
+  readonly currencyCode: string;
+  /** The invoice's `status`, or the credit note's `approval_state`. */
+  readonly status: string;
+  /** `sal.invoice_amounts.gross_total` as a decimal string; null on a credit note. */
+  readonly invoicedAmount: string | null;
+  /** `sal.invoice_open_receivable` as a decimal string; null on a credit note. */
+  readonly outstanding: string | null;
+  /**
+   * `sal.credit_notes.amount` as a decimal string; null on an invoice.
+   *
+   * The AUTHORITATIVE column, carried through untouched. It is not derived from
+   * the affected invoice's `outstanding` and nothing here subtracts one from the
+   * other: `sal.invoice_open_receivable` already counts approved credits, so a
+   * second derivation would be a second authority for the same money.
+   */
+  readonly creditNoteAmount: string | null;
+  /**
+   * The invoice's effective credits — the sum of its APPROVED credit notes, the
+   * predicate `sal.invoice_open_receivable` subtracts — as a decimal string; null
+   * on a credit note. What the credit status is derived from (D7, ADR-023).
+   */
+  readonly creditedAmount: string | null;
+  /**
+   * The party this document names, and the ROLE under which it names them.
+   *
+   * An invoice names its `payer_partner_id` and the role is `payer`. A credit
+   * note carries NO party column of its own — `sal.credit_notes` has none — so
+   * the id is the credited invoice's payer and the role says exactly that:
+   * `invoice_payer`. Calling both of them `customer` is what the Owner's
+   * decision of 2026-09-12 forbids, because the two are not the same claim.
+   */
+  readonly partyId: string;
+  readonly partyRole: 'payer' | 'invoice_payer';
+  /** The microsecond-precision cursor value for `documentDate`. */
+  readonly sortValue: string;
+}
+
+/** One currency's invoice totals over the WHOLE selection. */
+export interface InvoiceDocumentTotalRow {
+  readonly currencyCode: string;
+  /** Sum of `gross_total` over the period's invoices, as a decimal string. */
+  readonly invoiced: string;
+  /** Sum of `sal.invoice_open_receivable` over the same invoices. */
+  readonly outstanding: string;
+}
+
+/**
+ * One currency's APPROVED credit-note total over the whole selection.
+ *
+ * A total of its own rather than a measure beside `invoiced`, because a credit
+ * note is its own document type: adding it to the invoice group would net two
+ * different facts into one figure, and subtracting it would restate money the
+ * database function has already subtracted inside `outstanding`.
+ */
+export interface CreditNoteTotalRow {
+  readonly currencyCode: string;
+  /** Sum of `sal.credit_notes.amount` over the period's approved notes. */
+  readonly credited: string;
+}
+
+export interface InvoiceDocumentRows {
+  readonly totals: readonly InvoiceDocumentTotalRow[];
+  readonly creditNoteTotals: readonly CreditNoteTotalRow[];
+  readonly documents: readonly InvoiceDocumentRow[];
 }
 
 /**
@@ -261,8 +573,110 @@ export interface CreditNoteRow {
   readonly approvedBy: string | null;
   readonly approvedAt: Date | null;
   readonly issuedAt: Date | null;
+  /**
+   * Who withdrew or rejected the request, and when — stamped from the session by
+   * `sal.guard_credit_note_decision`, `null` while pending and on an approval
+   * (ADR-023, D3).
+   */
+  readonly decidedBy: string | null;
+  readonly decidedAt: Date | null;
+  /** Why it was rejected; present on a rejection only. */
+  readonly decisionReason: string | null;
   readonly idempotencyKey: string | null;
   readonly recordVersion: number;
+}
+
+/**
+ * What a credit note is traceable to (finance checkpoint, DF-B4): when it was
+ * requested, the invoice it reduces, who that invoice bills, and the customer
+ * return that raised it, if one did. Ids only for people and the item; the
+ * service turns them into names through their owners' ports.
+ */
+export interface CreditNoteTraceRow {
+  readonly requestedAt: Date;
+  /** `null` only if the invoice header is not visible — it shares the note's scope. */
+  readonly invoice: {
+    readonly invoiceNumber: string | null;
+    readonly saleKind: string;
+    readonly workOrderId: string | null;
+    /** The payer's display name, read here; whether it is PUBLISHED is the service's decision. */
+    readonly payerDisplayName: string | null;
+  } | null;
+  /** The return that raised the note (`inv.sales_returns.credit_note_id`), or `null`. */
+  readonly sourceReturn: {
+    readonly id: string;
+    readonly itemId: string;
+    /** `numeric(12,3)` decimal string. */
+    readonly quantity: string;
+    readonly receivedAt: Date;
+  } | null;
+}
+
+/**
+ * What an invoice can still be credited and what it still owes (ADR-023 D2,
+ * P1-32-PRE-OD-FD2A), as decimal STRINGS in its currency.
+ *
+ * `creditable` is the issued invoice's gross less the credit notes already
+ * APPROVED on it — `sal.approve_credit_note`'s ceiling, read here so a request is
+ * refused before a note is raised. `owed` is `sal.invoice_open_receivable`, never
+ * below zero. Both `0.0000` for a draft or a voided invoice. Every input is gated
+ * by `sal.finance.view`.
+ */
+export interface CreditCeilingRow {
+  readonly creditable: string;
+  readonly owed: string;
+}
+
+/**
+ * What approving a pending credit note would do, computed by PostgreSQL now: the
+ * part that reduces what the invoice still owes, and the part the customer would
+ * be owed back as a refund (ADR-023 D2). Decimal strings in the note's currency.
+ */
+export interface CreditApprovalEffectRow {
+  readonly reducesBalanceBy: string;
+  readonly refundOwed: string;
+}
+
+/**
+ * The refund facts of one invoice (D7 `refundStatus`): what its obligations total,
+ * what has been paid out on them, what is still owed, and whether a request waits
+ * for a decision or for its payout.
+ */
+export interface InvoiceRefundPositionRow {
+  readonly obligated: string;
+  readonly refunded: string;
+  readonly stillOwed: string;
+  readonly pendingRequest: boolean;
+  readonly approvedRequest: boolean;
+}
+
+/**
+ * One refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A): money a customer is owed
+ * back because an approved credit exceeded what the invoice still owed. The WHOLE
+ * row is gated by `sal.finance.view` (`sel_refund_obligations_gated`). An
+ * operational record, not an accounting entry.
+ */
+export interface RefundObligationRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly partnerId: string;
+  readonly invoiceId: string;
+  readonly creditNoteId: string;
+  readonly currencyCode: string;
+  /** `numeric(18,4)`, `CHECK (amount > 0)`, within the currency's minor unit. */
+  readonly amount: string;
+  /** `credit_excess` only (`ck_refund_obligations_source`). */
+  readonly source: string;
+  /** `open` until what has been paid out reaches its amount, then `settled` (FD2B). */
+  readonly state: string;
+  readonly createdAt: Date;
+  readonly createdBy: string;
+  readonly recordVersion: number;
+  /** What its approved refund requests have paid out, `numeric(18,4)` text (FD2B). */
+  readonly paidOut: string;
+  /** Its amount less what has been paid out, computed by PostgreSQL (FD2B). */
+  readonly stillOwed: string;
 }
 
 /** A work order's scope. `sal.invoices` must be created in exactly this scope. */
@@ -271,18 +685,33 @@ export interface WorkOrderScopeRow {
   readonly companyId: string;
   readonly branchId: string;
   readonly state: string;
+  /**
+   * The visit the work order came from and the instant it was opened: the two
+   * facts the reception module dates the work order's customer by
+   * (`PartyContextRepository.partiesForWorkOrders`). An invoice whose quotation
+   * and request name no payer bills that customer (DX-3, finance QA fixes E).
+   */
+  readonly receptionVisitId: string;
+  readonly openedAt: Date;
 }
 
 /**
- * One candidate commercial source for a work order, with its totals summed by
- * PostgreSQL.
+ * One candidate commercial source for a work order — the CURRENT revision of one
+ * of its live quotations, issued or (by the roll-up of a refused line) rejected —
+ * with its totals summed by PostgreSQL.
  *
  * A *candidate*, not the answer: `ix_quotations_work_order` is not unique, so a
  * work order may carry several quotations and nothing in the DDL prevents two of
- * them from being accepted. The decision counts are returned so the caller can
- * derive the outcome with the platform's own `rollUpDecisions` rather than a
- * second definition of "accepted", and so an ambiguous source is reported rather
- * than silently resolved by picking one.
+ * them from carrying approved lines. The decision counts are returned so the
+ * caller can tell a revision with approved lines from one without, and so an
+ * ambiguous source is reported rather than silently resolved by picking one.
+ *
+ * Two sets of totals (ADR-023 D5/D15, P1-32-PRE-OD-FD5). The `revision*` totals
+ * are the whole revision as quoted — what the preview reported before quantities
+ * were tracked, and what the printed copy of an invoice that billed the whole
+ * revision states. The unprefixed totals are what a NEW invoice would bill now:
+ * the lines `sal.billable_quotation_lines` answers `billable`, at what remains of
+ * each. For an approved revision nothing has invoiced yet the two are equal.
  *
  * Totals are ROUND-THEN-SUM, matching `sal.issue_invoice`, which sums the already
  * rounded `sal.invoice_line_amounts` (L-fin-3). Sum-then-round would produce a
@@ -299,26 +728,45 @@ export interface CommercialSourceRow {
   readonly itemCount: number;
   readonly approvedCount: number;
   readonly rejectedCount: number;
-  /** `Σ round(unit × qty, 4)`. */
+  /** How many lines may be billed now (`billing_status = 'billable'`). */
+  readonly billableCount: number;
+  /** `Σ (remaining net + remaining discount)` over the billable lines. */
   readonly subtotal: string;
-  /** `Σ captured_discount`. Already `numeric(18,4)`, so no rounding step. */
+  /** `Σ remaining discount`: a line's captured discount while nothing of it is invoiced, else zero. */
   readonly discountTotal: string;
-  /** `Σ captured_tax_amount`, validated by `ck_quotation_items_tax_amount`. */
+  /** `Σ remaining tax` over the billable lines. */
   readonly taxTotal: string;
-  /** `Σ round(unit × qty − discount, 4)` — what becomes `net_total`. */
+  /** `Σ remaining net` over the billable lines — what becomes the new invoice's `net_total`. */
   readonly netTotal: string;
-  /** `round(netTotal + taxTotal, 4)` — the shape `ck_invoice_amounts_gross` enforces. */
+  /** `netTotal + taxTotal`, as `ck_invoice_amounts_gross` requires. */
   readonly grossTotal: string;
+  /** `Σ (line gross − tax + discount)` over every line: each line's rounded net plus its discount. */
+  readonly revisionSubtotal: string;
+  /** `Σ captured_discount` over every line. */
+  readonly revisionDiscountTotal: string;
+  /** `Σ captured_tax_amount` over every line, validated by `tg_quotation_items_money`. */
+  readonly revisionTaxTotal: string;
+  /** `Σ (line gross − tax)` over every line, the rounded line nets. */
+  readonly revisionNetTotal: string;
+  /** `Σ captured_line_total` over every line. */
+  readonly revisionGrossTotal: string;
 }
 
 /**
- * One approved commercial line, in the shape `sal.invoice_line_amounts` stores.
+ * One line of a source revision: what it was quoted as, what the customer
+ * decided, and what of it may still be billed (ADR-023 D5/D15).
  *
- * `netAmount`, `taxAmount` and `grossAmount` are computed in `numeric` by the
- * query, from the captured values `quo` froze when the revision was issued. Tax
- * comes from `captured_tax_rate`/`captured_tax_amount` — configuration the
- * pricing layer resolved at quotation time and `ck_quotation_items_tax_amount`
+ * The quoted figures — `quantity`, `discount`, `netAmount`, `taxAmount`,
+ * `grossAmount` — are the line as `quo` froze it when the revision was issued.
+ * Tax comes from `captured_tax_rate`/`captured_tax_amount` — configuration the
+ * pricing layer resolved at quotation time and `tg_quotation_items_money`
  * validated — so nothing here defaults, guesses or computes a rate.
+ *
+ * The billing figures come from `sal.billable_quotation_lines`, the same read the
+ * database guards judge an invoice line by: the decision, the approved, invoiced
+ * and remaining quantities, and — on a `billable` line, to a caller holding
+ * `sal.finance.view` — the remaining net, tax, gross and discount, computed in
+ * `numeric`. An invoice line copies the REMAINING figures, never the quoted ones.
  */
 export interface CommercialSourceLineRow {
   readonly quotationItemId: string;
@@ -328,6 +776,12 @@ export interface CommercialSourceLineRow {
   readonly serviceId: string | null;
   readonly itemRef: string | null;
   readonly description: string | null;
+  /**
+   * What a PART line was quoted as (ADR-023 D6): the item's stock code and name and
+   * the unit its quantity is in, from the line's own snapshot columns, so a preview
+   * names the part rather than an identifier. `null` on a service line.
+   */
+  readonly quotedPart: QuotedPartRow | null;
   readonly currencyCode: string;
   readonly unitPrice: string;
   readonly quantity: string;
@@ -337,13 +791,29 @@ export interface CommercialSourceLineRow {
   readonly netAmount: string;
   readonly taxAmount: string;
   readonly grossAmount: string;
+  /** The customer's decision on this line, or `null` while it is undecided. */
+  readonly decision: string | null;
+  /** `sal.billable_quotation_lines.billing_status`: `billable` or why not. */
+  readonly billingStatus: string;
+  /** `numeric(12,3)` strings. Approved is the quoted quantity of an approved line, else zero. */
+  readonly approvedQuantity: string;
+  readonly invoicedQuantity: string;
+  readonly remainingQuantity: string;
+  /** Part of this line's lineage was invoiced under an earlier revision. */
+  readonly carried: boolean;
+  /** What a new invoice line bills; `null` unless billable and visible. */
+  readonly remainingNet: string | null;
+  readonly remainingTax: string | null;
+  readonly remainingGross: string | null;
+  readonly remainingDiscount: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // SQL-shape interfaces and mappers.
 // ---------------------------------------------------------------------------
 
-const INVOICE_COLUMNS = `i.id, i.company_id, i.branch_id, i.work_order_id, i.quotation_revision_id,
+const INVOICE_COLUMNS = `i.id, i.company_id, i.branch_id, i.work_order_id, i.sale_kind,
+  i.quotation_revision_id,
   i.payer_partner_id, i.currency_code, i.status, i.invoice_number, i.issued_at,
   i.idempotency_key, i.record_version`;
 
@@ -351,7 +821,8 @@ interface InvoiceSql {
   id: string;
   company_id: string;
   branch_id: string;
-  work_order_id: string;
+  work_order_id: string | null;
+  sale_kind: string;
   quotation_revision_id: string | null;
   payer_partner_id: string;
   currency_code: string;
@@ -378,6 +849,7 @@ const toInvoice = (r: InvoiceSql): InvoiceRow => ({
   companyId: r.company_id,
   branchId: r.branch_id,
   workOrderId: r.work_order_id,
+  saleKind: r.sale_kind,
   quotationRevisionId: r.quotation_revision_id,
   payerPartnerId: r.payer_partner_id,
   currencyCode: r.currency_code,
@@ -409,6 +881,16 @@ interface InvoiceLineSql {
   source_service_line_id: string | null;
   source_part_issue_id: string | null;
   source_quotation_item_id: string | null;
+  item_id: string | null;
+  quoted_item_ref: string | null;
+  quoted_item_sku: string | null;
+  quoted_item_name: string | null;
+  quoted_unit_code: string | null;
+  quoted_unit_name: string | null;
+  source_item_id: string | null;
+  source_description: string | null;
+  source_quoted_quantity: string | null;
+  source_discount: string | null;
   record_version: number;
   unit_price: string | null;
   net_amount: string | null;
@@ -430,6 +912,29 @@ const toInvoiceLine = (r: InvoiceLineSql): InvoiceLineRow => ({
   sourceServiceLineId: r.source_service_line_id,
   sourcePartIssueId: r.source_part_issue_id,
   sourceQuotationItemId: r.source_quotation_item_id,
+  itemId: r.item_id,
+  quotedPart:
+    r.quoted_item_ref !== null &&
+    r.quoted_item_sku !== null &&
+    r.quoted_item_name !== null &&
+    r.quoted_unit_code !== null &&
+    r.quoted_unit_name !== null
+      ? {
+          itemId: r.quoted_item_ref,
+          itemCode: r.quoted_item_sku,
+          itemName: r.quoted_item_name,
+          unitCode: r.quoted_unit_code,
+          unitName: r.quoted_unit_name,
+        }
+      : null,
+  quotedSource:
+    r.source_item_id !== null && r.source_quoted_quantity !== null && r.source_discount !== null
+      ? {
+          description: r.source_description,
+          quotedQuantity: r.source_quoted_quantity,
+          discount: r.source_discount,
+        }
+      : null,
   recordVersion: r.record_version,
   money:
     r.unit_price !== null &&
@@ -462,6 +967,9 @@ interface CreditNoteSql {
   approved_by: string | null;
   approved_at: Date | null;
   issued_at: Date | null;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_reason: string | null;
   idempotency_key: string | null;
   record_version: number;
 }
@@ -479,13 +987,69 @@ const toCreditNote = (r: CreditNoteSql): CreditNoteRow => ({
   approvedBy: r.approved_by,
   approvedAt: r.approved_at,
   issuedAt: r.issued_at,
+  decidedBy: r.decided_by,
+  decidedAt: r.decided_at,
+  decisionReason: r.decision_reason,
   idempotencyKey: r.idempotency_key,
   recordVersion: r.record_version,
 });
 
 const CREDIT_NOTE_COLUMNS = `c.id, c.company_id, c.branch_id, c.invoice_id, c.currency_code,
   c.amount::text AS amount, c.reason, c.approval_state, c.requested_by, c.approved_by,
-  c.approved_at, c.issued_at, c.idempotency_key, c.record_version`;
+  c.approved_at, c.issued_at, c.decided_by, c.decided_at, c.decision_reason,
+  c.idempotency_key, c.record_version`;
+
+interface RefundObligationSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  partner_id: string;
+  invoice_id: string;
+  credit_note_id: string;
+  currency_code: string;
+  amount: string;
+  source: string;
+  state: string;
+  created_at: Date;
+  created_by: string;
+  record_version: number;
+  paid_out: string;
+  still_owed: string;
+}
+
+const toRefundObligation = (r: RefundObligationSql): RefundObligationRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  partnerId: r.partner_id,
+  invoiceId: r.invoice_id,
+  creditNoteId: r.credit_note_id,
+  currencyCode: r.currency_code,
+  amount: r.amount,
+  source: r.source,
+  state: r.state,
+  createdAt: r.created_at,
+  createdBy: r.created_by,
+  recordVersion: r.record_version,
+  paidOut: r.paid_out,
+  stillOwed: r.still_owed,
+});
+
+/**
+ * What the obligation's approved refund requests have paid out (P1-32-PRE-OD-FD2B),
+ * summed by PostgreSQL; `sal.refund_requests` is gated by `sal.finance.view` exactly
+ * as the obligation is, so the sum never undercounts for a caller who sees the row.
+ */
+const REFUND_OBLIGATION_PAID_OUT = `COALESCE((SELECT sum(rr.amount) FROM sal.refund_requests rr
+    WHERE rr.tenant_id = ro.tenant_id AND rr.company_id = ro.company_id
+      AND rr.branch_id = ro.branch_id AND rr.obligation_id = ro.id
+      AND rr.approval_state = 'approved' AND rr.executed_at IS NOT NULL), 0)`;
+
+const REFUND_OBLIGATION_COLUMNS = `ro.id, ro.company_id, ro.branch_id, ro.partner_id, ro.invoice_id,
+  ro.credit_note_id, ro.currency_code, ro.amount::text AS amount, ro.source, ro.state,
+  ro.created_at, ro.created_by, ro.record_version,
+  (${REFUND_OBLIGATION_PAID_OUT})::numeric(18,4)::text AS paid_out,
+  (ro.amount - ${REFUND_OBLIGATION_PAID_OUT})::numeric(18,4)::text AS still_owed`;
 
 export class BillingRepository extends Repository {
   protected readonly module = 'billing';
@@ -528,6 +1092,29 @@ export class BillingRepository extends Repository {
     return row ? row.minor_unit : null;
   }
 
+  /**
+   * The minor units of several currencies at once, by code (Owner decision D1).
+   *
+   * A read stamps each amount it publishes with its currency's minor unit, so a
+   * client writes the amount the way the platform records the currency instead of
+   * the way its own locale data does. One statement per read, whatever the number
+   * of amounts. Reference data, so no permission and no scope, as above; a code the
+   * platform does not hold is simply absent from the map.
+   */
+  public async minorUnitsFor(
+    db: DbHandle,
+    codes: readonly string[]
+  ): Promise<ReadonlyMap<string, number>> {
+    const wanted = [...new Set(codes)];
+    if (wanted.length === 0) return new Map();
+    const rows = await this.run<{ code: string; minor_unit: number }>(
+      db,
+      `SELECT code, minor_unit FROM shared.currencies WHERE code = ANY($1::text[])`,
+      [wanted]
+    );
+    return new Map(rows.rows.map((row) => [row.code, row.minor_unit]));
+  }
+
   public async findWorkOrderScope(
     db: DbHandle,
     workOrderId: string
@@ -538,9 +1125,12 @@ export class BillingRepository extends Repository {
       company_id: string;
       branch_id: string;
       state: string;
+      reception_visit_id: string;
+      opened_at: Date;
     }>(
       db,
-      `SELECT w.id AS work_order_id, w.company_id, w.branch_id, w.state
+      `SELECT w.id AS work_order_id, w.company_id, w.branch_id, w.state,
+              w.reception_visit_id, w.opened_at
          FROM wo.work_orders w
         WHERE w.tenant_id = $1 AND w.id = $2 AND w.deleted_at IS NULL`,
       [context.principal.tenantId, workOrderId]
@@ -551,6 +1141,8 @@ export class BillingRepository extends Repository {
           companyId: row.company_id,
           branchId: row.branch_id,
           state: row.state,
+          receptionVisitId: row.reception_visit_id,
+          openedAt: row.opened_at,
         }
       : null;
   }
@@ -665,22 +1257,26 @@ export class BillingRepository extends Repository {
   }
 
   /**
-   * The at-most-one live invoice for a work order.
+   * The live invoices of a work order — the open draft first, then the newest.
    *
-   * `uq_invoices_work_order_active` is a partial unique index over
-   * `(tenant, company, branch, work_order_id) WHERE status <> 'void_before_issue'
-   * AND deleted_at IS NULL`, so this predicate reproduces the index exactly and the
-   * result cannot be more than one row. Used twice: to refuse a duplicate create
-   * before the INSERT collides, and as the delivery module's financial blocker,
-   * which needs "the invoice for this work order, if any" and must not read
-   * `sal.invoices` itself.
+   * A work order may carry several live invoices since ADR-023 D5/D15
+   * (P1-32-PRE-OD-FD5): each bills approved quantity no other live invoice holds.
+   * `uq_invoices_work_order_draft` keeps at most ONE of them a draft, so ordering
+   * the draft first makes `rows[0]` the invoice still being assembled whenever one
+   * exists. "Live" is the predicate the replaced `uq_invoices_work_order_active`
+   * used — not `void_before_issue`, not deleted.
+   *
+   * `limit` bounds a screen's read; the delivery gate passes none, because a
+   * blocker that judged only some of the invoices would clear a work order whose
+   * other invoice is unpaid.
    */
-  public async liveInvoiceForWorkOrder(
+  public async liveInvoicesForWorkOrder(
     db: DbHandle,
-    scope: { readonly workOrderId: string; readonly companyId: string; readonly branchId: string }
-  ): Promise<InvoiceRow | null> {
+    scope: { readonly workOrderId: string; readonly companyId: string; readonly branchId: string },
+    limit?: number
+  ): Promise<readonly InvoiceRow[]> {
     const context = this.assertContext(db);
-    const row = await this.runOne<InvoiceSql>(
+    const result = await this.run<InvoiceSql>(
       db,
       `SELECT ${INVOICE_COLUMNS},
               a.net_total::text   AS net_total,
@@ -693,10 +1289,47 @@ export class BillingRepository extends Repository {
           AND a.deleted_at IS NULL
         WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
           AND i.work_order_id = $4
-          AND i.status <> 'void_before_issue' AND i.deleted_at IS NULL`,
+          AND i.status <> 'void_before_issue' AND i.deleted_at IS NULL
+        ORDER BY (i.status = 'draft') DESC, i.created_at DESC, i.id DESC
+        LIMIT $5`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchId,
+        scope.workOrderId,
+        limit ?? null,
+      ]
+    );
+    return result.rows.map(toInvoice);
+  }
+
+  /**
+   * Whether the work order has approved quotation work no live invoice holds yet
+   * (ADR-023 D5/D15): any line of the current revision of a live quotation that
+   * `sal.billable_quotation_lines` answers `billable`.
+   *
+   * Quantities only, so it answers for a caller without `sal.finance.view` too —
+   * and for that caller a line whose approved total fell below what was invoiced
+   * still counts, which can only make the answer more cautious.
+   */
+  public async hasApprovedWorkToInvoice(
+    db: DbHandle,
+    scope: { readonly workOrderId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ pending: boolean }>(
+      db,
+      `SELECT EXISTS (
+         SELECT 1
+           FROM quo.quotations q
+          CROSS JOIN LATERAL sal.billable_quotation_lines(q.current_revision_id) b
+          WHERE q.tenant_id = $1 AND q.company_id = $2 AND q.branch_id = $3
+            AND q.work_order_id = $4 AND q.deleted_at IS NULL AND q.status <> 'cancelled'
+            AND q.current_revision_id IS NOT NULL
+            AND b.billing_status = 'billable') AS pending`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.workOrderId]
     );
-    return row ? toInvoice(row) : null;
+    return row?.pending === true;
   }
 
   /**
@@ -721,7 +1354,16 @@ export class BillingRepository extends Repository {
       `SELECT l.id, l.company_id, l.branch_id, l.line_number, l.line_type,
               l.quantity::text AS quantity, l.tax_class_id, l.currency_code,
               l.source_service_line_id, l.source_part_issue_id, l.source_quotation_item_id,
-              l.record_version,
+              l.item_id, l.record_version,
+              qi.item_ref           AS quoted_item_ref,
+              qi.quoted_item_sku  AS quoted_item_sku,
+              qi.quoted_item_name AS quoted_item_name,
+              qi.quoted_unit_code AS quoted_unit_code,
+              qi.quoted_unit_name AS quoted_unit_name,
+              src.id                           AS source_item_id,
+              src.description                  AS source_description,
+              src.captured_quantity::text      AS source_quoted_quantity,
+              src.captured_discount::text      AS source_discount,
               la.unit_price::text          AS unit_price,
               la.net_amount::text          AS net_amount,
               la.tax_amount::text          AS tax_amount,
@@ -733,12 +1375,63 @@ export class BillingRepository extends Repository {
            ON la.tenant_id = l.tenant_id AND la.company_id = l.company_id
           AND la.branch_id = l.branch_id AND la.invoice_line_id = l.id
           AND la.deleted_at IS NULL
+         -- A work-order part line's unit and item, as its quotation line captured
+         -- them (ADR-023 D6). SELECT-only, and only for a PART line.
+         LEFT JOIN quo.quotation_items qi
+           ON qi.tenant_id = l.tenant_id AND qi.company_id = l.company_id
+          AND qi.branch_id = l.branch_id AND qi.id = l.source_quotation_item_id
+          AND l.line_type = 'part' AND qi.item_kind = 'part'
+         -- The quotation line ANY work-order line was copied from, as quoted, so a
+         -- printed copy describes this invoice from its own source lines rather than
+         -- from whatever revision the work order bills now (ADR-023 D5/D15). The
+         -- discount is money, so the join is gated the way the amount tables are:
+         -- by iam.has_permission('sal.finance.view'). SELECT-only.
+         LEFT JOIN quo.quotation_items src
+           ON src.tenant_id = l.tenant_id AND src.company_id = l.company_id
+          AND src.branch_id = l.branch_id AND src.id = l.source_quotation_item_id
+          AND iam.has_permission('sal.finance.view')
         WHERE l.tenant_id = $1 AND l.company_id = $2 AND l.branch_id = $3
           AND l.invoice_id = $4 AND l.deleted_at IS NULL
         ORDER BY l.line_number ASC`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
     );
     return result.rows.map(toInvoiceLine);
+  }
+
+  /**
+   * The quotation revision an invoice was made from, as quoted (ADR-023 D5/D15):
+   * its line count and its before-discount and discount totals, summed by
+   * PostgreSQL exactly as `findCommercialSources` sums `revision_subtotal` and
+   * `revision_discount_total`, over the same live items. A printed copy states
+   * these only for an invoice that billed every line of the revision whole.
+   *
+   * `null` for a revision this caller cannot see, and for a caller without
+   * `sal.finance.view`: the totals are money, gated as the amount tables are.
+   */
+  public async sourceRevision(
+    db: DbHandle,
+    scope: { readonly revisionId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<SourceRevisionRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ line_count: number; subtotal: string; discount_total: string }>(
+      db,
+      `SELECT count(it.id)::int AS line_count,
+              COALESCE(sum(it.captured_line_total - it.captured_tax_amount
+                           + it.captured_discount), 0)::text AS subtotal,
+              COALESCE(sum(it.captured_discount), 0)::text AS discount_total
+         FROM quo.quotation_revisions r
+         LEFT JOIN quo.quotation_items it
+           ON it.tenant_id = r.tenant_id AND it.company_id = r.company_id
+          AND it.branch_id = r.branch_id AND it.quotation_revision_id = r.id
+          AND it.deleted_at IS NULL
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3 AND r.id = $4
+          AND iam.has_permission('sal.finance.view')
+        GROUP BY r.id`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.revisionId]
+    );
+    return row
+      ? { lineCount: row.line_count, subtotal: row.subtotal, discountTotal: row.discount_total }
+      : null;
   }
 
   /**
@@ -770,10 +1463,12 @@ export class BillingRepository extends Repository {
       amount: string;
       currency_code: string;
       status: string;
+      as_of: Date;
     }>(
       db,
       `SELECT i.id AS invoice_id, i.currency_code, i.status,
-              round(sal.invoice_open_receivable(i.id), 4)::text AS amount
+              round(sal.invoice_open_receivable(i.id), 4)::text AS amount,
+              statement_timestamp() AS as_of
          FROM sal.invoices i
         WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
           AND i.id = $4 AND i.deleted_at IS NULL`,
@@ -785,8 +1480,358 @@ export class BillingRepository extends Repository {
           amount: row.amount,
           currencyCode: row.currency_code,
           status: row.status,
+          asOf: row.as_of,
         }
       : null;
+  }
+
+  /**
+   * An invoice's credit position (D7): its gross, its effective credits and what
+   * has been paid against it.
+   *
+   * `credited` and `paid` use exactly the predicates `sal.invoice_open_receivable`
+   * subtracts — approved credit notes, and allocations of receipts that are not
+   * reversed — so `gross − paid − credited` is the open receivable the same read
+   * reports, and the two can never tell different stories. A pending or rejected
+   * credit note is not a credit. Both sums are cast to `numeric(18,4)` so an empty
+   * sum reads `0.0000` at the scale every other amount carries.
+   *
+   * The caller must have established that the balance is trustworthy
+   * (`balanceIsTrustworthy`): every input is gated by `sal.finance.view`.
+   */
+  public async creditPosition(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditPositionRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ gross: string | null; credited: string; paid: string }>(
+      db,
+      `SELECT a.gross_total::text AS gross,
+              COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                         WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                           AND cn.approval_state = 'approved'), 0)::numeric(18,4)::text AS credited,
+              COALESCE((SELECT sum(pa.amount) FROM sal.payment_allocations pa
+                          JOIN sal.receipts r
+                            ON r.tenant_id = pa.tenant_id AND r.company_id = pa.company_id
+                           AND r.branch_id = pa.branch_id AND r.id = pa.receipt_id
+                         WHERE pa.tenant_id = i.tenant_id AND pa.invoice_id = i.id
+                           AND r.status <> 'reversed'), 0)::numeric(18,4)::text AS paid
+         FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.id = $4 AND i.deleted_at IS NULL`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
+    );
+    return row ? { gross: row.gross, credited: row.credited, paid: row.paid } : null;
+  }
+
+  /**
+   * The third-party payments of one invoice (ADR-023 D14), oldest first.
+   *
+   * Only allocations of receipts that are not reversed — the predicate `paid`
+   * above and `sal.invoice_open_receivable` use, so every payment listed here is
+   * inside `paid` and none is outside it. The receipt names its payer and the
+   * invoice keeps its customer: this read joins the two to say who paid for whom,
+   * and changes neither. Fetched with one row of headroom so the caller can say
+   * the list was cut short. Every input is gated by `sal.finance.view`.
+   */
+  public async thirdPartyPayments(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string },
+    limit: number
+  ): Promise<readonly ThirdPartyPaymentRow[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<{
+      allocation_id: string;
+      receipt_id: string;
+      receipt_number: string;
+      payer_display_name: string | null;
+      third_party_relationship: string;
+      third_party_authorisation_reference: string;
+      third_party_reason: string;
+      amount: string;
+      currency_code: string;
+      allocated_at: Date;
+    }>(
+      db,
+      `SELECT pa.id AS allocation_id, pa.receipt_id, r.receipt_number,
+              pp.display_name AS payer_display_name,
+              pa.third_party_relationship, pa.third_party_authorisation_reference,
+              pa.third_party_reason, pa.amount::text AS amount, pa.currency_code,
+              pa.allocated_at
+         FROM sal.payment_allocations pa
+         JOIN sal.receipts r
+           ON r.tenant_id = pa.tenant_id AND r.company_id = pa.company_id
+          AND r.branch_id = pa.branch_id AND r.id = pa.receipt_id
+         LEFT JOIN crm.business_partners pp
+           ON pp.tenant_id = r.tenant_id AND pp.id = r.payer_partner_id
+          AND pp.deleted_at IS NULL
+        WHERE pa.tenant_id = $1 AND pa.company_id = $2 AND pa.branch_id = $3
+          AND pa.invoice_id = $4 AND pa.third_party_relationship IS NOT NULL
+          AND r.status <> 'reversed'
+        ORDER BY pa.seq ASC
+        LIMIT $5`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId, limit + 1]
+    );
+    return rows.rows.map((row) => ({
+      allocationId: row.allocation_id,
+      receiptId: row.receipt_id,
+      receiptNumber: row.receipt_number,
+      payerDisplayName: row.payer_display_name,
+      relationship: row.third_party_relationship,
+      authorisationReference: row.third_party_authorisation_reference,
+      reason: row.third_party_reason,
+      amount: row.amount,
+      currencyCode: row.currency_code,
+      allocatedAt: row.allocated_at,
+    }));
+  }
+
+  /**
+   * The branch's BILLING documents in a period, with the invoice totals of the
+   * whole selection (P1-31 P-11, engine slice 4).
+   *
+   * ## Which rows are documents of the period, and which are not
+   *
+   * An invoice belongs to the period by its `issued_at`, and a credit note by its
+   * own `issued_at`. Both are half-open in the branch's zone (D-17).
+   *
+   * A `draft` and a `void_before_issue` invoice carry `issued_at IS NULL`, so they
+   * fail BOTH comparisons of the range and are excluded by the predicate rather
+   * than by a status list — which is the honest exclusion, because the reason they
+   * are absent is that they were never issued and so happened in no period.
+   * `issued` and `credited` both remain and `status` travels with the row: D-4 is
+   * explicit that a credited invoice is neither paid nor outstanding and must be
+   * shown as what it is.
+   *
+   * A credit note appears only when `approval_state = 'approved'`, which D-4
+   * requires, and `ck_credit_notes_approved_shape` guarantees its `issued_at` is
+   * present exactly when it is approved.
+   *
+   * ## Outstanding is CALLED, never re-derived
+   *
+   * `sal.invoice_open_receivable` already excludes the allocations of reversed
+   * receipts, counts only approved credit notes and returns zero for a draft or a
+   * voided invoice. A subtraction written here would be a second authority that
+   * disagrees with the invoice screen the first time either changes. `round(…, 4)`
+   * is applied on the way out only to fix the scale, exactly as `openReceivable`
+   * above does and for the same reason.
+   *
+   * ## The credit-note amount is the TABLE's column, and it stands alone
+   *
+   * The Owner's answer of 2026-09-12 asks for the authoritative credit-note
+   * amount as a separate field. It is `sal.credit_notes.amount` — `numeric(18,4)`,
+   * `CHECK (amount > 0)`, frozen once approved by `sal.guard_dual_control_approval`
+   * — carried out as a decimal string on the credit-note row and NULL on an
+   * invoice row. It is not netted into `invoicedAmount` and it is not subtracted
+   * from `outstanding` here: `sal.invoice_open_receivable` has already counted it,
+   * and counting it twice is the arithmetic that answer forbids.
+   *
+   * Its currency total is a SEPARATE aggregate for the same reason, keyed on the
+   * credit notes' own `currency_code` — which `sal.approve_credit_note` holds
+   * equal to the invoice's.
+   *
+   * ## Every amount is AS OF a stated moment (Owner decision D16)
+   *
+   * `filter.asOf` is the moment the amounts are computed as of, and the period
+   * still chooses the documents. `outstanding` is
+   * `sal.invoice_open_receivable_as_of`, the live function's answer at that moment
+   * (identical to it for a moment at or after the read); the credited amount and the
+   * credit notes of the period count only credits issued by then; an invoice or a
+   * credit note issued after the moment did not exist yet and is left out; and the
+   * status is the one the invoice had then. So a payment allocated, a credit
+   * approved or a receipt reversed later does not change a report whose as-of is
+   * before it.
+   *
+   * ## No allocation column, and that is what prevents the double count
+   *
+   * Allocations live in `sal.payment_allocations`, which is the payments module's
+   * table and is not read here. The money a receipt applied to an invoice appears
+   * ONCE in this report — on the receipt's own row — and reaches the invoice only
+   * through `sal.invoice_open_receivable`, which subtracts it. Publishing it a
+   * second time as an invoice column is exactly the double count a reader would
+   * then add up.
+   *
+   * ## No page is built here
+   *
+   * These rows are one of TWO ordered streams the reporting module merges, so this
+   * returns ordered rows with their cursor values and mints no cursor. See
+   * `ReportDocumentPage`.
+   */
+  public async invoiceDocuments(
+    db: DbHandle,
+    filter: InvoiceDocumentFilter,
+    page: ReportDocumentPage
+  ): Promise<InvoiceDocumentRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+      filter.asOf,
+    ];
+    // Written once and used by both statements. A second copy is how an aggregate
+    // and its rows come to answer for different selections. `$7` is the as-of
+    // moment (D16): an invoice issued after it did not exist yet, and is left out.
+    const invoiceScope = `FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.deleted_at IS NULL
+          AND ${halfOpenLocalDayRange('i.issued_at', 4, 5, 6)}
+          AND i.issued_at <= $7::timestamptz`;
+
+    // The approved credit notes of the same period, scoped through the invoice
+    // they credit — the only route from a credit note to a branch, because
+    // `sal.credit_notes` carries its own company and branch and the join keeps
+    // the two in step rather than trusting either alone.
+    const creditNoteScope = `FROM sal.credit_notes c
+         JOIN sal.invoices i
+           ON i.tenant_id = c.tenant_id AND i.company_id = c.company_id
+          AND i.branch_id = c.branch_id AND i.id = c.invoice_id
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+          AND c.approval_state = 'approved'
+          AND ${halfOpenLocalDayRange('c.issued_at', 4, 5, 6)}
+          AND c.issued_at <= $7::timestamptz`;
+
+    const totals = await this.run<{
+      currency_code: string;
+      invoiced: string;
+      outstanding: string;
+    }>(
+      db,
+      `SELECT i.currency_code,
+              coalesce(sum(a.gross_total), 0::numeric(18, 4))::text AS invoiced,
+              coalesce(sum(round(sal.invoice_open_receivable_as_of(i.id, $7::timestamptz), 4)),
+                       0::numeric(18, 4))::text                     AS outstanding
+         ${invoiceScope}
+        GROUP BY i.currency_code
+        ORDER BY i.currency_code`,
+      values
+    );
+
+    const creditNoteTotals = await this.run<{
+      currency_code: string;
+      credited: string;
+    }>(
+      db,
+      `SELECT c.currency_code,
+              coalesce(sum(c.amount), 0::numeric(18, 4))::text AS credited
+         ${creditNoteScope}
+        GROUP BY c.currency_code
+        ORDER BY c.currency_code`,
+      values
+    );
+
+    // The keyset predicate, written here rather than taken from `keysetFragment`,
+    // because the cursor belongs to the reporting module's MERGED ordering and
+    // arrives already decoded. The comparison is the same row-value form
+    // `keysetFragment` emits for a descending order, applied inside EACH arm of
+    // the union so that every arm is bounded before the arms are merged.
+    const cursorIndex = values.length + 1;
+    if (page.after !== null) values.push(page.after.sortValue, page.after.id);
+    const after = (dateColumn: string, idColumn: string): string =>
+      page.after === null
+        ? ''
+        : `AND (${dateColumn}, ${idColumn}) < ($${cursorIndex}, $${cursorIndex + 1})`;
+    const limitIndex = values.length + 1;
+    values.push(page.limit);
+
+    const rows = await this.run<{
+      document_type: 'invoice' | 'credit_note';
+      document_id: string;
+      document_number: string | null;
+      document_date: Date;
+      payer_partner_id: string;
+      party_role: 'payer' | 'invoice_payer';
+      currency_code: string;
+      status: string;
+      invoiced_amount: string | null;
+      outstanding: string | null;
+      credit_note_amount: string | null;
+      credited_amount: string | null;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT * FROM (
+         SELECT 'invoice'::text AS document_type, i.id AS document_id,
+                i.invoice_number AS document_number, i.issued_at AS document_date,
+                i.payer_partner_id, 'payer'::text AS party_role,
+                i.currency_code,
+                -- The status it had at the as-of moment. issued -> credited is the
+                -- only move after issue; it is undone here only on the record's own
+                -- evidence that it happened after the moment.
+                CASE WHEN i.status = 'credited'
+                      AND EXISTS (SELECT 1 FROM sal.invoice_status_history h
+                                   WHERE h.tenant_id = i.tenant_id AND h.invoice_id = i.id
+                                     AND h.to_status = 'credited' AND h.occurred_at > $7::timestamptz)
+                      AND NOT EXISTS (SELECT 1 FROM sal.invoice_status_history h
+                                       WHERE h.tenant_id = i.tenant_id AND h.invoice_id = i.id
+                                         AND h.to_status = 'credited' AND h.occurred_at <= $7::timestamptz)
+                     THEN 'issued' ELSE i.status END              AS status,
+                a.gross_total::text                               AS invoiced_amount,
+                round(sal.invoice_open_receivable_as_of(i.id, $7::timestamptz), 4)::text
+                                                                  AS outstanding,
+                NULL::text                                        AS credit_note_amount,
+                COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                           WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                             AND cn.approval_state = 'approved'
+                             AND cn.issued_at <= $7::timestamptz), 0)::numeric(18,4)::text
+                                                                  AS credited_amount,
+                ${cursorTimestamp('i.issued_at')}                 AS sort_value
+           ${invoiceScope}
+             ${after('i.issued_at', 'i.id')}
+         UNION ALL
+         SELECT 'credit_note'::text, c.id, NULL, c.issued_at, i.payer_partner_id,
+                'invoice_payer'::text,
+                c.currency_code, c.approval_state, NULL, NULL, c.amount::text, NULL,
+                ${cursorTimestamp('c.issued_at')}
+           ${creditNoteScope}
+            ${after('c.issued_at', 'c.id')}
+       ) d
+        ORDER BY d.document_date DESC, d.document_id DESC
+        LIMIT $${limitIndex}`,
+      values
+    );
+
+    return {
+      totals: totals.rows.map((row) => ({
+        currencyCode: row.currency_code,
+        invoiced: row.invoiced,
+        outstanding: row.outstanding,
+      })),
+      creditNoteTotals: creditNoteTotals.rows.map((row) => ({
+        currencyCode: row.currency_code,
+        credited: row.credited,
+      })),
+      documents: rows.rows.map((row) => ({
+        documentType: row.document_type,
+        documentId: row.document_id,
+        documentNumber: row.document_number,
+        documentDate: row.document_date,
+        // The id is the same column under both document types; the ROLE is what
+        // differs, and it travels so a reader is never told a credit note names
+        // a party of its own.
+        partyId: row.payer_partner_id,
+        partyRole: row.party_role,
+        currencyCode: row.currency_code,
+        status: row.status,
+        // Carried through as the decimal strings `pg` produced. No arithmetic
+        // happens here and none may: `numeric(18,4)` holds values a double cannot
+        // represent, and one conversion is all it takes to lose the fourth place.
+        invoicedAmount: row.invoiced_amount,
+        outstanding: row.outstanding,
+        creditNoteAmount: row.credit_note_amount,
+        creditedAmount: row.credited_amount,
+        sortValue: row.sort_value,
+      })),
+    };
   }
 
   /**
@@ -866,6 +1911,89 @@ export class BillingRepository extends Repository {
   }
 
   /**
+   * What one credit note is traceable to (finance checkpoint, DF-B4): the moment
+   * it was requested, the invoice it reduces and that invoice's payer, and the
+   * customer return that raised it.
+   *
+   * Every join is a LEFT JOIN under the caller's own RLS, in the note's own scope.
+   * The invoice and the return are scope-gated exactly as the note is
+   * (`sel_invoices_scope`, `sel_sales_returns_scope`), so a reader of the note
+   * reads both; the payer's name is read here and published only by the service,
+   * on the same customer-read answer `sal.invoice-list` uses. The return is the
+   * one column-set of `inv.sales_returns` this module reads — the reverse of the
+   * one column of `sal.credit_notes` the inventory module reads (GAP-04): a
+   * return raises at most one note (`sal.request_return_credit_note` is called
+   * once per return), and the oldest is taken should that ever change.
+   */
+  public async findCreditNoteTrace(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditNoteTraceRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      requested_at: Date;
+      invoice_id: string | null;
+      invoice_number: string | null;
+      sale_kind: string | null;
+      work_order_id: string | null;
+      payer_display_name: string | null;
+      return_id: string | null;
+      return_item_id: string | null;
+      return_quantity: string | null;
+      return_received_at: Date | null;
+    }>(
+      db,
+      `SELECT c.created_at AS requested_at,
+              i.id AS invoice_id, i.invoice_number, i.sale_kind, i.work_order_id,
+              pp.display_name AS payer_display_name,
+              r.id AS return_id, r.item_id AS return_item_id,
+              r.quantity::text AS return_quantity, r.created_at AS return_received_at
+         FROM sal.credit_notes c
+         LEFT JOIN sal.invoices i
+           ON i.tenant_id = c.tenant_id AND i.company_id = c.company_id
+          AND i.branch_id = c.branch_id AND i.id = c.invoice_id AND i.deleted_at IS NULL
+         LEFT JOIN crm.business_partners pp
+           ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
+          AND pp.deleted_at IS NULL
+         LEFT JOIN LATERAL (
+           SELECT sr.id, sr.item_id, sr.quantity, sr.created_at
+             FROM inv.sales_returns sr
+            WHERE sr.tenant_id = c.tenant_id AND sr.company_id = c.company_id
+              AND sr.branch_id = c.branch_id AND sr.credit_note_id = c.id
+            ORDER BY sr.created_at, sr.id
+            LIMIT 1
+         ) r ON true
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    if (!row) return null;
+    return {
+      requestedAt: row.requested_at,
+      invoice:
+        row.invoice_id === null || row.sale_kind === null
+          ? null
+          : {
+              invoiceNumber: row.invoice_number,
+              saleKind: row.sale_kind,
+              workOrderId: row.work_order_id,
+              payerDisplayName: row.payer_display_name,
+            },
+      sourceReturn:
+        row.return_id === null ||
+        row.return_item_id === null ||
+        row.return_quantity === null ||
+        row.return_received_at === null
+          ? null
+          : {
+              id: row.return_id,
+              itemId: row.return_item_id,
+              quantity: row.return_quantity,
+              receivedAt: row.return_received_at,
+            },
+    };
+  }
+
+  /**
    * One credit note, held still for the approval decision.
    *
    * `sal.approve_credit_note` locks the note and then the invoice. Taking the
@@ -932,8 +2060,9 @@ export class BillingRepository extends Repository {
    * `captured_unit_price`, `captured_quantity`, `captured_discount`,
    * `captured_tax_rate` and `captured_tax_amount`, frozen when the revision was
    * issued (`quo.guard_quotation_item` refuses any write once the parent leaves
-   * draft), and `ck_quotation_items_tax_amount` has already validated that
-   * `captured_tax_amount = round((unit × qty − discount) × rate, 4)`.
+   * draft), and `tg_quotation_items_money` has already validated that
+   * `captured_tax_amount` is the rounded line net times the rate, rounded half-up
+   * to the currency's minor unit (ADR-023, D1).
    *
    * So every rate and every discount in the preview is captured configuration.
    * Nothing here reads a live price list, resolves a tax rate, or defaults one:
@@ -943,31 +2072,40 @@ export class BillingRepository extends Repository {
    *
    * ### Which revision, and why acceptance is not read from a status column
    *
-   * `r.id = q.current_revision_id AND r.status = 'issued'` picks at most one
-   * revision per quotation — `uq_quotation_revisions_one_issued` already guarantees
-   * one issued revision per quotation, and the `current_revision_id` equality pins
-   * it to the one the quotation itself points at rather than a superseded sibling.
+   * `r.id = q.current_revision_id` picks the one revision each quotation points at
+   * rather than a superseded sibling, and `r.status IN ('issued', 'rejected')`
+   * admits it once the customer has been asked: `issued` while decisions are
+   * outstanding or all approved, `rejected` when the roll-up refused the revision
+   * because ONE line was refused — its approved lines are still approved (ADR-023
+   * D5: approved items are invoiceable; rejected and unapproved ones are not).
    *
-   * `q.status` is filtered only to exclude `cancelled`. Acceptance is DERIVED from
-   * the per-item decisions on every read (BR-QUO-001): `quo.quotations.status` is a
-   * cached roll-up and no constraint ties it to `quo.approval_decisions`, so
-   * trusting it would mean billing from a value that could have drifted from the
-   * decisions it summarises. The three counts are the underlying facts and the
-   * caller derives the outcome from them with the platform's own `rollUpDecisions`.
+   * `q.status` is filtered only to exclude `cancelled`. What may be billed is
+   * DERIVED from the per-item decisions on every read (BR-QUO-001):
+   * `quo.quotations.status` is a cached roll-up and no constraint ties it to
+   * `quo.approval_decisions`. The three counts are the underlying facts.
    *
-   * Expiry is deliberately not a filter. `quo.expireLapsed` expires revisions whose
-   * decision is still incomplete, so an accepted revision that has since passed
-   * `expires_at` was accepted before it lapsed — refusing to bill it would refuse
-   * work the customer authorised.
+   * Expiry is deliberately not a filter on an issued revision.
+   * `quo.expireLapsed` moves a revision whose decisions are incomplete to
+   * `expired`, which is not admitted: what a customer approved before a revision
+   * lapsed is not billed from it (an open point recorded under ADR-023 D5/D15).
+   *
+   * ### What a new invoice would bill (ADR-023 D5/D15)
+   *
+   * The unprefixed totals sum `sal.billable_quotation_lines` over its `billable`
+   * lines — the same read `sal.guard_invoice_line_source` and
+   * `sal.guard_invoice_line_amount_source` judge an invoice line by, so the
+   * preview, the create path and the database cannot disagree about what remains.
+   * The `revision*` totals sum every line as quoted.
    *
    * ### Round-then-sum, not sum-then-round
    *
    * `sal.issue_invoice` recomputes the header from `Σ` of the *already rounded*
-   * per-line `sal.invoice_line_amounts` (L-fin-3). The aggregate below rounds each
-   * line first and then sums, so the preview equals what issue will write. The
-   * identity `grossTotal = round(subtotal − discountTotal + taxTotal, 4)` also
-   * holds exactly here, because `captured_discount` is `numeric(18,4)`: subtracting
-   * a scale-4 value commutes with rounding to scale 4.
+   * per-line `sal.invoice_line_amounts` (L-fin-3). The aggregates below sum the
+   * quotation lines' own rounded amounts, or what remains of them (ADR-023, D1:
+   * document totals are sums of rounded lines), so the preview equals what issue
+   * will write. A quoted line's subtotal is
+   * `captured_line_total − captured_tax_amount + captured_discount`, so
+   * `grossTotal = subtotal − discountTotal + taxTotal` holds by construction.
    *
    * `count(it.id)` rather than `count(*)`: the join to items is a LEFT JOIN, so
    * `count(*)` would report 1 for a revision with no items and the caller could not
@@ -988,43 +2126,63 @@ export class BillingRepository extends Repository {
       item_count: number;
       approved_count: number;
       rejected_count: number;
+      billable_count: number;
       subtotal: string;
       discount_total: string;
       tax_total: string;
       net_total: string;
       gross_total: string;
+      revision_subtotal: string;
+      revision_discount_total: string;
+      revision_tax_total: string;
+      revision_net_total: string;
+      revision_gross_total: string;
     }>(
       db,
       `SELECT q.id AS quotation_id, r.id AS revision_id, r.company_id, r.branch_id,
               r.currency_code, q.payer_partner_ref,
-              count(it.id)::int AS item_count,
-              count(d.id) FILTER (WHERE d.decision = 'approved')::int AS approved_count,
-              count(d.id) FILTER (WHERE d.decision = 'rejected')::int AS rejected_count,
-              COALESCE(sum(round(it.captured_unit_price * it.captured_quantity, 4)), 0)::text
-                AS subtotal,
-              COALESCE(sum(it.captured_discount), 0)::text AS discount_total,
-              COALESCE(sum(it.captured_tax_amount), 0)::text AS tax_total,
-              COALESCE(sum(round(it.captured_unit_price * it.captured_quantity
-                                 - it.captured_discount, 4)), 0)::text AS net_total,
-              round(COALESCE(sum(round(it.captured_unit_price * it.captured_quantity
-                                       - it.captured_discount, 4)), 0)
-                    + COALESCE(sum(it.captured_tax_amount), 0), 4)::text AS gross_total
+              quoted.item_count, quoted.approved_count, quoted.rejected_count,
+              quoted.revision_subtotal, quoted.revision_discount_total,
+              quoted.revision_tax_total, quoted.revision_net_total,
+              quoted.revision_gross_total,
+              billing.billable_count, billing.subtotal, billing.discount_total,
+              billing.tax_total, billing.net_total, billing.gross_total
          FROM quo.quotations q
          JOIN quo.quotation_revisions r
            ON r.tenant_id = q.tenant_id AND r.company_id = q.company_id
           AND r.branch_id = q.branch_id AND r.quotation_id = q.id
-         LEFT JOIN quo.quotation_items it
-           ON it.tenant_id = r.tenant_id AND it.company_id = r.company_id
-          AND it.branch_id = r.branch_id AND it.quotation_revision_id = r.id
-          AND it.deleted_at IS NULL
-         LEFT JOIN quo.approval_decisions d
-           ON d.tenant_id = it.tenant_id AND d.company_id = it.company_id
-          AND d.branch_id = it.branch_id AND d.quotation_revision_id = it.quotation_revision_id
-          AND d.quotation_item_id = it.id
+        CROSS JOIN LATERAL (
+          SELECT count(it.id)::int AS item_count,
+                 count(d.id) FILTER (WHERE d.decision = 'approved')::int AS approved_count,
+                 count(d.id) FILTER (WHERE d.decision = 'rejected')::int AS rejected_count,
+                 COALESCE(sum(it.captured_line_total - it.captured_tax_amount
+                              + it.captured_discount), 0)::text AS revision_subtotal,
+                 COALESCE(sum(it.captured_discount), 0)::text AS revision_discount_total,
+                 COALESCE(sum(it.captured_tax_amount), 0)::text AS revision_tax_total,
+                 COALESCE(sum(it.captured_line_total - it.captured_tax_amount), 0)::text
+                   AS revision_net_total,
+                 COALESCE(sum(it.captured_line_total), 0)::text AS revision_gross_total
+            FROM quo.quotation_items it
+            LEFT JOIN quo.approval_decisions d
+              ON d.tenant_id = it.tenant_id AND d.company_id = it.company_id
+             AND d.branch_id = it.branch_id AND d.quotation_revision_id = it.quotation_revision_id
+             AND d.quotation_item_id = it.id
+           WHERE it.tenant_id = r.tenant_id AND it.company_id = r.company_id
+             AND it.branch_id = r.branch_id AND it.quotation_revision_id = r.id
+             AND it.deleted_at IS NULL) quoted
+        CROSS JOIN LATERAL (
+          SELECT count(*)::int AS billable_count,
+                 COALESCE(sum(b.remaining_net + b.remaining_discount), 0)::text AS subtotal,
+                 COALESCE(sum(b.remaining_discount), 0)::text AS discount_total,
+                 COALESCE(sum(b.remaining_tax), 0)::text AS tax_total,
+                 COALESCE(sum(b.remaining_net), 0)::text AS net_total,
+                 COALESCE(sum(b.remaining_net + b.remaining_tax), 0)::text AS gross_total
+            FROM sal.billable_quotation_lines(r.id) b
+           WHERE b.billing_status = 'billable') billing
         WHERE q.tenant_id = $1 AND q.company_id = $2 AND q.branch_id = $3
           AND q.work_order_id = $4 AND q.deleted_at IS NULL AND q.status <> 'cancelled'
-          AND r.id = q.current_revision_id AND r.status = 'issued' AND r.deleted_at IS NULL
-        GROUP BY q.id, r.id, r.company_id, r.branch_id, r.currency_code, q.payer_partner_ref
+          AND r.id = q.current_revision_id AND r.status IN ('issued', 'rejected')
+          AND r.deleted_at IS NULL
         ORDER BY r.id ASC`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.workOrderId]
     );
@@ -1038,26 +2196,35 @@ export class BillingRepository extends Repository {
       itemCount: r.item_count,
       approvedCount: r.approved_count,
       rejectedCount: r.rejected_count,
+      billableCount: r.billable_count,
       subtotal: r.subtotal,
       discountTotal: r.discount_total,
       taxTotal: r.tax_total,
       netTotal: r.net_total,
       grossTotal: r.gross_total,
+      revisionSubtotal: r.revision_subtotal,
+      revisionDiscountTotal: r.revision_discount_total,
+      revisionTaxTotal: r.revision_tax_total,
+      revisionNetTotal: r.revision_net_total,
+      revisionGrossTotal: r.revision_gross_total,
     }));
   }
 
   /**
-   * The approved commercial lines of one revision, in the shape the invoice stores.
+   * Every line of one source revision: as quoted, as decided, and what of it may
+   * still be billed (ADR-023 D5/D15).
    *
-   * The per-line amounts are computed by the same `numeric` expressions the
-   * aggregate sums, so a line list and a total can never disagree:
-   * `net = round(unit × qty − discount, 4)`, `tax = captured_tax_amount`,
-   * `gross = round(net + tax, 4)`. That last value is provably
-   * `captured_line_total`, since `ck_quotation_items_line_total` already fixes
-   * `captured_line_total = round(unit × qty − discount + tax, 4)` and adding a
-   * scale-4 tax commutes with rounding to scale 4 — so the invoice line inherits an
-   * amount the quotation's own CHECK constraint validated, rather than a
-   * recomputation of it.
+   * The quoted per-line amounts are the quotation line's own, copied rather than
+   * recomputed: `gross = captured_line_total`, `tax = captured_tax_amount`,
+   * `net = gross − tax` (ADR-023, D1). Since `tg_quotation_items_money` fixes
+   * `captured_line_total = line net + tax`, each rounded half-up to the
+   * currency's minor unit, `net` IS the rounded line net.
+   *
+   * The billing columns are `sal.billable_quotation_lines`' own. A line nothing
+   * has invoiced yet remains billable at exactly its quoted amounts, so a fully
+   * approved revision is billed exactly as it was before quantities were tracked;
+   * a line part of whose lineage an earlier revision billed remains billable at
+   * what is left of its total.
    *
    * `item_kind` is carried through unmapped. `quo` uses `service`/`part` and
    * `ck_invoice_lines_line_type` admits `service`/`part`/`fee`; the two vocabularies
@@ -1076,6 +2243,10 @@ export class BillingRepository extends Repository {
       service_id: string | null;
       item_ref: string | null;
       description: string | null;
+      quoted_item_sku: string | null;
+      quoted_item_name: string | null;
+      quoted_unit_code: string | null;
+      quoted_unit_name: string | null;
       currency_code: string;
       unit_price: string;
       quantity: string;
@@ -1084,21 +2255,40 @@ export class BillingRepository extends Repository {
       net_amount: string;
       tax_amount: string;
       gross_amount: string;
+      decision: string | null;
+      billing_status: string;
+      approved_quantity: string;
+      invoiced_quantity: string;
+      remaining_quantity: string;
+      carried: boolean;
+      remaining_net: string | null;
+      remaining_tax: string | null;
+      remaining_gross: string | null;
+      remaining_discount: string | null;
     }>(
       db,
       `SELECT it.id AS quotation_item_id, it.line_number, it.item_kind, it.service_id,
-              it.item_ref, it.description, it.currency_code,
+              it.item_ref, it.description,
+              it.quoted_item_sku, it.quoted_item_name, it.quoted_unit_code, it.quoted_unit_name,
+              it.currency_code,
               it.captured_unit_price::text AS unit_price,
               it.captured_quantity::text   AS quantity,
               it.captured_discount::text   AS discount,
               it.captured_tax_rate::text   AS tax_rate,
-              round(it.captured_unit_price * it.captured_quantity
-                    - it.captured_discount, 4)::text AS net_amount,
+              (it.captured_line_total - it.captured_tax_amount)::text AS net_amount,
               it.captured_tax_amount::text AS tax_amount,
-              round(round(it.captured_unit_price * it.captured_quantity
-                          - it.captured_discount, 4)
-                    + it.captured_tax_amount, 4)::text AS gross_amount
+              it.captured_line_total::text AS gross_amount,
+              b.decision, b.billing_status,
+              b.approved_quantity::text  AS approved_quantity,
+              b.invoiced_quantity::text  AS invoiced_quantity,
+              b.remaining_quantity::text AS remaining_quantity,
+              b.carried,
+              b.remaining_net::text      AS remaining_net,
+              b.remaining_tax::text      AS remaining_tax,
+              (b.remaining_net + b.remaining_tax)::text AS remaining_gross,
+              b.remaining_discount::text AS remaining_discount
          FROM quo.quotation_items it
+         JOIN sal.billable_quotation_lines($4) b ON b.quotation_item_id = it.id
         WHERE it.tenant_id = $1 AND it.company_id = $2 AND it.branch_id = $3
           AND it.quotation_revision_id = $4 AND it.deleted_at IS NULL
         ORDER BY it.line_number ASC`,
@@ -1111,6 +2301,20 @@ export class BillingRepository extends Repository {
       serviceId: r.service_id,
       itemRef: r.item_ref,
       description: r.description,
+      quotedPart:
+        r.item_ref !== null &&
+        r.quoted_item_sku !== null &&
+        r.quoted_item_name !== null &&
+        r.quoted_unit_code !== null &&
+        r.quoted_unit_name !== null
+          ? {
+              itemId: r.item_ref,
+              itemCode: r.quoted_item_sku,
+              itemName: r.quoted_item_name,
+              unitCode: r.quoted_unit_code,
+              unitName: r.quoted_unit_name,
+            }
+          : null,
       currencyCode: r.currency_code,
       unitPrice: r.unit_price,
       quantity: r.quantity,
@@ -1119,6 +2323,16 @@ export class BillingRepository extends Repository {
       netAmount: r.net_amount,
       taxAmount: r.tax_amount,
       grossAmount: r.gross_amount,
+      decision: r.decision,
+      billingStatus: r.billing_status,
+      approvedQuantity: r.approved_quantity,
+      invoicedQuantity: r.invoiced_quantity,
+      remainingQuantity: r.remaining_quantity,
+      carried: r.carried,
+      remainingNet: r.remaining_net,
+      remainingTax: r.remaining_tax,
+      remainingGross: r.remaining_gross,
+      remainingDiscount: r.remaining_discount,
     }));
   }
 
@@ -1139,8 +2353,9 @@ export class BillingRepository extends Repository {
    * `sal.issue_invoice` is the only thing that sets either.
    *
    * A 23505 here is one of two distinct conflicts —
-   * `uq_invoices_work_order_active` or `uq_invoices_idempotency` — and the caller
-   * separates them with `violatedIndex`.
+   * `uq_invoices_work_order_draft` (or, for an invoice naming no revision,
+   * `uq_invoices_work_order_unsourced`) or `uq_invoices_idempotency` — and the
+   * caller separates them with `violatedIndex`.
    */
   public async insertDraftInvoice(
     db: DbHandle,
@@ -1161,7 +2376,7 @@ export class BillingRepository extends Repository {
          (tenant_id, company_id, branch_id, work_order_id, quotation_revision_id,
           payer_partner_id, currency_code, idempotency_key, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, company_id, branch_id, work_order_id, quotation_revision_id,
+       RETURNING id, company_id, branch_id, work_order_id, sale_kind, quotation_revision_id,
                  payer_partner_id, currency_code, status, invoice_number, issued_at,
                  idempotency_key, record_version`,
       [
@@ -1496,10 +2711,8 @@ export class BillingRepository extends Repository {
    * unrepresentable.
    *
    * `currency_code` is bound from the PARENT INVOICE's row by the caller, never
-   * from client input. Five triggers fire on this table and not one reads
-   * `sal.invoices.currency_code`, and `sal.approve_credit_note` compares the amount
-   * but never the currency — so the application's `assertCurrencyMatches` is the
-   * ONLY defence against a JOD credit note against a USD invoice (P1-22-L-02).
+   * from client input. `sal.guard_credit_note_currency` refuses any other code on
+   * insert (GAP-13, closing P1-22-L-02), so a mismatch cannot be stored.
    */
   public async insertCreditNote(
     db: DbHandle,
@@ -1522,7 +2735,8 @@ export class BillingRepository extends Repository {
        VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9)
        RETURNING id, company_id, branch_id, invoice_id, currency_code,
                  amount::text AS amount, reason, approval_state, requested_by, approved_by,
-                 approved_at, issued_at, idempotency_key, record_version`,
+                 approved_at, issued_at, decided_by, decided_at, decision_reason,
+                 idempotency_key, record_version`,
       [
         context.principal.tenantId,
         input.companyId,
@@ -1545,10 +2759,11 @@ export class BillingRepository extends Repository {
    * The primitive locks the note, returns silently for an already-`approved` one,
    * refuses any other non-`pending` state, locks the invoice, re-checks the amount
    * against `sal.invoice_open_receivable` *inside* that lock, sets
-   * `approval_state = 'approved'` and `issued_at = now()`, and writes the
-   * `credit_note_issued` financial event. The `BEFORE UPDATE` trigger stamps
-   * `approved_by` from the session and raises `check_violation` when it equals
-   * `requested_by`.
+   * `approval_state = 'approved'`, and writes the `credit_note_issued` financial
+   * event. The `BEFORE UPDATE` trigger `sal.guard_credit_note_decision` stamps
+   * `approved_by`, `approved_at` and `issued_at` from the session and the clock —
+   * the runtime login may write none of them — and raises `check_violation` when
+   * the approver equals `requested_by`.
    *
    * It does **not** compare the credit note's currency to the invoice's. That
    * comparison happens before the request is ever stored, in the service.
@@ -1562,5 +2777,668 @@ export class BillingRepository extends Repository {
       creditNoteId,
       correlationId,
     ]);
+  }
+
+  /**
+   * The requester withdraws their own pending note, through
+   * `sal.withdraw_credit_note` (ADR-023, D3).
+   *
+   * The primitive locks the note, refuses anyone but the requester
+   * (`credit_note_withdraw_not_requester`) and any decided state
+   * (`credit_note_decision_frozen`), and returns silently for the requester on a
+   * note already withdrawn. `sal.guard_credit_note_decision` stamps the decider
+   * and the time. No financial event: a withdrawn note never credited.
+   */
+  public async withdrawCreditNote(db: DbHandle, creditNoteId: string): Promise<void> {
+    await this.run(db, `SELECT sal.withdraw_credit_note($1::uuid)`, [creditNoteId]);
+  }
+
+  /**
+   * A different person rejects a pending note with a reason, through
+   * `sal.reject_credit_note` (ADR-023, D3).
+   *
+   * The primitive refuses the requester (`credit_note_self_rejection`) and any
+   * other decided state; the trigger checks `sal.credit.approve` in the note's
+   * company and branch (ADR-023 D13) and the reason, and stamps the decider and
+   * the time.
+   */
+  public async rejectCreditNote(db: DbHandle, creditNoteId: string, reason: string): Promise<void> {
+    await this.run(db, `SELECT sal.reject_credit_note($1::uuid, $2)`, [creditNoteId, reason]);
+  }
+
+  /**
+   * The approved credit an invoice would carry if `creditNoteId` were approved
+   * too (ADR-023, D13 — the anti-splitting total).
+   *
+   * Every other note on the invoice in the state `approved`, plus the note being
+   * decided. Pending, rejected and withdrawn notes credit nothing and are not
+   * counted; a credit note has no reversal, so every approved note stands. Summed
+   * by the database, never in JavaScript, and read while the caller holds the
+   * invoice row lock, so an approval that committed while this one waited is
+   * included — the same total `sal.guard_credit_note_decision` compares under the
+   * same lock. Returned as the database's exact decimal string at scale 4.
+   */
+  public async cumulativeApprovedCreditWith(
+    db: DbHandle,
+    scope: {
+      readonly invoiceId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly creditNoteId: string;
+    }
+  ): Promise<string> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ total: string }>(
+      db,
+      `SELECT round(COALESCE(sum(cn.amount), 0), 4)::text AS total
+         FROM sal.credit_notes cn
+        WHERE cn.tenant_id = $1 AND cn.company_id = $2 AND cn.branch_id = $3
+          AND cn.invoice_id = $4
+          AND (cn.approval_state = 'approved' OR cn.id = $5)`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchId,
+        scope.invoiceId,
+        scope.creditNoteId,
+      ]
+    );
+    /* c8 ignore next 3 -- an aggregate without GROUP BY always yields one row. */
+    if (!row) {
+      throw new Error('billing: the approved credit total returned no row');
+    }
+    return row.total;
+  }
+
+  /** The database's business date, the `asOf` an approval limit is resolved on. */
+  public async businessDate(db: DbHandle): Promise<string> {
+    const row = await this.runOne<{ today: string }>(db, `SELECT current_date::text AS today`, []);
+    /* c8 ignore next 3 -- `SELECT current_date` always yields one row. */
+    if (!row) {
+      throw new Error('billing: the database returned no business date');
+    }
+    return row.today;
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32-PRE-107…110 — the counter sale.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Creates the whole draft counter sale through `sal.create_counter_sale_invoice`.
+   *
+   * ONE call rather than the header/amounts/lines sequence `createInvoice` runs,
+   * and the difference is the money. A work-order invoice copies amounts that the
+   * accepted quotation already computed and stored; a counter sale has no prior
+   * document, so its amounts must be COMPUTED — price resolution, tax rate, line
+   * net, line tax, header totals. Every one of those is `numeric` arithmetic inside
+   * the function, which is the only engine this platform computes money with.
+   * Returning the priced lines to TypeScript to multiply them here would be a
+   * second engine, in IEEE-754, on the customer's bill.
+   */
+  public async createCounterSaleInvoice(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly customerPartnerId: string;
+      readonly lines: readonly {
+        readonly itemId: string;
+        readonly locationId: string;
+        /** Exact decimal STRING. */
+        readonly quantity: string;
+      }[];
+      readonly idempotencyKey: string | null;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT sal.create_counter_sale_invoice($1, $2, $3, $4::jsonb, $5, $6) AS id`,
+      [
+        input.companyId,
+        input.branchId,
+        input.customerPartnerId,
+        JSON.stringify(input.lines),
+        input.idempotencyKey,
+        db.context.correlationId,
+      ]
+    );
+    if (!row) throw new Error('billing: sal.create_counter_sale_invoice returned no row');
+    return row.id;
+  }
+
+  /**
+   * The line ids of a counter sale, in line order.
+   *
+   * Ids only. The inventory module posts each line's `sale`/`out` movement from the
+   * line itself, so it needs no item, no cell and no quantity from here — and
+   * passing them would create a second statement of facts the line already holds.
+   */
+  public async listCounterSaleLineIds(db: DbHandle, invoiceId: string): Promise<readonly string[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<{ id: string }>(
+      db,
+      `SELECT l.id
+         FROM sal.invoice_lines l
+        WHERE l.tenant_id = $1 AND l.invoice_id = $2 AND l.deleted_at IS NULL
+          AND l.item_id IS NOT NULL
+        ORDER BY l.line_number`,
+      [context.principal.tenantId, invoiceId]
+    );
+    return rows.rows.map((r) => r.id);
+  }
+
+  /** One branch's counter sales, newest first. */
+  public async listCounterSales(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly customerPartnerId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<InvoiceRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.customerPartnerId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'i.created_at', id: 'i.id' },
+      COUNTER_SALE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<InvoiceSql & { sort_value: string }>(
+      db,
+      `SELECT ${INVOICE_COLUMNS},
+              a.net_total::text   AS net_total,
+              a.tax_total::text   AS tax_total,
+              a.gross_total::text AS gross_total,
+              ${cursorTimestamp('i.created_at')} AS sort_value
+         FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id
+          AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.sale_kind = 'counter_sale' AND i.deleted_at IS NULL
+          AND ($4::text IS NULL OR i.status = $4)
+          AND ($5::uuid IS NULL OR i.payer_partner_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({ item: toInvoice(row), sortValue: row.sort_value, id: row.id })),
+      request,
+      COUNTER_SALE_ORDER
+    );
+  }
+
+  /**
+   * One branch's invoices, newest first, searchable by what a person holds
+   * (Owner directive, P1-32-PRE-OD-UX, `sal.invoice-list`).
+   *
+   * ## Why this read exists
+   *
+   * Every other invoice read is addressed by something the caller must ALREADY
+   * hold — an invoice id, a work order id, an idempotency key. The payment desk
+   * applies a receipt to an invoice, and before this read it asked for that
+   * invoice as a typed reference, because nothing answered "which invoices does
+   * this branch have". The counter-sale list answers it for counter sales only.
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the service has already
+   * authorized the pair — the same order `listCounterSales` uses, and for the
+   * same reason: the row policy narrows on the permission-blind union of the
+   * caller's grants (P1-18-A-01). RLS remains the guarantee underneath.
+   *
+   * ## Money
+   *
+   * The amounts are the same LEFT JOIN `findInvoice` uses, so a caller without
+   * `sal.finance.view` reads the header with `money` null. The open receivable is
+   * CALLED, never re-derived, and `round(…, 4)` only fixes its scale — exactly as
+   * `openReceivable` does. For that same caller the function computes zero
+   * (`balanceIsTrustworthy` explains why), so the service withholds it.
+   *
+   * ## The box
+   *
+   * One free-text box through the shared `searchFragment`: the invoice number,
+   * the payer's name, and the plate and VIN of the job's vehicle. The payer is
+   * the invoice's own `payer_partner_id`; a counter sale has no work order, so
+   * its vehicle anchor is NULL and those two arms cannot match it. The service
+   * switches the phone arm off before this is called, and switches the name arm
+   * off for a caller without `crm.customer.read` and the plate and VIN arms off
+   * for a caller without `veh.vehicle.read` — an empty fragment disables its arm
+   * in `searchFragment`. The payer's name is still read here; whether it is
+   * PUBLISHED is the service's decision, made on the same customer answer.
+   *
+   * The payer is NAMED from the same set the box SEARCHES: the shared name arm
+   * reads live partners only (`bp.deleted_at IS NULL`), so the join carries the
+   * same predicate. A payer retired since the invoice was written is therefore
+   * neither shown nor found by name — the row still shows its number and is
+   * still found by it — rather than shown under a name the box cannot reach.
+   *
+   * ## Allocatable
+   *
+   * `allocatable` keeps the two states `assertAllocatable` admits and asks
+   * `sal.invoice_open_receivable` whether anything is still open, in the query,
+   * before the keyset window, so a page of allocatable invoices is never short.
+   * The comparison is PostgreSQL's `numeric`; nothing here parses an amount.
+   *
+   * The function reads the invoice's amounts, credit notes and allocations, so it
+   * is the expensive predicate, and the statement is shaped so it runs LAST. The
+   * `candidates` CTE applies every cheap narrowing first — tenant, company,
+   * branch, live rows, the status filter, the two allocatable STATES, the box and
+   * the keyset position — and is `MATERIALIZED`, which PostgreSQL treats as an
+   * optimisation fence: the outer query cannot push the function into it or run
+   * it ahead of those predicates. The function is therefore called only for a
+   * live `issued`/`credited` invoice of this branch that the box and the cursor
+   * already admit. It is NOT confined to the page window: the window is counted
+   * AFTER the filter, which is what keeps an allocatable page full, so every
+   * candidate past the cursor is asked once. Without `allocatable` the outer
+   * predicate is `NOT false` and the function is not called in the filter at all.
+   *
+   * ## No index and no migration
+   *
+   * The branch predicate is served by the table's tenant/company/branch-leading
+   * indexes and the ordering is a sort over the already-narrowed set, which is
+   * the decision `listCounterSales` and the delivery list took on the same table
+   * shape.
+   */
+  public async listInvoices(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      /**
+       * Only `issued`/`credited` invoices whose open receivable is above zero —
+       * the invoices `sal.payment-allocate` could still apply money to.
+       */
+      readonly allocatable?: boolean | undefined;
+      /** `counter_sale` or `work_order`; every kind when absent (DF-B3). */
+      readonly saleKind?: string | undefined;
+      /** Already reduced by `toEntitySearchTerms`. */
+      readonly search?: EntitySearchTerms | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<InvoiceListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.allocatable === true,
+      filter.saleKind ?? null,
+    ];
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'i.tenant_id',
+        // A counter sale has no work order, so this is NULL for it and neither
+        // vehicle arm can match one.
+        vehicleId: `(SELECT w.vehicle_id
+                       FROM wo.work_orders w
+                      WHERE w.tenant_id = i.tenant_id
+                        AND w.id = i.work_order_id)`,
+        partnerIds: 'SELECT i.payer_partner_id',
+        reference: 'i.invoice_number',
+      },
+      values.length + 1
+    );
+    const keyset = keysetFragment(
+      request,
+      { sort: 'i.created_at', id: 'i.id' },
+      INVOICE_LIST_ORDER,
+      values.length + search.values.length + 1
+    );
+    const result = await this.run<
+      InvoiceSql & {
+        sort_value: string;
+        open_amount: string;
+        creditable_amount: string;
+        payer_display_name: string | null;
+        payer_display_number: string | null;
+        payer_party_type: string | null;
+      }
+    >(
+      db,
+      `WITH candidates AS MATERIALIZED (
+         SELECT i.id
+           FROM sal.invoices i
+          WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+            AND i.deleted_at IS NULL
+            AND ($4::text IS NULL OR i.status = $4)
+            AND (NOT $5::boolean OR i.status IN ('issued', 'credited'))
+            AND ($6::text IS NULL OR i.sale_kind = $6)
+            ${search.predicate}
+            ${keyset.predicate}
+       )
+       SELECT ${INVOICE_COLUMNS},
+              a.net_total::text   AS net_total,
+              a.tax_total::text   AS tax_total,
+              a.gross_total::text AS gross_total,
+              round(sal.invoice_open_receivable(i.id), 4)::text AS open_amount,
+              (CASE WHEN i.status IN ('issued', 'credited') THEN COALESCE(a.gross_total, 0) ELSE 0 END
+                 - COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                              WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                                AND cn.approval_state = 'approved'), 0))::numeric(18,4)::text
+                AS creditable_amount,
+              pp.display_name   AS payer_display_name,
+              pp.display_number AS payer_display_number,
+              pp.party_type     AS payer_party_type,
+              ${cursorTimestamp('i.created_at')} AS sort_value
+         FROM candidates c
+         JOIN sal.invoices i
+           ON i.tenant_id = $1 AND i.id = c.id
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id
+          AND a.deleted_at IS NULL
+         LEFT JOIN crm.business_partners pp
+           ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
+          AND pp.deleted_at IS NULL
+        WHERE (NOT $5::boolean OR sal.invoice_open_receivable(i.id) > 0)
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...search.values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          ...toInvoice(row),
+          payerDisplayName: row.payer_display_name,
+          payerDisplayNumber: row.payer_display_number,
+          payerPartyType: row.payer_party_type,
+          openAmount: row.open_amount,
+          creditableAmount: row.creditable_amount,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      INVOICE_LIST_ORDER
+    );
+  }
+
+  /**
+   * One branch's credit notes, newest first (DEF-T-07).
+   *
+   * No `deleted_at` predicate, for the reason `findCreditNote` gives: the table
+   * has no such column. No amount join either — the amount is a column of the row
+   * itself, and the whole row is gated by `sal.finance.view`
+   * (`sel_credit_notes_gated`), so a caller without that permission reads an
+   * EMPTY page rather than a page of nulled figures. That is why the operation
+   * declares the permission instead of nulling amounts the way the invoice reads
+   * do: there is no honest partial projection of a row RLS removes entirely.
+   */
+  public async listCreditNotes(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly approvalState?: string | undefined;
+      readonly invoiceId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<CreditNoteRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.approvalState ?? null,
+      filter.invoiceId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.created_at', id: 'c.id' },
+      CREDIT_NOTE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<CreditNoteSql & { sort_value: string }>(
+      db,
+      `SELECT ${CREDIT_NOTE_COLUMNS},
+              ${cursorTimestamp('c.created_at')} AS sort_value
+         FROM sal.credit_notes c
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+          AND ($4::text IS NULL OR c.approval_state = $4)
+          AND ($5::uuid IS NULL OR c.invoice_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toCreditNote(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      CREDIT_NOTE_ORDER
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // The D2 credit ceiling and refund obligations (P1-32-PRE-OD-FD2A).
+  // -------------------------------------------------------------------------
+
+  /**
+   * What an invoice can still be credited, and what it still owes (ADR-023 D2).
+   *
+   * The same predicates `sal.approve_credit_note` applies under its locks: the
+   * gross of an issued (or credited) invoice less its APPROVED credit notes. Both
+   * figures are cast to `numeric(18,4)` so an empty sum reads at the scale every
+   * other amount carries. The caller holds the invoice lock and has established
+   * that the balance is trustworthy (`balanceIsTrustworthy`).
+   */
+  public async creditCeiling(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditCeilingRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ creditable: string; owed: string }>(
+      db,
+      `SELECT (CASE WHEN i.status IN ('issued', 'credited') THEN COALESCE(a.gross_total, 0) ELSE 0 END
+                 - COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                              WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                                AND cn.approval_state = 'approved'), 0))::numeric(18,4)::text AS creditable,
+              round(sal.invoice_open_receivable(i.id), 4)::numeric(18,4)::text AS owed
+         FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.id = $4 AND i.deleted_at IS NULL`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
+    );
+    return row ? { creditable: row.creditable, owed: row.owed } : null;
+  }
+
+  /**
+   * What approving a PENDING note would do now (ADR-023 D2): the part of its amount
+   * that reduces what the invoice still owes — at most that — and the rest, which
+   * the customer would be owed back. Computed by PostgreSQL in `numeric`, never in
+   * JavaScript. A preview: the approval recomputes it under the invoice lock.
+   */
+  public async creditApprovalEffect(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditApprovalEffectRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ reduces: string; refund: string }>(
+      db,
+      `SELECT least(c.amount, o.owed)::numeric(18,4)::text AS reduces,
+              (c.amount - least(c.amount, o.owed))::numeric(18,4)::text AS refund
+         FROM sal.credit_notes c
+         CROSS JOIN LATERAL (SELECT greatest(sal.invoice_open_receivable(c.invoice_id), 0) AS owed) o
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    return row ? { reducesBalanceBy: row.reduces, refundOwed: row.refund } : null;
+  }
+
+  /**
+   * What an APPROVED note did (ADR-023 D2, P1-32-PRE-OD-FD2B): the part of its
+   * amount that reduced what the invoice still owed, and the part the customer is
+   * owed back — its refund obligation's amount, `0.0000` when it left none. Both
+   * computed by PostgreSQL in `numeric`, so the approval's answer can state the
+   * split without the browser subtracting money.
+   */
+  public async appliedCreditEffect(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditApprovalEffectRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ reduces: string; refund: string }>(
+      db,
+      `SELECT (c.amount - COALESCE(ro.amount, 0))::numeric(18,4)::text AS reduces,
+              COALESCE(ro.amount, 0)::numeric(18,4)::text AS refund
+         FROM sal.credit_notes c
+         LEFT JOIN sal.refund_obligations ro
+           ON ro.tenant_id = c.tenant_id AND ro.company_id = c.company_id
+          AND ro.branch_id = c.branch_id AND ro.credit_note_id = c.id
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4
+          AND c.approval_state = 'approved'`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    return row ? { reducesBalanceBy: row.reduces, refundOwed: row.refund } : null;
+  }
+
+  /** The refund obligation an approved credit note created, or `null` (at most one). */
+  public async findRefundObligationForCreditNote(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<RefundObligationRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<RefundObligationSql>(
+      db,
+      `SELECT ${REFUND_OBLIGATION_COLUMNS}
+         FROM sal.refund_obligations ro
+        WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+          AND ro.credit_note_id = $4`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    return row ? toRefundObligation(row) : null;
+  }
+
+  /**
+   * What the invoice's refund obligations total (cancelled ones aside), what has
+   * been paid out on them, what is still owed on the open ones, and whether a
+   * request waits for a decision or for its payout. Sums in `numeric(18,4)`.
+   */
+  public async invoiceRefundPosition(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<InvoiceRefundPositionRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      obligated: string;
+      refunded: string;
+      still_owed: string;
+      pending_request: boolean;
+      approved_request: boolean;
+    }>(
+      db,
+      `WITH ob AS (
+         SELECT ro.id, ro.amount, ro.state,
+                COALESCE((SELECT sum(rr.amount) FROM sal.refund_requests rr
+                           WHERE rr.tenant_id = ro.tenant_id AND rr.company_id = ro.company_id
+                             AND rr.branch_id = ro.branch_id AND rr.obligation_id = ro.id
+                             AND rr.approval_state = 'approved' AND rr.executed_at IS NOT NULL), 0) AS paid
+           FROM sal.refund_obligations ro
+          WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+            AND ro.invoice_id = $4 AND ro.state <> 'cancelled'
+       )
+       SELECT COALESCE(sum(ob.amount), 0)::numeric(18,4)::text AS obligated,
+              COALESCE(sum(ob.paid), 0)::numeric(18,4)::text AS refunded,
+              COALESCE(sum(ob.amount - ob.paid) FILTER (WHERE ob.state = 'open'), 0)::numeric(18,4)::text
+                AS still_owed,
+              EXISTS (SELECT 1 FROM sal.refund_requests rr
+                       WHERE rr.tenant_id = $1 AND rr.company_id = $2 AND rr.branch_id = $3
+                         AND rr.invoice_id = $4 AND rr.approval_state = 'pending') AS pending_request,
+              EXISTS (SELECT 1 FROM sal.refund_requests rr
+                       WHERE rr.tenant_id = $1 AND rr.company_id = $2 AND rr.branch_id = $3
+                         AND rr.invoice_id = $4 AND rr.approval_state = 'approved'
+                         AND rr.executed_at IS NULL) AS approved_request
+         FROM ob`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
+    );
+    return {
+      obligated: row?.obligated ?? '0.0000',
+      refunded: row?.refunded ?? '0.0000',
+      stillOwed: row?.still_owed ?? '0.0000',
+      pendingRequest: row?.pending_request === true,
+      approvedRequest: row?.approved_request === true,
+    };
+  }
+
+  /**
+   * One branch's refund obligations, newest first (`sal.refund-obligation-list`).
+   *
+   * The whole row is gated by `sal.finance.view` (`sel_refund_obligations_gated`),
+   * which the operation declares, so a caller without it is refused rather than
+   * shown an empty page that would read as "nobody is owed anything".
+   */
+  public async listRefundObligations(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly partnerId?: string | undefined;
+      readonly invoiceId?: string | undefined;
+      readonly state?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<RefundObligationRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.partnerId ?? null,
+      filter.invoiceId ?? null,
+      filter.state ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'ro.created_at', id: 'ro.id' },
+      REFUND_OBLIGATION_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<RefundObligationSql & { sort_value: string }>(
+      db,
+      `SELECT ${REFUND_OBLIGATION_COLUMNS},
+              ${cursorTimestamp('ro.created_at')} AS sort_value
+         FROM sal.refund_obligations ro
+        WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+          AND ($4::uuid IS NULL OR ro.partner_id = $4)
+          AND ($5::uuid IS NULL OR ro.invoice_id = $5)
+          AND ($6::text IS NULL OR ro.state = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toRefundObligation(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      REFUND_OBLIGATION_ORDER
+    );
   }
 }

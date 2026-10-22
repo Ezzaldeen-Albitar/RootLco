@@ -57,11 +57,12 @@ export async function PATCH(
   request: Request,
   route: { params: Promise<{ roleId: string; mappingId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     ROLE_PERMISSION_UPDATE_OPERATION,
     request,
     async ({ db, request: raw, expectedVersion }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const body = await parseJsonBody(raw, PatchBody);
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -75,7 +76,7 @@ export async function PATCH(
       );
       return { body: { status: 'updated' } };
     },
-    { params }
+    { params: rawParams }
   );
 }
 
@@ -83,14 +84,15 @@ export async function DELETE(
   request: Request,
   route: { params: Promise<{ roleId: string; mappingId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     ROLE_PERMISSION_REMOVE_OPERATION,
     request,
     async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
       await iamModule().access.removeRolePermission(db, params.roleId, params.mappingId);
       return { body: { status: 'removed' } };
     },
-    { params }
+    { params: raw }
   );
 }

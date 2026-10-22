@@ -1,0 +1,273 @@
+// =============================================================================
+// Element reset — vendored from Tailwind CSS 3.4 preflight (MIT licence)
+// =============================================================================
+//
+// ADR-022 turns Tailwind's own preflight OFF (`corePlugins.preflight: false` in
+// tailwind.config.ts) and carries the same rules here, inside the
+// `rootlco-reset` cascade layer, because Tailwind 3 cannot emit its base layer
+// into a named CSS layer and an unlayered preflight beats Material UI's layered
+// styles (see `styles/_layers.scss`).
+//
+// The rules are Tailwind 3.4's `src/css/preflight.css`, in its order, with four
+// deliberate adaptations and nothing else:
+//
+//   1. `theme('fontFamily.sans')` / `theme('fontFamily.mono')` resolve to the
+//      token stacks they already resolved to (`--font-family-sans`/`-mono`).
+//   2. `theme('borderColor.DEFAULT')` was Tailwind's gray-200 and
+//      `theme('colors.gray.400')` its gray-400 — raw colours this repository may
+//      not hold outside the token layer. They become `--color-border` (the
+//      neutral 200 divider) and `--color-text-muted` (the colour every text
+//      control already sets on its placeholder).
+//   3. Vendor-prefixed properties are written unprefixed (`appearance`,
+//      `tab-size`); Autoprefixer adds the prefixes the browser list needs. The
+//      `button` keyword is written `auto`: CSS UI 4 defines `button` as a
+//      compatibility keyword that behaves as `auto`, and Stylelint refuses the
+//      deprecated spelling.
+//   4. `-webkit-text-size-adjust` is not repeated: `_reset.scss` sets it, in the
+//      same layer, with its documented exception.
+//
+// It is forwarded LAST from `base/_index.scss`, so inside the layer it comes
+// after `_reset.scss` and the focus ring — the same relative order it had when
+// Tailwind emitted it after the base partials.
+// =============================================================================
+
+@layer rootlco-reset {
+  *,
+  ::before,
+  ::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: var(--color-border);
+  }
+
+  ::before,
+  ::after {
+    --tw-content: '';
+  }
+
+  html,
+  :host {
+    line-height: 1.5;
+    tab-size: 4;
+    font-family: var(--font-family-sans);
+    font-feature-settings: normal;
+    font-variation-settings: normal;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    margin: 0;
+    line-height: inherit;
+  }
+
+  hr {
+    height: 0;
+    color: inherit;
+    border-top-width: 1px;
+  }
+
+  abbr:where([title]) {
+    text-decoration: underline dotted;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  b,
+  strong {
+    font-weight: bolder;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-family-mono);
+    font-feature-settings: normal;
+    font-variation-settings: normal;
+    font-size: 1em;
+  }
+
+  small {
+    font-size: 80%;
+  }
+
+  sub,
+  sup {
+    font-size: 75%;
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+  }
+
+  sub {
+    bottom: -0.25em;
+  }
+
+  sup {
+    top: -0.5em;
+  }
+
+  table {
+    text-indent: 0;
+    border-color: inherit;
+    border-collapse: collapse;
+  }
+
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    font-size: 100%;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    margin: 0;
+    padding: 0;
+  }
+
+  button,
+  select {
+    text-transform: none;
+  }
+
+  button,
+  input:where([type='button']),
+  input:where([type='reset']),
+  input:where([type='submit']) {
+    appearance: auto;
+    background-color: transparent;
+    background-image: none;
+  }
+
+  :-moz-focusring {
+    outline: auto;
+  }
+
+  :-moz-ui-invalid {
+    box-shadow: none;
+  }
+
+  progress {
+    vertical-align: baseline;
+  }
+
+  ::-webkit-inner-spin-button,
+  ::-webkit-outer-spin-button {
+    height: auto;
+  }
+
+  [type='search'] {
+    appearance: textfield;
+    outline-offset: -2px;
+  }
+
+  ::-webkit-search-decoration {
+    appearance: none;
+  }
+
+  ::-webkit-file-upload-button {
+    appearance: auto;
+    font: inherit;
+  }
+
+  summary {
+    display: list-item;
+  }
+
+  blockquote,
+  dl,
+  dd,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  hr,
+  figure,
+  p,
+  pre {
+    margin: 0;
+  }
+
+  fieldset {
+    margin: 0;
+    padding: 0;
+  }
+
+  legend {
+    padding: 0;
+  }
+
+  ol,
+  ul,
+  menu {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  dialog {
+    padding: 0;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    opacity: 1;
+    color: var(--color-text-muted);
+  }
+
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  :disabled {
+    cursor: default;
+  }
+
+  img,
+  svg,
+  video,
+  canvas,
+  audio,
+  iframe,
+  embed,
+  object {
+    display: block;
+    vertical-align: middle;
+  }
+
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  [hidden]:where(:not([hidden='until-found'])) {
+    display: none;
+  }
+}

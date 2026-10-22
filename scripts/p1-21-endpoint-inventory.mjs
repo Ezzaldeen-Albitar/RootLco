@@ -468,7 +468,7 @@ const TASKS = Object.freeze([
       [
         'test',
         'tests/unit/p1-21-inventory-domain.test.ts',
-        'accepts exactly the seven legal triples and nothing else',
+        'accepts exactly the fourteen legal triples and nothing else',
       ],
       [
         'test',

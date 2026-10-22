@@ -39,6 +39,8 @@ import {
   DECISIONS,
   DECISION_CHANNELS,
   EVIDENCE_KINDS,
+  MAX_CONTACT_NAME,
+  MAX_CONTACT_PHONE_INPUT,
   MAX_REFERENCE_NOTE,
   quotationModule,
 } from '@/modules/quotation';
@@ -64,6 +66,10 @@ export const Body = z
     channel: z.enum(DECISION_CHANNELS),
     decidingPartyRef: schemas.uuid.optional(),
     evidence: Evidence.optional(),
+    // Who spoke for the customer, kept on the acceptance record when this decision
+    // completes an acceptance (ADR-023 D11); refused on a rejection.
+    contactName: z.string().min(1).max(MAX_CONTACT_NAME).optional(),
+    contactPhone: z.string().min(1).max(MAX_CONTACT_PHONE_INPUT).optional(),
     presentedRevisionId: schemas.uuid,
   })
   .strict();
@@ -107,6 +113,8 @@ export async function POST(
           channel: parsed.channel,
           decidingPartyRef: parsed.decidingPartyRef,
           evidence: parsed.evidence,
+          contactName: parsed.contactName,
+          contactPhone: parsed.contactPhone,
           presentedRevisionId: parsed.presentedRevisionId,
         },
         authorizeScope

@@ -724,6 +724,60 @@ function resolveHelper(helper, args, unions) {
  * Import closure
  * ------------------------------------------------------------------ */
 
+/**
+ * Filesystem lookups, memoised for the lifetime of ONE `run()` - or of one
+ * `phaseRoutes()` call made outside a run.
+ *
+ * Measured on the development machine: one `run()` made ~54,400 `existsSync`
+ * and ~42,500 `statSync` calls over ~900 distinct paths, because every import
+ * of every file in every closure re-probed the same five candidates. At 41-115
+ * microseconds a call that was ~9.7 s per `run()`, and the mutation suite
+ * calls `run()` once per case.
+ *
+ * Only the answer is memoised, never the decision: a path is classified by
+ * exactly the probe it always was (`existsSync`, then `statSync`), and each
+ * caller asks the classification the question it used to ask the probe. A
+ * `phaseRoutes()` that reads off disk (`defaultRead`) likewise reads each file
+ * once rather than once per closure that contains it. The memo exists only
+ * while one of those two calls is executing - created on entry, dropped on
+ * exit - so a tree that changes between two calls is read afresh, and any other
+ * call probes the disk exactly as before. Every `run()` starts with an empty
+ * memo; a `phaseRoutes()` inside a run shares the run's.
+ */
+let memo = null;
+
+/**
+ * Runs `compute` with a filesystem memo: the active one, or a fresh one for this call.
+ *
+ * @template T
+ * @param {() => T} compute
+ * @param {boolean} fresh
+ * @returns {T}
+ */
+function withFilesystemMemo(compute, fresh) {
+  if (memo !== null && !fresh) return compute();
+  const outer = memo;
+  memo = { kinds: new Map(), texts: new Map() };
+  try {
+    return compute();
+  } finally {
+    memo = outer;
+  }
+}
+
+/** `'file'`, `'directory'`, `'other'` or `'missing'`, memoised while a memo is active. */
+function pathKind(path) {
+  const known = memo?.kinds.get(path);
+  if (known !== undefined) return known;
+  let kind = 'missing';
+  if (existsSync(path)) {
+    const stats = statSync(path);
+    kind = stats.isFile() ? 'file' : stats.isDirectory() ? 'directory' : 'other';
+  }
+  memo?.kinds.set(path, kind);
+  return kind;
+}
+
 /** Where an import specifier resolves inside `apps/web/src`, or `null`. */
 export function resolveSpecifier(fromFile, specifier) {
   let base;
@@ -738,7 +792,7 @@ export function resolveSpecifier(fromFile, specifier) {
     join(base, 'index.tsx'),
     base,
   ]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+    if (pathKind(candidate) === 'file') return candidate;
   }
   return null;
 }
@@ -776,6 +830,37 @@ export function importClosure(entry, read) {
  * ------------------------------------------------------------------ */
 
 /**
+ * Module-level string constants, so an address ASSEMBLED from one resolves.
+ *
+ * `checkInWizardHref` builds `` `/${locale}${CHECK_IN_WIZARD_PATH}?…` ``, and
+ * the path half of that link is a named constant rather than text in the
+ * template — which is the shape `intake-handoff.ts` deliberately uses so the two
+ * ends of the handoff cannot point at different addresses. Collapsing every
+ * interpolation to `:p` erased the segment the link is FOR, so the one link in
+ * these trees that names its destination through a shared constant was the one
+ * link the derivation could not follow.
+ *
+ * Only a plain single-line string literal counts: a value assembled at runtime
+ * is not an address this function can claim to have read.
+ */
+export function stringConstants(text) {
+  const constants = new Map();
+  const declaration =
+    /\b(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::\s*string\s*)?=\s*(['"])((?:(?!\2)[^\\\n])*)\2/g;
+  let match;
+  while ((match = declaration.exec(text)) !== null) constants.set(match[1], match[3]);
+  return constants;
+}
+
+/** `${CHECK_IN_WIZARD_PATH}` → its literal value, where one is known. */
+export function inlineStringConstants(text, constants) {
+  if (constants.size === 0) return text;
+  return text.replace(/\$\{\s*([A-Za-z_$][\w$]*)\s*\}/g, (whole, name) =>
+    constants.has(name) ? constants.get(name) : whole
+  );
+}
+
+/**
  * The dashboard routes one source navigates to, as page-file paths.
  *
  * A locale-prefixed application path is the one link shape these screens use
@@ -783,11 +868,28 @@ export function importClosure(entry, read) {
  * interpolation is the marker. A dynamic segment matches a `[param]`
  * directory, which is how `/${locale}/appointments/${row.id}` finds
  * `appointments/[appointmentId]/page.tsx`.
+ *
+ * ## A link that carries a query string is still a link
+ *
+ * The pattern's character class held no `?`, so the moment a screen navigated
+ * with a parameter — which is exactly how the walk-in handoff travels,
+ * `/${locale}/receptions/check-in?customerId=…&vehicleId=…` — the whole literal
+ * stopped matching and the destination vanished from the reachable set. The
+ * consequence points the wrong way: the route that OFFERS the link is then
+ * reported as consulting surplus privilege for demanding the very permission
+ * its destination requires, and the cheap way out is to drop the gate.
+ *
+ * So the address is now PARSED the way a URL is: the path is what precedes the
+ * first `?` or `#`, and the query and the fragment are read and discarded
+ * rather than being allowed to hide the path. Nothing is listed by name and no
+ * link is exempted — a query-carrying link to a route outside these segments is
+ * still ignored, for the same reason it always was.
  */
 export function linkedRoutes(source, segments = routeSegments()) {
-  const text = normaliseSourcePaths(stripComments(source));
+  const stripped = stripComments(source);
+  const text = normaliseSourcePaths(inlineStringConstants(stripped, stringConstants(stripped)));
   const found = new Set();
-  const pattern = /['"`]\/:p\/([A-Za-z0-9\-_/:]*)['"`]/g;
+  const pattern = /['"`]\/:p\/([A-Za-z0-9\-_/:]*)(?:[?#][^'"`\s]*)?['"`]/g;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     const parts = match[1].split('/').filter((part) => part !== '');
@@ -803,7 +905,7 @@ function resolvePageForPath(segments) {
   let directory = DASHBOARD;
   for (const segment of segments) {
     const literal = join(directory, segment);
-    if (segment !== ':p' && existsSync(literal) && statSync(literal).isDirectory()) {
+    if (segment !== ':p' && pathKind(literal) === 'directory') {
       directory = literal;
       continue;
     }
@@ -817,7 +919,7 @@ function resolvePageForPath(segments) {
     directory = join(directory, dynamic);
   }
   const page = join(directory, 'page.tsx');
-  return existsSync(page) ? page : null;
+  return pathKind(page) !== 'missing' ? page : null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -945,6 +1047,10 @@ export function composedPermissions(manifest, readMigration) {
  * ------------------------------------------------------------------ */
 
 export function run(injected = {}) {
+  return withFilesystemMemo(() => judge(injected), true);
+}
+
+function judge(injected) {
   let register = injected.register;
   if (!register) {
     try {
@@ -1000,8 +1106,15 @@ export function run(injected = {}) {
   const sources = injected.sources ?? collectSources();
   const read = (file) => sources.get(file) ?? null;
 
-  const routes = injected.routes ?? phaseRoutes(read);
-  const segments = routeSegments(read);
+  /*
+   * Derived ONCE. `routeSegments(read)` is `phaseRoutes(read)` reduced to first
+   * segments, so calling both re-walked the router and re-took every import
+   * closure for an identical answer. The segments still come from the DERIVED
+   * routes, never from an injected list, exactly as before.
+   */
+  const derivedRoutes = phaseRoutes(read);
+  const routes = injected.routes ?? derivedRoutes;
+  const segments = segmentsOf(derivedRoutes);
   const inFeatureTree = (file) =>
     FEATURE_TREES.some((tree) => posix(file).includes(`/${posix(tree)}/`));
   const treeFiles = [...sources.keys()].filter(inFeatureTree);
@@ -1278,25 +1391,31 @@ export function collectSources() {
  * edit to this file.
  */
 export function phaseRoutes(read = defaultRead) {
-  const found = [];
-  for (const file of walk(DASHBOARD)) {
-    if (!file.endsWith(`${sep}page.tsx`)) continue;
-    const closure = importClosure(file, read);
-    const owned = closure.some((near) =>
-      FEATURE_TREES.some((tree) => posix(near).includes(`/${posix(tree)}/`))
-    );
-    if (owned) found.push(file);
-  }
-  return found.sort();
+  return withFilesystemMemo(() => {
+    const found = [];
+    for (const file of walk(DASHBOARD)) {
+      if (!file.endsWith(`${sep}page.tsx`)) continue;
+      const closure = importClosure(file, read);
+      const owned = closure.some((near) =>
+        FEATURE_TREES.some((tree) => posix(near).includes(`/${posix(tree)}/`))
+      );
+      if (owned) found.push(file);
+    }
+    return found.sort();
+  }, false);
 }
 
 /** Reads a file straight off disk, for callers with no source map to hand. */
 function defaultRead(file) {
+  if (memo?.texts.has(file)) return memo.texts.get(file);
+  let text;
   try {
-    return readFileSync(file, 'utf8');
+    text = readFileSync(file, 'utf8');
   } catch {
-    return null;
+    text = null;
   }
+  memo?.texts.set(file, text);
+  return text;
 }
 
 /**
@@ -1307,8 +1426,13 @@ function defaultRead(file) {
  * `phaseRoutes`, so the two can never disagree about what P1-28 owns.
  */
 export function routeSegments(read = defaultRead) {
+  return segmentsOf(phaseRoutes(read));
+}
+
+/** The sorted first path segments of a list of `(dashboard)` page files. */
+function segmentsOf(routes) {
   const segments = new Set();
-  for (const file of phaseRoutes(read)) {
+  for (const file of routes) {
     const parts = posix(relative(DASHBOARD, file)).split('/');
     if (parts.length > 0 && parts[0] !== '') segments.add(parts[0]);
   }

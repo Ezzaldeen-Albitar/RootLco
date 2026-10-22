@@ -180,6 +180,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     session: { userId: 'user-1', displayName: 'Front Desk' },
     writesLocked: false,
     refresh: vi.fn().mockResolvedValue(undefined),
+    goToStep: vi.fn(),
     ...over,
   };
 }
@@ -833,7 +834,7 @@ describe('P1-28-FE-017 — the outcome line reports what the act really did', ()
 
     await user.click(within(row).getByTestId('capture-override-open-vin'));
     await user.type(
-      within(row).getByLabelText(EN['receptions.capture.overrideReason']!),
+      within(row).getByRole('textbox', { name: EN['receptions.capture.overrideReason']! }),
       'The bay is flooded'
     );
     await user.click(
@@ -874,7 +875,7 @@ describe('P1-28-FE-017 — the outcome line reports what the act really did', ()
     const arRow = await requirementRow('vin');
     await user.click(within(arRow).getByTestId('capture-override-open-vin'));
     await user.type(
-      within(arRow).getByLabelText(AR['receptions.capture.overrideReason']!),
+      within(arRow).getByRole('textbox', { name: AR['receptions.capture.overrideReason']! }),
       'الساحة مغمورة'
     );
     await user.click(
@@ -900,7 +901,9 @@ describe('P1-28-FE-017 — the outcome line reports what the act really did', ()
     const row = await requirementRow('vin');
 
     await user.click(within(row).getByTestId('capture-override-open-vin'));
-    const reason = within(row).getByLabelText(EN['receptions.capture.overrideReason']!);
+    const reason = within(row).getByRole('textbox', {
+      name: EN['receptions.capture.overrideReason']!,
+    });
     await user.type(reason, 'The bay is flooded');
     await user.click(
       within(row).getByRole('button', { name: EN['receptions.capture.overrideSubmit']! })

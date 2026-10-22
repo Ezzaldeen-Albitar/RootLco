@@ -444,6 +444,10 @@ export class PriceListService {
     if (amount.isNegative) {
       throw new AppFailure('ERR-VAL-001', { message: 'A price amount may not be negative' });
     }
+    // A rule amount is a UNIT price (price resolution uses it as the line's unit
+    // price), so it keeps the column's own scale and is NOT held to the list
+    // currency's minor unit (ADR-023, D1). The money it produces is rounded on
+    // the line, where it is computed.
     if (input.taxClassId !== undefined && input.companyId === undefined) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'A tax class may only be set on a company-scoped price rule',

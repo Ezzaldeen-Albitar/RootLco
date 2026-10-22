@@ -3,21 +3,39 @@
  *
  * The claims worth holding are the ones a screen gets wrong by being helpful:
  * sending a `sort` the operation does not accept, inventing a total the backend
- * does not publish, offering a phone box the allow-list does not include, and
+ * does not publish, offering an email box the allow-list does not include, and
  * searching on every keystroke against a 30-per-minute budget.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   LIFECYCLE_STATUSES,
   MAX_CUSTOMER_NUMBER_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_PHONE_LENGTH,
+  MIN_FREE_TEXT_LENGTH,
   PARTY_TYPES,
   isEmptyCriteria,
+  isFreeTextTooShort,
   normalizeCriteria,
 } from '@/features/crm/customers/contract';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
+import { searchCustomers } from '@/features/crm/customers/api';
+import type { CustomerSearchHit } from '@/features/crm/customers/contract';
+import type { TableRequest } from '@/components/data-table/table-state';
+import type { ServerPage } from '@/components/data-table/use-server-table';
+import { readCustomerDirectory } from '@/lib/customers/directory-read.server';
+
+/*
+ * The server-only core is replaced for the whole file. Nothing else here imports
+ * it — every other assertion reads source text — so the replacement only
+ * removes the `next/headers` cookie read the real core would attempt, and lets
+ * the kept action be observed calling it.
+ */
+vi.mock('@/lib/customers/directory-read.server', () => ({
+  readCustomerDirectory: vi.fn(),
+}));
 
 const ROOT = join(process.cwd(), '..', '..');
 
@@ -79,6 +97,21 @@ describe('normalizeCriteria', () => {
     expect(result.customerNumber).toHaveLength(MAX_CUSTOMER_NUMBER_LENGTH);
   });
 
+  it('keeps a phone value exactly as typed, Arabic-Indic digits included (P1-32)', () => {
+    // The backend folds the digits. Folding here too would be a second normaliser.
+    expect(normalizeCriteria({ phone: ' ٠٧٩١٢٣٤٥٦٧ ' })).toEqual({ phone: '٠٧٩١٢٣٤٥٦٧' });
+    expect(normalizeCriteria({ phone: '9'.repeat(40) }).phone).toHaveLength(MAX_PHONE_LENGTH);
+  });
+
+  it('drops a one-character free-text value the backend would refuse (P1-32)', () => {
+    expect(normalizeCriteria({ q: 'a' })).toEqual({});
+    expect(normalizeCriteria({ q: ' ab ' })).toEqual({ q: 'ab' });
+    expect(isFreeTextTooShort({ q: ' a ' })).toBe(true);
+    expect(isFreeTextTooShort({ q: 'ab' })).toBe(false);
+    expect(isFreeTextTooShort({})).toBe(false);
+    expect(MIN_FREE_TEXT_LENGTH).toBe(2);
+  });
+
   it('keeps the discriminators as given', () => {
     expect(normalizeCriteria({ partyType: 'organization', lifecycleStatus: 'blocked' })).toEqual({
       partyType: 'organization',
@@ -98,6 +131,8 @@ describe('isEmptyCriteria', () => {
     expect(isEmptyCriteria({ customerNumber: 'C-1' })).toBe(false);
     expect(isEmptyCriteria({ partyType: 'individual' })).toBe(false);
     expect(isEmptyCriteria({ lifecycleStatus: 'active' })).toBe(false);
+    expect(isEmptyCriteria({ phone: '4567' })).toBe(false);
+    expect(isEmptyCriteria({ q: 'ab' })).toBe(false);
   });
 });
 
@@ -113,13 +148,21 @@ describe('what the adapter must never send', () => {
    * old path: pointed at the wrapper they would scan a file containing no
    * `query({` at all and pass by finding nothing, which is the vacuity the
    * stripper check below exists to prevent.
+   *
+   * It moved once more (P1-32-PRE-OD-READ): the request construction is now in
+   * the server-only core `lib/customers/directory-read.server.ts`, which the
+   * POST read route at `/reads/customer-directory` serves; the directory's own
+   * Server Action retired. The assertions follow it there, for the same reason.
    */
   const adapter = code(
-    readFileSync(join(ROOT, 'apps', 'web', 'src', 'lib', 'customers', 'directory.ts'), 'utf8')
+    readFileSync(
+      join(ROOT, 'apps', 'web', 'src', 'lib', 'customers', 'directory-read.server.ts'),
+      'utf8'
+    )
   );
 
   it('the comment stripper left the code, so these are not vacuous', () => {
-    expect(adapter).toContain('searchCustomerDirectory');
+    expect(adapter).toContain('readCustomerDirectory');
     // The subject of every assertion below. Without it `indexOf` returns -1 and
     // `slice(-1, -1)` is the empty string, which satisfies every `not.toContain`.
     expect(adapter).toContain('query({');
@@ -133,11 +176,42 @@ describe('what the adapter must never send', () => {
       )
     );
     expect(wrapper).toContain('searchCustomers');
-    expect(wrapper).toContain('searchCustomerDirectory');
-    // No request building of its own — one customer-search authority, two
-    // callers.
+    // It calls the one server core the read route serves (P1-32-PRE-OD-READ).
+    expect(wrapper).toContain('readCustomerDirectory');
+    // No request building of its own — one customer-search authority.
     expect(wrapper).not.toContain('query({');
     expect(wrapper).not.toContain('/api/v1/customers');
+  });
+
+  it('the kept action hands its arguments to the core unchanged and returns its answer', async () => {
+    // Behaviour, not source text: the action must pass the same request, cursor
+    // and criteria to the one core — which normalises and validates them — with
+    // no signal of its own, and return the core's envelope as-is, adding nothing.
+    const core = vi.mocked(readCustomerDirectory);
+    const envelope: ServerPage<CustomerSearchHit> = {
+      status: 'denied',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-kept-action',
+    };
+    core.mockResolvedValueOnce(envelope);
+    const request: TableRequest = {
+      page: 1,
+      pageSize: 25,
+      sort: null,
+      filters: [],
+      search: '',
+    };
+    const criteria = { name: '  Sam  ', partyType: 'individual' as const };
+
+    const answer = await searchCustomers(request, 'cursor-2', criteria);
+
+    expect(core).toHaveBeenCalledTimes(1);
+    expect(core.mock.calls[0]).toEqual([request, 'cursor-2', criteria]);
+    expect(core.mock.calls[0]?.[0]).toBe(request);
+    expect(core.mock.calls[0]?.[2]).toBe(criteria);
+    expect(answer).toBe(envelope);
   });
 
   it('sends no sort parameter, because the operation publishes none', () => {
@@ -151,7 +225,7 @@ describe('what the adapter must never send', () => {
     expect(call).not.toContain('sort');
   });
 
-  it('sends only the six parameters the contract accepts', () => {
+  it('sends only the parameters the contract accepts', () => {
     const call = adapter.slice(
       adapter.indexOf('query({'),
       adapter.indexOf('});', adapter.indexOf('query({'))
@@ -161,14 +235,16 @@ describe('what the adapter must never send', () => {
       'limit',
       'name',
       'customerNumber',
+      'phone: criteria.phone',
+      // Spelled out: a bare 'q' is a substring of almost anything.
+      'q: criteria.q',
       'partyType',
       'lifecycleStatus',
     ]) {
       expect(call, allowed).toContain(allowed);
     }
-    // Not in the allow-list, and deliberately so — NFR-PRV-001 keeps raw contact
-    // values out of the searchable surface entirely.
-    expect(call).not.toContain('phone');
+    // P1-32 admitted phone and the free-text box. Email is still not in the
+    // allow-list.
     expect(call).not.toContain('email');
   });
 
@@ -208,7 +284,12 @@ describe('the screen searches on intent, not on a keystroke', () => {
   it('the comment stripper actually removed something, so these are not vacuous', () => {
     // Non-vacuity. If `code()` returned an empty string every assertion below
     // would pass while proving nothing.
-    expect(screen).toContain('useServerTable');
+    //
+    // The token moved in P1-32: the screen reads through `useSearchRequest`,
+    // which owns the settling, the explicit submission and the abandoning of a
+    // superseded answer, and hands back the same page contract the table and
+    // its pager already spoke.
+    expect(screen).toContain('useSearchRequest');
     expect(screen.length).toBeGreaterThan(1000);
   });
 
@@ -217,19 +298,31 @@ describe('the screen searches on intent, not on a keystroke', () => {
     expect(screen).toContain('type="submit"');
   });
 
-  it('has no debounce and no timer', () => {
-    // A debounce is still a request per pause. Against 30 per minute, and with
-    // no client-side suggestion source to debounce against, it buys nothing and
-    // costs the operator a 429 mid-sentence.
-    expect(screen).not.toMatch(/setTimeout|debounce|useDeferredValue/);
+  it('starts no timer of its own, and searches on intent', () => {
+    /*
+     * The reason recorded here used to be "a debounce is still a request per
+     * pause", and that conclusion was wrong: measured against what an operator
+     * actually does — type, submit, correct, submit again, none of it
+     * cancelled — a settled and aborted stream sends FEWER requests against the
+     * same limit, not more. `lib/use-debounced-value.ts` carries the
+     * correction.
+     *
+     * What survives is this screen's own shape, and it is the stronger claim:
+     * the criteria handed to the read are the SUBMITTED ones, and the results
+     * are a separately mounted component, so "no request before intent" is
+     * structural here rather than a timer somebody tuned. This file holds no
+     * timer, no deferral and no debounce of its own.
+     */
+    expect(screen).not.toMatch(/setTimeout|useDeferredValue/);
+    expect(screen).not.toMatch(/useDebouncedValue/);
   });
 
   it('declares no sortable column', () => {
     expect(screen).not.toContain('sortable');
   });
 
-  it('offers no phone or email input', () => {
-    expect(screen.toLowerCase()).not.toContain('phone');
+  it('offers a phone input (P1-32) and still no email input', () => {
+    expect(screen).toContain("'crm.customers.search.phone'");
     expect(screen.toLowerCase()).not.toContain('email');
   });
 

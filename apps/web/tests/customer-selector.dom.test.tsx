@@ -1,7 +1,8 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SEARCH_DEBOUNCE_MS } from '@/lib/use-debounced-value';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import en from '../src/i18n/messages/en.json';
@@ -20,18 +21,27 @@ import { renderLtr, renderRtl } from './render';
  *   1. the operator sees and chooses a NAME, and
  *   2. the uuid is submitted and never rendered.
  *
- * Plus the property that keeps it usable at all: it does not search while
- * somebody is typing. `GET /api/v1/customers` is `expensive-read` at 30 requests
- * per 60 seconds, and a search-as-you-type chooser spends that budget in under
- * three seconds and then rate-limits the operator out of the form.
+ * Plus the property that keeps it usable at all, which CHANGED under the Owner
+ * directive (`P1-32-PRE-OD-UX`) and is now the stronger of the two.
+ *
+ * It used to search only on an explicit action, because a request per CHARACTER
+ * would spend `GET /api/v1/customers` — `expensive-read`, 30 requests per 60
+ * seconds — in under three seconds of typing. It now searches as the operator
+ * types, through `useSearchRequest`: one request per PAUSE, with every
+ * superseded answer discarded. That is FEWER requests than the type-press-read-
+ * correct-press loop it replaces, and the cases below hold the part that
+ * matters — nothing on mount, nothing per keystroke, and one request for one
+ * settled term.
  */
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const { CustomerSelector } = await import('@/components/party/CustomerSelector');
+const { CustomerPicker } = await import('@/components/party/CustomerPicker');
+type ChosenCustomer = Parameters<typeof CustomerPicker>[0]['value'];
 type SelectedCustomer = Parameters<typeof CustomerSelector>[0]['value'];
 
 const CUSTOMER_UUID = '9f8e7d6c-5b4a-4392-8172-0e02b2c3d479';
@@ -105,27 +115,102 @@ describe('the selector asks nothing until it is asked', () => {
     expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 
-  it('issues no request while the operator types a name', async () => {
-    const user = userEvent.setup();
-    renderLtr(<Harness />);
-    await user.type(screen.getByLabelText(en['crm.customers.column.name']), 'Layla Haddad');
-    // Twelve keystrokes. Search-as-you-type would have spent 12 of 30.
-    expect(searchCustomerDirectory).not.toHaveBeenCalled();
-  });
-
-  it('refuses to search on nothing at all', async () => {
-    const user = userEvent.setup();
-    renderLtr(<Harness />);
-    await user.click(screen.getByRole('button', { name: en['customerSelector.search'] }));
-    // An empty search asks the backend for "everything" and spends a slot to
-    // say something nobody asked.
-    expect(searchCustomerDirectory).not.toHaveBeenCalled();
-  });
-
   it('searches once, on the explicit action', async () => {
     renderLtr(<Harness />);
     await searchFor('Layla');
     await waitFor(() => expect(searchCustomerDirectory).toHaveBeenCalledTimes(1));
+  });
+});
+
+/**
+ * The debounce contract, on a clock the test owns.
+ *
+ * ## Why these three do not use the wall clock
+ *
+ * They used to. `await user.type(...)` of a twelve-character name was followed
+ * by "no request has been made yet", and that assertion was a race against the
+ * 300 ms the debounce waits: `userEvent` yields to the event loop between
+ * keystrokes, so typing takes REAL time. Measured in this environment with this
+ * file running alone on an idle machine, those twelve keystrokes took 265 ms —
+ * a 35 ms margin. Under the full DOM tier, with workers competing for the same
+ * cores, they cross 300 ms, the debounce fires mid-word, and the case fails;
+ * run alone it passes every time. That is the whole of the order dependence,
+ * and it lived in the test rather than in the component. A longer sleep cannot
+ * fix it, because the failure is a timer firing EARLY.
+ *
+ * ## Why `fireEvent` and not `userEvent` here
+ *
+ * `userEvent` routes every interaction through the testing library async
+ * wrapper, which drains the microtask queue with a `setTimeout(0)` it only
+ * advances when a JEST clock is installed. Under Vitest fake timers there is no
+ * such clock, so that drain never resolves and each case hangs to the suite
+ * timeout — a worse failure than the race, and one that looks like a product
+ * hang. `fireEvent` is synchronous and act-wrapped, which is exactly what these
+ * three need: the events land with NO time between them, which is what "typed
+ * rapidly" means, and the clock moves only where a line below says so.
+ *
+ * Only the four timer functions the debounce is built on are faked. Faking the
+ * rest takes `setImmediate` with it, which the same drain also reaches for.
+ */
+describe('the debounce spends one request per pause, and none before one', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Move the clock, and let everything it started finish. */
+  async function settle(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  /** One change event per character, with nothing between them. */
+  function typeRapidly(field: HTMLElement, text: string) {
+    for (let cut = 1; cut <= text.length; cut += 1) {
+      fireEvent.change(field, { target: { value: text.slice(0, cut) } });
+    }
+  }
+
+  it('sends nothing while twelve characters are typed, then exactly one', async () => {
+    renderLtr(<Harness />);
+    typeRapidly(screen.getByLabelText(en['crm.customers.column.name']), 'Layla Haddad');
+    // Twelve keystrokes. A request per character would have spent 12 of the 30
+    // this operation allows in sixty seconds.
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+
+    await settle(SEARCH_DEBOUNCE_MS);
+    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
+    expect(searchCustomerDirectory.mock.calls[0]?.[2]).toEqual({ name: 'Layla Haddad' });
+
+    // Still one, three intervals later: a debounce that re-fired on an
+    // unchanged term would spend the allowance on a question already answered.
+    await settle(SEARCH_DEBOUNCE_MS * 3);
+    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a one-character free-text term before spending a request', async () => {
+    renderLtr(<Harness />);
+    fireEvent.change(screen.getByLabelText(en['customerSelector.q']), { target: { value: 'L' } });
+    expect(screen.getByText(en['crm.customers.search.qTooShort'])).toBeInTheDocument();
+    // The minimum is the backend own rule and it is read BEFORE the timer, so
+    // running the clock on changes nothing: there was never anything to ask.
+    await settle(SEARCH_DEBOUNCE_MS * 2);
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('refuses to search on nothing at all', async () => {
+    renderLtr(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: en['customerSelector.search'] }));
+    // An empty search asks the backend for "everything" and spends a slot to
+    // say something nobody asked. The clock is run on, so the debounce cannot
+    // be hiding one that lands later.
+    await settle(SEARCH_DEBOUNCE_MS * 2);
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+    expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 });
 
@@ -174,6 +259,8 @@ describe('the operator chooses a name and the form carries an id', () => {
     await user.click(screen.getByRole('button', { name: en['customerSelector.change'] }));
 
     expect(screen.queryByTestId('customer-selector-value')).not.toBeInTheDocument();
+    // The list collapsed with the choice: the criteria that produced it are
+    // gone, so there is nothing left for a stray second click to replace.
     expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 
@@ -308,5 +395,361 @@ describe('this file is not vacuous', () => {
 
   it('uses a fixture id long enough that "absent" means something', () => {
     expect(CUSTOMER_UUID).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+/*
+ * CustomerPicker — the one-box chooser the finance screens use (Owner
+ * directive, `P1-32-PRE-OD-UX`). It spends the same directory adapter as the
+ * selector above, so it is proved here beside it: found by name, chosen by
+ * name, never a reference; permission-aware; and the caller's refusal sits on
+ * the control that fixes it.
+ */
+function PickerHarness({
+  canSearch = true,
+  error,
+  describedBy,
+}: {
+  readonly canSearch?: boolean;
+  readonly error?: string;
+  readonly describedBy?: string;
+}) {
+  const [value, setValue] = useState<ChosenCustomer>(null);
+  return (
+    <>
+      <CustomerPicker
+        messages={en}
+        locale="en"
+        label="Paying customer"
+        value={value}
+        onChange={setValue}
+        canSearch={canSearch}
+        error={error}
+        unavailableId="picker-unavailable"
+        describedBy={describedBy}
+      />
+      <output data-testid="picker-value">{value?.id ?? ''}</output>
+    </>
+  );
+}
+
+describe('CustomerPicker', () => {
+  it('asks the directory with the typed words and names the customer it chose', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const user = userEvent.setup();
+    renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Layla' });
+    expect(screen.getByTestId('customer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad — C-000482'
+    );
+    // The reference is what the caller receives, and it is never shown.
+    expect(screen.getByTestId('picker-value')).toHaveTextContent(CUSTOMER_UUID);
+    expect(screen.getByTestId('customer-picker')).not.toHaveTextContent(CUSTOMER_UUID);
+  });
+
+  it('carries the kind the directory answered with the choice, so a screen need not read it again', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const chosen = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(
+      <CustomerPicker
+        messages={en}
+        locale="en"
+        label="Paying customer"
+        value={null}
+        onChange={chosen}
+        canSearch
+      />
+    );
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    expect(chosen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: CUSTOMER_UUID, partyType: HIT.partyType })
+    );
+  });
+
+  it('says a single character is too short and sends nothing', async () => {
+    const user = userEvent.setup();
+    renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'L');
+    expect(await screen.findByText(en['customerPicker.tooShort'])).toBeVisible();
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('without the customer read offers no box and names the reason by id', () => {
+    renderLtr(<PickerHarness canSearch={false} />);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(document.getElementById('picker-unavailable')).toHaveTextContent(
+      en['customerPicker.notPermitted']
+    );
+  });
+
+  it('puts the caller’s refusal on the box', () => {
+    renderLtr(<PickerHarness error="Choose the paying customer." />);
+    expect(screen.getByLabelText(/^Paying customer/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Choose the paying customer.')).toBeVisible();
+  });
+
+  it('gives the refused box the red edge and the caller’s description (browser QA row 6.6)', () => {
+    renderLtr(
+      <>
+        <p id="picker-note">Only customers of this branch are offered.</p>
+        <PickerHarness error="Choose the paying customer." describedBy="picker-note" />
+      </>
+    );
+    const box = screen.getByLabelText(/^Paying customer/);
+    expect(box).toHaveClass('border-error');
+    expect(box).not.toHaveClass('border-border');
+    expect(box).toHaveAccessibleDescription(
+      expect.stringContaining('Only customers of this branch are offered.')
+    );
+    expect(box).toHaveAccessibleDescription(expect.stringContaining('Choose the paying customer.'));
+  });
+
+  it('keeps the cursor after a choice, on the control that changes it (browser QA row 10.4)', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const user = userEvent.setup();
+    renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+
+    const change = screen.getByRole('button', { name: en['customerSelector.change'] });
+    await waitFor(() => expect(change).toHaveFocus());
+    // Announced with what was chosen, not as a bare "change" control.
+    expect(change).toHaveAccessibleDescription(expect.stringContaining('Layla Haddad'));
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('marks the change control, not the chosen name, when the choice itself is refused', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const user = userEvent.setup();
+    const { rerender } = renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    rerender(<PickerHarness error="This customer cannot pay this invoice." />);
+
+    const change = screen.getByRole('button', { name: en['customerSelector.change'] });
+    // ARIA 1.2 does not support aria-invalid on a button, so the refusal is
+    // associated rather than asserted: see `expectRefusalAssociated`.
+    expectRefusalAssociated(change, 'This customer cannot pay this invoice.');
+    expect(change).toHaveClass('border-error');
+    expect(change).toHaveAccessibleDescription(
+      expect.stringContaining('This customer cannot pay this invoice.')
+    );
+  });
+});
+
+/*
+ * On Material UI (`material`) each match carries its primary phone exactly as
+ * the backend returned it (the `G-CRM-PHONE` closure): a receptionist tells two
+ * customers of the same name apart by the caller's number. The option is still
+ * NAMED by name and number alone; the phone is its description.
+ */
+describe('CustomerPicker on Material UI shows each match’s phone', () => {
+  const TWIN = { ...HIT, id: '22223333-4444-4555-8666-777788889999', displayNumber: 'C-000777' };
+
+  function renderMaterial(locale: Locale = 'en', messages: Messages = en) {
+    const chosen = vi.fn();
+    const renderIn = locale === 'ar' ? renderRtl : renderLtr;
+    renderIn(
+      <CustomerPicker
+        messages={messages}
+        locale={locale}
+        label="Paying customer"
+        value={null}
+        onChange={chosen}
+        canSearch
+        material
+      />
+    );
+    return chosen;
+  }
+
+  it('draws a masked phone with the partly-hidden hint, and a whole one without it', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        { ...HIT, primaryPhone: '*******4567', phoneMasked: true },
+        { ...TWIN, primaryPhone: '0799876543', phoneMasked: false },
+      ])
+    );
+    const user = userEvent.setup();
+    renderMaterial();
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+
+    const masked = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(within(masked).getByText('*******4567')).toBeVisible();
+    expect(within(masked).getByText('*******4567')).toHaveAttribute('dir', 'ltr');
+    expect(within(masked).getByText(en['crm.customers.search.phonePartlyHidden'])).toBeVisible();
+    expect(masked).toHaveAccessibleDescription(
+      new RegExp(`^\\*{7}4567\\s*${en['crm.customers.search.phonePartlyHidden']}$`)
+    );
+
+    const whole = screen.getByRole('option', { name: 'Layla Haddad — C-000777' });
+    expect(within(whole).getByText('0799876543')).toBeVisible();
+    expect(within(whole).queryByText(en['crm.customers.search.phonePartlyHidden'])).toBeNull();
+    expect(whole).toHaveAccessibleDescription('0799876543');
+  });
+
+  it('draws no second line for a customer with no phone on record', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...HIT, primaryPhone: null, phoneMasked: false }])
+    );
+    const user = userEvent.setup();
+    renderMaterial();
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+    const option = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(option).toHaveTextContent(/^Layla Haddad — C-000482$/);
+    expect(option).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('carries the phone with the choice, and never shows the identifier', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...HIT, primaryPhone: '*******4567', phoneMasked: true }])
+    );
+    const user = userEvent.setup();
+    const chosen = renderMaterial();
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+    const option = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(screen.getByTestId('customer-picker')).not.toHaveTextContent(CUSTOMER_UUID);
+    await user.click(option);
+    expect(chosen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: CUSTOMER_UUID, primaryPhone: '*******4567', phoneMasked: true })
+    );
+  });
+
+  it('says the hint in Arabic, keeping the number left to right', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...HIT, primaryPhone: '*******4567', phoneMasked: true }])
+    );
+    const user = userEvent.setup();
+    renderMaterial('ar', ar);
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+    const option = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(within(option).getByText(ar['crm.customers.search.phonePartlyHidden'])).toBeVisible();
+    expect(within(option).getByText('*******4567')).toHaveAttribute('dir', 'ltr');
+    expect(option).not.toHaveTextContent(en['crm.customers.search.phonePartlyHidden']);
+  });
+});
+
+/**
+ * How a refused CHOICE is marked (QA round three).
+ *
+ * The control that changes a choice is a button, and ARIA 1.2 does not support
+ * `aria-invalid` on the button role. The refusal is instead reached through
+ * the button's own description, and the sentence is a live `alert`;
+ * `data-invalid` is the non-ARIA marker that brings the cursor back to it.
+ */
+function expectRefusalAssociated(change: HTMLElement, sentence: string) {
+  expect(change).not.toHaveAttribute('aria-invalid');
+  expect(change).toHaveAttribute('data-invalid', 'true');
+  const ids = (change.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+  const described = ids
+    .map((id) => document.getElementById(id))
+    .find((element) => element?.textContent?.includes(sentence));
+  expect(described).toBeTruthy();
+  expect(described?.closest('[role="alert"]')).not.toBeNull();
+}
+
+describe('a choice the caller REFUSES leaves no cursor move waiting (QA round three)', () => {
+  /*
+   * The press asks for the cursor to follow the choice to its Change control.
+   * A caller may refuse the choice and keep nothing chosen. That request must
+   * end with the press: a record the caller sets LATER — handed over by the
+   * screen, not chosen here — must not pull the cursor from where the operator
+   * has gone since.
+   */
+  function Refusing({ selector }: { readonly selector: boolean }) {
+    const [value, setValue] = useState<SelectedCustomer | ChosenCustomer | null>(null);
+    const [candidate, setCandidate] = useState<SelectedCustomer | ChosenCustomer | null>(null);
+    const refuse = (next: SelectedCustomer | ChosenCustomer | null) => {
+      if (next !== null) setCandidate(next);
+      else setValue(null);
+    };
+    return (
+      <>
+        {selector ? (
+          <CustomerSelector
+            locale="en"
+            messages={en}
+            name="partnerId"
+            labelKey="vehicles.ownership.newOwner"
+            value={value as SelectedCustomer | null}
+            onChange={refuse}
+          />
+        ) : (
+          <CustomerPicker
+            messages={en}
+            locale="en"
+            label="Paying customer"
+            value={value as ChosenCustomer | null}
+            onChange={refuse}
+            canSearch
+            unavailableId="picker-unavailable"
+          />
+        )}
+        <button type="button" disabled={candidate === null} onClick={() => setValue(candidate)}>
+          hand the record over
+        </button>
+      </>
+    );
+  }
+
+  it.each([
+    ['SearchPicker', false],
+    ['CustomerSelector', true],
+  ] as const)(
+    '%s: a refused choice, then a record the caller sets, moves nobody',
+    async (_name, selector) => {
+      searchCustomerDirectory.mockResolvedValue(page([HIT]));
+      const user = userEvent.setup();
+      renderLtr(<Refusing selector={selector} />);
+      if (selector) await searchFor('Layla');
+      else await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+      await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+
+      // Refused: nothing is chosen, so there is no Change control to move to.
+      expect(screen.queryByRole('button', { name: en['customerSelector.change'] })).toBeNull();
+
+      const handOver = screen.getByRole('button', { name: 'hand the record over' });
+      await waitFor(() => expect(handOver).toBeEnabled());
+      await user.click(handOver);
+      const change = await screen.findByRole('button', { name: en['customerSelector.change'] });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(change).not.toHaveFocus();
+      expect(handOver).toHaveFocus();
+    }
+  );
+});
+
+describe('CustomerSelector marks a refused choice the way ARIA allows', () => {
+  function Chosen({ error }: { readonly error?: string }) {
+    const [value, setValue] = useState<SelectedCustomer | null>(null);
+    return (
+      <CustomerSelector
+        locale="en"
+        messages={en}
+        name="partnerId"
+        labelKey="vehicles.ownership.newOwner"
+        value={value}
+        onChange={setValue}
+        error={error}
+      />
+    );
+  }
+
+  it('describes the Change control by the refusal, an alert, with no aria-invalid', async () => {
+    const { rerender } = renderLtr(<Chosen />);
+    const user = await searchFor('Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    const change = await screen.findByRole('button', { name: en['customerSelector.change'] });
+    expect(change).not.toHaveAttribute('data-invalid');
+
+    rerender(<Chosen error="This customer cannot own this vehicle." />);
+    expectRefusalAssociated(change, 'This customer cannot own this vehicle.');
+    expect(change).toHaveAccessibleDescription(
+      expect.stringContaining('This customer cannot own this vehicle.')
+    );
   });
 });

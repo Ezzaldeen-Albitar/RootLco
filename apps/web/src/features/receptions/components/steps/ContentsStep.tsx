@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { CheckboxField, TextField } from '@/components/forms/Field';
+import { useState } from 'react';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import { translate } from '@/i18n/get-messages';
-import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { recordConditionEvidence } from '../../api';
 import { MAX_ITEM_DESCRIPTION, MAX_LOCATION } from '../../receptions-contract';
 import {
@@ -20,11 +22,12 @@ import type { CheckInStepProps } from '../../check-in/wizard';
 import {
   EvidenceReadBack,
   EvidenceSection,
-  PRIMARY_BUTTON,
   SessionCaptureList,
   StepOutcome,
+  SubmitButton,
   WriteWithdrawn,
   useEvidenceTable,
+  useStepForm,
 } from './EvidencePanels';
 
 /**
@@ -59,16 +62,28 @@ import {
  * employee master exists. The only identity the platform can resolve to a name
  * is the signed-in operator, offered here as a checkbox rather than as a uuid to
  * type, with the disposition stated beside it.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * `useStepForm`: every refusal is on its field (the cursor moved to the first,
+ * the entries kept, the complaint withdrawn on correction) and anything entered
+ * is unsaved work. Quantity and value stay the text typed (`FormNumberField`,
+ * left to right in both languages); the declarer is chosen by name.
  */
 
-const IDLE: ActionState = { status: 'idle' };
+interface ContentsForm extends ContentsDraft {
+  readonly declaredBy: ChosenCustomer | null;
+  readonly witnessed: boolean;
+}
 
-const EMPTY_DRAFT: ContentsDraft = {
+const EMPTY_CONTENTS: ContentsForm = {
   itemDescription: '',
   quantity: '',
   location: '',
   declaredValue: '',
   declaredCurrency: '',
+  declaredBy: null,
+  witnessed: false,
 };
 
 export function ContentsStep({
@@ -83,49 +98,26 @@ export function ContentsStep({
 }: CheckInStepProps) {
   const table = useEvidenceTable(visitId, 'contents', `${visitId}:${recordVersion}`);
   const [captured, setCaptured] = useState<readonly SessionEvidence[]>([]);
-
-  const [draft, setDraft] = useState<ContentsDraft>(EMPTY_DRAFT);
-  const [declaredBy, setDeclaredBy] = useState<SelectedCustomer | null>(null);
-  const [witnessed, setWitnessed] = useState(false);
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
-  // `P1-28-SEC-002`. The item description, the declared value and its currency
-  // land in `rec.vehicle_content_details`, whose INSERT policy ends
-  // `AND iam.has_permission('iam.sensitive.view')` — the same WF-27 pair the
-  // complaint step meets, on a different table.
   const gate = narrativeGate('contents', capabilities, writesLocked);
-  const denialKey = narrativeDenialKey('contents', state);
 
-  const set = (patch: Partial<ContentsDraft>) => setDraft((current) => ({ ...current, ...patch }));
-
-  const submit = () => {
-    const attempt = (state.attempt ?? 0) + 1;
-    const problems = contentsProblems(draft);
-    if (Object.keys(problems).length > 0) {
-      setState({
-        status: 'invalid',
-        messageKey: 'receptions.contents.error.check',
-        fieldErrors: problems,
-        attempt,
-      });
-      return;
-    }
-
-    startTransition(async () => {
+  const form = useStepForm<ContentsForm>({
+    messages,
+    empty: EMPTY_CONTENTS,
+    errorNames: { declaredBy: 'declaredByPartnerId', witnessed: 'witnessedByEmployeeId' },
+    check: (draft) => contentsProblems(draft),
+    refusedKey: 'receptions.contents.error.check',
+    send: async (draft, attempt) => {
       const result = await recordConditionEvidence(
         visitId,
         {
           kind: 'contents',
           itemDescription: draft.itemDescription.trim(),
           ...contentsOptionalFields(draft),
-          ...(declaredBy === null ? {} : { declaredByPartnerId: declaredBy.id }),
-          ...(witnessed ? { witnessedByEmployeeId: session.userId } : {}),
+          ...(draft.declaredBy === null ? {} : { declaredByPartnerId: draft.declaredBy.id }),
+          ...(draft.witnessed ? { witnessedByEmployeeId: session.userId } : {}),
         },
         attempt
       );
-      setState(result);
-
       const recorded = result.recorded;
       if (result.status === 'success' && recorded !== undefined) {
         setCaptured((current) =>
@@ -135,23 +127,20 @@ export function ContentsStep({
             summary: draft.itemDescription.trim(),
           })
         );
-        setDraft(EMPTY_DRAFT);
-        setDeclaredBy(null);
-        setWitnessed(false);
       }
-
+      return result;
+    },
+    settle: async (result) => {
       notifyActionResult(result, messages);
       if (result.status === 'success' || result.status === 'conflict') {
         await refresh();
         table.refresh();
       }
-    });
-  };
-
-  const errorFor = (field: string) => {
-    const key = state.fieldErrors?.[field];
-    return key === undefined ? undefined : translate(messages, key as never);
-  };
+    },
+  });
+  const denialKey = narrativeDenialKey('contents', form.state);
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -178,72 +167,63 @@ export function ContentsStep({
           <WriteWithdrawn locale={locale} messages={messages} messageKey={gate.noticeKey} />
         ) : (
           <form
+            ref={formRef}
             aria-label={translate(messages, 'receptions.contents.formLabel')}
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit();
-            }}
+            onSubmit={form.onSubmit}
+            noValidate
             className="flex flex-col gap-3"
           >
-            <TextField
+            <FormTextField
               label={translate(messages, 'receptions.contents.item')}
               required
               value={draft.itemDescription}
               maxLength={MAX_ITEM_DESCRIPTION}
-              error={errorFor('itemDescription')}
-              onChange={(event) => set({ itemDescription: event.target.value })}
+              error={form.fieldError('itemDescription')}
+              onChange={(value) => form.update('itemDescription', value)}
             />
-            <TextField
+            <FormNumberField
               label={translate(messages, 'receptions.contents.quantity')}
-              optionalHint={translate(messages, 'form.optional')}
-              type="number"
-              min={1}
-              step={1}
-              dir="ltr"
+              integer
               value={draft.quantity}
-              error={errorFor('quantity')}
-              onChange={(event) => set({ quantity: event.target.value })}
+              error={form.fieldError('quantity')}
+              onChange={(value) => form.update('quantity', value)}
             />
-            <TextField
+            <FormTextField
               label={translate(messages, 'receptions.contents.location')}
               description={translate(messages, 'receptions.contents.locationHint')}
-              optionalHint={translate(messages, 'form.optional')}
               value={draft.location}
               maxLength={MAX_LOCATION}
-              error={errorFor('location')}
-              onChange={(event) => set({ location: event.target.value })}
+              error={form.fieldError('location')}
+              onChange={(value) => form.update('location', value)}
             />
-            <TextField
+            <FormNumberField
               label={translate(messages, 'receptions.contents.declaredValue')}
-              optionalHint={translate(messages, 'form.optional')}
-              type="number"
-              min={0}
-              step="any"
-              dir="ltr"
               value={draft.declaredValue}
-              error={errorFor('declaredValue')}
-              onChange={(event) => set({ declaredValue: event.target.value })}
+              error={form.fieldError('declaredValue')}
+              onChange={(value) => form.update('declaredValue', value)}
             />
-            <TextField
+            <FormTextField
               label={translate(messages, 'receptions.contents.declaredCurrency')}
               description={translate(messages, 'receptions.contents.currencyHint')}
-              optionalHint={translate(messages, 'form.optional')}
               value={draft.declaredCurrency}
               maxLength={3}
               dir="ltr"
-              error={errorFor('declaredCurrency')}
-              onChange={(event) => set({ declaredCurrency: event.target.value })}
+              error={form.fieldError('declaredCurrency')}
+              onChange={(value) => form.update('declaredCurrency', value)}
             />
 
             {capabilities.readCustomers ? (
-              <CustomerSelector
-                locale={locale}
+              <CustomerPicker
                 messages={messages}
-                name="declaredByPartnerId"
-                labelKey="receptions.contents.declaredBy"
-                value={declaredBy}
-                onChange={setDeclaredBy}
-                attempt={state.attempt ?? 0}
+                locale={locale}
+                material
+                label={translate(messages, 'receptions.contents.declaredBy')}
+                value={draft.declaredBy}
+                onChange={(chosen) => form.update('declaredBy', chosen)}
+                canSearch
+                error={form.fieldError('declaredByPartnerId')}
+                countsAsUnsaved={false}
+                testId="contents-declared-by"
               />
             ) : (
               <WriteWithdrawn
@@ -253,27 +233,26 @@ export function ContentsStep({
               />
             )}
 
-            <CheckboxField
+            <FormCheckboxField
               label={`${translate(messages, 'receptions.contents.witnessed')} — ${session.displayName}`}
               description={translate(messages, 'receptions.contents.witnessedHint')}
-              checked={witnessed}
-              onChange={(event) => setWitnessed(event.target.checked)}
+              checked={draft.witnessed}
+              onChange={(checked) => form.update('witnessed', checked)}
+              error={form.fieldError('witnessedByEmployeeId')}
             />
 
-            <StepOutcome messages={messages} state={state} />
+            <StepOutcome messages={messages} state={form.state} />
             {denialKey === null ? null : (
               <p data-testid="contents-sensitive-denied" className="text-caption text-error">
                 {translate(messages, denialKey as never)}
               </p>
             )}
 
-            <div>
-              <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-                {pending
-                  ? translate(messages, 'form.pending')
-                  : translate(messages, 'receptions.contents.record')}
-              </button>
-            </div>
+            <SubmitButton
+              messages={messages}
+              pending={form.pending}
+              labelKey="receptions.contents.record"
+            />
           </form>
         )}
       </EvidenceSection>

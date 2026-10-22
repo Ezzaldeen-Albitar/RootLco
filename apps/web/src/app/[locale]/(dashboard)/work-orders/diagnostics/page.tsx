@@ -26,7 +26,7 @@ export default async function DiagnosticsCataloguePage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   const crumbs = [
-    { labelKey: 'nav.workOrders', href: '/work-orders' },
+    { labelKey: 'nav.workOrders', href: `/${locale}/work-orders` },
     { labelKey: 'nav.diagnostics' },
   ];
 

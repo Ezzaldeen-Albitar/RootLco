@@ -26,7 +26,13 @@ export interface PermissionRow {
   readonly description: string;
 }
 
-/** One role's mapping over a permission. */
+/**
+ * One role's mapping over a permission.
+ *
+ * `recordVersion` is what `iam.role-permission-update` takes as `If-Match`
+ * when the effect is changed (`P1-32-PRE-OD-ADM4`). A mapping read without one
+ * is never offered the change: a guessed version is a conflict waiting to land.
+ */
 export interface RolePermissionRow {
   readonly id: string;
   readonly permissionCode?: string;
@@ -54,6 +60,34 @@ export interface ApprovalLimitRow {
   readonly effectiveFrom: string;
   readonly effectiveTo: string | null;
   readonly recordVersion: number;
+  /**
+   * The person's display name, resolved by the list itself (`P1-32-PRE-OD-ADM4`,
+   * route checklist prerequisite 9). `null` for a role's limit, and `null` when
+   * the caller does not hold `iam.user.read` — the screen then says the name is
+   * not available, and never prints `userId`. Absent from an older answer.
+   */
+  readonly userDisplayName?: string | null;
+  /** The role's name, under `iam.role.read`; `null` otherwise and for a person's limit. */
+  readonly roleName?: string | null;
+}
+
+/**
+ * The limit types the platform itself consults, in the order the form offers them.
+ *
+ * `discount` is read by a discount approval (`DISCOUNT_LIMIT_TYPE` in the pricing
+ * module) and `credit_note` by a credit-note approval (`CREDIT_NOTE_LIMIT_TYPE` in
+ * the billing module, Owner decision D13, ADR-023). They are SEPARATE: a discount
+ * limit never counts for a credit note and a credit-note limit never counts for a
+ * discount. The form offers exactly these, so a limit is never created under a
+ * type nothing reads; a row of any other type already on file is still listed,
+ * under its own code.
+ */
+export const APPROVAL_LIMIT_TYPES = Object.freeze(['discount', 'credit_note'] as const);
+export type ApprovalLimitType = (typeof APPROVAL_LIMIT_TYPES)[number];
+
+/** Whether a stored limit type is one the platform consults (and so has a name). */
+export function isKnownApprovalLimitType(value: string): value is ApprovalLimitType {
+  return (APPROVAL_LIMIT_TYPES as readonly string[]).includes(value);
 }
 
 /**

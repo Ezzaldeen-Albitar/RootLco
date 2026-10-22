@@ -64,7 +64,7 @@ export async function writeVehicle<T>(
   if (!parsed.ok) return invalid(parsed.errors, attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<T>('POST', path, parsed.body);
   if (!result.ok) return fromFailure(result, attempt);

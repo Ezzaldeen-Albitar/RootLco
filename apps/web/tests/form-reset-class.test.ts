@@ -146,6 +146,14 @@ const ROOTS = [
   // `<form action={…}>` — a category select, two text boxes and the file input —
   // so its tree joins the inventory the round-six check demands.
   join(SRC, 'features', 'technicians'),
+  // P1-31: the handover signature capture is a `<form action={…}>` with a role
+  // select and the shared file input, so the delivery tree joins the inventory
+  // in the change that gives it a form rather than after the next round six.
+  join(SRC, 'features', 'delivery'),
+  // P1-32-PRE-065: the Platform Owner Console provisioning screen is a
+  // `<form action={…}>` owner with a language select, a plan select and the
+  // activate checkbox, so its tree joins the inventory with the form.
+  join(SRC, 'features', 'platform'),
   join(SRC, 'components', 'forms'),
   join(SRC, 'components', 'party'),
   join(SRC, 'components', 'duplicates'),
@@ -294,13 +302,13 @@ function safeShape(c: Control): boolean {
 const CLEARS_ON_REFUSAL: readonly { file: string; match: string; why: string }[] = [
   {
     file: 'features/authentication/components/LoginForm.tsx',
-    match: '<PasswordField',
-    why: 'Sign-in. A refused sign-in is the case where the password was most likely mistyped, and re-typing it is the intended correction. Retaining it would also leave the secret in a live DOM node across a failed attempt on a shared reception desk. The EMAIL beside it is retained — that is the half that was a defect, and it is fixed.',
+    match: '<FormPasswordField',
+    why: 'Sign-in. A refused sign-in is the case where the password was most likely mistyped, and re-typing it is the intended correction. Retaining it would also leave the secret in a live DOM node across a failed attempt on a shared reception desk. The EMAIL beside it is retained — that is the half that was a defect, and it is fixed. Since the Material UI slice (P1-32-PRE-OD-AUTHA) the box is controlled and the form clears it on the attempt the refusal answers, so the clearing is the code’s decision rather than a side effect of the reset.',
   },
   {
     file: 'features/authentication/components/SetPasswordForm.tsx',
-    match: '<PasswordField',
-    why: 'Choosing a new password, both boxes — the password and its confirmation. Every refusal this form can produce is a statement about the value itself (too short, too common, the two do not match), so restoring the rejected value would restore precisely what was refused and invite the operator to submit it again unchanged.',
+    match: '<FormPasswordField',
+    why: 'Choosing a new password, both boxes — the password and its confirmation. Every refusal this form can produce is a statement about the value itself (too short, too common, the two do not match), so restoring the rejected value would restore precisely what was refused and invite the operator to submit it again unchanged. Controlled since the Material UI slice (P1-32-PRE-OD-AUTHA), and cleared by the form on the attempt the refusal answers.',
   },
 ];
 
@@ -321,6 +329,31 @@ const RENDERS_COMPONENT = /<([A-Z]\w*)/g;
  * The name is the one the failure message below tells a reader to look for. It
  * used to be `EXEMPT` while the diagnostic said `OUTSIDE_A_FORM`, which sent
  * whoever read it looking for an identifier that did not exist.
+ */
+/*
+ * Two more left with the Material UI slice for the work-order screens (Owner
+ * directive slice 4): the template catalogue's status filter and the QC queue's
+ * result filter are `FormSelectField`s now, controlled and outside every form,
+ * and the screens' command forms submit through their own handlers
+ * (`onSubmit`), which no Server Action reset reaches. The evidence captures
+ * that still post a file through `<form action={…}>` key every control on the
+ * settlement and hold it controlled, the shape the reception signature capture
+ * uses.
+ *
+ * One more left with the users slice (`P1-32-PRE-OD-ADM3`): the user list's status
+ * filter is a `FormSelectField` of the shared filter toolbar now, controlled and
+ * outside every form, and the invitation is held in component state and sent
+ * from its own handler (`onSubmit`), which no Server Action reset reaches.
+ *
+ * Four entries left this list when the branch pair did.
+ *
+ * Two on the technician workspace and two on the QC queue each exempted a
+ * `SelectField` over raw company and branch references. Those controls no
+ * longer exist: the branch is the working context's named selection, chosen
+ * once in the header and rendered on the screen as text. An exemption for a
+ * control that is gone is not harmless — this file asserts that every entry
+ * matches exactly one control, precisely so a stale exemption cannot sit here
+ * quietly covering nothing.
  */
 const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = [
   {
@@ -359,36 +392,6 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     why: 'A file input CANNOT carry a default. Browsers refuse a programmatic write to `input[type=file].value` — that is the guard against a page selecting a file the operator never chose — so `defaultValue` is not a shape this control can take. What a reset costs here is the file selection, which the operator re-makes deliberately; there is no typed text to strand.',
   },
   {
-    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
-    match: "<SelectField label={translate(messages, 'technicians.workspace.company')}",
-    why: 'The branch-target company picker (P1-29 W4). It sits in a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it. The only `<form action={…}>` in this tree is the evidence capture in `JobWorkPanel.tsx`, which this screen renders as a SIBLING of the target form, not inside it — read off the element nesting.',
-  },
-  {
-    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
-    match: "<SelectField label={translate(messages, 'technicians.workspace.branch')}",
-    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
-  },
-  {
-    file: 'features/diagnostics/components/TemplateCatalogueScreen.tsx',
-    match: `<SelectField name="status" label={translate(messages, 'diagnostics.catalogue.filterStatus')}`,
-    why: 'The catalogue status FILTER (P1-29 W7). It sits in the list section, outside every `<form action={…}>` on the screen, and re-reads the list on change; nothing submits it, so no Server Action ever resets it — read off the element nesting.',
-  },
-  {
-    file: 'features/quality/components/QualityQueueScreen.tsx',
-    match: "<SelectField label={translate(messages, 'quality.queue.company')}",
-    why: 'The branch-target company picker (P1-29 W8), the W4 shape: a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it.',
-  },
-  {
-    file: 'features/quality/components/QualityQueueScreen.tsx',
-    match: "<SelectField label={translate(messages, 'quality.queue.branch')}",
-    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
-  },
-  {
-    file: 'features/quality/components/QualityQueueScreen.tsx',
-    match: `<SelectField name="overallResult" label={translate(messages, 'quality.queue.filterResult')}`,
-    why: 'The queue result FILTER (P1-29 W8). It sits in the list section outside every `<form action={…}>` and re-reads on change; nothing submits it.',
-  },
-  {
     file: 'features/vehicles/components/VehicleDuplicateReviewScreen.tsx',
     match: '<select value={status}',
     why: 'The queue status filter. It drives a table read and sits above the review form as a sibling, so no form reset reaches it — confirmed by reading the element nesting, not inferred from the file.',
@@ -397,11 +400,6 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'components/data-table/DataTable.tsx',
     match: '<select value={request.pageSize}',
     why: 'The shared table’s page-size control, at `DataTable.tsx:586`. The table is a SIBLING of every form that appears beside it — the derived reachability reaches this file because a form owner renders `<DataTable`, not because the table is inside the form — and its request state is owned by `useServerTable`, which no form reset touches.',
-  },
-  {
-    file: 'features/administration/users/components/UsersScreen.tsx',
-    match: "<SelectField label={t('users.filter.status')}",
-    why: 'The user-list status filter at `UsersScreen.tsx:177`, rendered in `UsersScreen` above the table. The only `<form action={…}>` in this file belongs to `InviteDialog`, a separate component mounted in a dialog, so the filter is not inside it — read off the element nesting rather than inferred from the file owning a form somewhere.',
   },
 ];
 
@@ -568,6 +566,15 @@ function resetKeyOf(head: string, signals: ReadonlySet<string>): ResetKey {
  *
  * `PasswordField` is listed so it is SEEN. What happens to it is decided by
  * `CLEARS_ON_REFUSAL` rather than by the shape rule — see that list.
+ *
+ * The sign-in and account forms moved onto the Material wrappers
+ * (P1-32-PRE-OD-AUTHA), and a matcher that named only the legacy components
+ * would have stopped seeing every box on them — the email the case below keeps
+ * guarded, and the three password boxes whose decision this file records. So
+ * `FormTextField` is a text control and `FormPasswordField` a password control,
+ * from the caller's side, exactly as their legacy namesakes are. Both are
+ * controlled by type (`value` is a required prop), which is the safe shape for
+ * a text box; the password decision stays `CLEARS_ON_REFUSAL`'s.
  */
 const COMPONENT_KIND = {
   SelectField: 'select',
@@ -576,6 +583,8 @@ const COMPONENT_KIND = {
   TextField: 'text',
   TextAreaField: 'textarea',
   PasswordField: 'password',
+  FormTextField: 'text',
+  FormPasswordField: 'password',
 } as const;
 
 /** One file, read once, with everything the reachability closure needs. */
@@ -692,7 +701,7 @@ function inventory(): {
      * it renders is `<SelectField>`.
      */
     for (const m of src.matchAll(
-      /<(SelectField|CheckboxField|RadioGroupField|TextField|TextAreaField|PasswordField)\b/g
+      /<(SelectField|CheckboxField|RadioGroupField|TextField|TextAreaField|PasswordField|FormTextField|FormPasswordField)\b/g
     )) {
       const at = m.index ?? 0;
       const head = src.slice(at, tagEnd(src, at));
@@ -825,13 +834,25 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
 
   it('follows a component into the form that renders it, not just the file that owns one', () => {
     /*
-     * Non-vacuity for the derived edge, on the file that proves it: the
-     * company/branch pair is the authorization target of every booking, it owns
-     * no form, hands controls to none, and is in no hand-written list. If the
-     * closure ever stops running, this is the assertion that says so — rather
-     * than the inventory quietly reporting zero uncovered controls again.
+     * Non-vacuity for the derived edge, on a file that proves it: the requested
+     * window is part of every booking, it owns no form, hands controls to none,
+     * and is in no hand-written list. If the closure ever stops running, this is
+     * the assertion that says so — rather than the inventory quietly reporting
+     * zero uncovered controls again.
+     *
+     * It used to be `BranchTargetFields.tsx`, which satisfied the same three
+     * conditions until it stopped rendering a control at all: the company and
+     * branch pair is now the working context's named selection, shown as text,
+     * so there is nothing there for a form reset to strand. The exemplar moved
+     * rather than the claim — to `WindowFields`, its sibling in the same form —
+     * and moved again when the appointment forms moved onto the Material UI
+     * wrappers (ADR-022): booking and the lifecycle commands now submit through
+     * their own handler (`<form onSubmit>`), never a Server Action, so no reset
+     * reaches them. `VinField` satisfies the same three conditions: the VIN box
+     * owns no form, hands controls to none, is in no hand-written list, and is
+     * rendered into the vehicle forms that do own one.
      */
-    const target = 'features/appointments/components/BranchTargetFields.tsx';
+    const target = 'features/vehicles/components/VinField.tsx';
     const src = stripComments(readFileSync(join(SRC, ...target.split('/')), 'utf8'));
 
     expect(OWNS_FORM.test(src), `${target} owns a form, so it proves nothing here`).toBe(false);
@@ -864,6 +885,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       'components/forms/Field.tsx',
       'features/vehicles/components/VehicleRelationsSections.tsx',
       'features/vehicles/components/VehicleCreateScreen.tsx',
+      // Still opened by the scan, so a form there that returned to a Server
+      // Action would be inventoried again (see below).
+      'features/administration/access/components/ApprovalLimitsScreen.tsx',
     ]) {
       expect(
         files.some((f) => f.replace(/\\/g, '/') === required),
@@ -879,15 +903,41 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
     for (const required of [
       'features/vehicles/components/VehicleRelationsSections.tsx',
       'features/vehicles/components/VehicleCreateScreen.tsx',
-      'features/appointments/components/AppointmentDetailScreen.tsx',
-      'features/appointments/components/AppointmentBookingScreen.tsx',
-      'features/appointments/components/BranchTargetFields.tsx',
-      'features/administration/access/components/ApprovalLimitsScreen.tsx',
+      // The three appointment files left this list with the Material UI slice:
+      // their forms submit through their own handler, so no reset reaches them
+      // and they hold no guarded control — the case below holds them to that.
+      // The approval-limits screen left it the same way (P1-32-PRE-OD-ADM4): its
+      // create and end forms are held in component state and sent from their
+      // own handler, and it is still required in the scan above.
     ]) {
       expect(
         guarded.some((c) => c.file === required),
         `${required} contributes no guarded control — the scan is not reading it`
       ).toBe(true);
+    }
+  });
+
+  it('holds the appointment forms to their own submit handler, which no form reset reaches', () => {
+    /*
+     * Round six found the cancellation reason, the appointment type and the
+     * branch pair stranded by a Server Action's reset. Those forms now submit
+     * through `onSubmit` with Material's controlled fields, so the reset class
+     * cannot occur there — and that is only true while none of them owns a
+     * `<form action={…}>`. One that did would re-enter this inventory, and its
+     * controls would be judged by the case below.
+     */
+    const appointmentFiles = scanned.filter((one) =>
+      one.file.startsWith('features/appointments/components/')
+    );
+    expect(appointmentFiles.length, 'the appointment screens are not in the scan').toBeGreaterThan(
+      2
+    );
+    expect(
+      appointmentFiles.filter((one) => one.ownsForm).map((one) => one.file),
+      'an appointment screen owns a Server Action form again'
+    ).toEqual([]);
+    for (const one of appointmentFiles) {
+      expect(one.src, one.file).not.toMatch(/useActionState/);
     }
   });
 

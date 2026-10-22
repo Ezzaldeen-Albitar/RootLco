@@ -379,6 +379,76 @@ describe('capabilities the change request measured as blocked now work', () => {
     });
   });
 
+  /**
+   * P1-32-PRE-OD-DISC-09: a discount approver's ceiling never counts a limit the approver
+   * created, so `created_by` must be the person who really set the limit.
+   * `tg_approval_limits_creator` stamps it from the signed-in person and refuses any other
+   * name — whatever role writes — and `tg_approval_limits_immutable` keeps it.
+   */
+  it('records an approval limit as set by the signed-in person, never under another name', async () => {
+    const refusal = async (
+      work: Promise<unknown>
+    ): Promise<{ code?: string; message?: string }> => {
+      try {
+        await work;
+      } catch (err) {
+        return err as { code?: string; message?: string };
+      }
+      throw new Error('expected a refusal but the statement succeeded');
+    };
+    const insertLimit = (c: Q, createdBy: string | null) =>
+      createdBy === null
+        ? c.query<{ id: string; created_by: string }>(
+            `INSERT INTO iam.approval_limits
+               (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from)
+             VALUES ($1, $2, $3, 'discount_approval', 1000.0000, 'USD', current_date)
+             RETURNING id, created_by`,
+            [TENANT_A, COMPANY_A1, TARGET_A]
+          )
+        : c.query<{ id: string; created_by: string }>(
+            `INSERT INTO iam.approval_limits
+               (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+             VALUES ($1, $2, $3, 'discount_approval', 1000.0000, 'USD', current_date, $4)
+             RETURNING id, created_by`,
+            [TENANT_A, COMPANY_A1, TARGET_A, createdBy]
+          );
+
+    // Omitted: stamped with the signed-in administrator.
+    await withRolledBackTx(runtime, AS_ADMIN_A, async (c: Q) => {
+      const stamped = await insertLimit(c, null);
+      expect(stamped.rows[0]?.created_by).toBe(ADMIN_A);
+    });
+    // Another person's name: refused on the request path…
+    await withRolledBackTx(runtime, AS_ADMIN_A, async (c: Q) => {
+      const err = await refusal(insertLimit(c, TARGET_A));
+      expect(err.code).toBe('23514');
+      expect(err.message ?? '').toMatch(/approval_limit_creator_mismatch/);
+    });
+    // …and by a role that bypasses row level security while a person is signed in.
+    await withRolledBackTx(admin, AS_ADMIN_A, async (c: Q) => {
+      const err = await refusal(insertLimit(c, TARGET_A));
+      expect(err.code).toBe('23514');
+      expect(err.message ?? '').toMatch(/approval_limit_creator_mismatch/);
+    });
+    // Nobody signed in on the request path: nothing to attribute it to.
+    await withRolledBackTx(runtime, { tenantId: TENANT_A }, async (c: Q) => {
+      const err = await refusal(insertLimit(c, ADMIN_A));
+      expect(err.code).toBe('23514');
+      expect(err.message ?? '').toMatch(/approval_limit_creator_unattributed/);
+    });
+    // Once written, the name never changes, whoever tries.
+    await withRolledBackTx(admin, AS_ADMIN_A, async (c: Q) => {
+      const written = await insertLimit(c, ADMIN_A);
+      const err = await refusal(
+        c.query(`UPDATE iam.approval_limits SET created_by = $2 WHERE id = $1`, [
+          written.rows[0]?.id,
+          TARGET_A,
+        ])
+      );
+      expect(err.code).toBe('23514');
+    });
+  });
+
   it('updates the tenant settings row', async () => {
     const result = await withRolledBackTx(runtime, AS_ADMIN_A, (c: Q) =>
       c.query(`UPDATE org.tenants SET display_name = 'Renamed Tenant' WHERE id = $1`, [TENANT_A])

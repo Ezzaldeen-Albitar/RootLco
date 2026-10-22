@@ -1,0 +1,28 @@
+// =============================================================================
+// Cascade layer order — the FIRST statement of the application stylesheet
+// =============================================================================
+//
+// ADR-022. Material UI's styles are emitted inside `@layer mui` (the App Router
+// cache is created with `enableCssLayer`, and the theme's `modularCssLayers`
+// splits it into `mui.global`, `mui.components`, `mui.theme`, `mui.custom` and
+// `mui.sx`). Tailwind 3 emits UNLAYERED CSS, and unlayered CSS beats every
+// layer whatever its specificity. That gives exactly one order:
+//
+//   1. `rootlco-reset` — the element-level rules: the vendored Tailwind
+//      preflight, the box-sizing/html/body reset and the global focus ring.
+//      They must LOSE to Material UI, or preflight's `button { background-color:
+//      transparent }` empties every contained button and the global focus ring
+//      draws a second ring beside the component's own.
+//   2. `mui` — the component library.
+//   3. unlayered — Tailwind utilities and components, SCSS modules and the print
+//      sheet. They must WIN over Material UI, so a layout utility on a wrapper
+//      is never silently overridden.
+//
+// Sass requires `@use` before any other statement, so the order is declared in
+// this partial and `globals.scss` uses it FIRST: the compiled stylesheet then
+// opens with this statement. The theme declares the same order through
+// `modularCssLayers`, so whichever stylesheet the browser sees first, the order
+// is the same.
+// =============================================================================
+
+@layer rootlco-reset, mui;

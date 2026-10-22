@@ -28,7 +28,8 @@
  * Every amount on the revision and on each line is `numeric(18,4)` and crosses
  * as a decimal STRING. `ck_quotation_revisions_totals` holds
  * `grand = subtotal - discount + tax` in the database, and
- * `ck_quotation_items_tax_amount` holds the per-line arithmetic; nothing here
+ * `tg_quotation_items_money` holds the per-line arithmetic at the currency's
+ * minor unit (ADR-023, D1: totals are sums of rounded lines); nothing here
  * recomputes either. A JSON number would let a client re-derive those identities
  * in IEEE-754 and disagree with the row it was sent.
  */

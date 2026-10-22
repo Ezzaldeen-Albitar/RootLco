@@ -78,7 +78,7 @@ describe('p1-10 security posture', () => {
       `SELECT table_name, privilege_type FROM information_schema.role_table_grants
        WHERE table_schema = ANY($1) AND grantee IN ('app_runtime','app_readonly')
          AND privilege_type IN ('UPDATE','DELETE')
-         AND table_name IN ('stock_movements','approval_decisions','approval_evidence','quotation_status_history')`,
+         AND table_name IN ('stock_movements','approval_decisions','approval_evidence','quotation_status_history','acceptance_records')`,
       [SCHEMAS]
     );
     expect(rows).toEqual([]);
