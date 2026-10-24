@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import Button from '@mui/material/Button';
 import { ZonedDateTimeField } from '@/components/forms/mui/DateField';
 import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
@@ -8,6 +8,7 @@ import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { MuiLoadingState } from '@/components/states/MuiStates';
+import { rosterOptions, type BranchRoster } from '@/features/technicians/roster-picker';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
@@ -68,6 +69,7 @@ export function JobPanel({
   canManageJobs,
   canReadTechnicians,
   canAssign,
+  roster,
   onDone,
 }: {
   readonly locale: Locale;
@@ -81,6 +83,8 @@ export function JobPanel({
   readonly canManageJobs: boolean;
   readonly canReadTechnicians: boolean;
   readonly canAssign: boolean;
+  /** The branch's roster, read once for the screen (`P1-32-PRE-OD-TECH1`). */
+  readonly roster: BranchRoster;
   /** Re-reads the work order; the routing stays busy until it resolves. */
   readonly onDone: () => Promise<void>;
 }) {
@@ -101,6 +105,7 @@ export function JobPanel({
         zone={zone}
         canReadTechnicians={canReadTechnicians}
         canAssign={canAssign}
+        roster={roster}
       />
     </div>
   );
@@ -302,6 +307,7 @@ function AssignmentPanel({
   zone,
   canReadTechnicians,
   canAssign,
+  roster,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -309,6 +315,7 @@ function AssignmentPanel({
   readonly zone: string | null;
   readonly canReadTechnicians: boolean;
   readonly canAssign: boolean;
+  readonly roster: BranchRoster;
 }) {
   const [assignments, setAssignments] = useState<readonly JobAssignment[] | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
@@ -318,6 +325,8 @@ function AssignmentPanel({
   const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // The sentence saying why the roster is not a choice describes the typed field.
+  const rosterReasonId = useId();
   /**
    * The refusals that name one of the controls above.
    *
@@ -511,17 +520,53 @@ function AssignmentPanel({
           }}
           className="mt-2 grid gap-3 sm:grid-cols-2"
         >
-          <FormTextField
-            label={translate(messages, 'workOrders.detail.technicianProfileId')}
-            name={`technicianProfileId-${job.id}`}
-            description={translate(messages, 'workOrders.detail.technicianProfileIdHint')}
-            dir="ltr"
-            autoComplete="off"
-            required
-            value={technicianProfileId}
-            onChange={setTechnicianProfileId}
-            error={errorFor('technicianProfileId')}
-          />
+          {/*
+            The roster as a choice when it was read in full (`P1-32-PRE-OD-TECH1`);
+            the typed reference wherever it was not, so the write still works.
+            Either way the value sent is the profile id.
+          */}
+          {roster.phase === 'listed' ? (
+            <FormSelectField
+              label={translate(messages, 'workOrders.detail.technicianProfileId')}
+              name={`technicianProfileId-${job.id}`}
+              description={translate(messages, 'workOrders.detail.technicianProfileIdHint')}
+              required
+              value={technicianProfileId}
+              onChange={setTechnicianProfileId}
+              options={rosterOptions(messages, roster.items)}
+              placeholder={translate(messages, 'form.select.placeholder')}
+              error={errorFor('technicianProfileId')}
+            />
+          ) : roster.phase === 'loading' ? (
+            <MuiLoadingState messages={messages} variant="inline" />
+          ) : (
+            <div className="flex flex-col gap-1">
+              <FormTextField
+                label={translate(messages, 'workOrders.detail.technicianProfileId')}
+                name={`technicianProfileId-${job.id}`}
+                description={translate(messages, 'workOrders.detail.technicianProfileIdTypedHint')}
+                dir="ltr"
+                autoComplete="off"
+                required
+                value={technicianProfileId}
+                onChange={setTechnicianProfileId}
+                error={errorFor('technicianProfileId')}
+                describedBy={roster.phase === 'off' ? undefined : rosterReasonId}
+              />
+              {roster.phase === 'off' ? null : (
+                <p id={rosterReasonId} className="text-caption text-text-muted">
+                  {translateDynamic(
+                    messages,
+                    roster.phase === 'failed'
+                      ? roster.messageKey
+                      : roster.phase === 'truncated'
+                        ? 'technicians.picker.truncated'
+                        : 'technicians.picker.empty'
+                  )}
+                </p>
+              )}
+            </div>
+          )}
           <FormRadioGroupField
             label={translate(messages, 'workOrders.detail.assignmentRole')}
             name={`assignmentRole-${job.id}`}
@@ -572,7 +617,7 @@ function AssignmentPanel({
             <Button
               type="submit"
               variant="outlined"
-              disabled={busy || zone === null}
+              disabled={busy || zone === null || roster.phase === 'loading'}
               aria-busy={busy || undefined}
             >
               {translate(

@@ -92,6 +92,12 @@ vi.mock('@/features/delivery/branch-api', () => ({
   listBranches: (...args: unknown[]) => listBranches(...args),
 }));
 
+// The branch roster the assignment form chooses from (`P1-32-PRE-OD-TECH1`).
+const listTechnicians = vi.fn();
+vi.mock('@/features/technicians/roster-api', () => ({
+  listTechnicians: (...args: unknown[]) => listTechnicians(...args),
+}));
+
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: PERMISSIONS, email: 'advisor@test.local' }),
@@ -111,6 +117,8 @@ vi.mock('next/navigation', () => ({
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const WorkOrderPage = (await import('@/app/[locale]/(dashboard)/work-orders/[workOrderId]/page'))
   .default as unknown as RoutePage;
+// The roster walk itself, over the mocked page read (`P1-32-PRE-OD-TECH1`).
+const { readBranchRoster } = await import('@/features/technicians/roster-picker');
 
 const detail = {
   workOrder: {
@@ -175,9 +183,46 @@ async function typeMoment(user: ReturnType<typeof userEvent.setup>, label: strin
 const handoverSection = () =>
   screen.queryByRole('region', { name: EN['delivery.workOrder.heading'] as string });
 
+const PROFILE_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const PROFILE_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const INACTIVE = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+/** One roster row as `tech.technician-list` publishes it; nothing but the id is set unless asked. */
+function rosterEntry(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    userId: `user-of-${id}`,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    trade: null,
+    employmentRef: null,
+    isActive: true,
+    recordVersion: 1,
+    displayName: null,
+    ...overrides,
+  };
+}
+
+/** One whole roster page: nothing follows it. */
+const rosterPage = (items: readonly unknown[]) => ({
+  status: 'ok' as const,
+  data: { items, nextCursor: null, hasMore: false },
+  correlationId: 'corr-roster',
+});
+
+const ROSTER = [
+  rosterEntry(PROFILE_A, {
+    displayName: 'Bay one technician',
+    trade: 'mechanic',
+    employmentRef: 'EMP-1',
+  }),
+  rosterEntry(PROFILE_B, { displayName: 'Bay two technician', trade: 'electrician' }),
+];
+
 beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
+  listTechnicians.mockResolvedValue(rosterPage(ROSTER));
   readWorkOrderDetail.mockResolvedValue({ status: 'ok', data: detail, correlationId: 'corr-wo' });
   readWorkOrderTimeline.mockResolvedValue({
     status: 'ok',
@@ -453,7 +498,7 @@ describe('the work-order record says why a command was refused', () => {
     const profile = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
     );
-    await user.type(profile, 'the-reference-on-screen');
+    await user.selectOptions(profile, PROFILE_A);
     await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
     await typeMoment(user, EN['workOrders.detail.windowTo'] as string, '010920261200');
     await user.click(
@@ -471,12 +516,12 @@ describe('the work-order record says why a command was refused', () => {
     expect(role.getAttribute('aria-describedby') ?? '').toContain(alert.id);
     // The window went as the branch's instants, with the branch's offset.
     expect(assignTechnician.mock.calls[0]?.[1]).toEqual({
-      technicianProfileId: 'the-reference-on-screen',
+      technicianProfileId: PROFILE_A,
       assignmentRole: 'primary',
       window: { from: '2026-09-01T08:00:00+03:00', to: '2026-09-01T12:00:00+03:00' },
     });
-    // Nothing the operator typed was thrown away by the refusal.
-    expect((profile as HTMLInputElement).value).toBe('the-reference-on-screen');
+    // Nothing the operator chose was thrown away by the refusal.
+    expect((profile as HTMLSelectElement).value).toBe(PROFILE_A);
     expect(document.body.textContent).not.toContain('primary_already_assigned');
   });
 
@@ -504,6 +549,12 @@ describe('the work-order record says why a command was refused', () => {
     const profile = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
     );
+    // The roster is a choice that opens on "Choose…", so nothing is chosen yet.
+    expect(profile.tagName).toBe('SELECT');
+    expect((profile as HTMLSelectElement).value).toBe('');
+    expect((profile as HTMLSelectElement).selectedOptions[0]?.textContent).toBe(
+      EN['form.select.placeholder']
+    );
     const from = screen.getByRole('group', {
       name: new RegExp(`^${EN['workOrders.detail.windowFrom'] as string}`),
     });
@@ -511,6 +562,14 @@ describe('the work-order record says why a command was refused', () => {
       screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
     );
     await waitFor(() => expect(profile).toHaveFocus());
+    // The missing choice is said on the select itself.
+    const describedBy = profile.getAttribute('aria-describedby') ?? '';
+    expect(
+      screen
+        .getAllByText(EN['field.required'] as string)
+        .map(errorElement)
+        .some((alert) => alert.id !== '' && describedBy.includes(alert.id))
+    ).toBe(true);
     expect(profile).toHaveAttribute('aria-invalid', 'true');
     expect(from).toHaveAttribute('aria-invalid', 'true');
     await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
@@ -545,7 +604,7 @@ describe('the work-order record says why a command was refused', () => {
     const profile = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
     );
-    await user.type(profile, 'the-reference-on-screen');
+    await user.selectOptions(profile, PROFILE_B);
     await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
     // The end: day and month only.
     await typeMoment(user, EN['workOrders.detail.windowTo'] as string, '0109');
@@ -590,6 +649,14 @@ describe('the work-order record says why a command was refused', () => {
       correlationId: 'corr-assign',
       attempt: 1,
     });
+    // The roster lists the inactive profile too, marked: the client filters
+    // nothing, and the refusal is the platform's.
+    listTechnicians.mockResolvedValue(
+      rosterPage([
+        ...ROSTER,
+        rosterEntry(INACTIVE, { displayName: 'Bay three technician', isActive: false }),
+      ])
+    );
     const user = userEvent.setup();
     await renderRecord();
 
@@ -597,7 +664,12 @@ describe('the work-order record says why a command was refused', () => {
     const profile = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
     );
-    await user.type(profile, 'the-reference-on-screen');
+    expect(
+      within(profile).getByRole('option', {
+        name: `Bay three technician — ${EN['technicians.roster.state.inactive'] as string}`,
+      })
+    ).toBeInTheDocument();
+    await user.selectOptions(profile, INACTIVE);
     await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
     await typeMoment(user, EN['workOrders.detail.windowTo'] as string, '010920261200');
     await user.click(
@@ -613,7 +685,8 @@ describe('the work-order record says why a command was refused', () => {
     // The sentence has to hold on THIS screen too: the refusal here is that the
     // technician cannot be given the job, not only that time cannot be logged.
     expect(alert.textContent).toContain('work cannot be given to them');
-    expect((profile as HTMLInputElement).value).toBe('the-reference-on-screen');
+    expect(assignTechnician.mock.calls[0]?.[1]).toMatchObject({ technicianProfileId: INACTIVE });
+    expect((profile as HTMLSelectElement).value).toBe(INACTIVE);
     expect(document.body.textContent).not.toContain('profile-inactive');
   });
 
@@ -1036,5 +1109,407 @@ describe('a job is said in words, and its routing rides the edit baseline', () =
 
     await user.click(screen.getByRole('button', { name: 'second' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});
+
+/*
+ * `P1-32-PRE-OD-TECH1`: the assignment form chooses the technician from the
+ * work order's branch roster when it may read that roster and the roster was
+ * read in full, and keeps the typed reference everywhere else, so every write
+ * that worked before still works. Either way the profile id is what is sent.
+ */
+describe('the assignment form chooses the technician from the branch roster', () => {
+  const ASSIGNER = [WORK_ORDER_READ, 'tech.technician.read', 'tech.assignment.manage'];
+  const SECOND_JOB_ID = '99999999-9999-4999-8999-999999999999';
+  const technicianField = (messages: Record<string, string>) =>
+    screen.findByLabelText(
+      new RegExp(`^${messages['workOrders.detail.technicianProfileId'] as string}`)
+    );
+  const optionNames = (select: HTMLElement) =>
+    [...(select as HTMLSelectElement).options].map((option) => option.textContent);
+
+  function assignable(permissions: readonly string[] = ASSIGNER, data: unknown = movable) {
+    PERMISSIONS = permissions;
+    readWorkOrderDetail.mockResolvedValue({ status: 'ok', data, correlationId: 'corr-wo' });
+    listJobAssignments.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-assignments',
+    });
+    listJobBlockers.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-blockers',
+    });
+  }
+
+  async function openTheJob(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    return technicianField(EN);
+  }
+
+  it('offers the roster by name on a select that opens on "Choose…", read once for the branch', async () => {
+    assignable();
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(profile.tagName).toBe('SELECT');
+    expect(optionNames(profile)).toEqual([
+      EN['form.select.placeholder'],
+      'Bay one technician — mechanic — EMP-1',
+      'Bay two technician — electrician',
+    ]);
+    expect(
+      screen.getByText(EN['workOrders.detail.technicianProfileIdHint'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByText(EN['workOrders.detail.technicianProfileIdTypedHint'] as string)
+    ).toBeNull();
+    // The whole roster of the WORK ORDER's branch, active and inactive alike,
+    // from the first cursor, at the route's largest page.
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
+    expect(listTechnicians).toHaveBeenCalledWith(
+      { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      { isActive: null, cursor: null, limit: 100 }
+    );
+  });
+
+  it('names a person whose name is withheld by why, with their trade and employment reference', async () => {
+    assignable();
+    listTechnicians.mockResolvedValue(
+      rosterPage([rosterEntry(PROFILE_A, { trade: 'mechanic', employmentRef: 'EMP-7' })])
+    );
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(
+      within(profile).getByRole('option', {
+        name: `${EN['technicians.roster.nameWithheld'] as string} — mechanic — EMP-7`,
+      })
+    ).toHaveValue(PROFILE_A);
+  });
+
+  it('lists an inactive technician, marked, rather than leaving them out', async () => {
+    assignable();
+    listTechnicians.mockResolvedValue(
+      rosterPage([
+        rosterEntry(PROFILE_A, { displayName: 'Bay one technician' }),
+        rosterEntry(INACTIVE, { displayName: 'Bay three technician', isActive: false }),
+      ])
+    );
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(optionNames(profile)).toEqual([
+      EN['form.select.placeholder'],
+      'Bay one technician',
+      `Bay three technician — ${EN['technicians.roster.state.inactive'] as string}`,
+    ]);
+  });
+
+  it('tells two identical labels apart by the profile id, and leaves a unique one alone', async () => {
+    assignable();
+    listTechnicians.mockResolvedValue(
+      rosterPage([
+        rosterEntry(PROFILE_A),
+        rosterEntry(PROFILE_B),
+        rosterEntry(INACTIVE, { trade: 'electrician' }),
+      ])
+    );
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    const withheld = EN['technicians.roster.nameWithheld'] as string;
+    expect(optionNames(profile)).toEqual([
+      EN['form.select.placeholder'],
+      `${withheld} — ${PROFILE_A}`,
+      `${withheld} — ${PROFILE_B}`,
+      `${withheld} — electrician`,
+    ]);
+  });
+
+  it('keeps the typed reference without tech.technician.read, reads no roster, and sends what was typed', async () => {
+    assignable([WORK_ORDER_READ, 'tech.assignment.manage']);
+    assignTechnician.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(profile.tagName).toBe('INPUT');
+    expect(
+      screen.getByText(EN['workOrders.detail.technicianProfileIdTypedHint'] as string)
+    ).toBeVisible();
+    await user.type(profile, 'the-typed-reference');
+    await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
+    await typeMoment(user, EN['workOrders.detail.windowTo'] as string, '010920261200');
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
+    );
+    await waitFor(() =>
+      expect(assignTechnician).toHaveBeenCalledWith(JOB_ID, {
+        technicianProfileId: 'the-typed-reference',
+        assignmentRole: 'primary',
+        window: { from: '2026-09-01T08:00:00+03:00', to: '2026-09-01T12:00:00+03:00' },
+      })
+    );
+    expect(listTechnicians).not.toHaveBeenCalled();
+  });
+
+  it('keeps the typed reference, and says so, when the roster read is refused', async () => {
+    assignable();
+    listTechnicians.mockResolvedValue({ status: 'denied', correlationId: 'corr-roster' });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(profile.tagName).toBe('INPUT');
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(
+      screen.getByText(EN['workOrders.detail.technicianProfileIdTypedHint'] as string)
+    ).toBeVisible();
+    // The reason is announced with the field, not only drawn beside it.
+    expect(profile).toHaveAccessibleDescription(
+      expect.stringContaining(EN['state.denied.title'] as string)
+    );
+  });
+
+  it('holds Assign behind a loading line while the roster read is out, then offers the select', async () => {
+    assignable();
+    let answerRoster!: (state: unknown) => void;
+    listTechnicians.mockReturnValue(
+      new Promise((resolve) => {
+        answerRoster = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    await renderRecord();
+
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    const assign = await screen.findByRole('button', {
+      name: EN['workOrders.detail.assignTechnician'] as string,
+    });
+    const form = assign.closest('form') as HTMLElement;
+    expect(within(form).getByRole('status')).toHaveTextContent(EN['state.loading'] as string);
+    expect(assign).toBeDisabled();
+    expect(
+      within(form).queryByLabelText(
+        new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
+      )
+    ).toBeNull();
+
+    answerRoster(rosterPage(ROSTER));
+    expect((await technicianField(EN)).tagName).toBe('SELECT');
+    expect(within(form).queryByRole('status')).toBeNull();
+    expect(assign).toBeEnabled();
+  });
+
+  it('reads a roster read that throws as "not right now", with the typed reference kept', async () => {
+    assignable();
+    listTechnicians.mockRejectedValue(new Error('the action did not answer'));
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(profile.tagName).toBe('INPUT');
+    expect(screen.getByText(EN['state.unavailable.title'] as string)).toBeVisible();
+  });
+
+  it('walks at most three pages, then keeps the typed reference and says the roster is too long', async () => {
+    assignable();
+    let page = 0;
+    listTechnicians.mockImplementation(async () => {
+      page += 1;
+      return {
+        status: 'ok',
+        data: {
+          items: [
+            rosterEntry(`profile-on-page-${page}`, { displayName: `Page ${page} technician` }),
+          ],
+          nextCursor: `cursor-${page}`,
+          hasMore: true,
+        },
+        correlationId: 'corr-roster',
+      };
+    });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(profile.tagName).toBe('INPUT');
+    expect(screen.getByText(EN['technicians.picker.truncated'] as string)).toBeVisible();
+    expect(listTechnicians).toHaveBeenCalledTimes(3);
+    expect(
+      listTechnicians.mock.calls.map((call) => (call[1] as { cursor: unknown }).cursor)
+    ).toEqual([null, 'cursor-1', 'cursor-2']);
+  });
+
+  it('keeps the typed reference, and says so, when the roster lists nobody', async () => {
+    assignable();
+    listTechnicians.mockResolvedValue(rosterPage([]));
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const profile = await openTheJob(user);
+    expect(profile.tagName).toBe('INPUT');
+    expect(screen.getByText(EN['technicians.picker.empty'] as string)).toBeVisible();
+  });
+
+  it('reads the roster once for the screen: none before a job is opened, one for two jobs, none after a re-read', async () => {
+    assignable([...ASSIGNER, 'tech.labor.record'], {
+      ...movable,
+      jobs: [job, { ...job, id: SECOND_JOB_ID, title: 'Rear axle check' }],
+    });
+    raiseJobBlocker.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    await screen.findByRole('button', { name: 'Open job Rear axle check' });
+    expect(listTechnicians).not.toHaveBeenCalled();
+    expect((await openTheJob(user)).tagName).toBe('SELECT');
+    await user.click(screen.getByRole('button', { name: 'Open job Rear axle check' }));
+    expect((await technicianField(EN)).tagName).toBe('SELECT');
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
+
+    // A command that re-reads the work order keeps the same branch, so the
+    // roster is not read again.
+    const readsBefore = readWorkOrderDetail.mock.calls.length;
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.blockerNote'] as string}`)),
+      'Waiting on the hoist'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.raiseBlocker'] as string })
+    );
+    await waitFor(() => expect(readWorkOrderDetail.mock.calls.length).toBeGreaterThan(readsBefore));
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a choice as unsaved work, and a confirmed discard returns the select to "Choose…"', async () => {
+    assignable();
+    const user = userEvent.setup();
+    const tree = await WorkOrderPage({
+      params: Promise.resolve({ locale: 'en', workOrderId: WORK_ORDER_ID }),
+    });
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+        {inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            {tree as ReactElement}
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), locale: 'en' }
+        )}
+      </UiFoundationProvider>
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const profile = (await openTheJob(user)) as HTMLSelectElement;
+    await user.selectOptions(profile, PROFILE_B);
+    expect(profile.value).toBe(PROFILE_B);
+
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['workingContext.discard.confirm'] as string })
+    );
+    await waitFor(() => expect(profile.value).toBe(''));
+    expect(profile.selectedOptions[0]?.textContent).toBe(EN['form.select.placeholder']);
+  });
+
+  it('says the roster hint in Arabic', async () => {
+    assignable();
+    const user = userEvent.setup();
+    await renderRecordInArabic();
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: (AR['workOrders.detail.openJobNamed'] as string).replace(
+          '{title}',
+          'Front brake overhaul'
+        ),
+      })
+    );
+    expect((await technicianField(AR)).tagName).toBe('SELECT');
+    expect(
+      screen.getByText(AR['workOrders.detail.technicianProfileIdHint'] as string)
+    ).toBeVisible();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('says the typed hint in Arabic', async () => {
+    assignable([WORK_ORDER_READ, 'tech.assignment.manage']);
+    const user = userEvent.setup();
+    await renderRecordInArabic();
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: (AR['workOrders.detail.openJobNamed'] as string).replace(
+          '{title}',
+          'Front brake overhaul'
+        ),
+      })
+    );
+    expect((await technicianField(AR)).tagName).toBe('INPUT');
+    expect(
+      screen.getByText(AR['workOrders.detail.technicianProfileIdTypedHint'] as string)
+    ).toBeVisible();
+    expect(listTechnicians).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * `P1-32-PRE-OD-TECH1`: the walk behind both pickers, over the page read. It
+ * never pretends a list is whole when the server's cursors do not reach the end,
+ * and it offers a profile once however many pages repeat it.
+ */
+describe('the roster walk', () => {
+  const target = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+  const page = (items: readonly unknown[], nextCursor: string | null, hasMore: boolean) => ({
+    status: 'ok' as const,
+    data: { items, nextCursor, hasMore },
+    correlationId: 'corr-roster',
+  });
+  const cursorsAsked = () =>
+    listTechnicians.mock.calls.map((call) => (call[1] as { cursor: unknown }).cursor);
+
+  it('stops on a repeated cursor and says the roster is cut short', async () => {
+    listTechnicians
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_A)], 'cursor-1', true))
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_B)], 'cursor-1', true));
+
+    expect(await readBranchRoster(target)).toEqual({
+      status: 'ok',
+      items: [rosterEntry(PROFILE_A), rosterEntry(PROFILE_B)],
+      truncated: true,
+    });
+    expect(cursorsAsked()).toEqual([null, 'cursor-1']);
+  });
+
+  it('offers a profile a later page repeats once, in the order it first came', async () => {
+    listTechnicians
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_A)], 'cursor-1', true))
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_A), rosterEntry(PROFILE_B)], null, false));
+
+    expect(await readBranchRoster(target)).toEqual({
+      status: 'ok',
+      items: [rosterEntry(PROFILE_A), rosterEntry(PROFILE_B)],
+      truncated: false,
+    });
+    expect(cursorsAsked()).toEqual([null, 'cursor-1']);
+  });
+
+  it('reads "more follows" with no cursor to reach it as cut short, not as whole', async () => {
+    listTechnicians.mockResolvedValueOnce(page([rosterEntry(PROFILE_A)], null, true));
+
+    expect(await readBranchRoster(target)).toEqual({
+      status: 'ok',
+      items: [rosterEntry(PROFILE_A)],
+      truncated: true,
+    });
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
   });
 });

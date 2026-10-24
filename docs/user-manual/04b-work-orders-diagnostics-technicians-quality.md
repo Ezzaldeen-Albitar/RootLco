@@ -90,8 +90,10 @@ allowed only one branch is not asked at all. An earlier version of the product s
 instead, because the platform published no directory of names; it publishes one now, and nothing in
 the workshop asks you to know an identifier.
 
-The same applies inside the work order: a technician is assigned by **technician profile**
-reference, not by name, and the rework sign-off and lead-technician fields are references too.
+The same applies inside the work order: a technician is assigned, and a rework is signed off, by
+choosing the person from the branch's technician roster by name — or, without `iam.user.read`, by
+"Name not shown to you" with their trade and reference. The rework lead-technician field is still a
+technician profile reference.
 
 ---
 
@@ -386,9 +388,14 @@ are separate questions and are refused separately.
 
 **Steps**
 
-1. Fill **Technician** <!-- workOrders.detail.technicianProfileId --> (required). This is a
-   reference, not a name: "The technician's profile identifier. The platform decides whether they
-   qualify for this job." <!-- workOrders.detail.technicianProfileIdHint -->
+1. Choose **Technician** <!-- workOrders.detail.technicianProfileId --> (required) from the
+   branch's roster: "Choose the technician from this branch's roster. The platform decides whether
+   they qualify for this job." <!-- workOrders.detail.technicianProfileIdHint --> Each entry shows
+   the name, the trade, the employment reference and "Inactive" where they apply. Where the roster
+   cannot be listed — you may not read it, it could not be read, it is empty or too long — the field
+   takes the reference typed instead: "The roster is not listed here, so enter the technician's
+   roster reference exactly as it was given. The platform decides whether they qualify for this
+   job." <!-- workOrders.detail.technicianProfileIdTypedHint -->
 2. Choose **Role** <!-- workOrders.detail.assignmentRole --> — **Primary** <!-- workOrders.assignmentRole.primary -->
    or **Assisting** <!-- workOrders.assignmentRole.assist --> (one of two choices).
 3. Fill **From** <!-- workOrders.detail.windowFrom --> and **To** <!-- workOrders.detail.windowTo -->
@@ -407,8 +414,9 @@ technician currently holds the job, and it is what puts the job into their **My 
 **Restrictions** · Both ends of the window are required — the form refuses with "Name a technician
 and both ends of the window." <!-- workOrders.detail.assignmentIncomplete --> Whether the technician
 qualifies (skills, certification, availability) is judged by the service against their profile, not
-by this form. You need the technician profile reference in advance; there is no roster screen to
-look it up (§4B.13).
+by this form, so an inactive technician is listed and the service refuses the assignment. The
+roster is offered only with `tech.technician.read`; without it you need the technician profile
+reference in advance (§4B.13).
 
 **If it goes wrong**
 
@@ -1120,10 +1128,11 @@ cost; `qms.rework.sign_off` to sign it off; `iam.sensitive.view` to see or recor
    safety-critical name the **Lead technician** <!-- quality.closure.leadTechnician --> — "Required
    when the rework is safety-critical. The technician profile reference." <!-- quality.closure.leadTechnicianHint -->
 3. Press **Create the rework order** <!-- quality.closure.createRework --> .
-4. When the rework has been checked, fill **Signed off by** <!-- quality.closure.signOffBy -->
+4. When the rework has been checked, choose **Signed off by** <!-- quality.closure.signOffBy -->
    (required) and press **Sign off** <!-- quality.closure.signOff --> . The hint states the rule:
-   "The independent reviewer's technician profile, from this workshop's roster. The platform refuses
-   the person who led the rework." <!-- quality.closure.signOffByHint -->
+   "Choose the independent reviewer from this branch's roster. The platform refuses the person who
+   led the rework." <!-- quality.closure.signOffByHint --> Where the roster cannot be listed, the
+   reviewer's roster reference is typed instead, and the hint says so.
 5. Where it applies, record **Rework cost** <!-- quality.closure.cost --> and **Currency** <!-- quality.closure.currency -->
    and press **Record the cost** <!-- quality.closure.recordCost --> .
 
@@ -1200,11 +1209,10 @@ and **Discard** <!-- form.discard --> .
   is the only route.
 - **NOT AVAILABLE — a tenant-wide work-order list.** The board, the quality queue and the technician
   workspace are each one branch at a time.
-- **OPERATOR PROCEDURE — the technician roster.** Technicians are administered by backend operation
-  and runbook act; there is no roster page, and a navigation link to one would not resolve. That is
-  why assignment, rework lead and rework sign-off all ask for a technician **profile reference**
-  rather than a name. Keep your own list of which reference belongs to Sami Al-Farsi (example) and
-  which to Lina Haddad (example).
+- **The technician roster.** The roster page is at `/en/technicians` (**Technician roster** <!-- nav.technicianRoster -->
+  , offered with `tech.technician.manage` and `tech.technician.read`). Assignment and rework
+  sign-off choose from it by name. Only the rework lead technician, and the typed fallback where the
+  roster cannot be listed, still take a technician **profile reference**.
 - **OPERATOR PROCEDURE — companies, branches, departments and employees.** None of them has a
   screen. A branch with no departments shows "This branch has no department to route to." <!-- workOrders.detail.noDepartments -->
   and nothing on the workshop screens can change that.
@@ -1247,7 +1255,7 @@ the product — those are roles you create.
 | `wo.work_order.close`                     | Close a work order                                                      |
 | `wo.job.manage`                           | Route a job to a department                                             |
 | `wo.additional_work.request` / `.approve` | Request additional work; record the customer's decision and the outcome |
-| `tech.technician.read`                    | Open **My work**; see who is assigned to a job                          |
+| `tech.technician.read`                    | Open **My work**; see who is assigned to a job; choose from the roster  |
 | `tech.assignment.manage`                  | Assign a technician to a job                                            |
 | `tech.labor.record`                       | Start and stop a clock; raise and resolve a job blocker                 |
 | `tech.labor.correct`                      | Correct one of your own labour sessions                                 |
@@ -1266,7 +1274,8 @@ the product — those are roles you create.
 | `org.department.read`                     | See department names instead of references                              |
 
 Two codes in the catalogue touch this part but are used by nothing: `wo.work_order.create` and
-`wo.work_order.line.manage`. `tech.technician.manage` administers the roster and has no screen.
+`wo.work_order.line.manage`. `tech.technician.manage` administers the roster on the **Technician
+roster** page.
 
 ---
 

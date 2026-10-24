@@ -79,6 +79,7 @@ export default async function WorkOrderClosurePage({
             canRequestAdditionalWork: can(QUALITY_PERMISSIONS.additionalWorkRequest),
             canApproveAdditionalWork: can(QUALITY_PERMISSIONS.additionalWorkApprove),
             canViewSensitive: can(QUALITY_PERMISSIONS.sensitiveView),
+            canReadTechnicians: can(QUALITY_PERMISSIONS.technicianRead),
           }}
         />
       </PageBody>

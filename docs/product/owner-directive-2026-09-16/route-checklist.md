@@ -1072,6 +1072,9 @@ interface's to make. Nothing below is worked around on the client.
 10. `/work-orders/[workOrderId]` and `/work-orders/[workOrderId]/closure` — a technician is named by
     roster reference for an assignment and a rework sign-off (prerequisite 13); the additional-work
     decision names its deciding party by reference (prerequisite 14).
+    Partly resolved (`P1-32-PRE-OD-TECH1`): an assignment and a rework sign-off now choose the
+    technician by name from the branch roster; the assignment list still prints the roster
+    reference. The additional-work clause (prerequisite 14) stands.
 11. `/delivery` — the handovers of a branch cannot be listed (prerequisite 4); and whether the
     credit-notes entry should also name `sal.finance.view` is a navigation decision for whoever
     owns that entry.
@@ -1145,6 +1148,10 @@ nothing below is invented on the client.
     update responses stay without it. The roster and the profile name each technician by it, and
     say in words when it is withheld. The job-assignment and rework sign-off pickers still take the
     roster reference; moving them onto the name is their own change, not made here.
+    **Closed for the pickers by `P1-32-PRE-OD-TECH1`:** a job assignment and a rework sign-off now
+    choose the technician from the branch roster by name (or by why the name is withheld), and fall
+    back to the typed reference where the roster cannot be offered. The assignment list still shows
+    the reference, and the rework lead technician is still typed as one.
 14. **The parties recorded on a visit.** The additional-work decision names its deciding party by
     party-role reference, and no read lists the parties of the visit a work order came from.
 15. **No item update operation.** No operation renames an item, moves it to another category or
@@ -6113,13 +6120,106 @@ Known limitations of this slice, one line each:
 
 - Open: recording a new certification — no certification catalogue read exists (above).
 - Open: the job-assignment and rework sign-off pickers still take the roster reference
-  (prerequisite 13).
+  (prerequisite 13). (Closed by `P1-32-PRE-OD-TECH1`: both now choose from the branch roster by
+  name; see that section below.)
 - Open: `tech.skill-list` declares the `expensive-read` rate-limit policy; whether that budget fits
   a bounded catalogue read is left for review, and the declaration is unchanged.
 - No browser spec covers the technician screens; none was extended. The Playwright tiers run only in
   hosted CI.
 - The backend proof (`tests/backend/od-technician-administration.test.ts`) runs only in the hosted
   database tier; it was not run locally.
+
+### Technician pickers on job assignment and rework sign-off (`P1-32-PRE-OD-TECH1`)
+
+The job assignment on `/work-orders/[workOrderId]` and the rework sign-off on
+`/work-orders/[workOrderId]/closure` now choose the technician from the work order's branch roster
+(`tech.technician-list`), closing the picker half of prerequisite 13 and of ADM2B's known
+limitation above. Web only: no backend, migration, route, operation or permission-code change. The
+request bodies are unchanged — `technicianProfileId` on `wo.job-assignment-create` and `signOffBy`
+with the link's `If-Match` on `qms.rework-sign-off` — and both route scopes stay `none`. The closure
+page now also passes `tech.technician.read` to its screen; the detail page already did.
+
+- **One read per screen, at most three pages of a hundred.** The shared walk
+  (`features/technicians/roster-picker.ts`) starts with no cursor, follows `nextCursor` while
+  `hasMore` holds, and stops on a repeated cursor, on a page that says more follows but gives no
+  cursor (read as cut short, not as whole), or after three pages. A hundred is the route's
+  largest page; three pages is the budget because `tech.technician-list` sits on the
+  `expensive-read` policy (thirty requests a minute per operation, tenant and user), which the
+  roster screen spends from too. The detail screen reads the roster the first time a job is opened
+  by someone holding both `tech.technician.read` and `tech.assignment.manage`, and keeps it for the
+  life of the screen; the closure screen reads it once, with `tech.technician.read` and
+  `qms.rework.sign_off`, when at least one listed link is unsigned, from the first ok order detail
+  (a link's branch is its original order's). Both reads are keyed on the company and branch
+  strings, so a re-read after a write does not read the roster again.
+- **Fallback rule.** The select is offered only when the roster was read in full and lists someone.
+  While the read is out, a loading line stands in its place and the submit waits. Everywhere else —
+  no `tech.technician.read`, a refused or thrown read (a throw is "not right now"), a roster longer
+  than the budget, an empty roster, or a closure detail that has not answered or was refused — the
+  typed reference stays, with its own hint and, where there is one, a sentence saying why. That
+  sentence is the typed field's accessible description as well, so it is announced with the field.
+  A reference typed on the closure screen before the order detail named the branch is emptied when
+  the select replaces the typed field, unless it is a listed profile id, which stays chosen: the
+  select would otherwise read "Choose…" while Sign off sent text the operator could not see. The
+  assignment form has no such switch — its branch is known before the job opens, the loading line
+  stands in for the field until the roster answers, and that answer is kept.
+- **Label rule.** Each option is the person's name, or "Name not shown to you" without
+  `iam.user.read`, then the trade, the employment reference and "Inactive", each only where it
+  applies. Two options whose labels still match each carry the profile id as well. Inactive
+  profiles are listed and marked, in the server's order, and a refusal sits on the select with the
+  choice kept. Job assignment refuses a technician who does not qualify or is inactive. Rework
+  sign-off refuses the person who led the rework and checks that the profile belongs to the link's
+  company and branch, but it does not check whether the profile is active
+  (`apps/api/src/modules/quality/application/rework-service.ts`), so an inactive profile chosen for
+  a sign-off is accepted. The select opens on "Choose…", a missing choice is refused on it, and a
+  confirmed discard returns it there.
+- **Follow-up (open, not decided here).** `qms.rework-sign-off` accepts an inactive technician
+  profile as the independent reviewer. Whether the sign-off choice should leave inactive profiles
+  out, or the platform should refuse them, is not decided in this slice; nothing about it changed.
+- **Tests changed (no new test file).** `apps/web/tests/work-order-delivery-mount.dom.test.tsx`:
+  the four assignment cases choose from the roster instead of typing (the inactive refusal now
+  chooses a listed inactive profile), and seventeen cases are new — the name labels, a withheld
+  name with trade and reference, the Inactive marker, identical labels told apart, no read without
+  the permission with the typed value sent, a refused read (whose sentence is also asserted as the
+  field's accessible description), a thrown read, the three-page truncation, an empty roster, one
+  read for two jobs and none before a job is opened or after a re-read, the discard, the two hints
+  in Arabic, Assign held behind the loading line until the roster answers, and three cases of the
+  walk itself (a repeated cursor, a profile repeated across pages, more said to follow with no
+  cursor). `apps/web/tests/quality.dom.test.tsx`: the independent sign-off refusal chooses from the
+  roster, and twelve cases are new — one read for two unsigned links with the chosen id sent and no
+  read after the write, no read when no link is unsigned, the typed fallback without the
+  permission and when the order detail is refused (it waits for the gate's verdict, held behind the
+  refused detail, rather than for the read being called), the hint in Arabic, a reference typed
+  before the detail answered emptied when the select replaces it with nothing sent, Sign off held
+  behind the loading line, the refused, too-long and empty roster sentences, the select kept when
+  a re-read of the order after a write does not answer, and the reason as the field's accessible
+  description in Arabic.
+- **Commands run on the development machine, before the commit:** `npm ci`; the seven web files
+  `work-order-delivery-mount.dom`, `quality.dom`, `i18n`, `p1-27-qa`, `p1-27-doc-reconciliation`,
+  `route-branch-scope` and `technician-administration.dom` (7 files, 320 tests, all passed);
+  `npm run typecheck:web` and `npm run lint:web` (passed; lint reports only warnings in files this
+  slice does not touch); `validate:theme` and `format:check` in the web workspace,
+  `style:check:web`, `validate:web-boundary`, `validate:web-topology`, `validate:plain-language`,
+  `validate:encoding`, `validate:generated-artifacts`, and the root `typecheck`, `lint`,
+  `format:check` and `security:all` (all passed). The root `npm run test` ran 170 files and 4353
+  tests: 4352 passed and one failed — "fails on an executable successor that is not named" in
+  `tests/ci/p1-28-evidence-manifest.test.ts` exceeded its 240-second budget (it walks repository
+  history, which this slice does not change); it was not re-run. `validate:phase-ownership` runs
+  after the commit; the web tier with coverage (`test:ci`), the builds, the database and backend
+  tiers and the browser tiers were not run locally.
+- **Review follow-up (second commit).** An independent review of the first commit found the typed
+  closure reference surviving the switch to the select, the reason sentence not linked to its
+  field, the inactivity wording above, and missing cases; this commit fixes those and adds the
+  null-cursor rule. The review's request to scope the sign-off hint to safety-critical rework was
+  not taken: `ck_rework_links_signoff_distinct` refuses the lead technician as signer on every
+  link, and `rework-service.ts` maps that refusal to the same `not_independent` sentence, so the
+  hint is true as written. Commands run on the development machine, before the commit:
+  `work-order-delivery-mount.dom`, `quality.dom`, `i18n` and `form-reset-class` (4 files, all
+  passed); `npm run typecheck:web`, `npm run lint:web` (warnings only, in files this slice does not
+  touch), `npm run format:check:web` and `validate:theme` in the web workspace; at the root,
+  `prettier --check` on the changed documents and `tests/ci/p1-27-matrix-citations.test.ts`.
+  `validate:phase-ownership` runs after the commit.
+- No browser spec covers these two screens; none was added or extended. The Playwright tiers run
+  only in hosted CI.
 
 ### Roles, permissions, approval limits and the discount threshold on Material UI (`P1-32-PRE-OD-ADM4`)
 

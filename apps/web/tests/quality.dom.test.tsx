@@ -115,6 +115,11 @@ const readWorkOrderDetail = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
 }));
+// The branch roster the rework sign-off chooses from (`P1-32-PRE-OD-TECH1`).
+const listTechnicians = vi.fn();
+vi.mock('@/features/technicians/roster-api', () => ({
+  listTechnicians: (...args: unknown[]) => listTechnicians(...args),
+}));
 vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: () => false,
 }));
@@ -254,7 +259,40 @@ const everything = {
   canRequestAdditionalWork: true,
   canApproveAdditionalWork: true,
   canViewSensitive: false,
+  canReadTechnicians: true,
 };
+
+const REVIEWER = '66666666-6666-4666-8666-666666666666';
+const SECOND_REVIEWER = '77777777-7777-4777-8777-777777777777';
+/** The branch roster, one whole page, as `tech.technician-list` publishes it. */
+const roster = ok({
+  items: [
+    {
+      id: REVIEWER,
+      userId: 'u-reviewer',
+      companyId: COMPANY,
+      branchId: BRANCH,
+      trade: 'inspector',
+      employmentRef: null,
+      isActive: true,
+      recordVersion: 1,
+      displayName: 'Bay four reviewer',
+    },
+    {
+      id: SECOND_REVIEWER,
+      userId: 'u-second',
+      companyId: COMPANY,
+      branchId: BRANCH,
+      trade: null,
+      employmentRef: 'EMP-9',
+      isActive: true,
+      recordVersion: 1,
+      displayName: 'Bay five reviewer',
+    },
+  ],
+  nextCursor: null,
+  hasMore: false,
+});
 
 beforeEach(() => {
   for (const fn of [
@@ -278,9 +316,11 @@ beforeEach(() => {
     raiseReopenAttempt,
     withdrawAdditionalWork,
     readWorkOrderDetail,
+    listTechnicians,
   ]) {
     fn.mockReset();
   }
+  listTechnicians.mockResolvedValue(roster);
   readWorkOrderDetail.mockResolvedValue(ok(workOrderDetail));
   readClosureEligibility.mockResolvedValue(ok(eligibility));
   listQcRecords.mockResolvedValue(ok({ items: [record] }));
@@ -912,15 +952,23 @@ describe('the closure screen says why a command was refused', () => {
         capabilities={everything}
       />
     );
-    const who = await screen.findByLabelText(new RegExp(`^${t('quality.closure.signOffBy')}`));
-    await user.type(who, 'the-colleague-reference');
+    const who = await screen.findByRole('combobox', {
+      name: startsWith(t('quality.closure.signOffBy')),
+    });
+    await user.selectOptions(who, REVIEWER);
     await user.click(screen.getByRole('button', { name: t('quality.closure.signOff') }));
 
     const alert = errorElement(await screen.findByText(t('form.violation.not_independent')));
     expect(alert).toBeVisible();
     expect(alert.id).not.toBe('');
     expect(who.getAttribute('aria-describedby') ?? '').toContain(alert.id);
-    expect((who as HTMLInputElement).value).toBe('the-colleague-reference');
+    // The chosen profile id went, with the link's version, and the choice is kept.
+    expect(signOffRework).toHaveBeenCalledWith(
+      reworkLink.id,
+      { signOffBy: REVIEWER },
+      reworkLink.recordVersion
+    );
+    expect((who as HTMLSelectElement).value).toBe(REVIEWER);
     // The rework order is reached by a link in words, never by its bare reference
     // (route sweep B3).
     expect(
@@ -1298,5 +1346,351 @@ describe('a decision is asked, and the command waits for its re-read', () => {
     expect(await reopen.findByText(t('state.unavailable.title'))).toBeVisible();
     await user.click(reopen.getByRole('button', { name: t('state.retry') }));
     expect(await reopen.findByText(t('quality.closure.noReopen'))).toBeVisible();
+  });
+});
+
+/*
+ * `P1-32-PRE-OD-TECH1`: the rework sign-off chooses the independent reviewer
+ * from the order's branch roster when it may read that roster and the order's
+ * detail named the branch, and keeps the typed reference everywhere else. The
+ * roster is read once for the panel, however many links wait for a sign-off.
+ */
+describe('the rework sign-off chooses the reviewer from the branch roster', () => {
+  const secondLink = { ...reworkLink, id: 'rw2', rootCause: 'Pad wear sensor left loose' };
+  const signOffFields = () =>
+    screen.findAllByLabelText(new RegExp(`^${t('quality.closure.signOffBy')}`));
+  // The select, waited for by its role: until the order's detail names the
+  // branch, the row shows the typed field, which is a textbox.
+  const signOffSelects = () =>
+    screen.findAllByRole('combobox', { name: startsWith(t('quality.closure.signOffBy')) });
+
+  it('reads the roster once for two unsigned links, sends the chosen id, and reads nothing after the write', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink, secondLink] }));
+    signOffRework.mockResolvedValue({
+      status: 'success',
+      messageKey: 'action.saved',
+      correlationId: 'corr-signed',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const fields = await signOffSelects();
+    expect(fields).toHaveLength(2);
+    for (const field of fields) expect(field.tagName).toBe('SELECT');
+    expect(
+      [...(fields[0] as HTMLSelectElement).options].map((option) => option.textContent)
+    ).toEqual([
+      t('form.select.placeholder'),
+      'Bay four reviewer — inspector',
+      'Bay five reviewer — EMP-9',
+    ]);
+    expect(screen.getAllByText(t('quality.closure.signOffByHint'))).toHaveLength(2);
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
+    expect(listTechnicians).toHaveBeenCalledWith(
+      { companyId: COMPANY, branchId: BRANCH },
+      { isActive: null, cursor: null, limit: 100 }
+    );
+
+    listReworkLinks.mockResolvedValue(
+      ok({ items: [{ ...reworkLink, signOffAt: '2026-09-03T08:00:00.000Z' }, secondLink] })
+    );
+    const linkReads = listReworkLinks.mock.calls.length;
+    await user.selectOptions(fields[0] as HTMLElement, SECOND_REVIEWER);
+    const [firstForm] = screen.getAllByRole('button', { name: t('quality.closure.signOff') });
+    await user.click(firstForm as HTMLElement);
+    await waitFor(() =>
+      expect(signOffRework).toHaveBeenCalledWith(
+        reworkLink.id,
+        { signOffBy: SECOND_REVIEWER },
+        reworkLink.recordVersion
+      )
+    );
+    await waitFor(() => expect(listReworkLinks.mock.calls.length).toBeGreaterThan(linkReads));
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('combobox', { name: startsWith(t('quality.closure.signOffBy')) })
+      ).toHaveLength(1)
+    );
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads no roster when no link waits for a sign-off', async () => {
+    listReworkLinks.mockResolvedValue(
+      ok({ items: [{ ...reworkLink, signOffAt: '2026-09-03T08:00:00.000Z' }] })
+    );
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    expect(
+      await screen.findByRole('link', { name: startsWith(t('quality.closure.openReworkOrder')) })
+    ).toBeVisible();
+    expect(screen.queryByLabelText(new RegExp(`^${t('quality.closure.signOffBy')}`))).toBeNull();
+    expect(listTechnicians).not.toHaveBeenCalled();
+  });
+
+  it('keeps the typed reference without tech.technician.read, and sends what was typed', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    signOffRework.mockResolvedValue({
+      status: 'success',
+      messageKey: 'action.saved',
+      correlationId: 'corr-signed',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={{ ...everything, canReadTechnicians: false }}
+      />
+    );
+    const [who] = await signOffFields();
+    expect(who?.tagName).toBe('INPUT');
+    expect(screen.getByText(t('quality.closure.signOffByTypedHint'))).toBeVisible();
+    await user.type(who as HTMLElement, 'the-typed-reviewer');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.signOff') }));
+    await waitFor(() =>
+      expect(signOffRework).toHaveBeenCalledWith(
+        reworkLink.id,
+        { signOffBy: 'the-typed-reviewer' },
+        reworkLink.recordVersion
+      )
+    );
+    expect(listTechnicians).not.toHaveBeenCalled();
+  });
+
+  it('keeps the typed reference when the order detail did not answer, since it names the branch', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    // A refused first detail draws nothing of its own — the screen reads the
+    // same as while it is out — so the gate's verdict is held behind it: the
+    // verdict on screen is a visible effect that can only follow the refusal.
+    let answerDetail!: (state: unknown) => void;
+    const detailAnswer = new Promise((resolve) => {
+      answerDetail = resolve;
+    });
+    readWorkOrderDetail.mockReturnValue(detailAnswer);
+    readClosureEligibility.mockImplementation(async () => {
+      await detailAnswer;
+      return ok(eligibility);
+    });
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await signOffFields();
+    expect(screen.queryByText(t('quality.closure.notEligible'))).toBeNull();
+    answerDetail(denied);
+    // The refusal has landed, and the row still offers the typed field.
+    expect(await screen.findByText(t('quality.closure.notEligible'))).toBeVisible();
+    const [who] = await signOffFields();
+    expect(who?.tagName).toBe('INPUT');
+    expect(screen.getByText(t('quality.closure.signOffByTypedHint'))).toBeVisible();
+    expect(listTechnicians).not.toHaveBeenCalled();
+  });
+
+  it('says the roster hint in Arabic', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    mountAr(
+      <WorkOrderClosureScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const who = await screen.findByRole('combobox', {
+      name: startsWith(arT('quality.closure.signOffBy')),
+    });
+    expect(who.tagName).toBe('SELECT');
+    expect(screen.getByText(arT('quality.closure.signOffByHint'))).toBeVisible();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('empties a reference typed before the detail named the branch, so Sign off sends nothing unseen', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    let answerDetail!: (state: unknown) => void;
+    readWorkOrderDetail.mockReturnValue(
+      new Promise((resolve) => {
+        answerDetail = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const [typed] = await signOffFields();
+    expect(typed?.tagName).toBe('INPUT');
+    await user.type(typed as HTMLElement, 'typed-before-the-detail');
+    answerDetail(ok(workOrderDetail));
+
+    const [who] = await signOffSelects();
+    const select = who as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(select.selectedOptions[0]?.textContent).toBe(t('form.select.placeholder'));
+    await user.click(screen.getByRole('button', { name: t('quality.closure.signOff') }));
+    // The empty choice is refused on the select, and nothing was sent.
+    await waitFor(() => expect(select).toHaveAttribute('aria-invalid', 'true'));
+    expect(signOffRework).not.toHaveBeenCalled();
+  });
+
+  it('holds Sign off behind a loading line while the roster read is out, then offers the select', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    let answerRoster!: (state: unknown) => void;
+    listTechnicians.mockReturnValue(
+      new Promise((resolve) => {
+        answerRoster = resolve;
+      })
+    );
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await waitFor(() => expect(listTechnicians).toHaveBeenCalledTimes(1));
+    const button = screen.getByRole('button', { name: t('quality.closure.signOff') });
+    const form = button.closest('form') as HTMLElement;
+    expect(within(form).getByRole('status')).toHaveTextContent(t('state.loading'));
+    expect(button).toBeDisabled();
+    expect(
+      within(form).queryByLabelText(new RegExp(`^${t('quality.closure.signOffBy')}`))
+    ).toBeNull();
+
+    answerRoster(roster);
+    const [who] = await signOffSelects();
+    expect(who?.tagName).toBe('SELECT');
+    expect(within(form).queryByRole('status')).toBeNull();
+    expect(button).toBeEnabled();
+  });
+
+  /** Mounts the screen with one unsigned link and answers the typed field the roster left. */
+  async function typedFallback(reason: string) {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const sentence = await screen.findByText(reason);
+    expect(sentence).toBeVisible();
+    const [who] = await signOffFields();
+    expect(who?.tagName).toBe('INPUT');
+    expect(screen.getByText(t('quality.closure.signOffByTypedHint'))).toBeVisible();
+    return who as HTMLElement;
+  }
+
+  it('keeps the typed reference, and says why with the field, when the roster read is refused', async () => {
+    listTechnicians.mockResolvedValue(denied);
+    const who = await typedFallback(t('state.denied.title'));
+    expect(who).toHaveAccessibleDescription(expect.stringContaining(t('state.denied.title')));
+  });
+
+  it('keeps the typed reference, and says the roster is too long, past three pages', async () => {
+    let page = 0;
+    listTechnicians.mockImplementation(async () => {
+      page += 1;
+      return ok({
+        items: [{ ...(roster.data.items[0] as object), id: `profile-on-page-${page}` }],
+        nextCursor: `cursor-${page}`,
+        hasMore: true,
+      });
+    });
+    await typedFallback(t('technicians.picker.truncated'));
+    expect(listTechnicians).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps the typed reference, and says so, when the roster lists nobody', async () => {
+    listTechnicians.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    await typedFallback(t('technicians.picker.empty'));
+  });
+
+  it('keeps the select when a re-read of the order after a write does not answer', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink, secondLink] }));
+    signOffRework.mockResolvedValue({
+      status: 'success',
+      messageKey: 'action.saved',
+      correlationId: 'corr-signed',
+      attempt: 1,
+    });
+    readWorkOrderDetail
+      .mockResolvedValueOnce(ok(workOrderDetail))
+      .mockResolvedValue({ status: 'unavailable', correlationId: 'corr-unavailable' });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const fields = await signOffSelects();
+    expect(fields).toHaveLength(2);
+    expect(screen.getByTestId('closure-order')).toBeVisible();
+
+    listReworkLinks.mockResolvedValue(
+      ok({ items: [{ ...reworkLink, signOffAt: '2026-09-03T08:00:00.000Z' }, secondLink] })
+    );
+    await user.selectOptions(fields[0] as HTMLElement, REVIEWER);
+    const [firstForm] = screen.getAllByRole('button', { name: t('quality.closure.signOff') });
+    await user.click(firstForm as HTMLElement);
+    // The re-read answered "not right now": the order's line in the gate is gone.
+    await waitFor(() => expect(screen.queryByTestId('closure-order')).toBeNull());
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('combobox', { name: startsWith(t('quality.closure.signOffBy')) })
+      ).toHaveLength(1)
+    );
+    expect(screen.queryByText(t('quality.closure.signOffByTypedHint'))).toBeNull();
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why the roster is not a choice with the field, in Arabic', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    listTechnicians.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    mountAr(
+      <WorkOrderClosureScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    expect(await screen.findByText(arT('technicians.picker.empty'))).toBeVisible();
+    const [who] = await screen.findAllByLabelText(
+      new RegExp(`^${arT('quality.closure.signOffBy')}`)
+    );
+    expect(who?.tagName).toBe('INPUT');
+    expect(who).toHaveAccessibleDescription(
+      expect.stringContaining(arT('technicians.picker.empty'))
+    );
+    expect(document.documentElement.dir).toBe('rtl');
   });
 });
