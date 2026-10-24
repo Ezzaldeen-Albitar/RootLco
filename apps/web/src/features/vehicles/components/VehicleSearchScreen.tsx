@@ -657,11 +657,18 @@ function VehicleSearchResults({
          * The same defect shape as the unreachable writes: the screen was built,
          * and nothing navigated to it. The CRM search has carried this row action
          * since Wave 2; the vehicle search never gained one.
+         *
+         * `about` names the vehicle the button opens (G9), so a screen reader
+         * hears "Open V-0001" rather than "Open" on every row: the reference,
+         * else the current plate, else the VIN. A row with none of the three
+         * keeps the bare label — there is nothing readable to name it by, and
+         * the id is not something an operator can read.
          */
         rowActions={(row) => [
           {
             kind: 'button',
             label: translate(messages, 'vehicles.search.open'),
+            about: row.displayNumber ?? row.activePlate ?? row.vin ?? undefined,
             onClick: () => router.push(`/${locale}/vehicles/${row.id}`),
           },
         ]}
@@ -677,10 +684,19 @@ function VehicleSearchResults({
         "No matches" is the PHASE, not a row count. `empty` is reachable only
         from a COMPLETED read that returned nothing, so the sentence cannot
         appear before there is an answer to base it on.
+
+        The sentence is a polite status (S4), so an operator using a screen
+        reader who pressed Search hears that nothing matched. The create offer
+        sits outside it: it is a control, not part of the announcement.
       */}
       {search.phase === 'empty' ? (
         <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <p className="text-body text-text-secondary" lang={locale}>
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-body text-text-secondary"
+            lang={locale}
+          >
             {translate(messages, 'vehicles.search.noMatch')}
           </p>
           {canCreate ? (

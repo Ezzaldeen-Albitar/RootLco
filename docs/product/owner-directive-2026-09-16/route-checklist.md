@@ -7775,9 +7775,10 @@ What `/vehicles` now renders:
   (`data-testid="previous-plate-badge"`), the model under the make and the merged-into sentence
   under the status are each the second line of a `TwoLineCell`. Codes keep `dir="ltr"` and names
   keep `<bdi>`. The four make outcomes are unchanged. The row action is a button labelled
-  `vehicles.search.open` that opens `/{locale}/vehicles/{id}`. The search honours neither a page
-  size nor a sort, so the grid draws no rows-per-page control and no sorting header, and the pager
-  says "Page N" only.
+  `vehicles.search.open` that opens `/{locale}/vehicles/{id}`; its `about` is the reference, else
+  the current plate, else the VIN, so its name says which vehicle it opens (G9). The search honours
+  neither a page size nor a sort, so the grid draws no rows-per-page control and no sorting header,
+  and the pager says "Page N" only.
 - The search box is `FormTextField` (`type="search"`, `dir="auto"`, `inputMode="text"`, no spell
   check, no autocomplete, 80 characters, the hint as its description) with `DigitsEcho` under it.
   Escape empties it, and a clear (×) control at its logical end, named by `search.clear`, does the
@@ -7788,7 +7789,9 @@ What `/vehicles` now renders:
 - Search (`type="submit"`, disabled while the form is empty), Clear and the create link are
   Material `Button`s; the link and the zero-result offer (`data-testid="create-vehicle-from-no-results"`)
   appear only with `canCreate`. The idle sentence is `MuiEmptyState` with the screen's idle keys.
-  `needCriteria`, the `role="alert"` `tooShort` sentence and `exactMatchNote` are unchanged.
+  `needCriteria`, the `role="alert"` `tooShort` sentence and `exactMatchNote` are unchanged. The
+  zero-result sentence `vehicles.search.noMatch` is `role="status"` (S4), with the create offer
+  beside it rather than inside it.
 
 What `/vehicles/new` now renders:
 
@@ -7817,7 +7820,7 @@ the normalised form only shown. Creation still validates in the action, advances
 client refusal, sends no idempotency key, loads models and trims only after a choice and clears the
 dependants on a change.
 
-Held by `apps/web/tests/vehicle-screens.dom.test.tsx` (51 cases kept, 8 added: four, each run in
+Held by `apps/web/tests/vehicle-screens.dom.test.tsx` (51 cases kept, 12 added: six, each run in
 English and in Arabic inside `UiFoundationProvider`), `apps/web/tests/vehicle-create.dom.test.tsx`
 (17 cases kept, 10 added: five, each run in English and in Arabic), and by
 `search-empty-states.dom.test.tsx`, `vin-create-validation.dom.test.tsx` and
@@ -7830,6 +7833,8 @@ English and in Arabic inside `UiFoundationProvider`), `apps/web/tests/vehicle-cr
 | Next page spends the returned cursor; Previous page asks again with none       | "walks the cursor the search returned…" (en, ar)                      |
 | Material fields and grid, in the page direction and style cache                | "renders the boxes, the selects and the grid…" (en, ar)               |
 | Clear removes the results; the create link needs permission                    | "clears the results with the criteria…" (en, ar), `search-empty-…`    |
+| Each Open button is named by the vehicle it opens (G9)                         | "names each Open button by the vehicle it opens" (en, ar)             |
+| No matches is announced as a polite status (S4)                                | "announces a search that matched nothing as a polite status" (en, ar) |
 | The action receives exactly the names and values entered                       | "hands the action exactly the names…" (en, ar)                        |
 | A client refusal never calls the action and keeps the typed value              | "refuses an out-of-range year…" (en, ar)                              |
 | The pending label, and no second press while the action runs                   | "says it is working…" (en, ar)                                        |
@@ -7839,7 +7844,10 @@ English and in Arabic inside `UiFoundationProvider`), `apps/web/tests/vehicle-cr
 
 Test changes forced by the move, the asserted behaviour unchanged: a disabled Material button has
 `pointer-events: none`, so "refuses to search on empty criteria" sets up `userEvent` with
-`pointerEventsCheck: 0` and still presses it and asserts that nothing was sent. The screen now
+`pointerEventsCheck: 0` and still presses it and asserts that nothing was sent. The Open button's
+name now carries the vehicle, so the two cases that press it name it "Open V-0001", and five cases
+that waited for the text `V-0001` wait for the grid cell of that name instead (the hidden part of
+the button's name holds the same text). The screen now
 imports `components/data`, so `apps/web/tests/p1-27-security.test.ts` records it as `in-surface` in
 its own copy of `MODULE_DISPOSITION` (the gate script's copy already did), and the count of modules
 the derivation finds moves from 14 to 15. `form-reset-class.test.ts` was not edited: the create
@@ -7854,15 +7862,17 @@ Known limitations and follow-ups, one line each:
 - The make catalogue of a provisioned organisation is empty (CC-OD-28); make and model search can
   still never match.
 - `/vehicles` offers no phone or owner-name search; the operation has no such parameter.
-- The row action is named "Open" alone; it does not announce the vehicle it opens.
 - `accessibility.spec.ts` finds rows with `tbody tr`, which the data grid does not draw; that case
   already skips on `/vehicles`, because the list shows no rows until a search runs. It is not
   coverage of this grid. Not changed.
 - The `crm-and-vehicles.spec.ts` comment above the typing case still calls this search a Server
   Action. Not changed.
 - `vehicles/page.tsx` cites `new/page.tsx:74` for a line that is now `:83`. Not changed.
-- Once the customer search also stops importing `SearchBox`, `components/search` leaves the module
-  set `p1-27-security.test.ts` derives, and its disposition and count move again.
+- Once the customer search also stops importing `SearchBox` (PR #600), `components/search` leaves
+  the module set `p1-27-security.test.ts` derives. Both branches move the count from 14 to 15 on
+  the same line, so that line merges without a conflict and the merged tree fails the equality.
+  Whichever of #600 and this slice lands second removes `components/search` from the test's
+  `MODULE_DISPOSITION` with its reason, sets the count to 14 and runs that test on the merged tree.
 - `docs/phase-1/phase-1-27/task-matrix.json` cites line ranges of these two files that no longer
   point at the same code. The matrix is frozen and was not changed.
 - Not run locally: the authenticated browser tier (`crm-and-vehicles.spec.ts`,

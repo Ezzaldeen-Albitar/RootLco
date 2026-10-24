@@ -212,7 +212,7 @@ describe('vehicle search asks nothing until it is asked', () => {
     render();
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
     await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('V-0001')).toBeInTheDocument();
+    expect(await screen.findByRole('gridcell', { name: 'V-0001' })).toBeInTheDocument();
   });
 
   it('offers the creation link only to an operator who may create', async () => {
@@ -237,7 +237,7 @@ describe('vehicle search asks nothing until it is asked', () => {
     const user = userEvent.setup();
     renderLtr(<VehicleSearchScreen locale="en" messages={en} canCreate={false} makes={makes} />);
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
-    await screen.findByText('V-0001');
+    await screen.findByRole('gridcell', { name: 'V-0001' });
   }
 
   const UNRESOLVED: VehicleSearchHit = { ...HIT, makeId: 'make-not-in-this-catalogue' };
@@ -288,9 +288,9 @@ describe('vehicle search asks nothing until it is asked', () => {
     const user = userEvent.setup();
     render();
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
-    await screen.findByText('V-0001');
+    await screen.findByRole('gridcell', { name: 'V-0001' });
 
-    await user.click(screen.getByRole('button', { name: en['vehicles.search.open'] }));
+    await user.click(screen.getByRole('button', { name: `${en['vehicles.search.open']} V-0001` }));
     expect(push).toHaveBeenCalledWith(`/en/vehicles/${HIT.id}`);
   });
 
@@ -298,8 +298,8 @@ describe('vehicle search asks nothing until it is asked', () => {
     const user = userEvent.setup();
     render();
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
-    await screen.findByText('V-0001');
-    await user.click(screen.getByRole('button', { name: en['vehicles.search.open'] }));
+    await screen.findByRole('gridcell', { name: 'V-0001' });
+    await user.click(screen.getByRole('button', { name: `${en['vehicles.search.open']} V-0001` }));
     // `V-0001` is a display number, not a route key. Routing on it would 404 on
     // every vehicle whose reference has not been assigned yet.
     expect(push).not.toHaveBeenCalledWith(expect.stringContaining('V-0001'));
@@ -393,7 +393,7 @@ describe('vehicle search asks nothing until it is asked', () => {
     // And the operator sees the result rather than the failure.
     // The literal, as the sibling cases use: `displayNumber` is `string | null` on
     // the contract, and a matcher cannot take null.
-    expect(await screen.findByText('V-0001')).toBeInTheDocument();
+    expect(await screen.findByRole('gridcell', { name: 'V-0001' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: en['state.retry'] })).not.toBeInTheDocument();
   });
 });
@@ -1358,5 +1358,54 @@ describe.each([
     expect(screen.getByText(t('vehicles.search.idleTitle'))).toBeInTheDocument();
     expect(screen.getByLabelText(t('vehicles.search.plate'))).toHaveValue('');
     expect(searchVehicles).toHaveBeenCalledTimes(1);
+  });
+
+  it('names each Open button by the vehicle it opens', async () => {
+    // G9: the reference, else the current plate, else the VIN.
+    const BY_PLATE: VehicleSearchHit = {
+      ...HIT,
+      id: 'row-by-plate',
+      displayNumber: null,
+      activePlate: '77-1234',
+    };
+    const BY_VIN: VehicleSearchHit = {
+      ...HIT,
+      id: 'row-by-vin',
+      displayNumber: null,
+      activePlate: null,
+      vin: '1HGCM82633A004352',
+    };
+    searchVehicles.mockResolvedValue(page([HIT, BY_PLATE, BY_VIN]));
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('vehicles.search.plate')), '12-3456{Enter}');
+    await screen.findByRole('grid', { name: t('vehicles.search.caption') });
+
+    const open = t('vehicles.search.open');
+    expect(await screen.findByRole('button', { name: `${open} V-0001` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${open} 77-1234` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${open} 1HGCM82633A004352` })).toBeInTheDocument();
+    // No row's button is announced as the bare label.
+    expect(screen.queryByRole('button', { name: open })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: `${open} 77-1234` }));
+    expect(push).toHaveBeenCalledWith(`/${locale}/vehicles/row-by-plate`);
+  });
+
+  it('announces a search that matched nothing as a polite status', async () => {
+    searchVehicles.mockResolvedValue(page([]));
+    const user = userEvent.setup();
+    mount(true);
+    await user.type(screen.getByLabelText(t('vehicles.search.q')), 'zz{Enter}');
+
+    // S4: the sentence is a polite status, so it is announced once the answer arrives.
+    const sentence = await screen.findByText(t('vehicles.search.noMatch'));
+    expect(sentence).toHaveAttribute('role', 'status');
+    expect(sentence).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getAllByRole('status')).toContain(sentence);
+    // The create offer is a control beside the announcement, not part of it.
+    const offer = screen.getByTestId('create-vehicle-from-no-results');
+    expect(offer).toHaveAttribute('href', `/${locale}/vehicles/new`);
+    expect(sentence).not.toContainElement(offer);
   });
 });

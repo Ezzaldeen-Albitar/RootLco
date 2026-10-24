@@ -470,7 +470,8 @@ Navigation: **"Vehicles"** <!-- nav.vehicles --> (المركبات) and **"Revie
 , **"Owner"** <!-- vehicles.column.owner --> , **"VIN"** <!-- vehicles.column.vin --> , **"Make"** <!-- vehicles.column.make -->
 (with the model under it), **"Year"** <!-- vehicles.column.modelYear --> , **"Status"** <!-- crm.customers.column.status -->
 , **"Powertrain"** <!-- vehicles.column.powertrain --> and **"Workshop"** <!-- vehicles.column.workshop -->
-, in that order, and the row action **"Open"** <!-- vehicles.search.open --> . The columns cannot be
+, in that order, and the row action **"Open"** <!-- vehicles.search.open --> , which a screen reader
+announces with the reference, the plate or the VIN of the vehicle it opens. The columns cannot be
 sorted. Below the grid, **"Previous page"** <!-- table.previousPage --> and **"Next page"** <!-- table.nextPage -->
 move between pages, and the page number is shown without a total, because the search does not count
 its results. Missing values read "No plate recorded", "No VIN recorded", "No reference", "No make recorded" <!-- vehicles.column.noPlate / .noVin / .noReference / .noMake -->
