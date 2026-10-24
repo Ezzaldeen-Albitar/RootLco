@@ -7811,10 +7811,14 @@ Known limitations and recorded gaps of this slice, one line each:
   separate markup change.
 - Material's button adds a hover tint and a press ripple to the section buttons and the link.
 - Enter and Space are proven with jsdom's simulated keyboard, not a browser.
-- The full web tier with coverage ran once locally and did not pass: 18 cases in seven files that do
-  not render this screen timed out under load, so no coverage report was written and the coverage
-  gate was not run locally. Those seven files passed when run on their own afterwards; the hosted
-  run is the record.
+- The full web tier with coverage ran once locally and did not pass: 18 of 9390 cases failed, in
+  seven of 211 files, none of which renders this screen. 15 of the 18 were timeouts under load (13
+  at the 30-second test limit, 2 inside a `waitFor`). The other 3 were assertion failures: one
+  over-capacity case in Arabic saw its mocked send called no times instead of once, and two
+  reception cases did not find an expected text on screen. The cause of those 3 was not
+  investigated. No coverage report was written and the coverage gate was not run locally. Those
+  seven files (639 cases) passed when run on their own afterwards. The hosted web-quality run on
+  this slice's head passed 9390 of 9390 cases in 211 files; the hosted run is the record.
 - Not run locally: the full unit, database and backend tiers, the browser tiers (including the
   authenticated accessibility scan, the only colour-contrast check) and the builds. They run in
   hosted CI.
