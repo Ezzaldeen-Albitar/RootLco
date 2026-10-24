@@ -34,20 +34,29 @@ import { LINK } from './stock-operations';
  * `inv.item.manage` is pointed there. Every item has a category (the database
  * requires one), so there is no "no category" bucket to draw. No figure per
  * category is shown: no read counts a category's items.
+ *
+ * The page may hand over the category to open on (`initialCategoryId`, from
+ * the address; P1-32-PRE-OD-INV2). It is only the first choice: a later click
+ * changes it as before, and the choice is never written back to the address.
+ * An identifier the tree does not hold is not given to the tree, and the
+ * detail column asks for a choice exactly as it does with nothing chosen.
  */
 export function CategoriesScreen({
   locale,
   messages,
   canManage,
+  initialCategoryId,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** `inv.item.manage` — only decides whether the way to the create form is offered. */
   readonly canManage: boolean;
+  /** The category the page opens on, already checked to be an identifier; null for none. */
+  readonly initialCategoryId: string | null;
 }) {
   const categories = useAllItemCategories();
   const { read, retry } = categories;
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(initialCategoryId ?? '');
 
   const setupLink = canManage ? (
     <Link href={`/${locale}/inventory/setup`} className={LINK} data-testid="categories-setup-link">
@@ -99,7 +108,7 @@ export function CategoriesScreen({
               locale={locale}
               messages={messages}
               forest={read.forest}
-              selected={selected}
+              selected={read.forest.byId.has(selected) ? selected : ''}
               onSelect={setSelected}
             />
           </section>

@@ -33,6 +33,9 @@ import { USER_ID, item, itemPage } from './support/stock-operations';
  *  - The page refuses before any read without `inv.item.read`, says plainly
  *    that nothing here changes a category, and points a holder of
  *    `inv.item.manage` at the create form.
+ *  - The address may name the category the page opens on
+ *    (P1-32-PRE-OD-INV2): it is read after the gate, only an identifier the
+ *    tree holds is chosen, and anything else opens with nothing chosen.
  *  - The picker chooses one category from the same tree and clears it.
  */
 
@@ -66,7 +69,10 @@ const { useAllItemCategories } = await import('@/features/inventory/components/C
 const { CATEGORY_PAGE_BUDGET, buildCategoryForest, pathOf, readAllCategories, searchCategories } =
   await import('@/features/inventory/category-tree');
 const { CategoryTreePicker } = await import('@/features/inventory/components/CategoryTreePicker');
-type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
+type RoutePage = (args: {
+  params: Promise<Record<string, string>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<React.ReactNode>;
 const CategoriesPage = (await import('@/app/[locale]/(dashboard)/inventory/categories/page'))
   .default as unknown as RoutePage;
 
@@ -214,13 +220,27 @@ const labelOf = (code: string, name: string) =>
   within(node(code)).getAllByText(name)[0] as HTMLElement;
 const rows = () => screen.queryAllByRole('treeitem');
 
-async function openPage(locale: 'en' | 'ar', permissions: readonly string[] = ['inv.item.read']) {
+async function openPage(
+  locale: 'en' | 'ar',
+  permissions: readonly string[] = ['inv.item.read'],
+  query?: Record<string, string | string[] | undefined>
+) {
   PERMISSIONS = permissions;
   const view = RENDER[locale](
-    (await CategoriesPage({ params: Promise.resolve({ locale }) })) as ReactElement
+    (await CategoriesPage({
+      params: Promise.resolve({ locale }),
+      searchParams: Promise.resolve(query ?? {}),
+    })) as ReactElement
   );
   return view;
 }
+
+/** No row of the tree is the chosen one. */
+const nothingChosen = () =>
+  rows().every(
+    (row) =>
+      row.getAttribute('aria-selected') !== 'true' && row.getAttribute('aria-checked') !== 'true'
+  );
 
 async function treeReady() {
   await waitFor(() => expect(screen.getByRole('tree')).toBeTruthy());
@@ -243,6 +263,62 @@ describe.each(['en', 'ar'] as const)('the category tree (%s)', (locale) => {
     return said;
   };
   const user = () => userEvent.setup();
+
+  it('opens on the category the address names, every ancestor open and its items listed', async () => {
+    serve(DEEP);
+    await openPage(locale, ['inv.item.read'], { category: idOf(3006) });
+    await treeReady();
+    // No search typed: the ancestors are open because the row was named.
+    expect(rows()).toHaveLength(7);
+    for (let level = 0; level < 6; level += 1) {
+      expect(node(`level_${level}`).getAttribute('aria-expanded')).toBe('true');
+    }
+    expect(node('level_6').getAttribute('aria-checked')).toBe('true');
+    const path = await screen.findByRole('navigation', {
+      name: t('inventory.categories.path.label'),
+    });
+    expect(within(path).getAllByRole('listitem')).toHaveLength(7);
+    expect(screen.queryByTestId('categories-choose')).toBeNull();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    expect(listItems.mock.calls.at(-1)?.[0]).toEqual({ categoryId: idOf(3006) });
+    // A later click changes the choice as it always did.
+    await user().click(labelOf('level_2', 'Level 2'));
+    await waitFor(() =>
+      expect(listItems.mock.calls.at(-1)?.[0]).toEqual({ categoryId: idOf(3002) })
+    );
+  });
+
+  it('takes the first value when the address names the category twice', async () => {
+    serve(DEEP);
+    await openPage(locale, ['inv.item.read'], { category: [idOf(3003), idOf(3006)] });
+    await treeReady();
+    expect(node('level_3').getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    expect(listItems.mock.calls.at(-1)?.[0]).toEqual({ categoryId: idOf(3003) });
+  });
+
+  it.each([
+    ['a value that is not an identifier', 'level_6'],
+    ['an identifier the tree does not hold', idOf(9999)],
+  ])('opens with nothing chosen for %s', async (_case, value) => {
+    serve(DEEP);
+    await openPage(locale, ['inv.item.read'], { category: value });
+    await treeReady();
+    expect(screen.getByTestId('categories-choose').textContent).toBe(
+      t('inventory.categories.detail.choose')
+    );
+    expect(rows().length).toBeGreaterThan(0);
+    expect(nothingChosen()).toBe(true);
+    expect(listItems).not.toHaveBeenCalled();
+  });
+
+  it('refuses without the catalogue read even when the address names a category', async () => {
+    await openPage(locale, [], { category: idOf(3006) });
+    expect(screen.getByText(t('state.denied.title'))).toBeTruthy();
+    expect(listItemCategoryPage).not.toHaveBeenCalled();
+    expect(listItems).not.toHaveBeenCalled();
+    expect(screen.queryByRole('tree')).toBeNull();
+  });
 
   it('says there are no categories yet, and still says nothing here changes one', async () => {
     serve([]);

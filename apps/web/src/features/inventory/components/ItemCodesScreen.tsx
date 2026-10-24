@@ -297,7 +297,10 @@ function ItemHeader({
           <span data-testid="item-header-category">
             <bdi>{item.categoryPath.map((step) => step.name).join(' / ')}</bdi>
           </span>{' '}
-          <Link href={`/${locale}/inventory/categories`} className={LINK}>
+          <Link
+            href={`/${locale}/inventory/categories?category=${encodeURIComponent(item.itemCategoryId)}`}
+            className={LINK}
+          >
             {translate(messages, 'inventory.setup.categories.browse')}
           </Link>
         </Fact>

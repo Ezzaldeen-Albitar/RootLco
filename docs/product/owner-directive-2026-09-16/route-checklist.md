@@ -3895,7 +3895,11 @@ is loading, and a refused or failed read is a sentence (a retry where retrying c
 named `CategoryTreePicker` because `shared.tsx` already exports a different `CategoryPicker` (the
 one-page select), which this slice does not touch. No screen adopts it in this slice; the setup
 item form, the vehicle specifications and the material-requirements panel are to move onto it
-later. **The material-requirements panel adopted it in INV5** — see that section below.
+later. **The material-requirements panel adopted it in INV5** — see that section below. **Since
+INVH (#577) a picker row names the category alone; the code follows only for two categories of one
+name under one parent** — see that section below. **The setup forms and the vehicle specifications
+adopted the picker in INV2A** — see that section below. The browsing tree on
+`/inventory/categories` keeps the code beside the name (above).
 
 Tests (`apps/web/tests/inventory-categories.dom.test.tsx`, new, en and ar for every case): an empty
 catalogue; 260 categories over three cursor pages, all drawn on "Expand all"; a repeated cursor
@@ -4359,6 +4363,8 @@ Categories by name, chosen from the tree:
 - The vehicle specification's part category is chosen with `CategoryTreePicker` over the whole
   tree (optional, "No category") instead of the one-page `CategoryPicker` select.
 - The setup categories, the specification form and the item header link to `/inventory/categories`.
+  **Since `P1-32-PRE-OD-INV2` the item header's link opens the tree on the item's own category** —
+  see that section below.
 - No field anywhere on these routes takes a typed identifier.
 
 The item page's own read — a new backend operation, `inv.item-detail`:
@@ -8207,3 +8213,70 @@ Open, recorded by this round and not changed by it:
   database.
 - `LoginForm.tsx` imports the parameter name from `intended-path.ts`, which brings both navigation
   models into the sign-in bundle. Noted, not measured.
+
+### The item page opens the category tree on its own category (`P1-32-PRE-OD-INV2`)
+
+Presentation only. The item page's header linked to `/inventory/categories` with no category
+chosen, and the tree page kept its choice in component state alone, so the operator had to find the
+item's category again by hand. Recorded as `P1-32-PRE-OD-INV2`; it follows `INV2B` (the tree and
+the picker) and `INV2A` (the screens that adopted the picker) and is neither of them.
+
+What changed:
+
+- The item header's **Browse the category tree** link (`ItemCodesScreen.tsx`) is now
+  `/{locale}/inventory/categories?category=<itemCategoryId>`, the value the item's own read
+  (`inv.item-detail`) supplies, URL-encoded. The label is unchanged; no message key was added.
+- `app/[locale]/(dashboard)/inventory/categories/page.tsx` takes `searchParams` and reads
+  `category` only after its `inv.item.read` refusal, as the parts page reads `workOrderId`: the
+  first value when the parameter repeats, and only an identifier (the same UUID pattern); anything
+  else is null. The value is handed to `CategoriesScreen` as `initialCategoryId`.
+- `CategoriesScreen.tsx` starts its choice from that value. The tree is handed the choice only when
+  the tree holds it, so an identifier the catalogue does not contain never reaches the tree view's
+  selection; the detail column then asks for a choice exactly as it does with nothing chosen, and no
+  item list is read. A named category the tree holds opens with every ancestor open (the tree's
+  existing first-mount rule), its path, and its items over `listItems({ categoryId })`. A later
+  click changes the choice as before.
+
+What did not change: the page's refusal before any read and its codes (`inv.item.read`, and
+`inv.item.manage` for the setup link alone), the branch scope `none`, the navigation entry, every
+backend file, every operation and contract, the cursor walk and its 500-page budget, the search,
+the keyboard model and the Arabic layout. Nothing writes. The choice is never written back to the
+address. The links from the setup page and the vehicle-specification form still open the tree with
+nothing chosen.
+
+Tests (existing files only; the web test-file count stays 211):
+
+- `apps/web/tests/inventory-categories.dom.test.tsx`, en and ar: the page is now given
+  `searchParams` in every case; a deep identifier opens with six ancestors open, the row chosen, a
+  seven-step path and the item list read for that category, and a later click moves the choice; a
+  repeated parameter uses its first value; a value that is not an identifier and an identifier the
+  tree does not hold each open with nothing chosen and no item list read; without `inv.item.read`
+  nothing is read even when the address names a category.
+- `apps/web/tests/inventory-item-codes.dom.test.tsx`: the header link's address carries the item's
+  category. Its fixture's category id is not an identifier, so this case proves the address only;
+  the round trip is proven by the categories cases above.
+
+Records corrected: the delivery-matrix row "Inventory and purchasing" in `capability-status.md`
+(its line references re-anchored to the sections as they now stand, and the tree and picker moved
+from remaining to implemented and awaiting verification); the notes on the `INV2B` picker paragraph
+(INVH names a category alone in a picker row; INV2A adopted the picker) and on the `INV2A` link
+line above. User manual: `05-inventory.md` section 5.5 corrected (the parent is chosen from the
+tree, the Parent column says a name and path, every page is read) and section 5.5.1 added.
+
+Records gap, recorded and not changed here — three existing operations that no screen calls. In
+`apps/web/src` each appears only in `lib/api/idempotent-operations.ts`, and no record in this
+folder named them before this entry:
+
+| Operation                           | Route file (`apps/api/src/app/api/v1/`) | Code                           | Idempotent |
+| ----------------------------------- | --------------------------------------- | ------------------------------ | ---------- |
+| `inv.customer-supplied-part-create` | `customer-supplied-parts/route.ts:63`   | `inv.custody.manage`           | yes        |
+| `inv.external-purchase-part-create` | `external-purchase-parts/route.ts:83`   | `inv.external_purchase.record` | yes        |
+| `inv.inventory-reconciliation-read` | `inventory-reconciliations/route.ts:48` | `inv.audit.read`               | no         |
+
+Known limitations:
+
+- The sign-in redirect keeps the page's path and never its query string (the session-return
+  section above), so a page reopened after a session ends opens with nothing chosen.
+- The setup page and the vehicle-specification form still link to the tree with nothing chosen.
+- Nothing in this slice was run in a browser; the browser tiers and the builds run in hosted CI
+  and were not run locally.

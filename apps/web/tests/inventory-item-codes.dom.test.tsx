@@ -770,7 +770,7 @@ describe('the item header (P1-32-PRE-OD-INV2A)', () => {
         within(header)
           .getByRole('link', { name: T['inventory.setup.categories.browse'] as string })
           .getAttribute('href')
-      ).toBe(`/${locale}/inventory/categories`);
+      ).toBe(`/${locale}/inventory/categories?category=cat-pads`);
       // Nothing in the header writes.
       expect(within(header).queryByRole('button')).toBeNull();
       expect(within(header).queryByRole('textbox')).toBeNull();
