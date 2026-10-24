@@ -7636,6 +7636,80 @@ Known limitations, one line each:
 - The DB and backend tiers were run on the development machine on a disposable database only for the
   files named in the pull request; the full tiers run on hosted CI.
 
+### Repeated file reads in two web scan tests, and a nested wait in the check-in tests (P1-32-PRE-OD-WINT1)
+
+Test code only. No product source, configuration, timeout, budget, npm script, `scripts/ci` or
+`.github` file changed, and no test file was added (the web test-file count stays 211). The three
+files are `apps/web/tests/cancellable-reads.test.ts`, `apps/web/tests/platform-console-writes.test.ts`
+and `apps/web/tests/reception-checkin.dom.test.tsx`.
+
+Mechanism (evidence: `orchestration/evidence/windows-web-tier-2026-10-24/README.md`, steps 1–3, and
+its `step3/` folder, kept outside the repository). Fourteen cases in six web files failed in all three
+full local Windows runs and passed alone and on hosted Linux. Two are static module-graph scans:
+"keeps every read core server-only" and "is reachable from no client module". Each started one walk
+per client module (262 starts) and re-read and re-resolved every file on every visit: about 9,470
+`readFileSync` and 27,000 `existsSync` calls per case, about 86% of the profiled case time, with no
+cache. In the failing full tier these two cases took 54–55 s against a 30 s budget.
+
+What changed:
+
+- Both scan files: each file's source, its directive and its resolved local imports are now kept in
+  three `Map`s keyed by absolute path, at module level in each test file. The client-filter pass fills
+  the cache and the walks reuse it. The 262 walks, the globs, both regexes, the resolution order and
+  candidates, the assertions and the failure messages are unchanged. The two copies stay separate; no
+  shared helper was added. The other cases that glob and read the tree again were left as they were.
+- `reception-checkin.dom.test.tsx`, helper `chosenVehicles`: it used to await two nested finds, each
+  with its own default 1000 ms limit, inside one 1000 ms `waitFor`. It now awaits three states in
+  sequence: the grid, then its Choose rows, then exactly one pressed row. No find runs inside a
+  `waitFor`, no limit was raised, and the callers' assertions are unchanged.
+
+Measured on the development machine (Windows, Node 24.19.0, Vitest 4.1.12, coverage off), each run
+once under the heavy lock, from `apps/web`, with the step-2 R1 command:
+`vitest run --reporter=default --reporter=json --outputFile.json=<tmp> --maxWorkers=1 <one file>`.
+The before figures are R1 from the evidence README; the after figures are from 2026-10-24 19:00–19:22
+UTC. The wall times are each wrapper's own measurement of the same command.
+
+| File or case                                        | Before (R1) | After    | Ratio |
+| --------------------------------------------------- | ----------- | -------- | ----- |
+| `cancellable-reads.test.ts`, whole file, wall       | 28.3 s      | 5.4 s    | 5.2×  |
+| "keeps every read core server-only" case            | 12,058 ms   | 824 ms   | 14.6× |
+| `platform-console-writes.test.ts`, whole file, wall | 12.2 s      | 4.3 s    | 2.8×  |
+| "is reachable from no client module" case           | 9,590 ms    | 989 ms   | 9.7×  |
+| `reception-checkin.dom.test.tsx`, whole file, wall  | 102.5 s     | 101.5 s  | –     |
+| walk-in handoff "submits the handed-over pair"      | 1,174 ms    | 979 ms   | –     |
+| walk-in handoff "is consumed once"                  | 1,343 ms    | 1,930 ms | –     |
+
+All 176, 60 and 78 cases passed in the after runs. The reception figures are single runs on a shared
+machine; they show the cases pass alone and do not measure the helper under load.
+
+Semantics proof (temporary, removed before the commit). Two scratch files were added under
+`apps/web/src/features/receptions/components/`: a `'use client'` module that imports one read core
+directly and a relay module, and the relay, with no directive, that imports a second read core and the
+console reads module `features/platform/api.ts`. Both scan cases were run with `-t`, first with the
+new test code and then with the two test files temporarily put back to their `develop` text. Both
+runs failed both cases. The Expected/Received blocks of the two runs are byte-identical (the same
+sha256): two offenders, direct and through the relay, in the read-core scan, and the client module in
+the console scan. Only the assertion line in the stack moved, by the 31 added lines. The same pair of
+runs timed the two cases at 1,091 ms and 889 ms with the cache, and 10,559 ms and 12,362 ms without
+it. The scratch files were then deleted, and the two test files were copied back and their sha256
+checked.
+
+Not done, and not claimed:
+
+- The full Windows web tier was not run, so this slice does not show that it is now green.
+- Unresolved: reception-condition-evidence "F8 resolves the account and renders the name" was left
+  unchanged. It waits for the right text through three commits, so its failure is a budget matter.
+- Unresolved: how much of the cost per file call comes from Defender scanning. An exclusion test is
+  ruled out, so it was not measured.
+- Unresolved: how the slowdown under full-tier load splits between CPU contention and filesystem
+  contention. Neither was measured under load.
+- Unresolved: Node 22 (hosted CI) against Node 24.19.0 (this machine). Installing Node 22 needs Owner
+  approval.
+
+Follow-up (recorded, not aligned): the two scan copies resolve a specifier differently. Only
+`platform-console-writes.test.ts` tries `index.tsx` (`:1048`); `cancellable-reads.test.ts` stops at
+`index.ts` (`:1239`). This slice kept the difference as it was.
+
 ### Organisation and languages on Material UI, and editing a company or a branch (`P1-32-PRE-OD-ADM1`)
 
 `/administration/organization` and `/administration/languages` moved onto the shared wrappers, and
