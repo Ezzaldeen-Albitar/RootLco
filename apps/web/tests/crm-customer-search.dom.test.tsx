@@ -394,12 +394,21 @@ describe.each([
     return user;
   }
 
-  it('names the grid with the caption and draws it in the page direction', async () => {
+  it('names the grid with the caption, takes the page direction and labels the pager in the page language', async () => {
     await searchFor('Nadia');
     const grid = screen.getByRole('grid', { name: t('crm.customers.search.tableCaption') });
     expect(grid).toBeInTheDocument();
-    const direction = locale === 'ar' ? 'rtl' : 'ltr';
-    expect(grid.closest('[dir]')?.getAttribute('dir')).toBe(direction);
+    // Nothing between the grid and the document sets a direction of its own, so
+    // the grid takes the page's. (Which direction that is, `renderIn` set; the
+    // claim here is that no wrapper on the way overrides it.)
+    expect(grid.closest('[dir]')).toBe(document.documentElement);
+    // The pager's two steps, in reading order and in the page's language.
+    const pager = screen.getByRole('navigation', { name: t('table.pagination') });
+    expect(
+      within(pager)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    ).toEqual([t('table.previousPage'), t('table.nextPage')]);
     // The grid's own styles come from the cache of its direction: `muirtl` in
     // Arabic, where the physical properties are flipped, and `mui` in English.
     const root = grid.closest('.MuiDataGrid-root') ?? grid;
@@ -441,6 +450,143 @@ describe.each([
       t('crm.customers.column.vehicles'),
       t('crm.customers.column.status'),
     ]);
+  });
+
+  function criteriaOf(call: number): Record<string, unknown> {
+    return (searchCustomers.mock.calls[call] as [unknown, unknown, Record<string, unknown>])[2];
+  }
+
+  it('sends the chosen type and status, and drops each when "any" is chosen again', async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('crm.customers.search.q')), 'Nadia');
+    await user.click(screen.getByRole('button', { name: t('crm.customers.search.moreFilters') }));
+    const type = screen.getByLabelText(t('crm.customers.search.type'));
+    const status = screen.getByLabelText(t('crm.customers.search.status'));
+    const submit = screen.getByRole('button', { name: t('crm.customers.search.submit') });
+
+    await user.selectOptions(type, t('crm.partyType.individual'));
+    await user.selectOptions(status, t('crm.lifecycle.active'));
+    await user.click(submit);
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
+    expect(criteriaOf(0)).toEqual({
+      q: 'Nadia',
+      partyType: 'individual',
+      lifecycleStatus: 'active',
+    });
+
+    // "Any type" is the empty option. It must leave the criteria, not travel as
+    // an empty string the route would refuse.
+    await user.selectOptions(type, t('crm.customers.search.anyType'));
+    expect(type).toHaveValue('');
+    await user.click(submit);
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(2));
+    expect(criteriaOf(1)).toEqual({ q: 'Nadia', lifecycleStatus: 'active' });
+    expect(criteriaOf(1).partyType).toBeUndefined();
+
+    await user.selectOptions(status, t('crm.customers.search.anyStatus'));
+    expect(status).toHaveValue('');
+    await user.click(submit);
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(3));
+    expect(criteriaOf(2)).toEqual({ q: 'Nadia' });
+    expect(criteriaOf(2).lifecycleStatus).toBeUndefined();
+  });
+
+  it('shows the results area loading while the search runs, and the Search button keeps its label', async () => {
+    let answer: ((value: unknown) => void) | undefined;
+    searchCustomers.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('crm.customers.search.q')), 'Nadia{Enter}');
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
+
+    const pending = screen.getByRole('grid', { name: t('crm.customers.search.tableCaption') });
+    expect(pending.closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('gridcell', { name: 'Nadia Khoury' })).toBeNull();
+    expect(screen.getByRole('button', { name: t('table.nextPage') })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: t('crm.customers.search.submit') })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(t('crm.customers.search.searching'))).toBeNull();
+    expect(screen.queryByText(t('crm.customers.search.idleTitle'))).toBeNull();
+
+    answer?.(page());
+    expect(await screen.findByRole('gridcell', { name: 'Nadia Khoury' })).toBeInTheDocument();
+    const settled = screen.getByRole('grid', { name: t('crm.customers.search.tableCaption') });
+    expect(settled.closest('[aria-busy]')).toBeNull();
+  });
+
+  it('steps back to page one with Previous page, asking again with no cursor', async () => {
+    searchCustomers.mockImplementation(async (_request: unknown, cursor: string | null) =>
+      cursor === null
+        ? page({ nextCursor: 'cursor-2', hasMore: true })
+        : page({ rows: [{ ...HIT, id: 'second-page-row', displayName: 'Omar Haddad' }] })
+    );
+    const user = await searchFor('Nadia');
+    const label = () => screen.getByTestId('customer-search-grid-page').textContent;
+    const previous = () => screen.getByRole('button', { name: t('table.previousPage') });
+    expect(previous()).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: t('table.nextPage') }));
+    expect(await screen.findByRole('gridcell', { name: 'Omar Haddad' })).toBeInTheDocument();
+    expect(label()).toBe(t('mui.pagination.page').replace('{page}', '2'));
+    expect(searchCustomers.mock.calls[1]?.[1]).toBe('cursor-2');
+    expect(previous()).toBeEnabled();
+
+    await user.click(previous());
+    expect(await screen.findByRole('gridcell', { name: 'Nadia Khoury' })).toBeInTheDocument();
+    expect(screen.queryByRole('gridcell', { name: 'Omar Haddad' })).toBeNull();
+    expect(searchCustomers).toHaveBeenCalledTimes(3);
+    expect(searchCustomers.mock.calls[2]?.[1]).toBeNull();
+    expect(criteriaOf(2)).toEqual({ q: 'Nadia' });
+    expect(label()).toBe(t('mui.pagination.page').replace('{page}', '1'));
+    expect(previous()).toBeDisabled();
+  });
+
+  it('says the search was refused, with no grid and no retry', async () => {
+    searchCustomers.mockResolvedValue(page({ status: 'denied', rows: [] }));
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('crm.customers.search.q')), 'Nadia{Enter}');
+    expect(await screen.findByText(t('state.denied.title'))).toBeInTheDocument();
+    expect(screen.getByText(t('state.denied.description'))).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).toBeNull();
+    expect(screen.queryByRole('button', { name: t('state.retry') })).toBeNull();
+  });
+
+  it('says the search failed, with the reference, and asks again from Try again', async () => {
+    searchCustomers.mockResolvedValueOnce(page({ status: 'error', rows: [] }));
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('crm.customers.search.q')), 'Nadia{Enter}');
+    expect(await screen.findByText(t('state.error.title'))).toBeInTheDocument();
+    expect(screen.getByText('fixed-correlation-id')).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: t('state.retry') }));
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(2));
+    expect(criteriaOf(1)).toEqual({ q: 'Nadia' });
+    expect(await screen.findByRole('gridcell', { name: 'Nadia Khoury' })).toBeInTheDocument();
+    expect(screen.queryByText(t('state.error.title'))).toBeNull();
+  });
+
+  it('says the session ended and links to sign in again, with no grid and no retry', async () => {
+    searchCustomers.mockResolvedValue(page({ status: 'expired', rows: [], correlationId: null }));
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('crm.customers.search.q')), 'Nadia{Enter}');
+    expect(await screen.findByText(t('state.expired.title'))).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: t('auth.backToLogin') })).toHaveAttribute(
+      'href',
+      `/${locale}/login`
+    );
+    expect(screen.queryByRole('grid')).toBeNull();
+    expect(screen.queryByRole('button', { name: t('state.retry') })).toBeNull();
   });
 
   it('empties the search box on Escape, and sends nothing for it', async () => {
