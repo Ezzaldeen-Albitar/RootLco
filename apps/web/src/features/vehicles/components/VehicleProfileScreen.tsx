@@ -937,9 +937,9 @@ function Text({
   /**
    * The SERVER's verdict on this field, as a catalogue key.
    *
-   * The same shape `VinField`, `VehicleCreateScreen`'s `TextField` and
-   * `VehicleDuplicateReviewScreen`'s reason box already take. This control
-   * accepted none, which is why a 422 naming a field could not reach it.
+   * The same shape `VinField` and `VehicleDuplicateReviewScreen`'s reason box take,
+   * and the key `VehicleCreateScreen` translates for its Material fields. This
+   * control accepted none, which is why a 422 naming a field could not reach it.
    */
   readonly error?: string | undefined;
 }) {

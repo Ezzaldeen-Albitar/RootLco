@@ -200,7 +200,7 @@ describe('vehicle search asks nothing until it is asked', () => {
   });
 
   it('refuses to search on empty criteria and says why', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 }); // a disabled button
     render();
     await user.click(screen.getByRole('button', { name: en['vehicles.search.submit'] }));
     expect(searchVehicles).not.toHaveBeenCalled();
@@ -212,7 +212,7 @@ describe('vehicle search asks nothing until it is asked', () => {
     render();
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
     await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('V-0001')).toBeInTheDocument();
+    expect(await screen.findByRole('gridcell', { name: 'V-0001' })).toBeInTheDocument();
   });
 
   it('offers the creation link only to an operator who may create', async () => {
@@ -237,7 +237,7 @@ describe('vehicle search asks nothing until it is asked', () => {
     const user = userEvent.setup();
     renderLtr(<VehicleSearchScreen locale="en" messages={en} canCreate={false} makes={makes} />);
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
-    await screen.findByText('V-0001');
+    await screen.findByRole('gridcell', { name: 'V-0001' });
   }
 
   const UNRESOLVED: VehicleSearchHit = { ...HIT, makeId: 'make-not-in-this-catalogue' };
@@ -288,9 +288,9 @@ describe('vehicle search asks nothing until it is asked', () => {
     const user = userEvent.setup();
     render();
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
-    await screen.findByText('V-0001');
+    await screen.findByRole('gridcell', { name: 'V-0001' });
 
-    await user.click(screen.getByRole('button', { name: en['vehicles.search.open'] }));
+    await user.click(screen.getByRole('button', { name: `${en['vehicles.search.open']} V-0001` }));
     expect(push).toHaveBeenCalledWith(`/en/vehicles/${HIT.id}`);
   });
 
@@ -298,8 +298,8 @@ describe('vehicle search asks nothing until it is asked', () => {
     const user = userEvent.setup();
     render();
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
-    await screen.findByText('V-0001');
-    await user.click(screen.getByRole('button', { name: en['vehicles.search.open'] }));
+    await screen.findByRole('gridcell', { name: 'V-0001' });
+    await user.click(screen.getByRole('button', { name: `${en['vehicles.search.open']} V-0001` }));
     // `V-0001` is a display number, not a route key. Routing on it would 404 on
     // every vehicle whose reference has not been assigned yet.
     expect(push).not.toHaveBeenCalledWith(expect.stringContaining('V-0001'));
@@ -393,7 +393,7 @@ describe('vehicle search asks nothing until it is asked', () => {
     // And the operator sees the result rather than the failure.
     // The literal, as the sibling cases use: `displayNumber` is `string | null` on
     // the contract, and a matcher cannot take null.
-    expect(await screen.findByText('V-0001')).toBeInTheDocument();
+    expect(await screen.findByRole('gridcell', { name: 'V-0001' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: en['state.retry'] })).not.toBeInTheDocument();
   });
 });
@@ -1192,3 +1192,241 @@ function withSearchProjection(
     customerDisplayName: null,
   };
 }
+
+/*
+ * On Material UI (`P1-32-PRE-OD-VEH1`).
+ *
+ * The cases above were kept as they were, with selector-only changes. These add
+ * what the move itself has to prove, in both languages: the screen renders on
+ * the Material fields and grid, takes the page direction, sends exactly the
+ * criteria the operator entered, never reads while they type or choose, and
+ * walks the cursor the search returned. Imported here, at the foot of the file,
+ * so that no line a phase record cites moved.
+ */
+const { within } = await import('@testing-library/react');
+const { UiFoundationProvider } = await import('@/components/ui-foundation/UiFoundationProvider');
+const { muiTextOf } = await import('@/components/ui-foundation/mui-text');
+const { getMessages } = await import('@/i18n/get-messages');
+
+describe.each([
+  ['en', en, renderLtr],
+  ['ar', ar, renderRtl],
+] as const)('vehicle search on Material UI, in %s', (locale, messages, renderIn) => {
+  const t = (key: string): string => (messages as Record<string, string>)[key] as string;
+  const mount = (canCreate = false) =>
+    renderIn(
+      <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+        <VehicleSearchScreen
+          locale={locale}
+          messages={messages}
+          canCreate={canCreate}
+          makes={CATALOGUE_OK}
+        />
+      </UiFoundationProvider>
+    );
+  const criteriaOf = (call: number) =>
+    (searchVehicles.mock.calls[call] as [Record<string, string>])[0];
+  const cursorOf = (call: number) =>
+    (searchVehicles.mock.calls[call] as [unknown, unknown, string | null])[2];
+
+  it('renders the boxes, the selects and the grid on Material, in the page direction', async () => {
+    const user = userEvent.setup();
+    const { container } = mount();
+    expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+
+    // Every box and both selects are Material fields, named by their labels.
+    for (const key of [
+      'vehicles.search.q',
+      'vehicles.search.vin',
+      'vehicles.search.plate',
+      'vehicles.search.vehicleNumber',
+      'vehicles.search.make',
+      'vehicles.search.model',
+      'vehicles.search.lifecycleStatus',
+      'vehicles.search.powertrainCategory',
+    ]) {
+      const control = screen.getByLabelText(t(key));
+      expect(control.closest('.MuiTextField-root'), key).not.toBeNull();
+    }
+    // The selects stay native, with "Any" first and empty.
+    const status = screen.getByLabelText(t('vehicles.search.lifecycleStatus'));
+    expect(status.tagName).toBe('SELECT');
+    expect((status as HTMLSelectElement).options[0]?.value).toBe('');
+    expect((status as HTMLSelectElement).options[0]?.textContent).toBe(
+      t('vehicles.search.anyOption')
+    );
+    // A VIN, a plate and a reference read left to right in either language.
+    for (const key of ['vehicles.search.vin', 'vehicles.search.plate']) {
+      expect(screen.getByLabelText(t(key))).toHaveAttribute('dir', 'ltr');
+    }
+    // Each hint is announced with its box.
+    const vin = screen.getByLabelText(t('vehicles.search.vin'));
+    const hint = screen.getByText(t('vehicles.search.vinHint'));
+    expect(vin.getAttribute('aria-describedby') ?? '').toContain(hint.id);
+
+    await user.type(screen.getByLabelText(t('vehicles.search.plate')), '12-3456{Enter}');
+    const grid = await screen.findByRole('grid', { name: t('vehicles.search.caption') });
+    expect(within(grid).getByRole('gridcell', { name: 'V-0001' })).toBeInTheDocument();
+    // The Material style cache follows the language: `muirtl` only in Arabic.
+    const root = grid.closest('.MuiDataGrid-root') ?? grid;
+    const cacheKeys = [...root.classList]
+      .map((name) => /^(mui|muirtl)-/.exec(name)?.[1])
+      .filter(Boolean);
+    expect(cacheKeys.length).toBeGreaterThan(0);
+    expect(new Set(cacheKeys)).toEqual(new Set([locale === 'ar' ? 'muirtl' : 'mui']));
+    // Still no raw key anywhere on screen.
+    expect(container.textContent ?? '').not.toMatch(/vehicles\.(search|column|create)\.\w+/);
+  });
+
+  it('sends exactly the criteria entered, and reads nothing while they are entered', async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('vehicles.search.q')), 'camry');
+    await user.type(screen.getByLabelText(t('vehicles.search.vin')), 'jh4-ka7561');
+    await user.type(screen.getByLabelText(t('vehicles.search.plate')), '12-3456');
+    await user.type(screen.getByLabelText(t('vehicles.search.vehicleNumber')), 'V-0001');
+    await user.type(screen.getByLabelText(t('vehicles.search.make')), 'Toy');
+    await user.type(screen.getByLabelText(t('vehicles.search.model')), 'Cam');
+    await user.selectOptions(screen.getByLabelText(t('vehicles.search.lifecycleStatus')), 'active');
+    await user.selectOptions(screen.getByLabelText(t('vehicles.search.powertrainCategory')), 'ev');
+    // Typing in six boxes and choosing in two selects asked nothing.
+    expect(searchVehicles).not.toHaveBeenCalled();
+    // The normalised VIN is shown beside the box; what is sent is what was typed.
+    const note = screen.getByText(new RegExp(t('vehicles.search.vinNormalized')));
+    expect(note).toHaveTextContent('JH4KA7561');
+    // The note is announced with the VIN box, and only the VIN reads left to right.
+    expect(screen.getByLabelText(t('vehicles.search.vin'))).toHaveAccessibleDescription(
+      new RegExp(`${t('vehicles.search.vinNormalized')} JH4KA7561`)
+    );
+    expect(note).not.toHaveAttribute('dir');
+    expect(within(note).getByText('JH4KA7561').tagName).toBe('BDI');
+    expect(within(note).getByText('JH4KA7561')).toHaveAttribute('dir', 'ltr');
+
+    await user.click(screen.getByRole('button', { name: t('vehicles.search.submit') }));
+    await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
+    expect(criteriaOf(0)).toEqual({
+      q: 'camry',
+      vin: 'jh4-ka7561',
+      plate: '12-3456',
+      vehicleNumber: 'V-0001',
+      make: 'Toy',
+      model: 'Cam',
+      lifecycleStatus: 'active',
+      powertrainCategory: 'ev',
+    });
+    expect(cursorOf(0)).toBeNull();
+    // The criteria never reach the address bar.
+    expect(window.location.href).not.toContain('camry');
+  });
+
+  it('walks the cursor the search returned with Next page, and back with Previous page', async () => {
+    const SECOND: VehicleSearchHit = { ...HIT, id: 'second-page-row', displayNumber: 'V-0002' };
+    searchVehicles.mockImplementation(
+      async (_criteria: unknown, _request: unknown, cursor: string | null) =>
+        cursor === null ? page([HIT], { nextCursor: 'cursor-2', hasMore: true }) : page([SECOND])
+    );
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('vehicles.search.plate')), '12-3456{Enter}');
+    await screen.findByRole('gridcell', { name: 'V-0001' });
+    const label = () => screen.getByTestId('vehicle-search-grid-page').textContent;
+    const previous = () => screen.getByRole('button', { name: t('table.previousPage') });
+    expect(label()).toBe(t('mui.pagination.page').replace('{page}', '1'));
+    expect(previous()).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: t('table.nextPage') }));
+    expect(await screen.findByRole('gridcell', { name: 'V-0002' })).toBeInTheDocument();
+    expect(cursorOf(1)).toBe('cursor-2');
+    // The same question, only further along it.
+    expect(criteriaOf(1)).toEqual(criteriaOf(0));
+    expect(label()).toBe(t('mui.pagination.page').replace('{page}', '2'));
+    expect(screen.getByRole('button', { name: t('table.nextPage') })).toBeDisabled();
+
+    await user.click(previous());
+    expect(await screen.findByRole('gridcell', { name: 'V-0001' })).toBeInTheDocument();
+    expect(screen.queryByRole('gridcell', { name: 'V-0002' })).toBeNull();
+    expect(cursorOf(searchVehicles.mock.calls.length - 1)).toBeNull();
+    expect(label()).toBe(t('mui.pagination.page').replace('{page}', '1'));
+  });
+
+  it('clears the results with the criteria, and offers the create link only when allowed', async () => {
+    const user = userEvent.setup();
+    mount(true);
+    expect(screen.getByRole('link', { name: t('vehicles.create.title') })).toHaveAttribute(
+      'href',
+      `/${locale}/vehicles/new`
+    );
+    await user.type(screen.getByLabelText(t('vehicles.search.plate')), '12-3456{Enter}');
+    await screen.findByRole('grid', { name: t('vehicles.search.caption') });
+
+    await user.click(screen.getByRole('button', { name: t('vehicles.search.clear') }));
+    expect(screen.queryByRole('grid')).toBeNull();
+    expect(screen.getByText(t('vehicles.search.idleTitle'))).toBeInTheDocument();
+    expect(screen.getByLabelText(t('vehicles.search.plate'))).toHaveValue('');
+    expect(searchVehicles).toHaveBeenCalledTimes(1);
+  });
+
+  it('names each Open button by the vehicle it opens', async () => {
+    // G9: the reference, else the current plate, else the VIN.
+    const BY_PLATE: VehicleSearchHit = {
+      ...HIT,
+      id: 'row-by-plate',
+      displayNumber: null,
+      activePlate: '77-1234',
+    };
+    const BY_VIN: VehicleSearchHit = {
+      ...HIT,
+      id: 'row-by-vin',
+      displayNumber: null,
+      activePlate: null,
+      vin: '1HGCM82633A004352',
+    };
+    searchVehicles.mockResolvedValue(page([HIT, BY_PLATE, BY_VIN]));
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText(t('vehicles.search.plate')), '12-3456{Enter}');
+    await screen.findByRole('grid', { name: t('vehicles.search.caption') });
+
+    const open = t('vehicles.search.open');
+    expect(await screen.findByRole('button', { name: `${open} V-0001` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${open} 77-1234` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${open} 1HGCM82633A004352` })).toBeInTheDocument();
+    // No row's button is announced as the bare label.
+    expect(screen.queryByRole('button', { name: open })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: `${open} 77-1234` }));
+    expect(push).toHaveBeenCalledWith(`/${locale}/vehicles/row-by-plate`);
+  });
+
+  it('announces a search that matched nothing as a polite status', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    searchVehicles.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    mount(true);
+    await user.type(screen.getByLabelText(t('vehicles.search.q')), 'zz{Enter}');
+    await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
+
+    // S4: the polite region is already mounted, and empty, BEFORE the answer —
+    // a live region inserted already holding its words is often not announced.
+    const region = screen.getByTestId('vehicle-search-no-match');
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toBeEmptyDOMElement();
+    expect(screen.queryByText(t('vehicles.search.noMatch'))).toBeNull();
+
+    // Only its text changes once the answer arrives.
+    answer(page([]));
+    const sentence = await screen.findByText(t('vehicles.search.noMatch'));
+    expect(sentence).toBe(region);
+    expect(screen.getByTestId('vehicle-search-no-match')).toBe(region);
+    expect(screen.getAllByRole('status')).toContain(sentence);
+    // The create offer is a control beside the announcement, not part of it.
+    const offer = screen.getByTestId('create-vehicle-from-no-results');
+    expect(offer).toHaveAttribute('href', `/${locale}/vehicles/new`);
+    expect(sentence).not.toContainElement(offer);
+  });
+});

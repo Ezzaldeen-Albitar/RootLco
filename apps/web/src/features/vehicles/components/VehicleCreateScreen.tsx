@@ -2,7 +2,13 @@
 
 import { useActionState, useEffect, useId, useState, useTransition } from 'react';
 import Link from 'next/link';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { FailureExplanation } from '@/components/states/States';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -25,7 +31,7 @@ import {
 } from '../contract';
 
 /**
- * Vehicle creation (`FE-018`).
+ * Vehicle creation (`FE-018`), on Material UI since `P1-32-PRE-OD-VEH1`.
  *
  * ## Every field is optional, and that is the contract rather than laxity
  *
@@ -45,9 +51,19 @@ import {
  *
  * ## Controlled fields, so a failure does not discard the operator's work
  *
- * React resets an uncontrolled form once a Server Action completes, which turns
- * a timeout into "type the VIN again". Every field here is controlled and the
- * form clears only on success.
+ * React resets the form once a Server Action completes, which would turn a
+ * timeout into "type the VIN again". Every field here is controlled from this
+ * screen's state, every select is also remounted on the attempt counter (see
+ * `submit` below), and the state clears only on success.
+ *
+ * ## On Material UI (`P1-32-PRE-OD-VEH1`)
+ *
+ * Presentation only. The text boxes are `FormTextField` and the selects are
+ * `FormSelectField` — native options, so the submitted value is still the
+ * catalogue id and the shown text its name. Each control's hint, catalogue note
+ * and error are its description and error, so all of them are announced with
+ * the control. The form still submits to `createVehicleAction` with the same
+ * field names; the VIN keeps its own control, `VinField`.
  *
  * ## What this form deliberately does NOT do
  *
@@ -82,7 +98,6 @@ export function VehicleCreateScreen({
 }: Props) {
   const formId = useId();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
 
   // Dependent catalogues, loaded on demand from the real operations.
   const [models, setModels] = useState<CatalogueResult | null>(null);
@@ -93,16 +108,15 @@ export function VehicleCreateScreen({
     async (previous: VehicleCreationState, form: FormData) => {
       const errors = validateVehicleCreate(values);
       if (Object.keys(errors).length > 0) {
-        setClientErrors(errors);
         /*
          * `attempt` MUST advance here, and this was the one failure branch in
          * the phase that did not advance it.
          *
-         * Every catalogue `<select>` on this screen is keyed on
-         * `state.attempt ?? 0` so that a failed submit remounts it — React never
-         * re-syncs an uncontrolled select's DOM default after mount, and
-         * `form.reset()` runs after the action, so without a remount the
-         * operator's choice is restored to the placeholder.
+         * Every `FormSelectField` on this screen is keyed on
+         * `state.attempt ?? 0` so that a failed submit remounts it. A controlled
+         * `value` that is unchanged between renders is never re-written, and the
+         * form reset React performs once the action settles runs after it — so
+         * without a remount the operator's choice is restored to the placeholder.
          *
          * `{ ...previous }` carried `attempt` through unchanged. On the FIRST
          * client-validation failure `previous` is `EMPTY`, so `attempt` stayed
@@ -123,7 +137,6 @@ export function VehicleCreateScreen({
           attempt: (previous.attempt ?? 0) + 1,
         };
       }
-      setClientErrors({});
       const result = await createVehicleAction(previous, form);
       if (result.status === 'success') {
         setValues({});
@@ -179,7 +192,21 @@ export function VehicleCreateScreen({
     if (name === 'modelId') setTrims(null);
   };
 
-  const errorFor = (field: string) => clientErrors[field] ?? state.fieldErrors?.[field];
+  /*
+   * After a refusal — the client's or the server's, both arrive as a new
+   * attempt carrying `fieldErrors` — the cursor goes to the first field to fix,
+   * and a field's error is withdrawn once the operator edits it, while the
+   * others stay. The intake vehicle step does the same with the same two hooks.
+   */
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
+  const edited = (field: string) => () => corrections.noteEdited(field);
+  const errorFor = (field: string) => corrections.errorFor(field);
+  /** The error for a Material field: the catalogue SENTENCE, never the key. */
+  const sentenceFor = (field: string): string | undefined => {
+    const key = errorFor(field);
+    return key === undefined ? undefined : translateDynamic(messages, key);
+  };
 
   if (state.status === 'success' && state.created) {
     return (
@@ -193,7 +220,7 @@ export function VehicleCreateScreen({
   }
 
   return (
-    <form action={submit} className="flex flex-col gap-4">
+    <form ref={formRef} action={submit} className="flex flex-col gap-4">
       <fieldset className="rounded-lg border border-border bg-surface p-4">
         <legend className="px-1 text-caption text-text-secondary">
           {translate(messages, 'vehicles.create.identity')}
@@ -226,22 +253,26 @@ export function VehicleCreateScreen({
             messages={messages}
             id={`${formId}-vin`}
             value={values.vin ?? ''}
-            onChange={(next) => set('vin', next)}
+            onChange={(next) => {
+              // VinField has no onEdit of its own; the edit is noted where its change arrives.
+              corrections.noteEdited('vin');
+              set('vin', next);
+            }}
             maxLength={MAX_VIN_INPUT}
             excludeVehicleId={null}
             error={errorFor('vin')}
           />
-          <TextField
-            messages={messages}
-            id={`${formId}-number`}
+          <FormTextField
             name="displayNumber"
-            labelKey="vehicles.column.reference"
-            hintKey="vehicles.create.displayNumberHint"
+            label={translate(messages, 'vehicles.column.reference')}
+            description={translate(messages, 'vehicles.create.displayNumberHint')}
             value={values.displayNumber ?? ''}
-            onChange={set}
+            onEdit={edited('displayNumber')}
+            onChange={(next) => set('displayNumber', next)}
             maxLength={MAX_DISPLAY_NUMBER}
-            error={errorFor('displayNumber')}
+            error={sentenceFor('displayNumber')}
             dir="ltr"
+            spellCheck={false}
           />
         </div>
       </fieldset>
@@ -254,8 +285,8 @@ export function VehicleCreateScreen({
           <CatalogueSelect
             attempt={state.attempt ?? 0}
             messages={messages}
-            id={`${formId}-make`}
             name="makeId"
+            onEdit={edited('makeId')}
             labelKey="vehicles.column.make"
             value={makeId}
             onChange={set}
@@ -265,8 +296,8 @@ export function VehicleCreateScreen({
           <CatalogueSelect
             attempt={state.attempt ?? 0}
             messages={messages}
-            id={`${formId}-model`}
             name="modelId"
+            onEdit={edited('modelId')}
             labelKey="vehicles.column.model"
             value={modelId}
             onChange={set}
@@ -280,8 +311,8 @@ export function VehicleCreateScreen({
           <CatalogueSelect
             attempt={state.attempt ?? 0}
             messages={messages}
-            id={`${formId}-trim`}
             name="trimId"
+            onEdit={edited('trimId')}
             labelKey="vehicles.column.trim"
             value={values.trimId ?? ''}
             onChange={set}
@@ -293,8 +324,8 @@ export function VehicleCreateScreen({
           <CatalogueSelect
             attempt={state.attempt ?? 0}
             messages={messages}
-            id={`${formId}-body`}
             name="bodyTypeId"
+            onEdit={edited('bodyTypeId')}
             labelKey="vehicles.column.bodyType"
             value={values.bodyTypeId ?? ''}
             onChange={set}
@@ -304,8 +335,8 @@ export function VehicleCreateScreen({
           <CatalogueSelect
             attempt={state.attempt ?? 0}
             messages={messages}
-            id={`${formId}-powertrain-type`}
             name="powertrainTypeId"
+            onEdit={edited('powertrainTypeId')}
             labelKey="vehicles.column.powertrainType"
             value={values.powertrainTypeId ?? ''}
             onChange={set}
@@ -320,81 +351,71 @@ export function VehicleCreateScreen({
           {translate(messages, 'vehicles.create.descriptive')}
         </legend>
         <div className="grid gap-3 sm:grid-cols-3">
-          <TextField
-            messages={messages}
-            id={`${formId}-year`}
+          <FormTextField
             name="modelYear"
-            labelKey="vehicles.column.modelYear"
-            hintKey="vehicles.create.yearHint"
+            label={translate(messages, 'vehicles.column.modelYear')}
+            description={translate(messages, 'vehicles.create.yearHint')}
             value={values.modelYear ?? ''}
-            onChange={set}
+            onEdit={edited('modelYear')}
+            onChange={(next) => set('modelYear', next)}
             maxLength={4}
-            error={errorFor('modelYear')}
+            error={sentenceFor('modelYear')}
             dir="ltr"
             inputMode="numeric"
           />
-          <TextField
-            messages={messages}
-            id={`${formId}-color`}
+          <FormTextField
             name="color"
-            labelKey="vehicles.create.color"
-            hintKey="vehicles.create.optionalHint"
+            label={translate(messages, 'vehicles.create.color')}
+            description={translate(messages, 'vehicles.create.optionalHint')}
             value={values.color ?? ''}
-            onChange={set}
+            onEdit={edited('color')}
+            onChange={(next) => set('color', next)}
             maxLength={MAX_COLOR}
-            error={errorFor('color')}
+            error={sentenceFor('color')}
             dir="auto"
           />
-          <div>
-            <label
-              htmlFor={`${formId}-category`}
-              className="block text-caption text-text-secondary"
-            >
-              {translate(messages, 'vehicles.column.powertrain')}
-            </label>
-            <select
-              key={`powertrainCategory-${state.attempt ?? 0}`}
-              id={`${formId}-category`}
-              name="powertrainCategory"
-              defaultValue={values.powertrainCategory ?? ''}
-              onChange={(event) => set('powertrainCategory', event.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
-            >
-              <option value="">{translate(messages, 'vehicles.create.categoryDefault')}</option>
-              {POWERTRAIN_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {translateDynamic(messages, `vehicles.powertrain.${category}`)}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-caption text-text-muted">
-              {/* Not the same field as the powertrain TYPE above. A category is
-                  a five-value enum on the vehicle; a type is a catalogue row. */}
-              {translate(messages, 'vehicles.create.categoryVsType')}
-            </p>
-          </div>
+          <FormSelectField
+            key={`powertrainCategory-${state.attempt ?? 0}`}
+            name="powertrainCategory"
+            label={translate(messages, 'vehicles.column.powertrain')}
+            // Not the same field as the powertrain TYPE above. A category is a
+            // five-value enum on the vehicle; a type is a catalogue row.
+            description={translate(messages, 'vehicles.create.categoryVsType')}
+            value={values.powertrainCategory ?? ''}
+            onEdit={edited('powertrainCategory')}
+            onChange={(next) => set('powertrainCategory', next)}
+            placeholder={translate(messages, 'vehicles.create.categoryDefault')}
+            options={POWERTRAIN_CATEGORIES.map((category) => ({
+              value: category,
+              label: translateDynamic(messages, `vehicles.powertrain.${category}`),
+            }))}
+            error={sentenceFor('powertrainCategory')}
+          />
         </div>
       </fieldset>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
+        <Button
           type="submit"
+          variant="contained"
           disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
+          aria-busy={pending || undefined}
         >
           {pending
             ? translate(messages, 'form.pending')
             : translate(messages, 'vehicles.create.submit')}
-        </button>
+        </Button>
 
         {state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
-          <p role="alert" className="text-body text-error">
-            {translateWithValues(messages, state.messageKey, state.messageValues)}
-            <FailureExplanation messages={messages} messageKey={state.messageKey} />
-            {state.correlationId ? (
-              <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
-            ) : null}
-          </p>
+          <Alert severity="error" variant="outlined" role="alert" className="w-full">
+            <p>
+              {translateWithValues(messages, state.messageKey, state.messageValues)}
+              <FailureExplanation messages={messages} messageKey={state.messageKey} />
+              {state.correlationId ? (
+                <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
+              ) : null}
+            </p>
+          </Alert>
         ) : null}
       </div>
 
@@ -406,7 +427,7 @@ export function VehicleCreateScreen({
 }
 
 /**
- * One catalogue selector.
+ * One catalogue selector, on `FormSelectField`.
  *
  * The option VALUE is the uuid and the option LABEL is the catalogue name. A
  * uuid never appears as visible text — it is an internal identifier that reads
@@ -414,11 +435,11 @@ export function VehicleCreateScreen({
  *
  * `result === null` means "not applicable yet", which is a different state from
  * a loaded-but-empty catalogue and from a failed read, and all three say
- * different things.
+ * different things. What they say is the field's description, so it is
+ * announced with the select.
  */
 function CatalogueSelect({
   messages,
-  id,
   name,
   labelKey,
   value,
@@ -428,9 +449,9 @@ function CatalogueSelect({
   disabledReasonKey,
   loading,
   attempt,
+  onEdit,
 }: {
   readonly messages: Messages;
-  readonly id: string;
   readonly name: string;
   readonly labelKey: string;
   readonly value: string;
@@ -449,62 +470,46 @@ function CatalogueSelect({
    * `CustomerCreateScreen.tsx:197-207`; every select here had the same shape.
    */
   readonly attempt: number;
+  /** Called on every change, so a standing error is withdrawn once corrected. */
+  readonly onEdit: () => void;
 }) {
   const options: readonly CatalogueOption[] = result?.status === 'ok' ? result.options : [];
   const failed = result !== null && result.status !== 'ok';
   const disabled = disabledReasonKey !== undefined || failed;
 
+  // `translateDynamic` for `disabledReasonKey`, which is a runtime string the
+  // caller chooses; `translate` for the literals, so a typo in one of them
+  // stays a compile error.
+  const note = disabledReasonKey
+    ? translateDynamic(messages, disabledReasonKey)
+    : loading && result === null
+      ? translate(messages, 'state.loading')
+      : failed
+        ? translate(messages, 'vehicles.create.catalogueUnavailable')
+        : result?.status === 'ok' && options.length === 0
+          ? translate(messages, 'vehicles.create.catalogueEmpty')
+          : result?.truncated
+            ? // A real limit, reported. The adapter walks at most 20 pages, and
+              // a partial list presented as complete would silently hide the
+              // tail of a large tenant catalogue.
+              translate(messages, 'vehicles.create.catalogueTruncated')
+            : undefined;
+
   return (
-    <div>
-      <label htmlFor={id} className="block text-caption text-text-secondary">
-        {translateDynamic(messages, labelKey)}
-      </label>
-      <select
-        key={`${name}-${attempt}`}
-        id={id}
-        name={name}
-        defaultValue={value}
-        disabled={disabled}
-        onChange={(event) => onChange(name, event.target.value)}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={`${id}-note`}
-        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary disabled:opacity-60"
-      >
-        <option value="">{translate(messages, 'vehicles.create.catalogueAny')}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {/* The NAME. Never `option.id`. */}
-            {option.name}
-          </option>
-        ))}
-      </select>
-
-      <p id={`${id}-note`} className="mt-1 text-caption text-text-muted">
-        {/* `translateDynamic` for `disabledReasonKey`, which is a runtime string
-            the caller chooses; `translate` for the literals, so a typo in one of
-            them stays a compile error. */}
-        {disabledReasonKey
-          ? translateDynamic(messages, disabledReasonKey)
-          : loading && result === null
-            ? translate(messages, 'state.loading')
-            : failed
-              ? translate(messages, 'vehicles.create.catalogueUnavailable')
-              : result?.status === 'ok' && options.length === 0
-                ? translate(messages, 'vehicles.create.catalogueEmpty')
-                : result?.truncated
-                  ? // A real limit, reported. The adapter walks at most 20 pages,
-                    // and a partial list presented as complete would silently
-                    // hide the tail of a large tenant catalogue.
-                    translate(messages, 'vehicles.create.catalogueTruncated')
-                  : ''}
-      </p>
-
-      {error ? (
-        <p role="alert" className="mt-1 text-caption text-error">
-          {translateDynamic(messages, error)}
-        </p>
-      ) : null}
-    </div>
+    <FormSelectField
+      key={`${name}-${attempt}`}
+      name={name}
+      label={translateDynamic(messages, labelKey)}
+      description={note}
+      value={value}
+      disabled={disabled}
+      onEdit={onEdit}
+      onChange={(next) => onChange(name, next)}
+      placeholder={translate(messages, 'vehicles.create.catalogueAny')}
+      // The NAME is the label. Never `option.id`.
+      options={options.map((option) => ({ value: option.id, label: option.name }))}
+      error={error ? translateDynamic(messages, error) : undefined}
+    />
   );
 }
 
@@ -587,82 +592,21 @@ function CreationOutcome({
           leg of the same journey, and the sibling customer screen has offered
           both of these links since it shipped. */}
       <div className="flex flex-wrap items-center gap-3">
-        <Link
+        <Button
+          component={Link}
           href={`/${locale}/vehicles/${created.vehicleId}`}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse"
+          variant="contained"
         >
           {translate(messages, 'vehicles.create.openCreated')}
-        </Link>
-        <Link
-          href={`/${locale}/vehicles`}
-          className="rounded-md border border-border px-4 py-2 text-body text-text-primary"
-        >
+        </Button>
+        <Button component={Link} href={`/${locale}/vehicles`} variant="outlined">
           {translate(messages, 'vehicles.create.backToSearch')}
-        </Link>
-        <button
-          type="button"
-          onClick={onAnother}
-          className="rounded-md border border-border px-4 py-2 text-body text-text-primary"
-        >
+        </Button>
+        <Button type="button" variant="outlined" onClick={onAnother}>
           {translate(messages, 'vehicles.create.another')}
-        </button>
+        </Button>
       </div>
     </section>
-  );
-}
-
-function TextField({
-  messages,
-  id,
-  name,
-  labelKey,
-  hintKey,
-  value,
-  onChange,
-  maxLength,
-  error,
-  dir,
-  inputMode,
-}: {
-  readonly messages: Messages;
-  readonly id: string;
-  readonly name: string;
-  readonly labelKey: string;
-  readonly hintKey: string;
-  readonly value: string;
-  readonly onChange: (name: string, value: string) => void;
-  readonly maxLength: number;
-  readonly error?: string | undefined;
-  readonly dir: 'ltr' | 'rtl' | 'auto';
-  readonly inputMode?: 'numeric' | undefined;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-caption text-text-secondary">
-        {translateDynamic(messages, labelKey)}
-      </label>
-      <input
-        id={id}
-        name={name}
-        type="text"
-        dir={dir}
-        inputMode={inputMode}
-        value={value}
-        onChange={(event) => onChange(name, event.target.value)}
-        maxLength={maxLength}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={`${id}-hint`}
-        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
-      />
-      <p id={`${id}-hint`} className="mt-1 text-caption text-text-muted">
-        {translateDynamic(messages, hintKey)}
-      </p>
-      {error ? (
-        <p role="alert" className="mt-1 text-caption text-error">
-          {translateDynamic(messages, error)}
-        </p>
-      ) : null}
-    </div>
   );
 }
 

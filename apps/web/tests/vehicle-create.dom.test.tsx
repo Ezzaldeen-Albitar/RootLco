@@ -413,3 +413,186 @@ describe('this file is not vacuous', () => {
     }
   });
 });
+
+/*
+ * On Material UI (`P1-32-PRE-OD-VEH1`).
+ *
+ * The cases above were kept as they were. These add what the move has to prove,
+ * in both languages: the exact form data the action receives, a client refusal
+ * that never reaches it, the pending label, the page direction and each field's
+ * error announced with its control. At the foot of the file, so that no line a
+ * phase record cites moved.
+ */
+describe.each([
+  ['en', en],
+  ['ar', ar],
+] as const)('vehicle creation on Material UI, in %s', (locale, messages) => {
+  const t = (key: string): string => (messages as Record<string, string>)[key] as string;
+  const select = (name: string) =>
+    document.querySelector<HTMLSelectElement>(`select[name="${name}"]`) as HTMLSelectElement;
+  const input = (name: string) =>
+    document.querySelector<HTMLInputElement>(`input[name="${name}"]`) as HTMLInputElement;
+
+  it('hands the action exactly the names and values the operator entered', async () => {
+    const user = userEvent.setup();
+    render(locale);
+    await user.type(input('vin'), 'JH4KA7561PC008269');
+    await user.type(input('displayNumber'), 'V-9');
+    await user.selectOptions(select('makeId'), MAKE_UUID);
+    await waitFor(() => expect(listModels).toHaveBeenCalledWith(MAKE_UUID));
+    await waitFor(() => expect(select('modelId')).toBeEnabled());
+    await user.selectOptions(select('modelId'), MAKE_UUID);
+    await waitFor(() => expect(listTrims).toHaveBeenCalledWith(MAKE_UUID));
+    await waitFor(() => expect(select('trimId')).toBeEnabled());
+    await user.selectOptions(select('trimId'), MAKE_UUID);
+    await user.selectOptions(select('bodyTypeId'), MAKE_UUID);
+    await user.selectOptions(select('powertrainTypeId'), MAKE_UUID);
+    await user.type(input('modelYear'), '2019');
+    await user.type(input('color'), 'Blue');
+    await user.selectOptions(select('powertrainCategory'), 'hybrid');
+    await submit(locale);
+
+    await waitFor(() => expect(createVehicleAction).toHaveBeenCalledTimes(1));
+    const form = createVehicleAction.mock.calls[0]?.[1] as FormData;
+    expect(Object.fromEntries(form.entries())).toEqual({
+      vin: 'JH4KA7561PC008269',
+      displayNumber: 'V-9',
+      makeId: MAKE_UUID,
+      modelId: MAKE_UUID,
+      trimId: MAKE_UUID,
+      bodyTypeId: MAKE_UUID,
+      powertrainTypeId: MAKE_UUID,
+      modelYear: '2019',
+      color: 'Blue',
+      powertrainCategory: 'hybrid',
+    });
+  });
+
+  it('refuses an out-of-range year on the client and never calls the action', async () => {
+    const user = userEvent.setup();
+    render(locale);
+    await user.type(input('modelYear'), '1800');
+    await submit(locale);
+    expect(await screen.findByText(t('vehicles.create.yearOutOfRange'))).toBeInTheDocument();
+    expect(createVehicleAction).toHaveBeenCalledTimes(0);
+    // The value the operator typed is still there to correct.
+    expect(input('modelYear')).toHaveValue('1800');
+  });
+
+  it('after a client refusal, puts the cursor on the first field to fix and withdraws its error once edited', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const user = userEvent.setup();
+    render(locale);
+    await user.type(input('modelYear'), '1800');
+    // A colour longer than the box allows, as a pasted or filled-in value can
+    // arrive; typing stops at the limit, so it is set directly.
+    fireEvent.change(input('color'), { target: { value: 'x'.repeat(41) } });
+    await submit(locale);
+
+    expect(await screen.findByText(t('vehicles.create.yearOutOfRange'))).toBeInTheDocument();
+    expect(createVehicleAction).toHaveBeenCalledTimes(0);
+    expect(input('modelYear')).toHaveAttribute('aria-invalid', 'true');
+    expect(input('color')).toHaveAttribute('aria-invalid', 'true');
+    // The first invalid field in the form takes the cursor, not the submit button.
+    await waitFor(() => expect(input('modelYear')).toHaveFocus());
+
+    // Editing it withdraws ITS complaint; the colour's still stands.
+    await user.type(input('modelYear'), '{Backspace}');
+    expect(input('modelYear')).toHaveValue('180');
+    expect(input('modelYear')).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(t('vehicles.create.yearOutOfRange'))).toBeNull();
+    expect(input('color')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(t('field.tooLong'))).toBeInTheDocument();
+    // Both values are still there to correct, and nothing was sent.
+    expect(input('color')).toHaveValue('x'.repeat(41));
+    expect(createVehicleAction).toHaveBeenCalledTimes(0);
+  });
+
+  it('says it is working, and takes no second press, while the action runs', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    createVehicleAction.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    render(locale);
+    await submit(locale);
+    const busy = await screen.findByRole('button', { name: t('form.pending') });
+    expect(busy).toBeDisabled();
+    expect(screen.queryByRole('button', { name: t('vehicles.create.submit') })).toBeNull();
+    answer({ status: 'idle' });
+    expect(await screen.findByRole('button', { name: t('vehicles.create.submit') })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: t('vehicles.create.submit') }));
+    await waitFor(() => expect(createVehicleAction).toHaveBeenCalledTimes(2));
+  });
+
+  it('renders the Material fields in the page direction, with left-to-right codes', () => {
+    render(locale);
+    expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+    for (const name of ['displayNumber', 'modelYear', 'color']) {
+      expect(input(name).closest('.MuiTextField-root'), name).not.toBeNull();
+    }
+    for (const name of ['makeId', 'modelId', 'trimId', 'bodyTypeId', 'powertrainTypeId']) {
+      expect(select(name).closest('.MuiTextField-root'), name).not.toBeNull();
+      expect(select(name).options[0]?.textContent).toBe(t('vehicles.create.catalogueAny'));
+    }
+    expect(select('powertrainCategory').options[0]?.textContent).toBe(
+      t('vehicles.create.categoryDefault')
+    );
+    expect(input('vin')).toHaveAttribute('dir', 'ltr');
+    expect(input('displayNumber')).toHaveAttribute('dir', 'ltr');
+    expect(input('modelYear')).toHaveAttribute('dir', 'ltr');
+    expect(input('modelYear')).toHaveAttribute('inputmode', 'numeric');
+    expect(input('color')).toHaveAttribute('dir', 'auto');
+    expect(input('vin')).toHaveAttribute('maxlength', '64');
+    expect(input('displayNumber')).toHaveAttribute('maxlength', '40');
+    expect(input('modelYear')).toHaveAttribute('maxlength', '4');
+    expect(input('color')).toHaveAttribute('maxlength', '40');
+    // The model and trim say why they are not yet available, with the control.
+    const note = screen.getByText(t('vehicles.create.chooseMakeFirst'));
+    expect(select('modelId')).toBeDisabled();
+    expect(select('modelId').getAttribute('aria-describedby') ?? '').toContain(note.id);
+    expect(screen.getByText(t('vehicles.create.draftNote'))).toBeInTheDocument();
+  });
+
+  it('announces each field error with its own control', async () => {
+    createVehicleAction.mockResolvedValue({
+      status: 'invalid',
+      attempt: 1,
+      messageKey: 'form.formError',
+      fieldErrors: {
+        displayNumber: 'field.tooLong',
+        modelYear: 'field.notAnInteger',
+        color: 'field.tooLong',
+        makeId: 'field.required',
+        powertrainCategory: 'field.required',
+      },
+    });
+    render(locale);
+    await submit(locale);
+    await waitFor(() => expect(createVehicleAction).toHaveBeenCalledTimes(1));
+
+    // Looked up by name each time: a failed attempt remounts every select.
+    const controls = [
+      [() => input('displayNumber'), 'field.tooLong'],
+      [() => input('modelYear'), 'field.notAnInteger'],
+      [() => input('color'), 'field.tooLong'],
+      [() => select('makeId'), 'field.required'],
+      [() => select('powertrainCategory'), 'field.required'],
+    ] as const;
+    for (const [find, key] of controls) {
+      await waitFor(() => expect(find()).toHaveAttribute('aria-invalid', 'true'));
+      const control = find();
+      const ids = (control.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+      const errors = ids
+        .map((id) => document.getElementById(id))
+        .filter((node): node is HTMLElement => node?.getAttribute('role') === 'alert');
+      expect(errors, `${control.getAttribute('name')} names no error`).toHaveLength(1);
+      expect(errors[0]).toHaveTextContent(t(key));
+      expect(control.getAttribute('aria-errormessage')).toBe(errors[0]?.id);
+    }
+    // The form's own banner, with the shared failure wording.
+    expect(screen.getByText(t('form.formError'), { exact: false })).toBeInTheDocument();
+  });
+});
