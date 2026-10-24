@@ -1,15 +1,17 @@
 'use client';
 
 import { useCallback, useId, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
-import { SearchBox } from '@/components/search/SearchBox';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { useSearchRequest } from '@/lib/api/use-search-request';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
-import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -28,7 +30,8 @@ import {
 } from '../contract';
 
 /**
- * CRM customer search and its results (`P1-27-FE-001`, `P1-27-FE-002`, P1-32).
+ * CRM customer search and its results (`P1-27-FE-001`, `P1-27-FE-002`, P1-32),
+ * on Material UI since `P1-32-PRE-OD-CRM1B`.
  *
  * ## One box first, the precise filters one step away (P1-32)
  *
@@ -62,15 +65,29 @@ import {
  * fewer requests against the same limit, not more.
  *
  * The mechanism now exists (`lib/use-debounced-value.ts`,
- * `lib/api/use-search-request.ts`, `components/search/SearchBox.tsx`) and is
- * what a new search surface should be built on. This screen keeps its explicit
- * Search for a reason that survives the correction: the results are a SEPARATELY
- * MOUNTED component, which is what makes "no request before intent" structural
- * here rather than a rule somebody has to remember.
+ * `lib/api/use-search-request.ts`) and is what a new search surface should be
+ * built on. This screen keeps its explicit Search for a reason that survives the
+ * correction: the results are a SEPARATELY MOUNTED component, which is what
+ * makes "no request before intent" structural here rather than a rule somebody
+ * has to remember.
  *
  * **The results are a separate component, mounted only after a submission.**
- * `useServerTable` reads on mount, so not mounting the hook makes "no request
+ * The search reads when it is mounted, so not mounting it makes "no request
  * before intent" structural instead of guarded.
+ *
+ * ## On Material UI (`P1-32-PRE-OD-CRM1B`)
+ *
+ * Presentation only. The results are `OperationalGrid` over the search's own
+ * `table`, the boxes and the two selects are the shared Material form fields,
+ * and the idle sentence is `MuiEmptyState`. What is read, when, and with which
+ * criteria is exactly as before: the loader, the submission rule and the key
+ * the results are mounted under did not change.
+ *
+ * The shared search box is no longer used here. What it gave this box is kept
+ * on the Material field: `type="search"`, `dir="auto"`, no spell check, no
+ * autocomplete, a text keypad, Escape to empty the box, and the clear (×)
+ * control at the box's logical end, named by the shared `search.clear` words.
+ * Enter is the form's own submission.
  *
  * ## Nothing reaches the address bar
  *
@@ -80,12 +97,14 @@ import {
  * ## What it does not offer
  *
  * **No sort control.** The operation publishes no `sort` parameter and its route
- * schema is `.strict()`, so a sortable column header would send a 422.
+ * schema is `.strict()`, so a sortable column header would send a 422. The search's
+ * table says it honours no sort, so the grid draws no such header.
  *
  * **No email box.** Email is not in the allow-list. Phone is, since P1-32, and
  * the phone shown in a row is masked unless the operator may see it whole.
  *
- * **No total.** `hasMore` is the only end-of-set signal the backend publishes.
+ * **No total, and no page-size choice.** `hasMore` is the only end-of-set
+ * signal the backend publishes, and the search takes a cursor and nothing else.
  *
  * **No "start a visit for this customer" link.** The walk-in desk takes no
  * customer from its address and the check-in hand-off needs a customer AND a
@@ -139,7 +158,7 @@ export function CustomerSearchScreen({ locale, messages, canCreate }: Props) {
       />
       {committed === null ? (
         // Not an empty result — nothing has been asked, so nothing is missing.
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="crm.customers.search.idleTitle"
           descriptionKey="crm.customers.search.idleDescription"
@@ -160,7 +179,7 @@ export function CustomerSearchScreen({ locale, messages, canCreate }: Props) {
 /**
  * The results, mounted only once a search has been submitted.
  *
- * Keyed on the criteria, so a new search remounts rather than reusing a table
+ * Keyed on the criteria, so a new search remounts rather than reusing a grid
  * still holding the previous set's cursors.
  */
 function CustomerSearchResults({
@@ -200,8 +219,8 @@ function CustomerSearchResults({
    *
    * `useServerTable` reads whenever its key moves and has no notion of a term
    * settling, a submission, or an answer being superseded. `useSearchRequest`
-   * owns those three and hands back the same page contract, so the table and
-   * its pager below are unchanged — Previous and Next still walk the cursor
+   * owns those three and hands back the same page contract, so the grid and
+   * its pager below walk it unchanged — Previous and Next still walk the cursor
    * stack, and a criteria or branch change still restarts at page one.
    */
   const search = useSearchRequest<CustomerSearchHit, CustomerSearchCriteria>({
@@ -209,14 +228,13 @@ function CustomerSearchResults({
     load,
     version: workingContextVersion,
   });
-  const table = search.table;
 
-  const columns = useMemo<readonly Column<CustomerSearchHit>[]>(
+  // No column offers a sort: the operation has no sort parameter.
+  const columns = useMemo<readonly OperationalColumn<CustomerSearchHit>[]>(
     () => [
       {
         id: 'displayName',
         headerKey: 'crm.customers.column.name',
-        // Not sortable: the operation has no sort parameter.
         cell: (row) => <bdi className="font-medium text-text-primary">{row.displayName}</bdi>,
       },
       {
@@ -286,33 +304,30 @@ function CustomerSearchResults({
 
   return (
     <>
-      <DataTable<CustomerSearchHit>
+      <OperationalGrid<CustomerSearchHit>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'crm.customers.search.tableCaption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'crm.customers.search.tableCaption')}
+        table={search.table}
         /*
          * `P1-27-FE-002`. The criteria live OUTSIDE `TableRequest`, so the
-         * table's own empty state would make a claim about the tenant's whole
+         * grid's own empty state would make a claim about the tenant's whole
          * customer list. The screen owns the zero-result state below.
          */
         suppressEmptyState
-        rowActions={(row) => (
-          // A real link, so the profile can be opened in a new tab. The route
-          // key is the id, never the display number.
-          <Link
-            href={`/${locale}/crm/customers/${row.id}`}
-            className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-          >
-            {translate(messages, 'crm.customers.search.open')}
-          </Link>
-        )}
+        // A real link, so the profile can be opened in a new tab. The route key
+        // is the id, never the display number; the name is announced with it.
+        rowActions={(row) => [
+          {
+            kind: 'link',
+            label: translate(messages, 'crm.customers.search.open'),
+            href: `/${locale}/crm/customers/${row.id}`,
+            about: row.displayName,
+          },
+        ]}
+        testId="customer-search-grid"
       />
       {/*
         Repeated here, under a search that found nothing, because that is where
@@ -355,11 +370,7 @@ function SearchForm({
 }) {
   const [expanded, setExpanded] = useState(false);
   const filtersId = `${formId}-filters`;
-  const nameId = `${formId}-name`;
-  const numberId = `${formId}-number`;
-  const phoneId = `${formId}-phone`;
-  const typeId = `${formId}-type`;
-  const statusId = `${formId}-status`;
+  const q = draft.q ?? '';
 
   return (
     <form
@@ -379,178 +390,142 @@ function SearchForm({
       </h2>
 
       {/*
-        The shared search box (P1-32), replacing a hand-rolled input.
-        
-        What it brings that the hand-rolled one did not: a clear control, Escape
-        to empty the box, Enter handled explicitly rather than relying on
-        implicit form submission, an `inputMode` that does not summon a
-        digits-only keypad for a box that also takes a name, and the same
-        non-colour error cue every other field carries. The words are still this
-        screen's: the label and the example say what may be typed HERE, because
-        a generic "Search…" is the shape of a control rather than a question.
+        The prominent box. The words are this screen's: the label and the
+        example say what may be typed HERE, because a generic "Search…" is the
+        shape of a control rather than a question. Escape empties the box, and
+        the clear control does the same; Enter is the form's submission.
       */}
       <div className="flex flex-col gap-1">
-        <SearchBox
-          messages={messages}
+        <FormTextField
           label={translate(messages, 'crm.customers.search.q')}
-          example={translate(messages, 'crm.customers.search.qHint')}
-          value={draft.q ?? ''}
+          description={translate(messages, 'crm.customers.search.qHint')}
+          error={tooShort ? translate(messages, 'crm.customers.search.qTooShort') : undefined}
+          type="search"
+          inputMode="text"
+          dir="auto"
+          spellCheck={false}
+          autoComplete="off"
+          value={q}
           maxLength={MAX_NAME_LENGTH}
           onChange={(next) => onChange({ ...draft, q: next })}
-          onSubmit={onSubmit}
-          error={tooShort ? translate(messages, 'crm.customers.search.qTooShort') : undefined}
-          inlineSubmit={false}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && q.length > 0) {
+              event.preventDefault();
+              onChange({ ...draft, q: '' });
+            }
+          }}
+          endAdornment={
+            q.length > 0 ? (
+              <IconButton
+                type="button"
+                size="small"
+                aria-label={translate(messages, 'search.clear')}
+                onClick={() => onChange({ ...draft, q: '' })}
+              >
+                <span aria-hidden="true">&times;</span>
+              </IconButton>
+            ) : undefined
+          }
           testId="customer-search-box"
         />
         <DigitsEcho messages={messages} value={draft.q} />
       </div>
 
       <div className="mt-3">
-        <button
+        <Button
           type="button"
+          variant="text"
           aria-expanded={expanded}
           aria-controls={filtersId}
           onClick={() => setExpanded((open) => !open)}
-          className="text-body text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
         >
           {translate(
             messages,
             expanded ? 'crm.customers.search.fewerFilters' : 'crm.customers.search.moreFilters'
           )}
-        </button>
+        </Button>
       </div>
 
       {expanded ? (
         <div id={filtersId} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {/*
-            The hint is a SIBLING of the label, not a child of it. Inside the
-            label its text joins the accessible name.
-          */}
-          <div className="flex flex-col gap-1">
-            <label className="text-caption font-medium text-text-secondary" htmlFor={nameId}>
-              {translate(messages, 'crm.customers.search.name')}
-            </label>
-            <input
-              id={nameId}
-              type="search"
-              value={draft.name ?? ''}
-              maxLength={MAX_NAME_LENGTH}
-              onChange={(event) => onChange({ ...draft, name: event.target.value })}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-              aria-describedby={`${nameId}-hint`}
-            />
-            <span id={`${nameId}-hint`} className="text-caption text-text-muted">
-              {translate(messages, 'crm.customers.search.nameHint')}
-            </span>
-          </div>
+          {/* Each hint is the field's description, outside its accessible name. */}
+          <FormTextField
+            label={translate(messages, 'crm.customers.search.name')}
+            description={translate(messages, 'crm.customers.search.nameHint')}
+            type="search"
+            value={draft.name ?? ''}
+            maxLength={MAX_NAME_LENGTH}
+            onChange={(next) => onChange({ ...draft, name: next })}
+          />
 
           <div className="flex flex-col gap-1">
-            <label className="text-caption font-medium text-text-secondary" htmlFor={numberId}>
-              {translate(messages, 'crm.customers.search.reference')}
-            </label>
-            <input
-              id={numberId}
+            <FormTextField
+              label={translate(messages, 'crm.customers.search.reference')}
+              description={translate(messages, 'crm.customers.search.referenceHint')}
               type="search"
               dir="ltr"
               value={draft.customerNumber ?? ''}
               maxLength={MAX_CUSTOMER_NUMBER_LENGTH}
-              onChange={(event) => onChange({ ...draft, customerNumber: event.target.value })}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-              aria-describedby={`${numberId}-hint`}
+              onChange={(next) => onChange({ ...draft, customerNumber: next })}
             />
-            <span id={`${numberId}-hint`} className="text-caption text-text-muted">
-              {translate(messages, 'crm.customers.search.referenceHint')}
-            </span>
             <DigitsEcho messages={messages} value={draft.customerNumber} />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-caption font-medium text-text-secondary" htmlFor={phoneId}>
-              {translate(messages, 'crm.customers.search.phone')}
-            </label>
-            <input
-              id={phoneId}
+            <FormTextField
+              label={translate(messages, 'crm.customers.search.phone')}
+              description={translate(messages, 'crm.customers.search.phoneHint')}
               type="search"
               inputMode="tel"
               dir="ltr"
               value={draft.phone ?? ''}
               maxLength={MAX_PHONE_LENGTH}
-              onChange={(event) => onChange({ ...draft, phone: event.target.value })}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-              aria-describedby={`${phoneId}-hint`}
+              onChange={(next) => onChange({ ...draft, phone: next })}
             />
-            <span id={`${phoneId}-hint`} className="text-caption text-text-muted">
-              {translate(messages, 'crm.customers.search.phoneHint')}
-            </span>
             <DigitsEcho messages={messages} value={draft.phone} />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-caption font-medium text-text-secondary" htmlFor={typeId}>
-              {translate(messages, 'crm.customers.search.type')}
-            </label>
-            <select
-              id={typeId}
-              value={draft.partyType ?? ''}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  partyType: (event.target.value ||
-                    undefined) as CustomerSearchCriteria['partyType'],
-                })
-              }
-              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-            >
-              <option value="">{translate(messages, 'crm.customers.search.anyType')}</option>
-              {PARTY_TYPES.map((value) => (
-                <option key={value} value={value}>
-                  {translate(messages, `crm.partyType.${value}`)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FormSelectField
+            label={translate(messages, 'crm.customers.search.type')}
+            value={draft.partyType ?? ''}
+            placeholder={translate(messages, 'crm.customers.search.anyType')}
+            options={PARTY_TYPES.map((value) => ({
+              value,
+              label: translate(messages, `crm.partyType.${value}`),
+            }))}
+            onChange={(next) =>
+              onChange({
+                ...draft,
+                partyType: (next || undefined) as CustomerSearchCriteria['partyType'],
+              })
+            }
+          />
 
-          <div className="flex flex-col gap-1">
-            <label className="text-caption font-medium text-text-secondary" htmlFor={statusId}>
-              {translate(messages, 'crm.customers.search.status')}
-            </label>
-            <select
-              id={statusId}
-              value={draft.lifecycleStatus ?? ''}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  lifecycleStatus: (event.target.value ||
-                    undefined) as CustomerSearchCriteria['lifecycleStatus'],
-                })
-              }
-              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-            >
-              <option value="">{translate(messages, 'crm.customers.search.anyStatus')}</option>
-              {LIFECYCLE_STATUSES.map((value) => (
-                <option key={value} value={value}>
-                  {translate(messages, `crm.lifecycle.${value}`)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FormSelectField
+            label={translate(messages, 'crm.customers.search.status')}
+            value={draft.lifecycleStatus ?? ''}
+            placeholder={translate(messages, 'crm.customers.search.anyStatus')}
+            options={LIFECYCLE_STATUSES.map((value) => ({
+              value,
+              label: translate(messages, `crm.lifecycle.${value}`),
+            }))}
+            onChange={(next) =>
+              onChange({
+                ...draft,
+                lifecycleStatus: (next || undefined) as CustomerSearchCriteria['lifecycleStatus'],
+              })
+            }
+          />
         </div>
       ) : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button
-          type="submit"
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
-        >
+        <Button type="submit" variant="contained">
           {translate(messages, 'crm.customers.search.submit')}
-        </button>
-        <button
-          type="button"
-          onClick={onClear}
-          className="rounded-md border border-border px-4 py-2 text-body text-text-secondary"
-        >
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClear}>
           {translate(messages, 'crm.customers.search.clear')}
-        </button>
+        </Button>
       </div>
     </form>
   );
