@@ -122,6 +122,8 @@ Navigation group **"Customers"** <!-- nav.group.customers --> — in Arabic "ا�
    , whose hint says exactly what it accepts: "Part of a name, a customer number, or a phone number.
    For a phone, type the whole number or at least its last seven digits." <!-- crm.customers.search.qHint -->
    Two characters is the minimum: **"Type at least two characters."** <!-- crm.customers.search.qTooShort -->
+   Escape empties the box, and so does the × button at its end, **"Clear what you typed"** <!-- search.clear -->
+   , shown while the box holds text.
 3. **"More filters"** <!-- crm.customers.search.moreFilters --> opens the rest of the form
    **"Customer search"** <!-- crm.customers.search.formLabel --> ; **"Fewer filters"** <!-- crm.customers.search.fewerFilters -->
    closes it again. In it, fill in any of:
@@ -134,15 +136,19 @@ Navigation group **"Customers"** <!-- nav.group.customers --> — in Arabic "ا�
    - **"Status"** <!-- crm.customers.search.status --> — **"Any status"** <!-- crm.customers.search.anyStatus -->
      , or one of "Prospect", "Active", "Inactive", "Blocked", "Merged" <!-- crm.lifecycle.* --> _No
      field is required._
-4. Choose **"Search"** <!-- crm.customers.search.submit --> (the button reads **"Searching…"** <!-- crm.customers.search.searching -->
-   while it works). Pressing Enter in the form does the same. Typing alone does nothing — there is
-   no search-as-you-type.
+4. Choose **"Search"** <!-- crm.customers.search.submit --> . Pressing Enter in the form does the
+   same. The button keeps its label while the search runs; the results area shows that it is
+   loading. Typing alone does nothing — there is no search-as-you-type.
 5. **"Clear"** <!-- crm.customers.search.clear --> empties the form.
 
-**Result** — a table captioned "Customers matching your search, newest first" <!-- crm.customers.search.tableCaption -->
-, with columns **"Name"**, **"Reference"**, **"Phone"** <!-- crm.customers.column.phone --> ,
-**"Vehicles"** <!-- crm.customers.column.vehicles --> , **"Type"** and **"Status"**, and a row action
-**"Open"** <!-- crm.customers.search.open --> .
+**Result** — a grid that a screen reader names "Customers matching your search, newest first" <!-- crm.customers.search.tableCaption -->
+, with columns **"Name"** <!-- crm.customers.column.name --> , **"Reference"** <!-- crm.customers.column.reference -->
+, **"Type"** <!-- crm.customers.column.type --> , **"Phone"** <!-- crm.customers.column.phone --> ,
+**"Vehicles"** <!-- crm.customers.column.vehicles --> and **"Status"** <!-- crm.customers.column.status -->
+, in that order, and a row action **"Open"** <!-- crm.customers.search.open --> , which a screen reader
+announces with the customer's name. The columns cannot be sorted. Below the grid, **"Previous page"** <!-- table.previousPage -->
+and **"Next page"** <!-- table.nextPage --> move between pages, and the page number is shown without
+a total, because the search does not count its results.
 
 **Three things about the search that are worth knowing**
 
@@ -1961,6 +1967,18 @@ screenshot of a page that shows customer details when the reference alone will d
 
 <!--
 SOURCES
+REVISION 2026-10-24 — section 4A.2.1 (customer search) was re-read when the screen moved onto
+Material UI (P1-32-PRE-OD-CRM1B), on a branch from develop 4ea2986a7592a1da0a286798396ba38a8216f7b1.
+Three statements were corrected: the Search button never read "Searching…" (that catalogue key is
+unused), the columns are listed in the screen's order (Name, Reference, Type, Phone, Vehicles,
+Status), and the results are a grid with an accessible name rather than a table with a caption.
+Escape, the clear button and the pager were added. Everything else is carried unchanged, and the
+line citations in the older revisions below refer to the file as it was then.
+
+Read for this revision:
+- apps/web/src/features/crm/customers/components/CustomerSearchScreen.tsx
+- apps/web/src/components/data/OperationalGrid.tsx — the pager label and the absent total
+
 REVISION 2026-09-21 — sections 4A.2.4, 4A.5.0 (new), 4A.5.5, 4A.5.8, 4A.5.9 and 4A.8 were re-read
 and written at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9. Everything else in this part is
 carried unchanged from the readings recorded below and was not re-read.

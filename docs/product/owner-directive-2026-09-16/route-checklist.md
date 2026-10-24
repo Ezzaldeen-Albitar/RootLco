@@ -1802,7 +1802,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                                 | not run — nothing migrated                  |
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
+| `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | migrated — see below the table (CRM1B)                                       | focused suites, en and ar — see below       |
 | `/inventory/adjustments`                              | form fields, states                                                                                      | F1–F7; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                                     | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                                   | focused suites, en and ar — see below       |
 | `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -7999,6 +7999,77 @@ Known limitations and recorded gaps of this slice, one line each:
 - The server write does not validate `currency.enabled_codes`, and `[]` is accepted; see above.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds.
   They run in hosted CI.
+
+### Customer search on Material UI (`P1-32-PRE-OD-CRM1B`)
+
+`/crm/customers` moved onto the shared Material wrappers. The change is presentation only, in
+`features/crm/customers/components/CustomerSearchScreen.tsx`. No migration, route, operation,
+permission code, audit action or catalogue key was added. The page (`page.tsx`: the session, the
+read-permission check, `canCreate`), `api.ts`, `contract.ts`, `lib/customers/*`,
+`use-search-request.ts`, `OperationalGrid`, `SearchBox` and the form wrappers are unchanged.
+
+What the screen now renders:
+
+- The results are `OperationalGrid` over `useSearchRequest(...).table`, named by
+  `crm.customers.search.tableCaption`, with the six columns in their order (name, reference, type,
+  phone, vehicles, status), none of them offering a sort, and `suppressEmptyState`. The row action
+  is a link labelled `crm.customers.search.open` to `/{locale}/crm/customers/{id}`, with the
+  customer's name announced after it (G9). The search honours neither a page size nor a sort, so
+  the grid draws no rows-per-page control and no sorting header, and the pager says "Page N" only.
+- The idle sentence is `MuiEmptyState` with the screen's own idle title and description keys.
+  "No match" stays the screen's sentence under the grid, with `CustomerCreateActions` beside it.
+- The search box is `FormTextField` (`type="search"`, `dir="auto"`, `inputMode="text"`, no spell
+  check, no autocomplete, 80 characters, the hint as its description, `qTooShort` as its error).
+  Escape empties it, and a clear (×) control at its logical end, named by `search.clear`, does
+  the same while it holds text. Enter is the form's own submission.
+- The name, customer number and phone filters are `FormTextField`s (80, 64 and 32 characters; the
+  number and phone left to right, the phone with a telephone keypad), each hint as its
+  description. Type and status are `FormSelectField`s whose placeholder is the "any" option.
+- More filters, Search (`type="submit"`) and Clear are Material `Button`s; the toggle keeps
+  `aria-expanded` and `aria-controls`.
+
+What is read is unchanged. The loader still calls
+`searchCustomerDirectoryCancellable(INITIAL_REQUEST, cursor, criteria, signal)` with the working
+context's version, an empty form and a one-character box still send nothing, the results are still
+mounted only after a submission and keyed on the submitted criteria, and every typed value is sent
+as typed, with the Western-digit echo beneath three boxes.
+
+Held by `apps/web/tests/crm-customer-search.dom.test.tsx` (21 cases kept, 10 added: five, each run
+in English and in Arabic inside `UiFoundationProvider`) and by the five customer cases of
+`search-empty-states.dom.test.tsx`, unchanged:
+
+| Property                                                                     | Case                                                       |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| No request before a submission, nor while typing                             | "calls the backend zero times…", "issues no request…"      |
+| The criteria are sent exactly as typed; a one-character box sends nothing    | "keeps the precise filters…", "refuses a one-character…"   |
+| Page two spends page one's cursor; a new question starts with no cursor      | "spends the cursor page one returned…", "starts a NEW…"    |
+| A late answer to an older search is dropped                                  | "shows the second search, not the first…"                  |
+| The grid is named by the caption, in the page's direction and style cache    | "names the grid with the caption…" (en, ar)                |
+| No page-size choice, "Page 1" with no count, no sorting header               | "offers no page-size choice…" (en, ar)                     |
+| The six columns in their order                                               | "keeps the six columns in their order…" (en, ar)           |
+| Escape and the clear control empty the box and send nothing                  | "empties the search box on Escape…", "…from its clear…"    |
+| Idle, "no match" and the create offer stay apart; the offer needs permission | `search-empty-states.dom` (five cases), "offers creation…" |
+| An outage reads as unavailable, by its words, not as the idle status         | "reports a rate limit as unavailable…"                     |
+
+Test changes forced by the move, the asserted behaviour unchanged: the row link's name is now
+"Open" followed by the customer's name, so it is matched from its start and its full name is
+asserted; the name is now also in that link, so the cases that waited for a name find its grid
+cell rather than any text; and the rate-limit case looks for `state.unavailable.title` rather than
+any `role="status"`, which the idle sentence also carries.
+
+Known limitations and follow-ups, one line each:
+
+- Follow-up: pressing Search again with the same criteria sends nothing. The results key does not
+  change and the screen never calls `search.submit`, although `use-search-request.ts` says a second
+  Search re-asks and names this search among the surfaces relying on it. On page two, the page
+  also stays.
+- `accessibility.spec.ts` looks for `tbody tr`, which the data grid does not draw; that case
+  already skips on this route, because the list shows no rows until a search runs. Not changed.
+- `crm.customers.search.searching` stays unused; no button label changes while a search runs.
+- `docs/phase-1/phase-1-27/task-matrix.json` cites line ranges of this file that no longer point
+  at the same code. The matrix is frozen and was not changed.
+- Not run locally: the authenticated browser tier (`crm-and-vehicles.spec.ts`); it runs in hosted
+  CI.
 
 ### Session lifecycle and the intended page after sign-in (`P1-32-PRE-OD-AUTHB`)
 
