@@ -7,6 +7,8 @@ import Button from '@mui/material/Button';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { FailureExplanation } from '@/components/states/States';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -96,7 +98,6 @@ export function VehicleCreateScreen({
 }: Props) {
   const formId = useId();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
 
   // Dependent catalogues, loaded on demand from the real operations.
   const [models, setModels] = useState<CatalogueResult | null>(null);
@@ -107,7 +108,6 @@ export function VehicleCreateScreen({
     async (previous: VehicleCreationState, form: FormData) => {
       const errors = validateVehicleCreate(values);
       if (Object.keys(errors).length > 0) {
-        setClientErrors(errors);
         /*
          * `attempt` MUST advance here, and this was the one failure branch in
          * the phase that did not advance it.
@@ -137,7 +137,6 @@ export function VehicleCreateScreen({
           attempt: (previous.attempt ?? 0) + 1,
         };
       }
-      setClientErrors({});
       const result = await createVehicleAction(previous, form);
       if (result.status === 'success') {
         setValues({});
@@ -193,7 +192,16 @@ export function VehicleCreateScreen({
     if (name === 'modelId') setTrims(null);
   };
 
-  const errorFor = (field: string) => clientErrors[field] ?? state.fieldErrors?.[field];
+  /*
+   * After a refusal — the client's or the server's, both arrive as a new
+   * attempt carrying `fieldErrors` — the cursor goes to the first field to fix,
+   * and a field's error is withdrawn once the operator edits it, while the
+   * others stay. The intake vehicle step does the same with the same two hooks.
+   */
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
+  const edited = (field: string) => () => corrections.noteEdited(field);
+  const errorFor = (field: string) => corrections.errorFor(field);
   /** The error for a Material field: the catalogue SENTENCE, never the key. */
   const sentenceFor = (field: string): string | undefined => {
     const key = errorFor(field);
@@ -212,7 +220,7 @@ export function VehicleCreateScreen({
   }
 
   return (
-    <form action={submit} className="flex flex-col gap-4">
+    <form ref={formRef} action={submit} className="flex flex-col gap-4">
       <fieldset className="rounded-lg border border-border bg-surface p-4">
         <legend className="px-1 text-caption text-text-secondary">
           {translate(messages, 'vehicles.create.identity')}
@@ -245,7 +253,11 @@ export function VehicleCreateScreen({
             messages={messages}
             id={`${formId}-vin`}
             value={values.vin ?? ''}
-            onChange={(next) => set('vin', next)}
+            onChange={(next) => {
+              // VinField has no onEdit of its own; the edit is noted where its change arrives.
+              corrections.noteEdited('vin');
+              set('vin', next);
+            }}
             maxLength={MAX_VIN_INPUT}
             excludeVehicleId={null}
             error={errorFor('vin')}
@@ -255,6 +267,7 @@ export function VehicleCreateScreen({
             label={translate(messages, 'vehicles.column.reference')}
             description={translate(messages, 'vehicles.create.displayNumberHint')}
             value={values.displayNumber ?? ''}
+            onEdit={edited('displayNumber')}
             onChange={(next) => set('displayNumber', next)}
             maxLength={MAX_DISPLAY_NUMBER}
             error={sentenceFor('displayNumber')}
@@ -273,6 +286,7 @@ export function VehicleCreateScreen({
             attempt={state.attempt ?? 0}
             messages={messages}
             name="makeId"
+            onEdit={edited('makeId')}
             labelKey="vehicles.column.make"
             value={makeId}
             onChange={set}
@@ -283,6 +297,7 @@ export function VehicleCreateScreen({
             attempt={state.attempt ?? 0}
             messages={messages}
             name="modelId"
+            onEdit={edited('modelId')}
             labelKey="vehicles.column.model"
             value={modelId}
             onChange={set}
@@ -297,6 +312,7 @@ export function VehicleCreateScreen({
             attempt={state.attempt ?? 0}
             messages={messages}
             name="trimId"
+            onEdit={edited('trimId')}
             labelKey="vehicles.column.trim"
             value={values.trimId ?? ''}
             onChange={set}
@@ -309,6 +325,7 @@ export function VehicleCreateScreen({
             attempt={state.attempt ?? 0}
             messages={messages}
             name="bodyTypeId"
+            onEdit={edited('bodyTypeId')}
             labelKey="vehicles.column.bodyType"
             value={values.bodyTypeId ?? ''}
             onChange={set}
@@ -319,6 +336,7 @@ export function VehicleCreateScreen({
             attempt={state.attempt ?? 0}
             messages={messages}
             name="powertrainTypeId"
+            onEdit={edited('powertrainTypeId')}
             labelKey="vehicles.column.powertrainType"
             value={values.powertrainTypeId ?? ''}
             onChange={set}
@@ -338,6 +356,7 @@ export function VehicleCreateScreen({
             label={translate(messages, 'vehicles.column.modelYear')}
             description={translate(messages, 'vehicles.create.yearHint')}
             value={values.modelYear ?? ''}
+            onEdit={edited('modelYear')}
             onChange={(next) => set('modelYear', next)}
             maxLength={4}
             error={sentenceFor('modelYear')}
@@ -349,6 +368,7 @@ export function VehicleCreateScreen({
             label={translate(messages, 'vehicles.create.color')}
             description={translate(messages, 'vehicles.create.optionalHint')}
             value={values.color ?? ''}
+            onEdit={edited('color')}
             onChange={(next) => set('color', next)}
             maxLength={MAX_COLOR}
             error={sentenceFor('color')}
@@ -362,6 +382,7 @@ export function VehicleCreateScreen({
             // five-value enum on the vehicle; a type is a catalogue row.
             description={translate(messages, 'vehicles.create.categoryVsType')}
             value={values.powertrainCategory ?? ''}
+            onEdit={edited('powertrainCategory')}
             onChange={(next) => set('powertrainCategory', next)}
             placeholder={translate(messages, 'vehicles.create.categoryDefault')}
             options={POWERTRAIN_CATEGORIES.map((category) => ({
@@ -428,6 +449,7 @@ function CatalogueSelect({
   disabledReasonKey,
   loading,
   attempt,
+  onEdit,
 }: {
   readonly messages: Messages;
   readonly name: string;
@@ -448,6 +470,8 @@ function CatalogueSelect({
    * `CustomerCreateScreen.tsx:197-207`; every select here had the same shape.
    */
   readonly attempt: number;
+  /** Called on every change, so a standing error is withdrawn once corrected. */
+  readonly onEdit: () => void;
 }) {
   const options: readonly CatalogueOption[] = result?.status === 'ok' ? result.options : [];
   const failed = result !== null && result.status !== 'ok';
@@ -479,6 +503,7 @@ function CatalogueSelect({
       description={note}
       value={value}
       disabled={disabled}
+      onEdit={onEdit}
       onChange={(next) => onChange(name, next)}
       placeholder={translate(messages, 'vehicles.create.catalogueAny')}
       // The NAME is the label. Never `option.id`.

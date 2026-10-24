@@ -479,6 +479,35 @@ describe.each([
     expect(input('modelYear')).toHaveValue('1800');
   });
 
+  it('after a client refusal, puts the cursor on the first field to fix and withdraws its error once edited', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const user = userEvent.setup();
+    render(locale);
+    await user.type(input('modelYear'), '1800');
+    // A colour longer than the box allows, as a pasted or filled-in value can
+    // arrive; typing stops at the limit, so it is set directly.
+    fireEvent.change(input('color'), { target: { value: 'x'.repeat(41) } });
+    await submit(locale);
+
+    expect(await screen.findByText(t('vehicles.create.yearOutOfRange'))).toBeInTheDocument();
+    expect(createVehicleAction).toHaveBeenCalledTimes(0);
+    expect(input('modelYear')).toHaveAttribute('aria-invalid', 'true');
+    expect(input('color')).toHaveAttribute('aria-invalid', 'true');
+    // The first invalid field in the form takes the cursor, not the submit button.
+    await waitFor(() => expect(input('modelYear')).toHaveFocus());
+
+    // Editing it withdraws ITS complaint; the colour's still stands.
+    await user.type(input('modelYear'), '{Backspace}');
+    expect(input('modelYear')).toHaveValue('180');
+    expect(input('modelYear')).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(t('vehicles.create.yearOutOfRange'))).toBeNull();
+    expect(input('color')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(t('field.tooLong'))).toBeInTheDocument();
+    // Both values are still there to correct, and nothing was sent.
+    expect(input('color')).toHaveValue('x'.repeat(41));
+    expect(createVehicleAction).toHaveBeenCalledTimes(0);
+  });
+
   it('says it is working, and takes no second press, while the action runs', async () => {
     let answer: (value: unknown) => void = () => undefined;
     createVehicleAction.mockReturnValue(

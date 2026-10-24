@@ -1292,9 +1292,15 @@ describe.each([
     // Typing in six boxes and choosing in two selects asked nothing.
     expect(searchVehicles).not.toHaveBeenCalled();
     // The normalised VIN is shown beside the box; what is sent is what was typed.
-    expect(screen.getByText(new RegExp(t('vehicles.search.vinNormalized')))).toHaveTextContent(
-      'JH4KA7561'
+    const note = screen.getByText(new RegExp(t('vehicles.search.vinNormalized')));
+    expect(note).toHaveTextContent('JH4KA7561');
+    // The note is announced with the VIN box, and only the VIN reads left to right.
+    expect(screen.getByLabelText(t('vehicles.search.vin'))).toHaveAccessibleDescription(
+      new RegExp(`${t('vehicles.search.vinNormalized')} JH4KA7561`)
     );
+    expect(note).not.toHaveAttribute('dir');
+    expect(within(note).getByText('JH4KA7561').tagName).toBe('BDI');
+    expect(within(note).getByText('JH4KA7561')).toHaveAttribute('dir', 'ltr');
 
     await user.click(screen.getByRole('button', { name: t('vehicles.search.submit') }));
     await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
@@ -1393,15 +1399,30 @@ describe.each([
   });
 
   it('announces a search that matched nothing as a polite status', async () => {
-    searchVehicles.mockResolvedValue(page([]));
+    let answer: (value: unknown) => void = () => undefined;
+    searchVehicles.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
     const user = userEvent.setup();
     mount(true);
     await user.type(screen.getByLabelText(t('vehicles.search.q')), 'zz{Enter}');
+    await waitFor(() => expect(searchVehicles).toHaveBeenCalledTimes(1));
 
-    // S4: the sentence is a polite status, so it is announced once the answer arrives.
+    // S4: the polite region is already mounted, and empty, BEFORE the answer —
+    // a live region inserted already holding its words is often not announced.
+    const region = screen.getByTestId('vehicle-search-no-match');
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toBeEmptyDOMElement();
+    expect(screen.queryByText(t('vehicles.search.noMatch'))).toBeNull();
+
+    // Only its text changes once the answer arrives.
+    answer(page([]));
     const sentence = await screen.findByText(t('vehicles.search.noMatch'));
-    expect(sentence).toHaveAttribute('role', 'status');
-    expect(sentence).toHaveAttribute('aria-live', 'polite');
+    expect(sentence).toBe(region);
+    expect(screen.getByTestId('vehicle-search-no-match')).toBe(region);
     expect(screen.getAllByRole('status')).toContain(sentence);
     // The create offer is a control beside the announcement, not part of it.
     const offer = screen.getByTestId('create-vehicle-from-no-results');

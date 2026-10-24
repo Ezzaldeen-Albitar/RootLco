@@ -7785,13 +7785,19 @@ What `/vehicles` now renders:
   same while it holds text. The VIN, plate and reference boxes (64, 32 and 64 characters, left to
   right) and the make and model boxes (80 characters, `dir="auto"`) are `FormTextField`s with their
   hints as descriptions; the normalised VIN line and the digit echo under the plate and the
-  reference stay. Status and powertrain are `FormSelectField`s whose first, empty option is "Any".
+  reference stay. The normalised VIN line is also named by the VIN box's `aria-describedby`
+  (through `describedBy`), so it is announced with the box, and only the VIN value in it is isolated
+  in `<bdi dir="ltr">`; the sentence takes the page direction. Status and powertrain are
+  `FormSelectField`s whose first, empty option is "Any".
 - Search (`type="submit"`, disabled while the form is empty), Clear and the create link are
   Material `Button`s; the link and the zero-result offer (`data-testid="create-vehicle-from-no-results"`)
   appear only with `canCreate`. The idle sentence is `MuiEmptyState` with the screen's idle keys.
   `needCriteria`, the `role="alert"` `tooShort` sentence and `exactMatchNote` are unchanged. The
-  zero-result sentence `vehicles.search.noMatch` is `role="status"` (S4), with the create offer
-  beside it rather than inside it.
+  zero-result sentence `vehicles.search.noMatch` is the text of a polite `role="status"` region
+  (S4, `data-testid="vehicle-search-no-match"`). The region is mounted, empty, with the results
+  area and only its text changes when the search answers with nothing, because many screen readers
+  do not announce a live region inserted already holding its words. The create offer is beside it
+  rather than inside it.
 
 What `/vehicles/new` now renders:
 
@@ -7808,6 +7814,12 @@ What `/vehicles/new` now renders:
 - Each field error is the translated sentence passed to the wrapper, so it is named by the
   control's `aria-describedby` and `aria-errormessage`. Before the move, the hand-built boxes and
   selects pointed `aria-describedby` at their hint or note only.
+- After a refusal, the client's or the server's, the form keeps the values (F4), puts the cursor on
+  the first invalid field (`useFocusFirstInvalid(state)`, the form's `ref`) and withdraws a field's
+  error once the operator edits that field while the others stay (`useClearOnCorrect(state)`, with
+  `onEdit` on each text box and select, as in `IntakeVehicleStep.tsx`). `VinField` has no `onEdit`,
+  so its edit is noted in the change handler the screen passes it. The client branch's errors now
+  arrive only through the action state's `fieldErrors`; the separate copy the screen kept is gone.
 - Submit is a Material `Button` reading `form.pending` while the action runs. The failure banner is
   a Material `Alert` with the same message, `FailureExplanation` and correlation reference, shown
   in the same cases. The success card keeps its three exits, now Material `Button`s.
@@ -7822,25 +7834,27 @@ dependants on a change.
 
 Held by `apps/web/tests/vehicle-screens.dom.test.tsx` (51 cases kept, 12 added: six, each run in
 English and in Arabic inside `UiFoundationProvider`), `apps/web/tests/vehicle-create.dom.test.tsx`
-(17 cases kept, 10 added: five, each run in English and in Arabic), and by
+(17 cases kept, 12 added: six, each run in English and in Arabic), and by
 `search-empty-states.dom.test.tsx`, `vin-create-validation.dom.test.tsx` and
 `form-reset-class.test.ts`, unchanged:
 
-| Property                                                                       | Case                                                                  |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| No request before a submission, nor while typing in any box or choosing        | "calls the backend zero times…", "sends exactly the criteria…" (both) |
-| The criteria are sent exactly as entered, all eight, with no cursor            | "sends exactly the criteria entered…" (en, ar)                        |
-| Next page spends the returned cursor; Previous page asks again with none       | "walks the cursor the search returned…" (en, ar)                      |
-| Material fields and grid, in the page direction and style cache                | "renders the boxes, the selects and the grid…" (en, ar)               |
-| Clear removes the results; the create link needs permission                    | "clears the results with the criteria…" (en, ar), `search-empty-…`    |
-| Each Open button is named by the vehicle it opens (G9)                         | "names each Open button by the vehicle it opens" (en, ar)             |
-| No matches is announced as a polite status (S4)                                | "announces a search that matched nothing as a polite status" (en, ar) |
-| The action receives exactly the names and values entered                       | "hands the action exactly the names…" (en, ar)                        |
-| A client refusal never calls the action and keeps the typed value              | "refuses an out-of-range year…" (en, ar)                              |
-| The pending label, and no second press while the action runs                   | "says it is working…" (en, ar)                                        |
-| Material fields in the page direction, left-to-right codes, the catalogue note | "renders the Material fields in the page direction…" (en, ar)         |
-| Each field error is named by its control                                       | "announces each field error with its own control" (en, ar)            |
-| Selections survive a client and a server failure                               | "keeps the catalogue selections…", "keeps them when the CLIENT…"      |
+| Property                                                                        | Case                                                                   |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| No request before a submission, nor while typing in any box or choosing         | "calls the backend zero times…", "sends exactly the criteria…" (both)  |
+| The criteria are sent exactly as entered, all eight, with no cursor             | "sends exactly the criteria entered…" (en, ar)                         |
+| Next page spends the returned cursor; Previous page asks again with none        | "walks the cursor the search returned…" (en, ar)                       |
+| Material fields and grid, in the page direction and style cache                 | "renders the boxes, the selects and the grid…" (en, ar)                |
+| Clear removes the results; the create link needs permission                     | "clears the results with the criteria…" (en, ar), `search-empty-…`     |
+| Each Open button is named by the vehicle it opens (G9)                          | "names each Open button by the vehicle it opens" (en, ar)              |
+| No matches is announced as a polite status (S4), empty region present first     | "announces a search that matched nothing as a polite status" (en, ar)  |
+| The normalised VIN is the VIN box's description; only the value is `<bdi>`      | "sends exactly the criteria entered…" (en, ar)                         |
+| The action receives exactly the names and values entered                        | "hands the action exactly the names…" (en, ar)                         |
+| A client refusal never calls the action and keeps the typed value               | "refuses an out-of-range year…" (en, ar)                               |
+| After a refusal: first invalid field focused; an edited field's error withdrawn | "after a client refusal, puts the cursor on the first field…" (en, ar) |
+| The pending label, and no second press while the action runs                    | "says it is working…" (en, ar)                                         |
+| Material fields in the page direction, left-to-right codes, the catalogue note  | "renders the Material fields in the page direction…" (en, ar)          |
+| Each field error is named by its control                                        | "announces each field error with its own control" (en, ar)             |
+| Selections survive a client and a server failure                                | "keeps the catalogue selections…", "keeps them when the CLIENT…"       |
 
 Test changes forced by the move, the asserted behaviour unchanged: a disabled Material button has
 `pointer-events: none`, so "refuses to search on empty criteria" sets up `userEvent` with
@@ -7877,7 +7891,21 @@ Known limitations and follow-ups, one line each:
   `validate:p1-27-frontend` fails too. Whichever of #600 and this slice lands second removes
   `components/search` from both copies of `MODULE_DISPOSITION` (the test file and the gate
   script), each with its reason. It also sets the test's count to 14 and runs that test and
-  `validate:p1-27-frontend` on the merged tree.
+  `validate:p1-27-frontend` on the merged tree. The two copies are
+  `apps/web/tests/p1-27-security.test.ts` (the object at `:230`–`:274`, the entry at `:249`) and
+  `scripts/ci/check-p1-27-frontend.mjs` (the object at `:350`–`:444`, the entry at `:413`, the
+  stale-entry report at `:514`). Both go stale together, so removing the entry from one copy only
+  leaves the other failing. Editing `scripts/ci/` needs the Owner's explicit approval
+  (`RootLco/CLAUDE.md` §A, step 3), so that removal waits for it. This slice does not edit
+  `scripts/ci/`.
+- Records obligation for the next checkpoint: this slice introduced a P1-27 document-count drift.
+  It was not there before. `vehicle-screens.dom.test.tsx` holds 51 cases on `develop` and 57 on this
+  branch, while three frozen P1-27 documents still state 51: `docs/phase-1/phase-1-27/deliverable-manifest.md`,
+  `docs/phase-1/phase-1-27/evidence/task-traceability.md` and
+  `docs/phase-1/phase-1-27/risk-register.md`. They stay unedited now. `validate:p1-27-doc-counts`
+  reports the three disagreements in the strict records mode, and they are deferred in the
+  development records mode (`checkpoint-deferred`) until the checkpoint records step updates the
+  three documents to the tree's count.
 - `docs/phase-1/phase-1-27/task-matrix.json` cites line ranges of these two files that no longer
   point at the same code. The matrix is frozen and was not changed.
 - Not run locally: the authenticated browser tier (`crm-and-vehicles.spec.ts`,

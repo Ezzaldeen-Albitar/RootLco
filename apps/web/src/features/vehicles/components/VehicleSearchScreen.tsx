@@ -128,11 +128,17 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
     setSubmitted(draft);
   };
 
-  const vinNote =
+  /*
+   * The normalised VIN, or null when it reads the same as what was typed. Only
+   * the VALUE is isolated left to right below; the sentence around it takes the
+   * page direction, so an Arabic sentence is not forced into a left-to-right run.
+   */
+  const vinNormalized =
     draft.vin.trim().length > 0 &&
     normalizeVinForDisplay(draft.vin) !== draft.vin.trim().toUpperCase()
-      ? `${translate(messages, 'vehicles.search.vinNormalized')} ${normalizeVinForDisplay(draft.vin)}`
+      ? normalizeVinForDisplay(draft.vin)
       : null;
+  const vinNoteId = `${formId}-vin-note`;
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -197,13 +203,16 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
               maxLength={MAX_VIN_FRAGMENT}
               dir="ltr"
               spellCheck={false}
+              // The note below describes the box, so it is announced with it.
+              describedBy={vinNormalized ? vinNoteId : undefined}
             />
             {/* Shown, not applied. The raw value is what gets sent; the backend
                 normalises authoritatively. Two normalisers that disagree is how
                 a search box and a database look at different vehicles. */}
-            {vinNote ? (
-              <p className="text-caption text-text-muted" dir="ltr">
-                {vinNote}
+            {vinNormalized ? (
+              <p id={vinNoteId} className="text-caption text-text-muted">
+                {translate(messages, 'vehicles.search.vinNormalized')}{' '}
+                <bdi dir="ltr">{vinNormalized}</bdi>
               </p>
             ) : null}
           </div>
@@ -686,31 +695,38 @@ function VehicleSearchResults({
         appear before there is an answer to base it on.
 
         The sentence is a polite status (S4), so an operator using a screen
-        reader who pressed Search hears that nothing matched. The create offer
-        sits outside it: it is a control, not part of the announcement.
+        reader who pressed Search hears that nothing matched. The region is
+        mounted with the results area and stays EMPTY until the answer arrives;
+        only its text changes. Many screen readers do not announce a live region
+        that is inserted already holding its words, so mounting it together with
+        the sentence would announce nothing. The create offer sits outside it:
+        it is a control, not part of the announcement.
       */}
-      {search.phase === 'empty' ? (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <p
-            role="status"
-            aria-live="polite"
-            className="text-body text-text-secondary"
-            lang={locale}
+      <div
+        className={
+          search.phase === 'empty' ? 'flex flex-col items-center gap-3 py-8 text-center' : undefined
+        }
+      >
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-body text-text-secondary"
+          lang={locale}
+          data-testid="vehicle-search-no-match"
+        >
+          {search.phase === 'empty' ? translate(messages, 'vehicles.search.noMatch') : null}
+        </p>
+        {search.phase === 'empty' && canCreate ? (
+          <Button
+            component={Link}
+            href={`/${locale}/vehicles/new`}
+            variant="outlined"
+            data-testid="create-vehicle-from-no-results"
           >
-            {translate(messages, 'vehicles.search.noMatch')}
-          </p>
-          {canCreate ? (
-            <Button
-              component={Link}
-              href={`/${locale}/vehicles/new`}
-              variant="outlined"
-              data-testid="create-vehicle-from-no-results"
-            >
-              {translate(messages, 'vehicles.create.title')}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+            {translate(messages, 'vehicles.create.title')}
+          </Button>
+        ) : null}
+      </div>
 
       <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
         {translate(messages, 'vehicles.search.exactMatchNote')}
