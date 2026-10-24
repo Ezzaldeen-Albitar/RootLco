@@ -369,9 +369,9 @@ instant without seconds. The generated `docs/api/openapi.v1.json` changes in fiv
 date-time patterns in the reports export, rows and snapshots schemas, and was regenerated with
 `UPDATE_OPENAPI=1` on `tests/openapi-contract.test.ts`. Two tests pin the new contract:
 `tests/unit/p1-32-zod-datetime-seconds.test.ts` (one route schema of each form refuses
-`2026-10-24T10:15Z` and accepts `2026-10-24T10:15:00Z`) and
-`apps/web/tests/instant-seconds-contract.test.ts` (`composeInstant` always emits seconds, and both
-schema forms accept its output). The alternative, keeping secondless
+`2026-10-24T10:15Z` and accepts `2026-10-24T10:15:00Z`) and the composeInstant cases at the end
+of `apps/web/tests/appointments-window-support.test.ts` (`composeInstant` always emits seconds,
+and both schema forms accept its output). The alternative, keeping secondless
 instants accepted, is an API source change that the `dependency-security` ownership profile
 forbids, so it would be its own slice and was not taken. Other stricter zod behaviours in the
 same releases: a `__proto__` key is always stripped, and `.strict()` reports one as an
