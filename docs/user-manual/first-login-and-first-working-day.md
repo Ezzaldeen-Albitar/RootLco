@@ -782,8 +782,10 @@ audit log with its **Reference** column is illustrated in
 
 ## 14. What is not there on your first day
 
-- **NOT AVAILABLE:** a technician roster screen. Company, branch, department and employee screens do
-  exist (Part 2), but a company or branch cannot be **edited** from a screen after it is created.
+- **NOT AVAILABLE:** editing a company's currency or registration numbers, or a branch's address
+  lines, from a screen. Company, branch, department and employee screens do exist (Part 2), as does
+  the **Technicians** screen, and a company's legal name and a branch's name, place and time zone
+  are edited there.
 - **NOT AVAILABLE, from inside your organisation:** changing your subscription or raising a limit.
   The refusal names who can do it — the platform owner (Part 2, §2.9).
 - **NOT AVAILABLE:** any expiry or shelf-life warning. Nothing in the application records a batch, a

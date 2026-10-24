@@ -269,9 +269,10 @@ or **"Deactivate this company?"** <!-- organization.company.confirmDeactivate --
 with its reason.
 
 **Restrictions** The company code cannot be changed, ever. A company has only those two states;
-"suspended" and "being set up" belong to the workspace, not to a company. Editing a company's legal
-name, currency or registration numbers is a service call (`PATCH /api/v1/org/companies/{company}`)
-and has no screen at this version — **OPERATOR PROCEDURE** for that one act.
+"suspended" and "being set up" belong to the workspace, not to a company. A company's legal name is
+changed in the **Edit company** <!-- organization.company.edit --> dialog. Changing its currency or
+registration numbers is a service call (`PATCH /api/v1/org/companies/{company}`) and has no screen
+at this version — **OPERATOR PROCEDURE** for that one act.
 
 **Screenshot** no screenshot available at this version.
 
@@ -328,7 +329,8 @@ and receipt numbering is set up with it, so it can start trading without a furth
   allows {limit} branches and {used} are in use. Ask the platform owner to raise the limit."**
   <!-- capacity.reached.branches --> Nothing is created. See 2.9.
 - Where there are none yet: **"No branches yet."** — _"Add a branch to start working in it."_
-- Editing a branch's name, address or time zone afterwards is a service call
+- A branch's name, place (city and country) and time zone are changed afterwards in the **Edit
+  branch** <!-- organization.branch.edit --> dialog. Changing its address lines is a service call
   (`PATCH /api/v1/org/branches/{branch}`) with no screen at this version — **OPERATOR PROCEDURE**
   for that one act.
 
@@ -1055,10 +1057,10 @@ additive backfill), not something a screen can do.
 
 **NOT AVAILABLE** unless a backlog item is named, in which case **DEFERRED**.
 
-- **NOT AVAILABLE** — a screen for **editing** a company's legal name, currency or registration
-  numbers, or a branch's name, address or time zone, after it has been created. Creating them,
-  and changing their status, do have screens (2.4, 2.5); editing them is a service call.
-- **NOT AVAILABLE** — a technician roster screen.
+- **NOT AVAILABLE** — a screen for **editing** a company's currency or registration numbers, or a
+  branch's address lines, after it has been created; that is a service call. Creating a company or
+  a branch, changing its status, and editing a company's legal name or a branch's name, place and
+  time zone do have screens (2.4, 2.5).
 - **NOT AVAILABLE** — a company or branch directory in the **settings** screens; there you still
   supply a reference. The **Companies and branches** block, the **Audit log** filters and the branch
   choosers on operational screens all name them.

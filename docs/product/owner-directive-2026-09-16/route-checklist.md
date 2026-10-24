@@ -250,7 +250,7 @@ hand-built form moves the cursor to the refused field and withdraws a corrected 
 | `/administration/employees`                                | `apps/web/src/features/administration/employees/components/EmployeesScreen.tsx`          | fixed (B3-02) — as departments                                                               | fixed (B3-02)                                                                                       | pass — the login account is chosen by name                                                                                                                                                            | n/a                                                          | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/organization`                             | `apps/web/src/features/administration/organization/components/OrganizationStructure.tsx` | n/a — the organisation's companies and branches                                              | pass                                                                                                | fixed (P1-32-PRE-OD-REF) — currency, time zone and language are chosen from `org.reference-values-read`                                                                                               | n/a                                                          | n/a                                | fixed (B3-03) — the company and branch dialogs, the tenant form                                                                                             | pass                                                                                                          | pass | pass |
 | `/administration/system-settings`                          | `apps/web/src/features/administration/organization/components/SettingsEditor.tsx`        | pass — the company or branch is the working context's                                        | pass                                                                                                | pass                                                                                                                                                                                                  | n/a                                                          | n/a                                | fixed (B3-04) — the value                                                                                                                                   | pass                                                                                                          | pass | pass |
-| `/administration/currencies`, `/taxes`, `/numbering-rules` | `apps/web/src/features/administration/shared/components/SettingsBackedScreen.tsx`        | pass — as system settings                                                                    | pass                                                                                                | pass — the screen says no catalogue read exists and the settings are keyed values                                                                                                                     | n/a                                                          | n/a                                | fixed (B3-04) — the shared editor                                                                                                                           | pass                                                                                                          | pass | pass |
+| `/administration/currencies`, `/taxes`, `/numbering-rules` | `apps/web/src/features/administration/shared/components/SettingsBackedScreen.tsx`        | pass — as system settings                                                                    | pass                                                                                                | fixed (ADM5) — `/currencies` reads the catalogue through `readReferenceValuesState` and renders `CurrencyCatalogue`; `/taxes` and `/numbering-rules` remain keyed values                              | n/a                                                          | n/a                                | fixed (B3-04) — the shared editor                                                                                                                           | pass                                                                                                          | pass | pass |
 | `/administration/languages`                                | `apps/web/src/features/administration/organization/components/TenantForm.tsx`            | n/a — the tenant's own                                                                       | pass                                                                                                | n/a                                                                                                                                                                                                   | n/a                                                          | n/a                                | fixed (B3-03) — each refusal now also on its field                                                                                                          | pass                                                                                                          | pass | pass |
 | `/administration/appointment-setup`                        | `apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx`               | n/a — the entries are the organisation's, not a branch's                                     | pass — each list reads its first page on arrival; an empty list says so and invites the first entry | n/a — nothing is chosen; an entry is named by its name                                                                                                                                                | n/a — the management lists take no search                    | n/a — the lists publish no filter  | pass — each refused field is red with its sentence beside it, takes the cursor and lets go once corrected; a taken short reference is said on its own field | pass                                                                                                          | pass | pass |
 
@@ -1843,7 +1843,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/technicians/[technicianProfileId]`                  | form fields, `OperationalGrid`, `DateField`, `ZonedDateTimeField`, `FormDialog`, `ConfirmDialog`, states | F1–F6; G1–G9; E1–E4; D1–D4; S1–S4                | migrated (ADM2B) — built on Material UI (`P1-32-PRE-OD-ADM2B`)               | focused suite, en and ar — see that section |
 | `/vehicles/[vehicleId]`                               | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                                 | not run — nothing migrated                  |
 | `/vehicles/duplicates`                                | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/vehicles/new`                                       | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
+| `/vehicles/new`                                       | states                                                                                                   | S1–S4                                            | not migrated                                                                 | not run — nothing migrated                  |
 | `/vehicles`                                           | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/work-orders/[workOrderId]/closure`                  | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -1861,12 +1861,12 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/work-orders/quality`                                | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/gallery`                                            | all four                                                                                                 | G, P, F, S                                       | shown in the gallery, not a screen                                           | `gallery-and-print.dom.test.tsx` (en, ar)   |
 | `/platform/account`                                   | form fields, `FormPasswordField`, states                                                                 | F1–F6, F8; S1–S4                                 | migrated — see below the table (AUTHA)                                       | focused suites, en and ar — see below       |
-| `/platform/audit`                                     | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
-| `/platform/organizations/[tenantId]`                  | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
-| `/platform/organizations/new`                         | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
-| `/platform/organizations`                             | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
-| `/platform`                                           | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/platform/plans`                                     | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
+| `/platform/audit`                                     | form fields, `OperationalGrid`, `DateField`, drawer, states                                              | F1–F6; G1–G9; E1–E4; S1–S4                       | migrated — see below the table (console, `P1-32-PRE-OD-WP06A`)               | focused suites — not re-run; see below      |
+| `/platform/organizations/[tenantId]`                  | form fields, `OperationalGrid`, `DateField`, `FormDialog`, a reason dialog, states                       | F1–F6; G1–G9; E1–E4; D1–D4; S1–S4                | migrated — see below the table (console, `P1-32-PRE-OD-WP06B`, `WP06B2`)     | focused suites — not re-run; see below      |
+| `/platform/organizations/new`                         | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
+| `/platform/organizations`                             | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | migrated — see below the table (console, `P1-32-PRE-OD-WP06A`)               | focused suites — not re-run; see below      |
+| `/platform`                                           | Material table, states                                                                                   | S1–S4                                            | migrated — see below the table (console, `P1-32-PRE-OD-WP06B2`)              | focused suites — not re-run; see below      |
+| `/platform/plans`                                     | form fields, `OperationalGrid`, `DateField`, `FormDialog`, states                                        | F1–F6; G1–G9; E1–E4; D1–D4; S1–S4                | migrated — see below the table (console, `P1-32-PRE-OD-WP06A`)               | focused suites — not re-run; see below      |
 
 ### `/receptions` on Material UI
 
@@ -8207,3 +8207,85 @@ Open, recorded by this round and not changed by it:
   database.
 - `LoginForm.tsx` imports the parameter name from `intended-path.ts`, which brings both navigation
   models into the sign-in bundle. Noted, not measured.
+
+### Records corrected: the console's adoption rows, the currencies row and editing a company or a branch (`P1-32-PRE-OD-RECORDS1`)
+
+This is a correction of records only. It makes the route-adoption table, one row of the scope
+table, one capability row and the user manuals match the code at `develop`
+`4ea2986a7592a1da0a286798396ba38a8216f7b1`. No code, test, route, operation, permission code, audit
+action or migration changed. Every row was edited in place within its column's width, so no other
+row of either table moved.
+
+Adoption rows corrected, each derived again from the route's import graph by the rule above the
+table:
+
+- `/platform/audit` — `PlatformAuditScreen.tsx` reaches `OperationalGrid` with `useServerTable`,
+  `ZonedDateField` (`DateField`), a Material `Drawer` and the form wrappers, and no picker; the row
+  lacked `DateField` and the drawer. Migrated by `P1-32-PRE-OD-WP06A`.
+- `/platform/organizations/[tenantId]` — `OrganizationDetailScreen.tsx` with `BillingPanel.tsx`,
+  `SubscriptionPanel.tsx` and `OrganizationGrowthPanel.tsx` reaches `OperationalGrid`, the form
+  wrappers (`FormMoneyField` among them, counted as form fields), `ZonedDateField`, `FormDialog` and
+  `ConsoleReasonDialog`. D5 is not claimed: `ConsoleReasonDialog` (`console-parts.tsx`) says the
+  server's refusal beside the buttons, not on the reason box. Migrated by `P1-32-PRE-OD-WP06B` (the
+  organisation page) and `P1-32-PRE-OD-WP06B2` (the subscriptions).
+- `/platform/organizations/new` — `ProvisionOrganizationScreen.tsx` reaches `Field.tsx`, its page
+  reaches `States.tsx`, and nothing reaches a table, so `OperationalGrid` and G1–G9 were removed.
+  It is still built on `Field.tsx`, not on the Material wrappers: not migrated.
+- `/platform/organizations` — the components were right; the status and verification were not.
+  Migrated by `P1-32-PRE-OD-WP06A`.
+- `/platform` — `PlatformOverview.tsx` draws its lists as the Material table (`ConsoleTable`,
+  `console-parts.tsx`) and reaches no `DataTable`, `CursorPager` or `useServerTable`, so
+  `OperationalGrid` and G1–G9 became "Material table" and S1–S4. Migrated by
+  `P1-32-PRE-OD-WP06B2`.
+- `/platform/plans` — `PlansScreen.tsx` reaches `OperationalGrid`, the form wrappers,
+  `ZonedDateField` and `FormDialog`. Migrated by `P1-32-PRE-OD-WP06A`.
+- `/vehicles/new` — `VehicleCreateScreen.tsx` imports only `FailureExplanation` from `States.tsx`.
+  Its form is raw `<form>`, `<select>` and `<input>` elements, so it never reaches `Field.tsx`, and
+  it reaches no table. By the rule the row is `states` and S1–S4; F1–F6 will apply once the form is
+  built on the wrappers. Not migrated, as before.
+
+Scope table, `/administration/currencies`, `/taxes`, `/numbering-rules`, column c: `/currencies`
+reads the currency catalogue through `readReferenceValuesState` and renders `CurrencyCatalogue`
+(the ADM5 section above); `/taxes` and `/numbering-rules` remain keyed values. The row said that no
+catalogue read existed.
+
+The pull requests that moved the console onto Material UI, resolved from git
+(`git log --first-parent origin/develop`, the subject of each merge's second parent) and from
+`gh pr view <number> --json mergeCommit,title`:
+
+- #582, `P1-32-PRE-OD-WP06A`, merged as `e36f86eabb97c5780fcc6181011311b5be8f1ad8` — the
+  organisations list, the plans and the platform audit.
+- #586, `P1-32-PRE-OD-WP06B`, merged as `689688fcaf2f84532043bbd4daecd6caa408a07c` — the
+  organisation page, its charges and its growth panel.
+- #590, `P1-32-PRE-OD-WP06B2`, merged as `f647ef6414be44af50b5bf9adb2d48a8a244b06a` — the overview
+  and the subscriptions.
+- #592, `P1-32-PRE-OD-WP06B3`, merged as `304ebe2e3f7d4320f03655d335cdcbcd4fb4159d` — follow-ups
+  across the same screens. That merge was also the `develop` tip at which PR #503's CI ran, as the
+  capability status records.
+
+The focused suites of those pull requests were not re-run for this record. The console has never
+been tested at runtime: the local QA records name it as not run, blocked by ACCESS02 (no
+platform-operator identity) (`capability-status.md:366,389`).
+
+Capability status, "Edit a company or branch after creation": `missing` became `partial` on
+`/[locale]/administration/organization`. `StructureDialogs.tsx` calls `updateCompanyAction` and
+`updateBranchAction` (the ADM1 section above). The Edit dialogs change a company's legal name and a
+branch's name, time zone, city and country; a company's base currency and registration numbers and
+a branch's address lines are not offered.
+
+User manuals: Part 2 (§2.4, §2.5 and §2.13), Part 7 (limitation 8) and the first-day guide (§14)
+now say that a company's legal name and a branch's name, place and time zone are edited on screen,
+and that the rest stays a service call. The same lines said that there is no technician roster
+screen; `/technicians` has been one since ADM2B, so that claim was removed from those lines.
+
+Follow-ups, recorded and not fixed:
+
+- `apps/web/tests/e2e/authenticated/accessibility.spec.ts` and `isolation.spec.ts` visit
+  `/crm/customers/new`, which has no page of its own: the address resolves to the customer page
+  with the identifier "new". The loop waits only for `main`, so which state it draws is not
+  verified.
+- Part 7, limitation 7, may understate `/currencies`, which now reads the catalogue. Not checked in
+  detail.
+- Other manual lines still say that there is no technician roster screen: Part 4b (§ on assigning a
+  technician, and its operator procedure and permission notes), Part 4c (its limitations) and the
+  Part 7 task table. They are outside this correction.
