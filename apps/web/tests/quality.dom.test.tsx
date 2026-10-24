@@ -1474,10 +1474,17 @@ describe('the rework sign-off chooses the reviewer from the branch roster', () =
 
   it('keeps the typed reference when the order detail did not answer, since it names the branch', async () => {
     listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
-    let detailAnswered = false;
-    readWorkOrderDetail.mockImplementation(async () => {
-      detailAnswered = true;
-      return denied;
+    // A refused first detail draws nothing of its own — the screen reads the
+    // same as while it is out — so the gate's verdict is held behind it: the
+    // verdict on screen is a visible effect that can only follow the refusal.
+    let answerDetail!: (state: unknown) => void;
+    const detailAnswer = new Promise((resolve) => {
+      answerDetail = resolve;
+    });
+    readWorkOrderDetail.mockReturnValue(detailAnswer);
+    readClosureEligibility.mockImplementation(async () => {
+      await detailAnswer;
+      return ok(eligibility);
     });
     mount(
       <WorkOrderClosureScreen
@@ -1488,8 +1495,10 @@ describe('the rework sign-off chooses the reviewer from the branch roster', () =
       />
     );
     await signOffFields();
+    expect(screen.queryByText(t('quality.closure.notEligible'))).toBeNull();
+    answerDetail(denied);
     // The refusal has landed, and the row still offers the typed field.
-    await waitFor(() => expect(detailAnswered).toBe(true));
+    expect(await screen.findByText(t('quality.closure.notEligible'))).toBeVisible();
     const [who] = await signOffFields();
     expect(who?.tagName).toBe('INPUT');
     expect(screen.getByText(t('quality.closure.signOffByTypedHint'))).toBeVisible();
@@ -1511,6 +1520,177 @@ describe('the rework sign-off chooses the reviewer from the branch roster', () =
     });
     expect(who.tagName).toBe('SELECT');
     expect(screen.getByText(arT('quality.closure.signOffByHint'))).toBeVisible();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('empties a reference typed before the detail named the branch, so Sign off sends nothing unseen', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    let answerDetail!: (state: unknown) => void;
+    readWorkOrderDetail.mockReturnValue(
+      new Promise((resolve) => {
+        answerDetail = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const [typed] = await signOffFields();
+    expect(typed?.tagName).toBe('INPUT');
+    await user.type(typed as HTMLElement, 'typed-before-the-detail');
+    answerDetail(ok(workOrderDetail));
+
+    const [who] = await signOffSelects();
+    const select = who as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(select.selectedOptions[0]?.textContent).toBe(t('form.select.placeholder'));
+    await user.click(screen.getByRole('button', { name: t('quality.closure.signOff') }));
+    // The empty choice is refused on the select, and nothing was sent.
+    await waitFor(() => expect(select).toHaveAttribute('aria-invalid', 'true'));
+    expect(signOffRework).not.toHaveBeenCalled();
+  });
+
+  it('holds Sign off behind a loading line while the roster read is out, then offers the select', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    let answerRoster!: (state: unknown) => void;
+    listTechnicians.mockReturnValue(
+      new Promise((resolve) => {
+        answerRoster = resolve;
+      })
+    );
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await waitFor(() => expect(listTechnicians).toHaveBeenCalledTimes(1));
+    const button = screen.getByRole('button', { name: t('quality.closure.signOff') });
+    const form = button.closest('form') as HTMLElement;
+    expect(within(form).getByRole('status')).toHaveTextContent(t('state.loading'));
+    expect(button).toBeDisabled();
+    expect(
+      within(form).queryByLabelText(new RegExp(`^${t('quality.closure.signOffBy')}`))
+    ).toBeNull();
+
+    answerRoster(roster);
+    const [who] = await signOffSelects();
+    expect(who?.tagName).toBe('SELECT');
+    expect(within(form).queryByRole('status')).toBeNull();
+    expect(button).toBeEnabled();
+  });
+
+  /** Mounts the screen with one unsigned link and answers the typed field the roster left. */
+  async function typedFallback(reason: string) {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const sentence = await screen.findByText(reason);
+    expect(sentence).toBeVisible();
+    const [who] = await signOffFields();
+    expect(who?.tagName).toBe('INPUT');
+    expect(screen.getByText(t('quality.closure.signOffByTypedHint'))).toBeVisible();
+    return who as HTMLElement;
+  }
+
+  it('keeps the typed reference, and says why with the field, when the roster read is refused', async () => {
+    listTechnicians.mockResolvedValue(denied);
+    const who = await typedFallback(t('state.denied.title'));
+    expect(who).toHaveAccessibleDescription(expect.stringContaining(t('state.denied.title')));
+  });
+
+  it('keeps the typed reference, and says the roster is too long, past three pages', async () => {
+    let page = 0;
+    listTechnicians.mockImplementation(async () => {
+      page += 1;
+      return ok({
+        items: [{ ...(roster.data.items[0] as object), id: `profile-on-page-${page}` }],
+        nextCursor: `cursor-${page}`,
+        hasMore: true,
+      });
+    });
+    await typedFallback(t('technicians.picker.truncated'));
+    expect(listTechnicians).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps the typed reference, and says so, when the roster lists nobody', async () => {
+    listTechnicians.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    await typedFallback(t('technicians.picker.empty'));
+  });
+
+  it('keeps the select when a re-read of the order after a write does not answer', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink, secondLink] }));
+    signOffRework.mockResolvedValue({
+      status: 'success',
+      messageKey: 'action.saved',
+      correlationId: 'corr-signed',
+      attempt: 1,
+    });
+    readWorkOrderDetail
+      .mockResolvedValueOnce(ok(workOrderDetail))
+      .mockResolvedValue({ status: 'unavailable', correlationId: 'corr-unavailable' });
+    const user = userEvent.setup();
+    mount(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const fields = await signOffSelects();
+    expect(fields).toHaveLength(2);
+    expect(screen.getByTestId('closure-order')).toBeVisible();
+
+    listReworkLinks.mockResolvedValue(
+      ok({ items: [{ ...reworkLink, signOffAt: '2026-09-03T08:00:00.000Z' }, secondLink] })
+    );
+    await user.selectOptions(fields[0] as HTMLElement, REVIEWER);
+    const [firstForm] = screen.getAllByRole('button', { name: t('quality.closure.signOff') });
+    await user.click(firstForm as HTMLElement);
+    // The re-read answered "not right now": the order's line in the gate is gone.
+    await waitFor(() => expect(screen.queryByTestId('closure-order')).toBeNull());
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('combobox', { name: startsWith(t('quality.closure.signOffBy')) })
+      ).toHaveLength(1)
+    );
+    expect(screen.queryByText(t('quality.closure.signOffByTypedHint'))).toBeNull();
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why the roster is not a choice with the field, in Arabic', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    listTechnicians.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    mountAr(
+      <WorkOrderClosureScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    expect(await screen.findByText(arT('technicians.picker.empty'))).toBeVisible();
+    const [who] = await screen.findAllByLabelText(
+      new RegExp(`^${arT('quality.closure.signOffBy')}`)
+    );
+    expect(who?.tagName).toBe('INPUT');
+    expect(who).toHaveAccessibleDescription(
+      expect.stringContaining(arT('technicians.picker.empty'))
+    );
     expect(document.documentElement.dir).toBe('rtl');
   });
 });

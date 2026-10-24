@@ -117,6 +117,8 @@ vi.mock('next/navigation', () => ({
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const WorkOrderPage = (await import('@/app/[locale]/(dashboard)/work-orders/[workOrderId]/page'))
   .default as unknown as RoutePage;
+// The roster walk itself, over the mocked page read (`P1-32-PRE-OD-TECH1`).
+const { readBranchRoster } = await import('@/features/technicians/roster-picker');
 
 const detail = {
   workOrder: {
@@ -1269,6 +1271,40 @@ describe('the assignment form chooses the technician from the branch roster', ()
     expect(
       screen.getByText(EN['workOrders.detail.technicianProfileIdTypedHint'] as string)
     ).toBeVisible();
+    // The reason is announced with the field, not only drawn beside it.
+    expect(profile).toHaveAccessibleDescription(
+      expect.stringContaining(EN['state.denied.title'] as string)
+    );
+  });
+
+  it('holds Assign behind a loading line while the roster read is out, then offers the select', async () => {
+    assignable();
+    let answerRoster!: (state: unknown) => void;
+    listTechnicians.mockReturnValue(
+      new Promise((resolve) => {
+        answerRoster = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    await renderRecord();
+
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    const assign = await screen.findByRole('button', {
+      name: EN['workOrders.detail.assignTechnician'] as string,
+    });
+    const form = assign.closest('form') as HTMLElement;
+    expect(within(form).getByRole('status')).toHaveTextContent(EN['state.loading'] as string);
+    expect(assign).toBeDisabled();
+    expect(
+      within(form).queryByLabelText(
+        new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
+      )
+    ).toBeNull();
+
+    answerRoster(rosterPage(ROSTER));
+    expect((await technicianField(EN)).tagName).toBe('SELECT');
+    expect(within(form).queryByRole('status')).toBeNull();
+    expect(assign).toBeEnabled();
   });
 
   it('reads a roster read that throws as "not right now", with the typed reference kept', async () => {
@@ -1422,5 +1458,58 @@ describe('the assignment form chooses the technician from the branch roster', ()
       screen.getByText(AR['workOrders.detail.technicianProfileIdTypedHint'] as string)
     ).toBeVisible();
     expect(listTechnicians).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * `P1-32-PRE-OD-TECH1`: the walk behind both pickers, over the page read. It
+ * never pretends a list is whole when the server's cursors do not reach the end,
+ * and it offers a profile once however many pages repeat it.
+ */
+describe('the roster walk', () => {
+  const target = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+  const page = (items: readonly unknown[], nextCursor: string | null, hasMore: boolean) => ({
+    status: 'ok' as const,
+    data: { items, nextCursor, hasMore },
+    correlationId: 'corr-roster',
+  });
+  const cursorsAsked = () =>
+    listTechnicians.mock.calls.map((call) => (call[1] as { cursor: unknown }).cursor);
+
+  it('stops on a repeated cursor and says the roster is cut short', async () => {
+    listTechnicians
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_A)], 'cursor-1', true))
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_B)], 'cursor-1', true));
+
+    expect(await readBranchRoster(target)).toEqual({
+      status: 'ok',
+      items: [rosterEntry(PROFILE_A), rosterEntry(PROFILE_B)],
+      truncated: true,
+    });
+    expect(cursorsAsked()).toEqual([null, 'cursor-1']);
+  });
+
+  it('offers a profile a later page repeats once, in the order it first came', async () => {
+    listTechnicians
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_A)], 'cursor-1', true))
+      .mockResolvedValueOnce(page([rosterEntry(PROFILE_A), rosterEntry(PROFILE_B)], null, false));
+
+    expect(await readBranchRoster(target)).toEqual({
+      status: 'ok',
+      items: [rosterEntry(PROFILE_A), rosterEntry(PROFILE_B)],
+      truncated: false,
+    });
+    expect(cursorsAsked()).toEqual([null, 'cursor-1']);
+  });
+
+  it('reads "more follows" with no cursor to reach it as cut short, not as whole', async () => {
+    listTechnicians.mockResolvedValueOnce(page([rosterEntry(PROFILE_A)], null, true));
+
+    expect(await readBranchRoster(target)).toEqual({
+      status: 'ok',
+      items: [rosterEntry(PROFILE_A)],
+      truncated: true,
+    });
+    expect(listTechnicians).toHaveBeenCalledTimes(1);
   });
 });

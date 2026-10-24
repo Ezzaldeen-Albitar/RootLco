@@ -30,9 +30,14 @@ import type { TechnicianRosterEntry, TechnicianRosterPage } from './roster-types
  * ## The client decides nothing
  *
  * Every profile the read returns is offered, inactive ones included and marked,
- * in the server's order. Whether the person qualifies for the job, is active, or
- * is independent of the rework is the platform's to refuse, and a refusal lands
- * on the field that holds the choice.
+ * in the server's order. A refusal lands on the field that holds the choice.
+ * Job assignment refuses a person who does not qualify for the job or is
+ * inactive. Rework sign-off refuses the person who led the rework, and checks
+ * that the profile belongs to the link's company and branch, but it does NOT
+ * check whether the profile is active: an inactive profile chosen here for a
+ * sign-off is accepted. That is a recorded follow-up; whether to leave such
+ * profiles out of the sign-off choice or to refuse them on the platform is not
+ * decided here.
  */
 
 /** The largest page `tech.technician-list` accepts. */
@@ -56,7 +61,8 @@ export type BranchRosterRead =
  *
  * Starts with no cursor and follows `nextCursor` while `hasMore` holds. It stops
  * — and says `truncated` rather than pretending the list is whole — when a
- * cursor repeats or the budget is spent. A failed page fails the whole read,
+ * cursor repeats, when more is said to follow but no cursor reaches it, or when
+ * the budget is spent. A failed page fails the whole read,
  * and a page that throws is `unavailable`, the way the roster screen reads it.
  * `isCurrent` lets the caller abandon a walk it no longer wants; an abandoned
  * walk answers `null`.
@@ -89,8 +95,8 @@ export async function readBranchRoster(
       items.push(entry);
     }
     const next = state.data.nextCursor;
-    if (!state.data.hasMore || next === null) return { status: 'ok', items, truncated: false };
-    if (seen.has(next) || pages >= ROSTER_PAGE_BUDGET) {
+    if (!state.data.hasMore) return { status: 'ok', items, truncated: false };
+    if (next === null || seen.has(next) || pages >= ROSTER_PAGE_BUDGET) {
       return { status: 'ok', items, truncated: true };
     }
     seen.add(next);

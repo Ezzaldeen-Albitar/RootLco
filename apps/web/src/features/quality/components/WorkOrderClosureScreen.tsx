@@ -52,7 +52,7 @@
  *   B.S3); the order is named by its number, never its reference.
  */
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import Button from '@mui/material/Button';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
@@ -1257,6 +1257,21 @@ function ReworkRow({
   readonly onChanged: Renew;
 }) {
   const [signOffBy, setSignOffBy] = useState('');
+  // The sentence saying why the roster is not a choice describes the typed field.
+  const rosterReasonId = useId();
+  /*
+   * A typed reference does not survive the switch to the select. The row shows
+   * the typed field until the order's detail names the branch, and a select
+   * cannot show a value that is none of its options: it would read "Choose…"
+   * while Sign off sent text the operator no longer sees. So the value is
+   * emptied, unless what was typed is a listed profile id, which stays chosen.
+   * Adjusted during render, as the panel's branch is.
+   */
+  if (roster.phase === 'listed' && signOffBy !== '') {
+    const typed = signOffBy.trim();
+    const kept = roster.items.some((entry) => entry.id === typed) ? typed : '';
+    if (kept !== signOffBy) setSignOffBy(kept);
+  }
   /**
    * `body.signOffBy` — rework may not be signed off by the technician who did
    * it. The sentence states that rule beside the control holding the name, and
@@ -1469,9 +1484,10 @@ function ReworkRow({
                 dir="ltr"
                 autoComplete="off"
                 required
+                describedBy={roster.phase === 'off' ? undefined : rosterReasonId}
               />
               {roster.phase === 'off' ? null : (
-                <p className="text-caption text-text-muted">
+                <p id={rosterReasonId} className="text-caption text-text-muted">
                   {translateDynamic(
                     messages,
                     roster.phase === 'failed'

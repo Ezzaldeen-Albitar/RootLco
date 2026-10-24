@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import Button from '@mui/material/Button';
 import { ZonedDateTimeField } from '@/components/forms/mui/DateField';
 import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
@@ -325,6 +325,8 @@ function AssignmentPanel({
   const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // The sentence saying why the roster is not a choice describes the typed field.
+  const rosterReasonId = useId();
   /**
    * The refusals that name one of the controls above.
    *
@@ -549,9 +551,10 @@ function AssignmentPanel({
                 value={technicianProfileId}
                 onChange={setTechnicianProfileId}
                 error={errorFor('technicianProfileId')}
+                describedBy={roster.phase === 'off' ? undefined : rosterReasonId}
               />
               {roster.phase === 'off' ? null : (
-                <p className="text-caption text-text-muted">
+                <p id={rosterReasonId} className="text-caption text-text-muted">
                   {translateDynamic(
                     messages,
                     roster.phase === 'failed'
