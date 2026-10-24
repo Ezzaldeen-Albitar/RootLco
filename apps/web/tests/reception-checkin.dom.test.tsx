@@ -999,12 +999,20 @@ describe('the start screen — the walk-in handoff', () => {
    * submits a ROW, not the identifier the handoff carried — so the picker
    * renders one tick before anything in it is pressed. Reading the rows and
    * asserting immediately passes alone and fails under a loaded suite, which is
-   * a latent flake rather than a check.
+   * a latent flake rather than a check. The three states are awaited one after
+   * another — the grid, then its rows, then the pressed row — so no wait holds a
+   * second wait inside its own limit.
    */
   async function chosenVehicles(): Promise<readonly HTMLElement[]> {
+    const rows = () =>
+      within(screen.getByTestId('check-in-vehicles')).getAllByRole('button', {
+        name: named(EN['receptions.checkIn.choose']!),
+      });
+    await screen.findByTestId('check-in-vehicles');
+    await waitFor(() => expect(rows().length).toBeGreaterThan(0));
     let chosen: readonly HTMLElement[] = [];
-    await waitFor(async () => {
-      chosen = pressed(await vehicleChoices());
+    await waitFor(() => {
+      chosen = pressed(rows());
       expect(chosen).toHaveLength(1);
     });
     return chosen;

@@ -1249,6 +1249,40 @@ function localImportsOf(file: string, source: string): string[] {
   return out;
 }
 
+/*
+ * The module-graph scan below starts one walk per client module, and the walks
+ * reach the same few hundred files thousands of times. Each file's source, its
+ * directive and its resolved local imports are therefore read once per absolute
+ * path and kept for the rest of this file. Nothing under `src` changes while the
+ * suite runs, so the cached answer is the answer a fresh read would give.
+ */
+const scannedSource = new Map<string, string>();
+const scannedDirective = new Map<string, string | null>();
+const scannedImports = new Map<string, string[]>();
+
+function sourceOf(file: string): string {
+  let source = scannedSource.get(file);
+  if (source === undefined) {
+    source = readFileSync(file, 'utf8');
+    scannedSource.set(file, source);
+  }
+  return source;
+}
+
+function scannedDirectiveOf(file: string): string | null {
+  if (!scannedDirective.has(file)) scannedDirective.set(file, directiveOf(sourceOf(file)));
+  return scannedDirective.get(file) ?? null;
+}
+
+function scannedImportsOf(file: string): string[] {
+  let imports = scannedImports.get(file);
+  if (imports === undefined) {
+    imports = localImportsOf(file, sourceOf(file));
+    scannedImports.set(file, imports);
+  }
+  return imports;
+}
+
 describe('the read structure', () => {
   it('serves exactly the six phase-one routes and the invoice balance, each on its one method and nothing else', () => {
     const routes = readdirSync(READS_DIR).sort();
@@ -1315,9 +1349,7 @@ describe('the read structure', () => {
     const files = globSync(['**/*.ts', '**/*.tsx'], { cwd: WEB_SRC, absolute: true }).map((file) =>
       resolve(file)
     );
-    const clientFiles = files.filter(
-      (file) => directiveOf(readFileSync(file, 'utf8')) === 'use client'
-    );
+    const clientFiles = files.filter((file) => scannedDirectiveOf(file) === 'use client');
     expect(clientFiles.length).toBeGreaterThan(0);
     const offenders: string[] = [];
     for (const start of clientFiles) {
@@ -1325,11 +1357,10 @@ describe('the read structure', () => {
       const queue = [start];
       while (queue.length > 0) {
         const file = queue.shift() as string;
-        const source = readFileSync(file, 'utf8');
         // A Server Action module ends the chain: the browser receives a
         // reference to it, never its imports.
-        if (file !== start && directiveOf(source) === 'use server') continue;
-        for (const target of localImportsOf(file, source)) {
+        if (file !== start && scannedDirectiveOf(file) === 'use server') continue;
+        for (const target of scannedImportsOf(file)) {
           if (CORES.includes(target)) offenders.push(`${relative(WEB_SRC, start)} -> ${target}`);
           if (!seen.has(target)) {
             seen.add(target);
