@@ -7868,11 +7868,16 @@ Known limitations and follow-ups, one line each:
 - The `crm-and-vehicles.spec.ts` comment above the typing case still calls this search a Server
   Action. Not changed.
 - `vehicles/page.tsx` cites `new/page.tsx:74` for a line that is now `:83`. Not changed.
-- Once the customer search also stops importing `SearchBox` (PR #600), `components/search` leaves
-  the module set `p1-27-security.test.ts` derives. Both branches move the count from 14 to 15 on
-  the same line, so that line merges without a conflict and the merged tree fails the equality.
-  Whichever of #600 and this slice lands second removes `components/search` from the test's
-  `MODULE_DISPOSITION` with its reason, sets the count to 14 and runs that test on the merged tree.
+- Once the customer search also stops importing `SearchBox` (PR #600), no scanned tree imports
+  `components/search`. Its only remaining importers are the billing and work-order pickers. It
+  leaves the module set that `p1-27-security.test.ts` derives. It also leaves the set that
+  `scripts/ci/check-p1-27-frontend.mjs` derives, and that gate then reports its
+  `MODULE_DISPOSITION` entry as stale. Both branches move the test's count from 14 to 15 on the
+  same line, so that line merges without a conflict, the merged tree fails the equality, and
+  `validate:p1-27-frontend` fails too. Whichever of #600 and this slice lands second removes
+  `components/search` from both copies of `MODULE_DISPOSITION` (the test file and the gate
+  script), each with its reason. It also sets the test's count to 14 and runs that test and
+  `validate:p1-27-frontend` on the merged tree.
 - `docs/phase-1/phase-1-27/task-matrix.json` cites line ranges of these two files that no longer
   point at the same code. The matrix is frozen and was not changed.
 - Not run locally: the authenticated browser tier (`crm-and-vehicles.spec.ts`,
