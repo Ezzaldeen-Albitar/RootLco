@@ -22,7 +22,7 @@ import { useSearchRequest } from '@/lib/api/use-search-request';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
-import { formatDate } from '@/lib/format';
+import { formatCalendarDay } from '@/lib/format';
 
 import { listWarranties } from '../warranty-api';
 import {
@@ -231,12 +231,12 @@ export function WarrantyListScreen({
       {
         id: 'start',
         headerKey: 'warranty.list.columnStart',
-        cell: (row) => formatDate(row.startDate, locale),
+        cell: (row) => formatCalendarDay(row.startDate, locale),
       },
       {
         id: 'expiry',
         headerKey: 'warranty.list.columnExpiry',
-        cell: (row) => formatDate(row.expiryDate, locale),
+        cell: (row) => formatCalendarDay(row.expiryDate, locale),
       },
       {
         id: 'odometerLimit',

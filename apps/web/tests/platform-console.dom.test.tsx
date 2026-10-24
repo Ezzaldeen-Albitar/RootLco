@@ -7,6 +7,7 @@ import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { formatDayInZone } from '@/lib/branch-time';
 import { formatDate, formatDateTime, formatInteger, intlLocale } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
@@ -1592,6 +1593,9 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
       />
     );
 
+  /** A stored day as the reader sees it: that day, on no clock but its own. */
+  const calendarDay = (value: string) => formatDayInZone(value, intlLocale(locale), 'UTC');
+
   const LONG_CODE = 'test_company_code_long_enough_to_outrun_its_column';
   const LONG_REASON =
     'Test reason long enough to run past the end of its column in either language';
@@ -1790,9 +1794,9 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
     // Every payment, each written whole as it was before: amount · day · method · reference.
     const lines = within(open).getAllByTestId('platform-receipt');
     expect(lines.map((line) => flat(line.textContent))).toEqual([
-      `${money('500.0000')} · ${flat(formatDate('2026-09-05', locale))} · Bank transfer`,
-      `${money('200.0000')} · ${flat(formatDate('2026-09-09', locale))} · Cash · TEST-REF-2`,
-      `${money('50.0000')} · ${flat(formatDate('2026-09-12', locale))} · ${third.method} · TEST-REFERENCE-THREE-LONG`,
+      `${money('500.0000')} · ${flat(calendarDay('2026-09-05'))} · Bank transfer`,
+      `${money('200.0000')} · ${flat(calendarDay('2026-09-09'))} · Cash · TEST-REF-2`,
+      `${money('50.0000')} · ${flat(calendarDay('2026-09-12'))} · ${third.method} · TEST-REFERENCE-THREE-LONG`,
     ]);
     expect(within(gone).getByText('Test voided charge')).toBeInTheDocument();
     expect(within(gone).getByText('Raised against the wrong term')).toBeInTheDocument();
@@ -1807,13 +1811,49 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
     panel();
     const table = screen.getByRole('table', { name: M('platform.billing.title') });
     const line = within(table).getByTestId('platform-charge');
-    const about = `${charge.description}, ${formatDate(charge.dueOn, locale)}`;
+    const about = `${charge.description}, ${calendarDay(charge.dueOn)}`;
     for (const key of ['platform.billing.recordReceipt', 'platform.billing.void']) {
       expect(
         within(line).getByRole('button', { name: labelledBy(M(key)) }),
         key
       ).toHaveAccessibleName(`${M(key)} ${about}`);
     }
+  });
+
+  it('shows the stored due day and received day to a reader west of UTC, buttons included', () => {
+    const previous = process.env.TZ;
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      // The premise: the clock really is west of UTC, so reading a stored day as
+      // an instant names the day before. Without it this case would pass on a UTC
+      // machine whatever the panel did.
+      expect(formatDate(charge.dueOn, locale)).toBe(calendarDay('2026-09-14'));
+      expect(formatDate(charge.receipts[0]!.receivedOn, locale)).toBe(calendarDay('2026-09-04'));
+
+      panel();
+      const table = screen.getByRole('table', { name: M('platform.billing.title') });
+      const line = within(table).getByTestId('platform-charge');
+      expect(within(line).getByText(calendarDay('2026-09-15'))).toBeInTheDocument();
+      expect(within(line).queryByText(calendarDay('2026-09-14'))).toBeNull();
+      expect(
+        within(line)
+          .getAllByTestId('platform-receipt')
+          .map((receipt) => flat(receipt.textContent))
+      ).toEqual([`${money('500.0000')} · ${flat(calendarDay('2026-09-05'))} · Bank transfer`]);
+      const about = `${charge.description}, ${calendarDay('2026-09-15')}`;
+      for (const key of ['platform.billing.recordReceipt', 'platform.billing.void']) {
+        expect(
+          within(line).getByRole('button', { name: labelledBy(M(key)) }),
+          key
+        ).toHaveAccessibleName(`${M(key)} ${about}`);
+      }
+    } finally {
+      // Assigned, never deleted: deleting TZ does not reset a zone Node has
+      // already resolved, and every later case would run west of UTC.
+      process.env.TZ = previous ?? zone;
+    }
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
   });
 
   it('says that no charge was recorded, or none with the chosen status, in its own words', () => {

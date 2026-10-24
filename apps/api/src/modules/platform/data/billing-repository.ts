@@ -14,6 +14,13 @@
  * string, because the alternative — subtracting two floats and rounding — is how
  * a balance ends up one minor unit away from the truth.
  *
+ * ## Days are read as `::text`
+ *
+ * `due_on` and `received_on` are `date` columns. `pg` decodes OID 1082 into a JS
+ * `Date` at local midnight, so for a process running east of UTC the instant it
+ * serialises names the day before. Both are read as `YYYY-MM-DD`, the same form
+ * the request side accepts, so the day sent is the day stored.
+ *
  * ## Settlement is not decided here
  *
  * A charge becomes `settled` when `tg_subscription_receipts_settle` says so.
@@ -99,7 +106,7 @@ export class BillingRepository extends Repository {
       subscription_id: string | null;
       amount: string;
       currency_code: string;
-      due_on: string | Date;
+      due_on: string;
       description: string;
       status: string;
       void_reason: string | null;
@@ -109,7 +116,7 @@ export class BillingRepository extends Repository {
       created_at_cursor: string;
     }>(
       db,
-      `SELECT c.id, c.subscription_id, c.amount, c.currency_code, c.due_on,
+      `SELECT c.id, c.subscription_id, c.amount, c.currency_code, c.due_on::text AS due_on,
               c.description, c.status, c.void_reason, c.record_version, c.created_at,
               ${cursorTimestamp('c.created_at')} AS created_at_cursor,
               -- Cast to the column's own numeric(18,4) so every balance has the
@@ -141,7 +148,7 @@ export class BillingRepository extends Repository {
           subscriptionId: r.subscription_id,
           amount: r.amount,
           currencyCode: r.currency_code,
-          dueOn: toIsoString(r.due_on),
+          dueOn: r.due_on,
           description: r.description,
           status: r.status,
           voidReason: r.void_reason,
@@ -175,14 +182,14 @@ export class BillingRepository extends Repository {
       charge_id: string;
       amount: string;
       currency_code: string;
-      received_on: string | Date;
+      received_on: string;
       reference: string | null;
       method: string;
       notes: string | null;
       created_at: string | Date;
     }>(
       db,
-      `SELECT r.id, r.charge_id, r.amount, r.currency_code, r.received_on,
+      `SELECT r.id, r.charge_id, r.amount, r.currency_code, r.received_on::text AS received_on,
               r.reference, r.method, r.notes, r.created_at
          FROM org.subscription_receipts r
         WHERE r.charge_id = ANY($1::uuid[])
@@ -194,7 +201,7 @@ export class BillingRepository extends Repository {
       chargeId: r.charge_id,
       amount: r.amount,
       currencyCode: r.currency_code,
-      receivedOn: toIsoString(r.received_on),
+      receivedOn: r.received_on,
       reference: r.reference,
       method: r.method,
       notes: r.notes,

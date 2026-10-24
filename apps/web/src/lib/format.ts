@@ -1,5 +1,7 @@
 import type { Locale } from '@/i18n/config';
 
+import { formatDayInZone, isCalendarDay } from './branch-time';
+
 /**
  * Locale-safe formatting for display.
  *
@@ -15,6 +17,10 @@ import type { Locale } from '@/i18n/config';
  * Riyadh are different strings for the same instant. Anything that must agree
  * across locations (a period boundary, an audit window) formats server-side or
  * carries an explicit timezone. Nothing here decides a business date.
+ *
+ * A calendar day (`YYYY-MM-DD`, a warranty's start or a charge's due day) is the
+ * exception: it names no instant, so `formatCalendarDay` places it on no clock but
+ * its own and every reader sees the day that was stored.
  *
  * ## Numerals
  *
@@ -45,6 +51,16 @@ export function formatInteger(value: number, locale: Locale): string {
 /** Date only. `dateStyle: 'medium'` avoids the ambiguous all-numeric forms. */
 export function formatDate(value: Date | string, locale: Locale): string {
   return new Intl.DateTimeFormat(intlLocale(locale), { dateStyle: 'medium' }).format(asDate(value));
+}
+
+/**
+ * A calendar day, written in the reader's language. A `YYYY-MM-DD` day is read on
+ * the UTC clock it was parsed on, so a reader west of UTC does not see the day
+ * before; any other value renders exactly as `formatDate` renders it.
+ */
+export function formatCalendarDay(value: string, locale: Locale): string {
+  if (isCalendarDay(value)) return formatDayInZone(value, intlLocale(locale), 'UTC');
+  return formatDate(value, locale);
 }
 
 export function formatTime(value: Date | string, locale: Locale): string {

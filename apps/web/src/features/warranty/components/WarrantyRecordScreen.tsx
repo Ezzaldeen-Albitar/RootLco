@@ -5,7 +5,7 @@ import Link from 'next/link';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
-import { formatDate, formatInteger } from '@/lib/format';
+import { formatCalendarDay, formatInteger } from '@/lib/format';
 
 import type { WarrantyRecordDetail } from '../warranty-contract';
 import { WarrantyHistoryPanel } from './WarrantyHistoryPanel';
@@ -99,11 +99,11 @@ export function WarrantyRecordScreen({
           </Fact>
 
           <Fact label={translate(messages, 'warranty.summary.startDate')}>
-            {formatDate(warranty.startDate, locale)}
+            {formatCalendarDay(warranty.startDate, locale)}
           </Fact>
 
           <Fact label={translate(messages, 'warranty.summary.expiryDate')}>
-            {formatDate(warranty.expiryDate, locale)}
+            {formatCalendarDay(warranty.expiryDate, locale)}
           </Fact>
 
           <Fact label={translate(messages, 'warranty.summary.odometerAtIssue')}>
@@ -188,12 +188,12 @@ export function WarrantyRecordScreen({
             )}
           </Fact>
           <Fact label={translate(messages, 'warranty.coverage.effectiveFrom')}>
-            {formatDate(warranty.coverage.effectiveFrom, locale)}
+            {formatCalendarDay(warranty.coverage.effectiveFrom, locale)}
           </Fact>
           <Fact label={translate(messages, 'warranty.coverage.effectiveTo')}>
             {warranty.coverage.effectiveTo === null
               ? translate(messages, 'warranty.coverage.openEnded')
-              : formatDate(warranty.coverage.effectiveTo, locale)}
+              : formatCalendarDay(warranty.coverage.effectiveTo, locale)}
           </Fact>
           <Fact label={translate(messages, 'warranty.coverage.status')}>
             <ConfigurationStatusLabel messages={messages} status={warranty.coverage.status} />

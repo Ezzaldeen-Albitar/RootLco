@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { formatDayInZone } from '@/lib/branch-time';
+import { formatDate, intlLocale } from '@/lib/format';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -610,6 +612,79 @@ describe('the record shows the terms it was issued under', () => {
       <WarrantyRecordScreen locale="en" messages={en as never} warranty={unknown as never} />
     );
     expect(screen.getByText('under_review')).toBeInTheDocument();
+  });
+
+  it('shows each stored day as that day to a reader west of UTC, in both directions', async () => {
+    const previous = process.env.TZ;
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      // The premise: the clock really is west of UTC, so reading a stored day as
+      // an instant names the day before. Without it this case would pass on a UTC
+      // machine whatever the screens did.
+      expect(formatDate('2026-09-01', 'en')).toBe(
+        formatDayInZone('2026-08-31', intlLocale('en'), 'UTC')
+      );
+      // A bounded coverage, so the end day is drawn as a day and not as the
+      // open-ended sentence.
+      const bounded = { ...record, coverage: { ...record.coverage, effectiveTo: '2027-01-01' } };
+      const days = [
+        bounded.startDate,
+        bounded.expiryDate,
+        bounded.coverage.effectiveFrom,
+        bounded.coverage.effectiveTo,
+      ];
+
+      for (const locale of ['en', 'ar'] as const) {
+        const view =
+          locale === 'ar'
+            ? renderRtl(
+                <WarrantyRecordScreen
+                  locale="ar"
+                  messages={ar as never}
+                  warranty={bounded as never}
+                />
+              )
+            : renderLtr(
+                <WarrantyRecordScreen
+                  locale="en"
+                  messages={en as never}
+                  warranty={bounded as never}
+                />
+              );
+        for (const stored of days) {
+          expect(
+            screen.getByText(formatDayInZone(stored, intlLocale(locale), 'UTC'))
+          ).toBeInTheDocument();
+          expect(screen.queryByText(formatDate(stored, locale))).not.toBeInTheDocument();
+        }
+        view.unmount();
+      }
+
+      for (const locale of ['en', 'ar'] as const) {
+        const view =
+          locale === 'ar'
+            ? renderRtl(
+                inBranch(
+                  <WarrantyListScreen locale="ar" messages={ar as never} initialVehicleId={null} />,
+                  { locale: 'ar' }
+                )
+              )
+            : await renderListPage();
+        for (const stored of [row.startDate, row.expiryDate]) {
+          expect(
+            await screen.findByText(formatDayInZone(stored, intlLocale(locale), 'UTC'))
+          ).toBeInTheDocument();
+          expect(screen.queryByText(formatDate(stored, locale))).not.toBeInTheDocument();
+        }
+        view.unmount();
+      }
+    } finally {
+      // Assigned, never deleted: deleting TZ does not reset a zone Node has
+      // already resolved, and every later case would run west of UTC.
+      process.env.TZ = previous ?? zone;
+    }
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
   });
 });
 
