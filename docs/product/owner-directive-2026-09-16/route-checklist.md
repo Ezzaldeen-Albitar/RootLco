@@ -1800,7 +1800,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/credit-notes`                                       | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states                 | F1–F6; G1–G9, G12, G13; P1–P10; T1; D1–D4; S1–S4 | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/crm/customer-duplicates`                            | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | migrated — see below the table (CRM1C)                                       | focused suites, en and ar — see below       |
 | `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
-| `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table (CRM1C)                                       | focused suites, en and ar — see below       |
+| `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9, G12; P1–P10; S1–S4                 | migrated — see below the table (CRM1C)                                       | focused suites, en and ar — see below       |
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/inventory/adjustments`                              | form fields, states                                                                                      | F1–F7; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -7899,8 +7899,11 @@ What moved to which wrapper on `/crm/customer-duplicates` (`DuplicateReviewScree
   catalogue's caption. The page sizes offered are the ones the shared table offered, so every
   request the queue can send is one it could send before.
 - "Review" is a row action, offered only on an open pair, and its name carries both names of the
-  pair, so ten rows of "Review" are ten different controls. A settled pair has no action; its
-  "Decision" cell shows the day it was decided, or a dash.
+  pair, so ten rows of "Review" are ten different controls. An open pair's "Decision" cell reads
+  "Awaiting review" (the existing `vehicles.duplicateStatus.open` entry; no catalogue entry was
+  added), because its Review moved to the row-action column and a dash there said nothing. A
+  settled pair has no action; its "Decision" cell shows the day it was decided when `reviewedAt` is
+  set, and a dash when it is not.
 - Both names of a pair are drawn in the same style, one above the other. A missing name still reads
   "Name unavailable" and never the identifier.
 - The status choice is `FormSelectField` (native). Changing it still closes an open panel.
@@ -7909,7 +7912,11 @@ What moved to which wrapper on `/crm/customer-duplicates` (`DuplicateReviewScree
 What moved on `/crm/customers/[customerId]/work-order/new` (`CustomerWorkOrderStartScreen.tsx`):
 
 - The customer's current vehicles are `OperationalGrid`, columns "Vehicle" and "Role", with one
-  "Use this vehicle" row action per row that is a toggle (`pressed`, G12) in place of a radio. The
+  "Use this vehicle" row action per row that is a toggle (`pressed`, G12) in place of a radio.
+  The question is still a named group: the visible "This customer's vehicles" line labels a
+  `role="group"` around the grid (`aria-labelledby`), where the radios had a `fieldset` and
+  `legend`, and the grid is named "Vehicle relationships" (the existing
+  `vehicles.relationships.caption`), so the question's words are heard once. The
   grid is handed the same read with only the offered rows of the fetched page in its response (an
   open relationship to a live vehicle, the filter the screen always ran), because the grid filters
   nothing. The page size stays ten and no rows-per-page choice is offered
@@ -7925,8 +7932,9 @@ Deliberate behaviour changes:
 
 - The work-order step's pager is drawn on every page, with "Page N"; on a single page Previous and
   Next are shown disabled, where the step used to draw no pager at all.
-- While the vehicle list loads, the grid keeps its header over skeleton rows instead of the "Loading"
-  sentence. A "not found" answer is the grid's not-found state, which offers no retry, where the
+- While the vehicle list loads, the grid keeps its header over skeleton rows; the "Loading"
+  sentence is still announced, from a visually hidden polite status that holds it only while the
+  page loads. A "not found" answer is the grid's not-found state, which offers no retry, where the
   step used to draw the general error with a retry.
 - The duplicate queue's score column and dates are laid out by the grid; the date column is never
   narrower than a whole date and time.
@@ -7937,18 +7945,30 @@ Tests, each in an existing file (no web test file added or removed):
   exact name would also have made the "no Review on a settled pair" case pass for the wrong
   reason); the row count reads the grid's rows instead of `tbody tr`; new cases for the grid's name
   and pager on page one, a walk to page two with the same status, page size and the returned cursor,
-  and Review's name carrying the pair.
+  and Review's name carrying the pair. Review round: Arabic cases for the grid's caption, Review's
+  name with the pair and the right-to-left pager; the Decision cell of an open pair ("Awaiting
+  review") in both languages, and of a settled pair with and without `reviewedAt`; opening Review
+  then changing the status closes the panel; and Review, then Dismiss, closes the panel and reads
+  the queue again (`onDecided`).
 - `reception-walkin.dom.test.tsx`: the step's cases choose with the "Use this vehicle" toggle
   instead of a radio, and "exactly one" is read from `aria-pressed`; loading is read from the grid's
   busy state; the single-page case now holds Next and Previous disabled instead of absent; new
   checks that no rows-per-page choice is offered and the first read asks for ten, and a new case
-  walks to page two with page size ten and the returned cursor.
+  walks to page two with page size ten and the returned cursor. Review round, each in English and
+  Arabic: the group is named by the question and the grid by "Vehicle relationships", with no grid
+  named by the question; the announced "Loading" while the page loads, emptied once it answers (the
+  English single-language case asserts the text again as well as the busy state); and not-found
+  (no retry), unavailable (reference, Retry re-reads) and expired (the way back to sign in, no
+  retry).
 - `tests/e2e/authenticated/shared-ux.spec.ts`: the shared table's region case now measures
   `/en/vehicles/duplicates`, the twin queue still drawn by `DataTable`, and also checks that its
   pager scrolls into view, which the case's title promised and did not check. A new case on
   `/en/crm/customer-duplicates` finds the grid by its caption, scrolls its pager into view, holds
   Previous disabled and Next present, and holds the document still. On an empty queue these are
-  structural checks, not proof of layout with rows. Not run locally; it runs in hosted CI.
+  structural checks, not proof of layout with rows. Review round: once the grid is no longer busy,
+  it reads the page's row count against the rows-per-page value, requires fewer rows than a page
+  (the end of the set, `hasMore` false), and holds Next disabled; the read answers in a server
+  action, so `hasMore` itself is not visible to the browser. Not run locally; it runs in hosted CI.
 
 Manual: `04a-customers-vehicles-appointments-reception.md` §4A.2.7 now describes the columns the
 queue draws, the status choice, the pager and a merge control that is absent (it described "First
@@ -7961,6 +7981,13 @@ Known limitations and recorded gaps, one line each:
   of status does, as before. Left for a reviewer to decide.
 - Recorded gap: `capability-status.md` has no row naming either route; not changed here.
 - `/vehicles/duplicates` is still drawn by `DataTable` until its own slice.
+- Follow-up: `profile-accessibility.dom.test.tsx` cites `crm/customer-duplicates/page.tsx:59-65`
+  for the route's `PageHeader`; the page has not changed here, and the cited range is already
+  stale (the granted branch's `PageHeader` spans lines 63–75). Not changed in this slice.
+- `p1-27-security.test.ts` names the `components/data` disposition for both grids on one line,
+  "the customer search grid (CRM1B) and the duplicate queue (CRM1C)", keeping the file's line count
+  because the frozen matrix cites line ranges in it. PR #600 (CRM1B) adds the same line; it needs
+  this same text to merge cleanly after this one, or this one after it.
 
 ### Numbering rules, taxes, currencies and system settings on Material UI (`P1-32-PRE-OD-ADM5`)
 

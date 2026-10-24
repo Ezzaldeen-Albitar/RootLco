@@ -228,7 +228,7 @@ function importedModuleDirectories(): readonly string[] {
  * "excluded".
  */
 const MODULE_DISPOSITION = {
-  'components/data': 'in-surface', // `OperationalGrid`: the customer search grid (CRM1B)
+  'components/data': 'in-surface', // `OperationalGrid`: the customer search grid (CRM1B) and the duplicate queue (CRM1C)
   'components/data-table': 'in-surface', // Renders every customer and vehicle row. Was in NO list, by either name.
   'components/duplicates': 'in-surface',
   'components/forms': 'in-surface',

@@ -365,8 +365,9 @@ means the tick box is missing.
 
 **Label: IMPLEMENTED (UI) for review and dismissal. Merging: NOT AVAILABLE.**
 
-**Who** — `crm.customer.duplicate.review` to open the queue. The merge action additionally needs
-`crm.customer.merge`, and it does not work even then — see Restrictions.
+**Who** — `crm.customer.duplicate.review` to open the queue and dismiss a pair. Holding
+`crm.customer.merge` changes nothing here: the screen offers no merge control of any kind — see
+Restrictions.
 
 **Where** — **Customers** > **"Review duplicate customers"** (`/{locale}/crm/customer-duplicates`).
 Heading **"Review duplicate customers"** <!-- crm.duplicates.title --> .
@@ -383,9 +384,11 @@ Heading **"Review duplicate customers"** <!-- crm.duplicates.title --> .
    **"Previous page"** <!-- table.previousPage --> and **"Next page"** <!-- table.nextPage --> move
    through the queue, and **"Rows per page"** <!-- table.rowsPerPage --> sets how many pairs a page
    shows.
-2. Choose **"Review"** <!-- crm.duplicates.review --> on an open pair. A pair that is already
-   settled has no **"Review"**; its **"Decision"** column shows the day it was decided. The panel
-   **"Review this pair"** <!-- crm.duplicates.decideHeading --> opens.
+2. Choose **"Review"** <!-- crm.duplicates.review --> on an open pair; its **"Decision"** column
+   reads **"Awaiting review"** <!-- vehicles.duplicateStatus.open --> . A pair that is already
+   settled has no **"Review"**; its **"Decision"** column shows the day it was decided when that day
+   is recorded, and a dash when it is not. The panel **"Review this pair"** <!-- crm.duplicates.decideHeading -->
+   opens.
 3. Read **"Why these were matched"** <!-- crm.duplicates.basis --> . The reasons are in plain words:
    - "Both records use the same name, once spacing and capital letters are ignored." <!-- crm.duplicates.reason.name -->
    - "The same telephone number or email address is used on both records." <!-- crm.duplicates.reason.contact -->
@@ -1123,8 +1126,10 @@ settled.
    button stays pressed on the chosen row only; choosing another row moves it. The chosen vehicle is
    echoed back under **"Selected vehicle"** <!-- receptions.workOrderStart.selectedVehicle --> with
    its **"Vehicle number"**. Below the table, **"Previous page"** <!-- table.previousPage --> and
-   **"Next page"** <!-- table.nextPage --> move through the customer's vehicles ten at a time; each
-   is greyed out when there is no page in that direction.
+   **"Next page"** <!-- table.nextPage --> move through the customer's vehicle records ten at a
+   time. Each page is ten relationship records, current and ended alike; only the current ones whose
+   vehicle record still exists are shown, so a page can show fewer than ten vehicles, or none. Each
+   button is greyed out when there is no page in that direction.
 4. Choose **"Continue to check-in"** <!-- receptions.workOrderStart.continue --> . You arrive at the
    check-in screen (4A.5.3) with the customer and the vehicle already chosen.
 
