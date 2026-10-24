@@ -8294,5 +8294,11 @@ Known limitations:
   lines added to section 5.5 move that sentence to `:218`; line 213 now holds the Parent column's
   **Top level** sentence. This slice may change only line 291 of `capability-status.md`, so the
   re-anchor (`:213` to `:218`) is left to a slice allowed to change line 1229.
+- A line reference across two open pull requests, left open here: PR #602 adds to
+  `capability-status.md` a reference to this file at `:7639`, the `P1-32-PRE-OD-ADM1` heading as it
+  stands at #602's head. This slice adds six lines above that heading, which is at `:7645` at this
+  slice's head, so once both have landed the reference must name the heading's new line. Whichever
+  of #602 and this pull request (#607) lands second re-anchors it; `capability-status.md` is not
+  changed for it in this slice.
 - Nothing in this slice was run in a browser; the browser tiers and the builds run in hosted CI
   and were not run locally.

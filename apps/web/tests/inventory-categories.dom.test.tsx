@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState, type ReactElement } from 'react';
+import { createElement, useState, type ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
@@ -64,6 +64,22 @@ vi.mock('@/features/authentication/api/session', () => ({
     email: 'operator@test.local',
   }),
 }));
+
+// A pass-through spy on the tree view: it draws the real tree unchanged and
+// records the choice the screen hands it, so a case can prove what the tree
+// view was given and not only what it drew.
+const treeSelections: string[] = [];
+vi.mock('@/features/inventory/components/CategoryTree', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/features/inventory/components/CategoryTree')>();
+  return {
+    ...actual,
+    CategoryTreeView: (props: Parameters<typeof actual.CategoryTreeView>[0]) => {
+      treeSelections.push(props.selected);
+      return createElement(actual.CategoryTreeView, props);
+    },
+  };
+});
 
 const { useAllItemCategories } = await import('@/features/inventory/components/CategoryTree');
 const { CATEGORY_PAGE_BUDGET, buildCategoryForest, pathOf, readAllCategories, searchCategories } =
@@ -223,13 +239,16 @@ const rows = () => screen.queryAllByRole('treeitem');
 async function openPage(
   locale: 'en' | 'ar',
   permissions: readonly string[] = ['inv.item.read'],
-  query?: Record<string, string | string[] | undefined>
+  query?: Record<string, string | string[] | undefined>,
+  searchParams: Promise<Record<string, string | string[] | undefined>> = Promise.resolve(
+    query ?? {}
+  )
 ) {
   PERMISSIONS = permissions;
   const view = RENDER[locale](
     (await CategoriesPage({
       params: Promise.resolve({ locale }),
-      searchParams: Promise.resolve(query ?? {}),
+      searchParams,
     })) as ReactElement
   );
   return view;
@@ -242,12 +261,16 @@ const nothingChosen = () =>
       row.getAttribute('aria-selected') !== 'true' && row.getAttribute('aria-checked') !== 'true'
   );
 
+/** The rows the Tab key stops on — the tree view keeps exactly one. */
+const tabStops = () => rows().filter((row) => row.getAttribute('tabindex') === '0');
+
 async function treeReady() {
   await waitFor(() => expect(screen.getByRole('tree')).toBeTruthy());
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  treeSelections.length = 0;
   listItems.mockResolvedValue(itemPage([]));
   serve(BRAKES);
 });
@@ -274,6 +297,11 @@ describe.each(['en', 'ar'] as const)('the category tree (%s)', (locale) => {
       expect(node(`level_${level}`).getAttribute('aria-expanded')).toBe('true');
     }
     expect(node('level_6').getAttribute('aria-checked')).toBe('true');
+    // The tree's one Tab stop is the chosen row, and the Tab key lands on it.
+    expect(tabStops()).toEqual([node('level_6')]);
+    act(() => screen.getByRole('button', { name: t('inventory.categories.collapseAll') }).focus());
+    await user().tab();
+    expect(document.activeElement).toBe(node('level_6'));
     const path = await screen.findByRole('navigation', {
       name: t('inventory.categories.path.label'),
     });
@@ -309,12 +337,26 @@ describe.each(['en', 'ar'] as const)('the category tree (%s)', (locale) => {
     );
     expect(rows().length).toBeGreaterThan(0);
     expect(nothingChosen()).toBe(true);
+    // The tree view is handed no choice at all — not the identifier it does
+    // not hold — so its one Tab stop is the first row.
+    expect(treeSelections.length).toBeGreaterThan(0);
+    expect([...new Set(treeSelections)]).toEqual(['']);
+    expect(tabStops()).toEqual([rows()[0]]);
     expect(listItems).not.toHaveBeenCalled();
   });
 
   it('refuses without the catalogue read even when the address names a category', async () => {
-    await openPage(locale, [], { category: idOf(3006) });
+    // The address is a thenable whose `then` is a spy: awaiting it anywhere
+    // calls `then`, so a page that read the address before its refusal fails here.
+    const consumed = vi.fn((resolve: (query: Record<string, string>) => void) =>
+      resolve({ category: idOf(3006) })
+    );
+    const searchParams = { then: consumed } as unknown as Promise<
+      Record<string, string | string[] | undefined>
+    >;
+    await openPage(locale, [], undefined, searchParams);
     expect(screen.getByText(t('state.denied.title'))).toBeTruthy();
+    expect(consumed).not.toHaveBeenCalled();
     expect(listItemCategoryPage).not.toHaveBeenCalled();
     expect(listItems).not.toHaveBeenCalled();
     expect(screen.queryByRole('tree')).toBeNull();

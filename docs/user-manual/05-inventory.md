@@ -250,7 +250,10 @@ page, on the vehicle-specification form and in the header of an item's page.
 - The **Category tree** <!-- inventory.categories.tree.heading --> : every category of the
   organisation under its parent, each name with its code beside it, and an inactive category
   labelled **Inactive** <!-- inventory.setup.status.inactive --> . The category pickers on the
-  setup page and the vehicle-specification form show the name alone; this tree keeps the code.
+  setup page and the vehicle-specification form show the name alone, with one exception: when two
+  categories under the same parent share a name (letter case and extra spaces aside), each of them
+  shows its code in brackets after the name, so the two can be told apart. This tree always keeps
+  the code.
 - **Find a category** <!-- inventory.categories.search.label --> : **"Type part of a name or a
   code, for example brakes. Each match is shown under the categories above it."** <!-- inventory.categories.search.help -->
 - **Expand all** <!-- inventory.categories.expandAll --> and **Collapse all** <!-- inventory.categories.collapseAll -->
@@ -311,8 +314,11 @@ Treat that as NOT AVAILABLE, not as a screen you have not found.
 
 **Steps**
 
-1. Choose **Category** (required) <!-- inventory.setup.item.category --> , from **Choose a
-   category** <!-- inventory.setup.item.chooseCategory --> .
+1. Choose **Category** (required) <!-- inventory.setup.item.category --> from the category tree
+   shown beneath the label, which names the categories as the pickers in 5.5.1 do. The tree has no
+   row for "no category": an item must have one. Once a category is chosen, its path is said
+   beneath the tree, for example **"Chosen: Filters (example)."** <!-- inventory.categories.picker.chosen -->
+   .
 2. Enter **SKU** (required) <!-- inventory.setup.item.sku --> . The rule: **"Letters, digits,
    hyphens and underscores; up to 63 characters; unique in the organisation."** <!-- inventory.setup.item.skuHelp -->
    For the example: `OIL-FLT-001`.
@@ -2184,8 +2190,8 @@ security determinations do not exist.
   for this version.
 
 <!--
-REVISION 2026-10-24 — sections 5.5 and 5.5.1 (new) were re-read and written on branch
-feature/owner-directive-inventory-category-link (cut from develop
+REVISION 2026-10-24 — sections 5.5 and 5.5.1 (new), and step 1 of 5.6.2, were re-read and
+written on branch feature/owner-directive-inventory-category-link (cut from develop
 4ea2986a7592a1da0a286798396ba38a8216f7b1), for P1-32-PRE-OD-INV2. Every other section of this part
 is carried unchanged from the readings recorded below, and the pin in the front matter stays at
 fe09f1a9, as it does for every part.
@@ -2199,11 +2205,13 @@ Read for this revision:
   and Collapse all, and the ancestors opened for the chosen row.
 - apps/web/src/features/inventory/category-tree.ts — every page read, and the stop on a repeated
   page or after 500 pages.
+- apps/web/src/features/inventory/components/CategoryTreePicker.tsx — the names the category
+  pickers show, and the code added when two categories under one parent share a name.
 - apps/web/src/features/inventory/components/SetupScreen.tsx — the parent picker of the category
-  form and the Parent column of the category table.
+  form, the required category picker of the item form, and the Parent column of the category table.
 - apps/web/src/features/inventory/components/ItemCodesScreen.tsx and
   VehicleSpecificationsScreen.tsx — the links that open the tree.
-- apps/web/src/i18n/messages/en.json — every key named in 5.5 and 5.5.1.
+- apps/web/src/i18n/messages/en.json — every key named in 5.5, 5.5.1 and step 1 of 5.6.2.
 
 Nothing in this revision was checked in a browser.
 -->
