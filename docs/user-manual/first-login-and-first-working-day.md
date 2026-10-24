@@ -784,8 +784,9 @@ audit log with its **Reference** column is illustrated in
 
 - **NOT AVAILABLE:** editing a company's currency or registration numbers, or a branch's address
   lines, from a screen. Company, branch, department and employee screens do exist (Part 2), as does
-  the **Technicians** screen, and a company's legal name and a branch's name, place and time zone
-  are edited there.
+  the **Technician roster** <!-- nav.technicianRoster --> screen (its sidebar link is shown only to
+  holders of the technician-management permission), and a company's legal name and a branch's
+  name, place and time zone are edited there.
 - **NOT AVAILABLE, from inside your organisation:** changing your subscription or raising a limit.
   The refusal names who can do it — the platform owner (Part 2, §2.9).
 - **NOT AVAILABLE:** any expiry or shelf-life warning. Nothing in the application records a batch, a
