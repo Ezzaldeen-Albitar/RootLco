@@ -1801,7 +1801,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/crm/customer-duplicates`                            | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
 | `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                                 | not run — nothing migrated                  |
-| `/crm/customers/new/[kind]`                           | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
+| `/crm/customers/new/[kind]`                           | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table (CRM1A)                                       | focused suites, en and ar — see below       |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/inventory/adjustments`                              | form fields, states                                                                                      | F1–F7; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                                     | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                                   | focused suites, en and ar — see below       |
@@ -8207,3 +8207,74 @@ Open, recorded by this round and not changed by it:
   database.
 - `LoginForm.tsx` imports the parameter name from `intended-path.ts`, which brings both navigation
   models into the sign-in bundle. Noted, not measured.
+
+### Customer creation on Material UI (`P1-32-PRE-OD-CRM1A`)
+
+`/crm/customers/new/[kind]` — the individual and the company creation forms — moved onto the shared
+wrappers (ADR-022). Presentation only; no functional gap was found and none was closed. This slice
+is CRM1A. It is not "CRM and vehicles interface slice 1", which is the customer search
+(`capability-status.md`).
+
+What changed, in `CustomerCreateScreen.tsx`:
+
+- The screen's own text box became `FormTextField`, the status `<select>` became `FormSelectField`
+  (native options), and the submit button a Material `Button`, disabled and marked `aria-busy`
+  while the save runs. Cancel, "Open the new customer" and "Back to search" are Material buttons
+  drawn as links (`component={Link}`), so they keep the link role and their addresses. The names
+  in the duplicate list stay plain links.
+- The failure banner is an inline Material `Alert` with `role="alert"`, keyed on the attempt, with
+  the failure's explanation and the correlation reference. It is not `MuiFormFeedback`: that banner
+  draws nothing for a state without a message key, and `fromFailure` returns a caller's
+  cancellation with none, where this banner has always said "The form could not be saved"
+  (`form.formError`).
+- Optional labels carry the suffix in words ("Trading name (optional)", "Preferred language
+  (optional)"), as the organisation dialogs do. Required boxes carry `aria-required` and never the
+  native `required` (contract F1), so an empty name is not stopped by the browser: the Server Action
+  refuses it with "This field is required." before any request is made.
+- Kept: `useFocusFirstInvalid`, `useClearOnCorrect` (the wrappers' `onEdit`), the preferred
+  language on the individual form only, the status select remounted on the attempt, and the
+  docblocks including the `NEW-FE-01` measurement.
+
+Unchanged: the page, its permission (`crm.customer.create`, with the denied state instead of the
+form), `requireSession`, branch scope `none` (row above); the two actions, the contract and the
+catalogues; the submitted field names (`givenName`, `familyName`, `preferredLocale` for an
+individual; `legalName`, `tradeName` for a company; `lifecycleStatus` for both); the two requests
+(`POST /api/v1/customers/individuals`, `POST /api/v1/customers/companies`), their bodies, the
+`Idempotency-Key` from the contract, and the field bounds. Nothing is requested while typing and
+no duplicate scan is made. The two choices of status, Prospect and Active, default Prospect. The
+branch-switch row in the guard table above still holds: the form declares no unsaved work, and a
+switch asks nothing and keeps the input.
+
+Deviations from the brief, one line each:
+
+- The status select's remount alone does not keep the operator's choice on the Material select.
+  `FormSelectField` is controlled and takes no default, and React 19 resets the form at the end of
+  the same commit that mounts the new select, so the remount was reset to "Prospect" — measured by
+  the existing case "keeps the CHOSEN initial status after a failed submit", which failed with the
+  remount alone. A layout effect now writes the held choice back into the select after the reset
+  and before paint; it writes the page only, not state. The remount stays.
+- The 422 cases' helper reads an error the way a screen reader does, without the wrapper's hidden
+  `!` mark, because the wrapper puts the error's id on the node that holds the mark.
+- The red-edge checks now read `Mui-error` on the Material field root instead of the old border
+  classes.
+
+Measured locally, in this worktree: `crm-customer-create.dom.test.tsx` grew from 33 to 51 cases,
+in English and Arabic: the Arabic individual form right to left with its three fields;
+`aria-required` and no native `required`; the optional suffix; the preferred language present for an
+individual and absent for a company; the exact submitted field names for each kind; empty names
+refused by the real actions with no request made; the busy submit button; and the outcome links,
+links with Arabic addresses. The other focused suites named in the PR ran as well, in the default
+time zone and in UTC.
+
+Not measured: no runtime acceptance on the local site, and no authenticated browser run locally —
+the authenticated end-to-end specs (`crm-and-vehicles.spec.ts`, `accessibility.spec.ts`) run only in
+hosted CI, and the PR records whether they ran.
+
+Open, recorded here and not changed:
+
+- `accessibility.spec.ts` and `isolation.spec.ts` scan `/crm/customers/new` as a chooser. No chooser
+  exists; that address resolves to the customer profile route with `new` as the customer id.
+- Candidate gaps: the form has no handling for an answer that never arrives (`unreachable()`), and
+  no leave-page guard.
+- The reception intake's customer form uses the same status-select shape that was measured losing
+  the choice here (remount alone, on `FormSelectField`). Not measured on that screen.

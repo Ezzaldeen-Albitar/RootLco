@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
  *
  * React resets the form DOM once a Server Action settles. A controlled `value`
  * that is unchanged between renders is never re-written by the reconciler, so
- * the reset wins — measured, and recorded at `CustomerCreateScreen.tsx:197-207`
+ * the reset wins — measured, and recorded at `CustomerCreateScreen.tsx:262-272`
  * ("Making it a controlled `value={…}` field … DID NOT FIX IT").
  *
  * What works is three parts together: a `key` on the attempt counter to force a

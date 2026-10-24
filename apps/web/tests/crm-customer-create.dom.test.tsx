@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import type { Messages } from '@/i18n/get-messages';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -82,6 +83,9 @@ const CREATED = {
     displayNumber: string | null;
   }[],
 };
+
+/** The Material field root a control sits in — where `Mui-error` is drawn. */
+const fieldRoot = (control: HTMLElement) => control.closest('.MuiInputBase-root');
 
 function successState(overrides: Record<string, unknown> = {}) {
   return {
@@ -300,10 +304,11 @@ describe('failure', () => {
       await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
 
       await waitFor(() => expect(family()).toHaveAttribute('aria-invalid', 'true'));
-      expect(family()).toHaveClass('border-error');
-      expect(family()).not.toHaveClass('border-border');
-      expect(given()).toHaveClass('border-border');
-      expect(given()).not.toHaveClass('border-error');
+      // The red edge is drawn on the Material field root, which carries
+      // `Mui-error` exactly when the field is refused.
+      expect(fieldRoot(family())).toHaveClass('Mui-error');
+      expect(fieldRoot(given())).not.toBeNull();
+      expect(fieldRoot(given())).not.toHaveClass('Mui-error');
     });
 
     it(`puts the cursor on the refused box, even after Enter in another (${locale})`, async () => {
@@ -329,7 +334,7 @@ describe('failure', () => {
       await user.tab();
 
       expect(family()).not.toHaveAttribute('aria-invalid');
-      expect(family()).toHaveClass('border-border');
+      expect(fieldRoot(family())).not.toHaveClass('Mui-error');
       expect(screen.queryByText(messages['field.required'])).toBeNull();
       // No second request was needed to find that out.
       expect(createIndividualAction).toHaveBeenCalledTimes(1);
@@ -511,12 +516,16 @@ describe('the field errors a real 422 carries reach the CRM controls it names', 
    * assertion is the ASSOCIATION: `aria-invalid`, plus text reached through the
    * id the control itself names.
    *
-   * `CustomerCreateScreen`'s `TextField` describes its error through
-   * `aria-describedby` and gives the span no `role`, where the vehicle profile
-   * uses `aria-errormessage` and `role="alert"`. Both are valid; the helper
-   * reads whichever this screen uses rather than assuming the other file's
-   * shape, and the hint span is skipped by id so a field with a hint does not
-   * return its hint as its error.
+   * `CustomerCreateScreen` is on the Material wrappers (`P1-32-PRE-OD-CRM1A`),
+   * whose control names its error through `aria-errormessage` and lists it in
+   * `aria-describedby` (`components/forms/mui/field-wiring.tsx`). The helper
+   * reads whichever is present, and the description span is skipped by id so a
+   * field with a hint does not return its hint as its error.
+   *
+   * The wrapper's error node also holds the decorative `!` mark, hidden from
+   * assistive technology with `aria-hidden`. What is read here is what a screen
+   * reader reads — the node's text without its hidden parts — so the mark is
+   * not mistaken for part of the sentence.
    */
   function messageOn(label: string): string {
     const element = control(label);
@@ -529,7 +538,10 @@ describe('the field errors a real 422 carries reach the CRM controls it names', 
       .map((one) => document.getElementById(one))
       .find((node): node is HTMLElement => node !== null);
     expect(errorNode, `${label} points at no error message`).toBeTruthy();
-    return errorNode?.textContent ?? '';
+    if (!errorNode) return '';
+    const spoken = errorNode.cloneNode(true) as HTMLElement;
+    for (const hidden of spoken.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+    return spoken.textContent ?? '';
   }
 
   /** Fill the two required names and submit. Values that PASS the client schema,
@@ -754,5 +766,233 @@ describe('a branch switch neither asks about nor empties a customer being create
     } finally {
       forgetRememberedBranch();
     }
+  });
+});
+
+/**
+ * The screen on Material UI (`P1-32-PRE-OD-CRM1A`), in both languages.
+ *
+ * A presentation change, so what is pinned here is what must NOT have moved:
+ * the fields each kind offers, the names the form submits, the required marks
+ * the wrappers carry (`aria-required`, never the native `required`), the
+ * refusal of an empty name before any request, the busy submit button and the
+ * outcome links.
+ */
+describe('the screen on Material UI keeps its fields, its names and its refusals', () => {
+  const MESSAGES: Readonly<Record<'en' | 'ar', Messages>> = { en, ar };
+  const VIEW = { en: renderLtr, ar: renderRtl } as const;
+
+  const labelled = (messages: Messages, key: keyof Messages) =>
+    screen.getByLabelText(messages[key], { exact: false });
+
+  /** The visible label of a control, as the operator reads it. */
+  const labelText = (control: HTMLElement) =>
+    document.querySelector(`label[for="${control.id}"]`)?.textContent ?? '';
+
+  function deferred<T>() {
+    let resolve: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  it('renders the Arabic individual form right to left with all three fields', () => {
+    renderRtl(<CustomerCreateScreen locale="ar" messages={ar} kind="individual" />);
+    expect(document.documentElement).toHaveAttribute('dir', 'rtl');
+    expect(labelled(ar, 'crm.customers.create.givenName')).toHaveAttribute('name', 'givenName');
+    expect(labelled(ar, 'crm.customers.create.familyName')).toHaveAttribute('name', 'familyName');
+    expect(labelled(ar, 'crm.customers.create.preferredLocale')).toHaveAttribute(
+      'name',
+      'preferredLocale'
+    );
+    expect(screen.getByRole('link', { name: ar['form.cancel'] })).toHaveAttribute(
+      'href',
+      '/ar/crm/customers'
+    );
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = MESSAGES[locale];
+    const view = VIEW[locale];
+
+    it(`marks the required boxes with aria-required and never the native required (${locale})`, () => {
+      const { unmount } = view(
+        <CustomerCreateScreen locale={locale} messages={messages} kind="individual" />
+      );
+      for (const key of [
+        'crm.customers.create.givenName',
+        'crm.customers.create.familyName',
+      ] as const) {
+        expect(labelled(messages, key)).toHaveAttribute('aria-required', 'true');
+        expect(labelled(messages, key)).not.toHaveAttribute('required');
+      }
+      expect(labelled(messages, 'crm.customers.create.preferredLocale')).not.toHaveAttribute(
+        'aria-required'
+      );
+      unmount();
+
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="company" />);
+      expect(labelled(messages, 'crm.customers.create.legalName')).toHaveAttribute(
+        'aria-required',
+        'true'
+      );
+      expect(labelled(messages, 'crm.customers.create.legalName')).not.toHaveAttribute('required');
+      expect(labelled(messages, 'crm.customers.create.tradeName')).not.toHaveAttribute(
+        'aria-required'
+      );
+    });
+
+    it(`labels Trading name and Preferred language with the optional suffix (${locale})`, () => {
+      const { unmount } = view(
+        <CustomerCreateScreen locale={locale} messages={messages} kind="individual" />
+      );
+      expect(labelText(labelled(messages, 'crm.customers.create.preferredLocale'))).toBe(
+        `${messages['crm.customers.create.preferredLocale']} ${messages['field.optional']}`
+      );
+      // A required label carries no optional suffix.
+      expect(labelText(labelled(messages, 'crm.customers.create.givenName'))).not.toContain(
+        messages['field.optional']
+      );
+      unmount();
+
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="company" />);
+      expect(labelText(labelled(messages, 'crm.customers.create.tradeName'))).toBe(
+        `${messages['crm.customers.create.tradeName']} ${messages['field.optional']}`
+      );
+    });
+
+    it(`offers the preferred language to an individual and not to a company (${locale})`, () => {
+      const { unmount } = view(
+        <CustomerCreateScreen locale={locale} messages={messages} kind="individual" />
+      );
+      expect(document.querySelector('input[name="preferredLocale"]')).not.toBeNull();
+      unmount();
+
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="company" />);
+      expect(document.querySelector('input[name="legalName"]')).not.toBeNull();
+      expect(document.querySelector('input[name="preferredLocale"]')).toBeNull();
+      expect(
+        screen.queryByLabelText(messages['crm.customers.create.preferredLocale'], { exact: false })
+      ).toBeNull();
+    });
+
+    it(`submits exactly the individual field names (${locale})`, async () => {
+      const user = userEvent.setup({ delay: null });
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="individual" />);
+      await user.type(labelled(messages, 'crm.customers.create.givenName'), 'Nadia');
+      await user.type(labelled(messages, 'crm.customers.create.familyName'), 'Khoury');
+      await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+
+      await waitFor(() => expect(createIndividualAction).toHaveBeenCalledTimes(1));
+      const form = createIndividualAction.mock.calls[0]?.[1] as FormData;
+      expect([...form.keys()].sort()).toEqual(
+        ['familyName', 'givenName', 'lifecycleStatus', 'preferredLocale'].sort()
+      );
+      expect(form.get('lifecycleStatus')).toBe('prospect');
+      expect(createCompanyAction).not.toHaveBeenCalled();
+    });
+
+    it(`submits exactly the company field names (${locale})`, async () => {
+      const user = userEvent.setup({ delay: null });
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="company" />);
+      await user.type(labelled(messages, 'crm.customers.create.legalName'), 'Khoury Trading');
+      await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+
+      await waitFor(() => expect(createCompanyAction).toHaveBeenCalledTimes(1));
+      const form = createCompanyAction.mock.calls[0]?.[1] as FormData;
+      expect([...form.keys()].sort()).toEqual(['legalName', 'lifecycleStatus', 'tradeName'].sort());
+      expect(form.get('lifecycleStatus')).toBe('prospect');
+      expect(createIndividualAction).not.toHaveBeenCalled();
+    });
+
+    it(`refuses empty individual names in the action, before any request (${locale})`, async () => {
+      createIndividualAction.mockImplementation(actualCreationActions.createIndividualAction);
+      const user = userEvent.setup({ delay: null });
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="individual" />);
+      await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+
+      const given = labelled(messages, 'crm.customers.create.givenName');
+      const family = labelled(messages, 'crm.customers.create.familyName');
+      await waitFor(() => expect(given).toHaveAttribute('aria-invalid', 'true'));
+      expect(family).toHaveAttribute('aria-invalid', 'true');
+      for (const control of [given, family]) {
+        const errorId = control.getAttribute('aria-errormessage');
+        expect(errorId).toBeTruthy();
+        expect(document.getElementById(errorId ?? '')).toHaveTextContent(
+          messages['field.required']
+        );
+      }
+      expect(createIndividualAction).toHaveBeenCalledTimes(1);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it(`refuses an empty legal name in the action, before any request (${locale})`, async () => {
+      createCompanyAction.mockImplementation(actualCreationActions.createCompanyAction);
+      const user = userEvent.setup({ delay: null });
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="company" />);
+      await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+
+      const legal = labelled(messages, 'crm.customers.create.legalName');
+      await waitFor(() => expect(legal).toHaveAttribute('aria-invalid', 'true'));
+      expect(
+        document.getElementById(legal.getAttribute('aria-errormessage') ?? '')
+      ).toHaveTextContent(messages['field.required']);
+      expect(labelled(messages, 'crm.customers.create.tradeName')).not.toHaveAttribute(
+        'aria-invalid'
+      );
+      expect(createCompanyAction).toHaveBeenCalledTimes(1);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it(`disables the submit button and marks it busy while saving (${locale})`, async () => {
+      const pending = deferred<ReturnType<typeof successState>>();
+      createIndividualAction.mockReturnValue(pending.promise);
+      const user = userEvent.setup({ delay: null });
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="individual" />);
+      await user.type(labelled(messages, 'crm.customers.create.givenName'), 'Nadia');
+      await user.type(labelled(messages, 'crm.customers.create.familyName'), 'Khoury');
+      await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+
+      const busy = await screen.findByRole('button', { name: messages['form.saving'] });
+      expect(busy).toBeDisabled();
+      expect(busy).toHaveAttribute('aria-busy', 'true');
+
+      pending.resolve(successState());
+      expect(
+        await screen.findByRole('link', { name: messages['crm.customers.create.openCreated'] })
+      ).toBeInTheDocument();
+    });
+  }
+
+  it('keeps the outcome links as links, with Arabic hrefs', async () => {
+    createIndividualAction.mockResolvedValue(
+      successState({
+        possibleDuplicates: [{ id: 'other-1', displayName: 'نادية خوري', displayNumber: 'C-0007' }],
+      })
+    );
+    const user = userEvent.setup({ delay: null });
+    renderRtl(<CustomerCreateScreen locale="ar" messages={ar} kind="individual" />);
+    await user.type(labelled(ar, 'crm.customers.create.givenName'), 'نادية');
+    await user.type(labelled(ar, 'crm.customers.create.familyName'), 'خوري');
+    await user.click(screen.getByRole('button', { name: ar['form.submit'] }));
+
+    expect(
+      await screen.findByRole('link', { name: ar['crm.customers.create.openCreated'] })
+    ).toHaveAttribute('href', `/ar/crm/customers/${CREATED.customerId}`);
+    expect(
+      screen.getByRole('link', { name: ar['crm.customers.create.backToSearch'] })
+    ).toHaveAttribute('href', '/ar/crm/customers');
+    expect(screen.getByRole('link', { name: 'نادية خوري' })).toHaveAttribute(
+      'href',
+      '/ar/crm/customers/other-1'
+    );
+    // Neither outcome action is drawn as a button.
+    expect(
+      screen.queryByRole('button', { name: ar['crm.customers.create.openCreated'] })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: ar['crm.customers.create.backToSearch'] })
+    ).toBeNull();
   });
 });

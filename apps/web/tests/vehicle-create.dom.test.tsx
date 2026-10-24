@@ -131,8 +131,8 @@ describe('a failed creation keeps what the operator chose', () => {
      * All six selects on this form were controlled `value=` + `onChange` with no
      * `key`, inside `<form action={submit}>`. That is verbatim the shape this
      * branch's own comment records as measured NOT to work
-     * (`CustomerCreateScreen.tsx:197-207`: "Making it a controlled `value={…}`
-     * field … DID NOT FIX IT"), and the comment at :218 says the hole exists
+     * (`CustomerCreateScreen.tsx:262-272`: "Making it a controlled `value={…}`
+     * field … DID NOT FIX IT"), and the comment at :292 says the hole exists
      * "wherever a `<select>` sits in a `<form action={…}>`". `NEW-FE-01` was then
      * closed against `RecordForm` alone, and this screen owns its own form.
      *
