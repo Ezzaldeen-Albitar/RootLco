@@ -1347,6 +1347,17 @@ row (`/{locale}/receptions/check-in`). Heading **"Vehicle check-in"** <!-- recep
 - **One open visit per vehicle.** Before you submit, the screen checks and warns: **"This vehicle
   already has an open visit"** <!-- receptions.checkIn.openVisitTitle --> with **"Resume the open
   visit"** <!-- receptions.checkIn.resume --> .
+- **Earlier visits of the vehicle, at this branch only.** Once a vehicle is chosen, the section
+  **"Earlier finished visits of this vehicle at this branch"** <!-- receptions.checkIn.previousVisitsTitle -->
+  lists its finished visits at the working branch, most recently received first: the visit number,
+  its status, when it was received on the branch's clock, and **"View this visit"** <!-- receptions.checkIn.previousVisitsView -->
+  to read it. Nothing in the list can be changed, and visits at other branches are not shown. It
+  shows one page only; when there are more, it says "This vehicle has more earlier visits at this
+  branch than are listed here. Only the most recent ones are shown." <!-- receptions.checkIn.previousVisitsTruncated -->
+  With none it says "This vehicle has no earlier finished visits at this branch." <!-- receptions.checkIn.previousVisitsEmpty -->
+  If the visits cannot be read it says so instead, for example "This vehicle's earlier visits could
+  not be read." <!-- receptions.checkIn.previousVisitsUnread --> , which does not mean there are
+  none. The list appears only to people who can open a visit, because the form it sits in does.
 - **The receiving employee is a login account, not an employee record.** "The receiving employee is
   the platform account that accepts custody of the vehicle. The name recorded here is kept as it was
   at check-in, so it stays accurate on the customer’s copy even if the account is renamed later." <!-- receptions.checkIn.employeeHint -->

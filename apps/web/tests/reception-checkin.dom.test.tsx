@@ -13,7 +13,8 @@ import {
 } from './support/branch-switch';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
-import { formatDateTime } from '@/lib/format';
+import { formatInZone } from '@/lib/branch-time';
+import { formatDateTime, intlLocale } from '@/lib/format';
 
 /**
  * The check-in wizard, rendered (`P1-28-FE-007`/`FE-008`/`FE-009`).
@@ -312,19 +313,26 @@ describe('the start screen — origin XOR', () => {
   });
 
   it('choosing an appointment surfaces the open visit of ITS vehicle, with a resume link', async () => {
-    listReceptions.mockResolvedValue(page([OPEN_VISIT_ROW]));
+    // The open-visit lookup answers the open row; the earlier-visits read
+    // (`statusGroup: 'finished'`, CHKPV) answers its own empty page.
+    listReceptions.mockImplementation((_scope: unknown, criteria: { statusGroup?: string }) =>
+      Promise.resolve(criteria.statusGroup === 'finished' ? page([]) : page([OPEN_VISIT_ROW]))
+    );
     const user = userEvent.setup();
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     await chooseTheAppointment(user);
 
-    // The lookup is filtered by the appointment's OWN vehicle.
+    // The lookup is filtered by the appointment's OWN vehicle — selected by its
+    // criteria, not its position, because the earlier-visits read asks too.
     await waitFor(() => {
       expect(listReceptions).toHaveBeenCalled();
     });
-    const [, criteria] = listReceptions.mock.calls.at(-1)!;
-    expect(criteria).toEqual({ vehicleId: 'veh-9' });
+    const lookup = listReceptions.mock.calls.find(
+      ([, criteria]) => (criteria as { statusGroup?: string }).statusGroup === undefined
+    );
+    expect(lookup?.[1]).toEqual({ vehicleId: 'veh-9' });
 
     expect(await screen.findByText(EN['receptions.checkIn.openVisitTitle']!)).toBeInTheDocument();
     const resume = screen.getByRole('link', { name: EN['receptions.checkIn.resume']! });
@@ -2443,4 +2451,300 @@ describe('an appointment time on a branch zone the browser does not recognise', 
       ).toBeEnabled();
     }
   );
+});
+
+/*
+ * P1-32-PRE-OD-CHKPV: a returning vehicle's earlier FINISHED visits at this
+ * branch, listed beside the form. A second read of `rec.reception-list`, asked
+ * with `statusGroup: 'finished'` for the chosen vehicle and the concrete
+ * working branch; one page, read-only, each row a link to the visit. Related to
+ * the returning-vehicle summary (R06) and not that summary: no evidence,
+ * readings or other branches are read.
+ */
+describe('the start screen — the vehicle’s earlier finished visits at this branch', () => {
+  const FINISHED_ROW = {
+    ...OPEN_VISIT_ROW,
+    id: 'rv-12',
+    displayNumber: 'R-0012',
+    receptionStatus: 'converted',
+    custodyAcceptedAt: '2026-07-02T06:30:00.000Z',
+    custodyReleasedAt: '2026-07-02T15:00:00.000Z',
+  };
+  const OLDER_ROW = {
+    ...FINISHED_ROW,
+    id: 'rv-5',
+    displayNumber: 'R-0005',
+    receptionStatus: 'closed_without_work',
+    custodyAcceptedAt: '2026-05-10T08:00:00.000Z',
+  };
+
+  type Criteria = { readonly vehicleId?: string; readonly statusGroup?: string };
+  type Answer = Readonly<Record<string, unknown>>;
+
+  /** The open-visit lookup and the earlier-visits read, answered apart. */
+  function answer(finished: Answer, lookup: Answer = page([])) {
+    listReceptions.mockImplementation((_scope: unknown, criteria: Criteria) =>
+      Promise.resolve(criteria.statusGroup === 'finished' ? finished : lookup)
+    );
+  }
+
+  const finishedCalls = () =>
+    listReceptions.mock.calls.filter(
+      ([, criteria]) => (criteria as Criteria).statusGroup === 'finished'
+    );
+
+  async function chooseAndFindSection(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await chooseTheAppointment(user);
+    return screen.findByTestId('check-in-previous-visits');
+  }
+
+  it('asks nothing before a vehicle is chosen, then asks once for this vehicle at this branch', async () => {
+    answer(page([]));
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.checkIn.loadAppointments']! })
+    );
+    await screen.findByTestId('check-in-appointments');
+    expect(listReceptions).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('check-in-previous-visits')).not.toBeInTheDocument();
+
+    const grid = screen.getByTestId('check-in-appointments');
+    await user.click(
+      await within(grid).findByRole('button', { name: named(EN['receptions.checkIn.choose']!) })
+    );
+    await screen.findByTestId('check-in-previous-visits');
+
+    await waitFor(() => expect(finishedCalls()).toHaveLength(1));
+    const [scope, criteria, request] = finishedCalls()[0]!;
+    expect(scope).toEqual({ companyId: 'company-1', branchId: 'branch-1' });
+    expect(criteria).toEqual({ vehicleId: 'veh-9', statusGroup: 'finished' });
+    expect((request as { pageSize: number }).pageSize).toBe(10);
+    // The open-visit lookup is still its own read, with its own criteria.
+    expect(
+      listReceptions.mock.calls.filter(([, c]) => (c as Criteria).statusGroup === undefined)
+    ).toHaveLength(1);
+  });
+
+  it('lists each visit with its number, status in words, received time and a link to open it', async () => {
+    answer(page([FINISHED_ROW, OLDER_ROW]));
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    const section = await chooseAndFindSection(user);
+    expect(section).toHaveTextContent(EN['receptions.checkIn.previousVisitsTitle']!);
+    const items = await within(section).findAllByRole('listitem');
+    expect(items).toHaveLength(2);
+
+    const first = items[0]!;
+    expect(first).toHaveTextContent('R-0012');
+    expect(first).toHaveTextContent(EN['receptions.status.converted']!);
+    expect(first).toHaveTextContent(EN['receptions.queue.column.received']!);
+    const when = first.querySelector('bdi');
+    expect(when?.textContent).toBe(
+      formatInZone(FINISHED_ROW.custodyAcceptedAt, intlLocale('en'), 'Asia/Riyadh')
+    );
+    const open = within(first).getByRole('link', {
+      name: named(EN['receptions.checkIn.previousVisitsView']!),
+    });
+    expect(open).toHaveAttribute('href', '/en/receptions/check-in/rv-12');
+    expect(open).toHaveAccessibleName(`${EN['receptions.checkIn.previousVisitsView']!} R-0012`);
+
+    expect(items[1]!).toHaveTextContent(EN['receptions.status.closed_without_work']!);
+    expect(
+      within(items[1]!).getByRole('link', {
+        name: named(EN['receptions.checkIn.previousVisitsView']!),
+      })
+    ).toHaveAttribute('href', '/en/receptions/check-in/rv-5');
+
+    // Read-only: nothing in the section changes a visit, and there is no pager.
+    expect(within(section).queryAllByRole('button')).toHaveLength(0);
+    expect(section).not.toHaveTextContent(EN['receptions.checkIn.previousVisitsEmpty']!);
+    expect(
+      within(section).queryByTestId('check-in-previous-visits-truncated')
+    ).not.toBeInTheDocument();
+  });
+
+  it('says there are no earlier visits only when the page answered complete and empty', async () => {
+    answer(page([]));
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    const section = await chooseAndFindSection(user);
+    await waitFor(() =>
+      expect(section).toHaveTextContent(EN['receptions.checkIn.previousVisitsEmpty']!)
+    );
+    expect(within(section).queryByRole('list')).not.toBeInTheDocument();
+  });
+
+  it('says more exist when the server holds more than the one page read, and offers no pager', async () => {
+    answer({ ...page([FINISHED_ROW]), nextCursor: 'cur-2', hasMore: true });
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    const section = await chooseAndFindSection(user);
+    const note = await within(section).findByTestId('check-in-previous-visits-truncated');
+    expect(note).toHaveTextContent(EN['receptions.checkIn.previousVisitsTruncated']!);
+    expect(within(section).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(section).queryAllByRole('button')).toHaveLength(0);
+    expect(section).not.toHaveTextContent(EN['receptions.checkIn.previousVisitsEmpty']!);
+  });
+
+  const FAILURES = [
+    {
+      status: 'denied',
+      key: 'receptions.checkIn.previousVisitsDenied',
+      reference: true,
+      retry: false,
+    },
+    {
+      status: 'expired',
+      key: 'receptions.checkIn.previousVisitsExpired',
+      reference: false,
+      retry: false,
+    },
+    {
+      status: 'unavailable',
+      key: 'receptions.checkIn.previousVisitsUnavailable',
+      reference: true,
+      retry: true,
+    },
+    {
+      status: 'not-found',
+      key: 'receptions.checkIn.previousVisitsScopeUnknown',
+      reference: false,
+      retry: false,
+    },
+    {
+      status: 'error',
+      key: 'receptions.checkIn.previousVisitsUnread',
+      reference: true,
+      retry: true,
+    },
+  ] as const;
+
+  for (const failure of FAILURES) {
+    it(`states the ${failure.status} read as its own sentence and leaves the resume banner alone`, async () => {
+      answer(
+        {
+          status: failure.status,
+          rows: [],
+          nextCursor: null,
+          hasMore: false,
+          correlationId: 'corr-previous',
+        },
+        page([OPEN_VISIT_ROW])
+      );
+      const user = userEvent.setup();
+      renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+      const section = await chooseAndFindSection(user);
+      await waitFor(() => expect(section).toHaveTextContent(EN[failure.key]!));
+      expect(section).not.toHaveTextContent(EN['receptions.checkIn.previousVisitsEmpty']!);
+      if (failure.reference) expect(section).toHaveTextContent('corr-previous');
+      else expect(section).not.toHaveTextContent('corr-previous');
+      const retry = within(section).queryByRole('button', { name: EN['state.retry']! });
+      expect(Boolean(retry), `${failure.status} retry`).toBe(failure.retry);
+
+      // The open-visit lookup answered on its own: the banner and its link stand.
+      expect(await screen.findByText(EN['receptions.checkIn.openVisitTitle']!)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: EN['receptions.checkIn.resume']! })).toHaveAttribute(
+        'href',
+        '/en/receptions/check-in/rv-77'
+      );
+      expect(screen.queryByTestId('open-visit-lookup')).not.toBeInTheDocument();
+    });
+  }
+
+  it('asks on arrival for the walk-in handoff’s vehicle, once its row is on the list', async () => {
+    answer(page([FINISHED_ROW]));
+    listCustomerVehicles.mockResolvedValue(
+      page([
+        {
+          id: 'link-9',
+          vehicleId: 'veh-9',
+          relationshipRole: 'owner',
+          validFrom: '2026-08-01',
+          validTo: null,
+          active: true,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          vehicleDisplayNumber: 'V-9',
+          vin: null,
+          makeId: null,
+          modelId: null,
+          modelYear: null,
+          color: null,
+          vehicleLifecycleStatus: 'active',
+        },
+      ])
+    );
+    const handoff = {
+      requester: {
+        id: 'partner-1',
+        displayName: 'Layla Haddad',
+        displayNumber: 'C-0001',
+        partyType: 'individual',
+      },
+      vehicleId: 'veh-9',
+    };
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
+
+    const section = await screen.findByTestId('check-in-previous-visits');
+    expect(await within(section).findByRole('listitem')).toHaveTextContent('R-0012');
+    expect(finishedCalls()).toHaveLength(1);
+    expect(finishedCalls()[0]![1]).toEqual({ vehicleId: 'veh-9', statusGroup: 'finished' });
+  });
+
+  it('renders in Arabic, RTL, with the received time isolated in <bdi>', async () => {
+    answer(page([FINISHED_ROW]));
+    const user = userEvent.setup();
+    renderRtl(
+      inBranch(
+        <CheckInStartScreen {...startProps({ locale: 'ar', messages: ar as typeof en })} />,
+        { snapshot: CHECKIN_CONTEXT, locale: 'ar' }
+      )
+    );
+
+    await user.click(
+      screen.getByRole('radio', { name: new RegExp(`^${AR['receptions.origin.appointment']!}`) })
+    );
+    await chooseTheAppointment(user, AR);
+    const section = await screen.findByTestId('check-in-previous-visits');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(section).toHaveTextContent(AR['receptions.checkIn.previousVisitsTitle']!);
+    const item = await within(section).findByRole('listitem');
+    expect(item).toHaveTextContent(AR['receptions.status.converted']!);
+    expect(item.querySelector('bdi')?.textContent).toBe(
+      formatInZone(FINISHED_ROW.custodyAcceptedAt, intlLocale('ar'), 'Asia/Riyadh')
+    );
+    expect(
+      within(item).getByRole('link', { name: named(AR['receptions.checkIn.previousVisitsView']!) })
+    ).toHaveAttribute('href', '/ar/receptions/check-in/rv-12');
+  });
+
+  it('says the empty sentence in Arabic when the complete page holds nothing', async () => {
+    answer(page([]));
+    const user = userEvent.setup();
+    renderRtl(
+      inBranch(
+        <CheckInStartScreen {...startProps({ locale: 'ar', messages: ar as typeof en })} />,
+        { snapshot: CHECKIN_CONTEXT, locale: 'ar' }
+      )
+    );
+    await user.click(
+      screen.getByRole('radio', { name: new RegExp(`^${AR['receptions.origin.appointment']!}`) })
+    );
+    await chooseTheAppointment(user, AR);
+    const section = await screen.findByTestId('check-in-previous-visits');
+    await waitFor(() =>
+      expect(section).toHaveTextContent(AR['receptions.checkIn.previousVisitsEmpty']!)
+    );
+  });
 });

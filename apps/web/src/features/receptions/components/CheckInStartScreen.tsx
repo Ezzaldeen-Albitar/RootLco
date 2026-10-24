@@ -501,6 +501,40 @@ export function CheckInStartScreen({
   const openVisitAsked = targetReady && chosenVehicleId !== null;
   const openVisitLookup = openVisitOutcome(visits.status, visits.response?.hasMore);
 
+  /* --- the vehicle's earlier finished visits at this branch (CHKPV) --------- */
+
+  /*
+   * A SECOND read of the same operation, asked a narrower question.
+   *
+   * The open-visit lookup above answers "may a visit be opened"; this one
+   * answers "has this vehicle been here before", and only for THIS branch —
+   * the scope is the concrete working branch, so "all my branches" never asks.
+   * It is one page and never more: the list is a reminder beside the form, not
+   * the vehicle's history, and a page that says more exist says so rather than
+   * offering a pager. Related to the returning-vehicle summary (R06); it does
+   * not satisfy it — no evidence, readings or other branches are read here.
+   *
+   * It shares the lookup's asking condition, so it is asked exactly when that
+   * one is, including the walk-in handoff's vehicle once its row is on the list.
+   */
+  const loadPreviousVisits = useCallback(
+    (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
+      targetReady && chosenVehicleId !== null
+        ? listReceptionsCancellable(
+            { companyId, branchId },
+            { vehicleId: chosenVehicleId, statusGroup: 'finished' },
+            request,
+            cursor,
+            signal
+          )
+        : Promise.resolve(UNASKED),
+    [targetReady, chosenVehicleId, companyId, branchId]
+  );
+  const previousVisits = useServerTable(loadPreviousVisits, {
+    initial: { ...INITIAL_REQUEST, pageSize: 10 },
+    loadKey: `finished:${chosenVehicleId ?? 'none'}:${companyId}:${branchId}`,
+  });
+
   /* --- receiving employee (Owner decision `FE-007`) ------------------------- */
 
   const [chosenEmployee, setChosenEmployee] = useState<{
@@ -1111,6 +1145,10 @@ export function CheckInStartScreen({
         </div>
       ) : null}
 
+      {openVisitAsked ? (
+        <PreviousVisits locale={locale} messages={messages} zone={zone} table={previousVisits} />
+      ) : null}
+
       <fieldset className="min-w-0 rounded-lg border border-border bg-surface p-4">
         <legend className="px-1 text-caption text-text-secondary">
           {translate(messages, 'receptions.checkIn.employeeLegend')}
@@ -1489,6 +1527,131 @@ function VisitPages({
       suppressEmptyState
       testId="check-in-open-visit-pages"
     />
+  );
+}
+
+/**
+ * What the earlier-visits read says when it has no rows to show, in both
+ * catalogues. `none` and `truncated` are absent: a read that answered is drawn
+ * as its rows (or the empty sentence), and its truncation as the note under
+ * them — `as const satisfies` makes forgetting a failure a compile error.
+ */
+const PREVIOUS_VISITS_NOTICE_KEYS = {
+  pending: 'receptions.checkIn.previousVisitsChecking',
+  denied: 'receptions.checkIn.previousVisitsDenied',
+  expired: 'receptions.checkIn.previousVisitsExpired',
+  unavailable: 'receptions.checkIn.previousVisitsUnavailable',
+  'not-found': 'receptions.checkIn.previousVisitsScopeUnknown',
+  error: 'receptions.checkIn.previousVisitsUnread',
+} as const satisfies Readonly<Record<Exclude<OpenVisitOutcome, 'none' | 'truncated'>, string>>;
+
+/**
+ * The vehicle's earlier FINISHED visits at this branch (`P1-32-PRE-OD-CHKPV`).
+ *
+ * Read-only and one page: each visit's number, its status in words, when it
+ * was received on the branch's clock, and a link to open it. The link is drawn
+ * for every row because the page this screen sits on is gated by the same code
+ * as the visit page it opens (`rec.reception.read`), so nobody who sees the
+ * list is refused at the other end.
+ *
+ * A read that did not answer says which way it did not, with the reference and
+ * Retry where the open-visit lookup carries them — and never the "no earlier
+ * visits" sentence, which belongs to a complete page with nothing on it.
+ *
+ * Not exported: it is the screen's own section, not a reusable component.
+ */
+function PreviousVisits({
+  locale,
+  messages,
+  zone,
+  table,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly zone: string | null;
+  readonly table: ServerTable<ReceptionListEntry>;
+}) {
+  const headingId = useId();
+  const outcome = openVisitOutcome(table.status, table.response?.hasMore);
+  const rows = table.response?.rows ?? [];
+  const received = (value: string) =>
+    zone === null ? formatDateTime(value, locale) : formatInZone(value, intlLocale(locale), zone);
+
+  return (
+    <section
+      aria-labelledby={headingId}
+      data-testid="check-in-previous-visits"
+      className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4"
+    >
+      <h2 id={headingId} className="text-body font-medium text-text-primary">
+        {translate(messages, 'receptions.checkIn.previousVisitsTitle')}
+      </h2>
+      {outcome === 'none' || outcome === 'truncated' ? (
+        <>
+          {rows.length === 0 && outcome === 'none' ? (
+            <p className="text-body text-text-secondary" lang={locale}>
+              {translate(messages, 'receptions.checkIn.previousVisitsEmpty')}
+            </p>
+          ) : null}
+          {rows.length > 0 ? (
+            <ul className="flex flex-col gap-2" data-testid="check-in-previous-visit-rows">
+              {rows.map((row) => {
+                const number =
+                  row.displayNumber ?? translate(messages, 'receptions.wizard.visitUnnumbered');
+                return (
+                  <li
+                    key={row.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-subtle p-3"
+                  >
+                    <p className="text-caption text-text-secondary">
+                      <span className="font-medium text-text-primary">{number}</span> ·{' '}
+                      {translateDynamic(messages, `receptions.status.${row.receptionStatus}`)} ·{' '}
+                      {translate(messages, 'receptions.queue.column.received')}{' '}
+                      <bdi>{received(row.custodyAcceptedAt)}</bdi>
+                    </p>
+                    <Button
+                      component={Link}
+                      href={`/${locale}/receptions/check-in/${row.id}`}
+                      variant="outlined"
+                      size="small"
+                    >
+                      {translate(messages, 'receptions.checkIn.previousVisitsView')}
+                      <span className="sr-only"> {number}</span>
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+          {outcome === 'truncated' ? (
+            <p
+              data-testid="check-in-previous-visits-truncated"
+              className="text-caption text-text-muted"
+              lang={locale}
+            >
+              {translate(messages, 'receptions.checkIn.previousVisitsTruncated')}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <div role="status" className="flex flex-col gap-2">
+          <p className="text-body text-text-secondary" lang={locale}>
+            {translate(messages, PREVIOUS_VISITS_NOTICE_KEYS[outcome])}
+          </p>
+          {OPEN_VISIT_REFERENCED.includes(outcome) && table.correlationId ? (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'state.correlationId')}{' '}
+              <code className="font-mono">{table.correlationId}</code>
+            </p>
+          ) : null}
+          {OPEN_VISIT_RETRYABLE.includes(outcome) ? (
+            <div>
+              <RetryButton messages={messages} onRetry={table.refresh} />
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 
