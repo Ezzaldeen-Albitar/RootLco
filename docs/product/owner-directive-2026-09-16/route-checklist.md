@@ -8263,20 +8263,36 @@ from remaining to implemented and awaiting verification); the notes on the `INV2
 line above. User manual: `05-inventory.md` section 5.5 corrected (the parent is chosen from the
 tree, the Parent column says a name and path, every page is read) and section 5.5.1 added.
 
-Records gap, recorded and not changed here — three existing operations that no screen calls. In
+Records gap, recorded and not changed here — four existing operations that no screen calls. In
 `apps/web/src` each appears only in `lib/api/idempotent-operations.ts`, and no record in this
 folder named them before this entry:
 
-| Operation                           | Route file (`apps/api/src/app/api/v1/`) | Code                           | Idempotent |
-| ----------------------------------- | --------------------------------------- | ------------------------------ | ---------- |
-| `inv.customer-supplied-part-create` | `customer-supplied-parts/route.ts:63`   | `inv.custody.manage`           | yes        |
-| `inv.external-purchase-part-create` | `external-purchase-parts/route.ts:83`   | `inv.external_purchase.record` | yes        |
-| `inv.inventory-reconciliation-read` | `inventory-reconciliations/route.ts:48` | `inv.audit.read`               | no         |
+| Operation                            | Route file (`apps/api/src/app/api/v1/`)                 | Code                           | Idempotent |
+| ------------------------------------ | ------------------------------------------------------- | ------------------------------ | ---------- |
+| `inv.customer-supplied-part-create`  | `customer-supplied-parts/route.ts:63`                   | `inv.custody.manage`           | yes        |
+| `inv.external-purchase-part-create`  | `external-purchase-parts/route.ts:83`                   | `inv.external_purchase.record` | yes        |
+| `inv.inventory-reconciliation-read`  | `inventory-reconciliations/route.ts:48`                 | `inv.audit.read`               | no         |
+| `inv.stock-transfer-settlement-read` | `stock-transfer-settlements/[settlementId]/route.ts:22` | `inv.stock.read`               | no         |
+
+How the set was enumerated, so the count can be checked: every quoted `inv.*` operation id in
+`apps/web/src/lib/api/idempotent-operations.ts` (83 at this head); of those, the ones no other
+`.ts` or `.tsx` file under `apps/web/src` names (six); of those, the ones no record in this folder
+named at develop `4ea2986a` (four). The two dropped at the last step are `inv.damaged-stock-create`
+(already named in `capability-status.md`) and `inv.item-detail` (already named in both files; the
+item page reads it by path). Each of the four was then searched by its route path under
+`apps/web/src`: none of the four paths is requested; the settlement list and the write-off
+decision are requested (`features/inventory/api.ts:901` and `:918`), never the one-settlement read.
 
 Known limitations:
 
 - The sign-in redirect keeps the page's path and never its query string (the session-return
   section above), so a page reopened after a session ends opens with nothing chosen.
 - The setup page and the vehicle-specification form still link to the tree with nothing chosen.
+- A line reference this slice made stale and did not change: the `CAT01` register row in
+  `capability-status.md` (line 1229) cites `docs/user-manual/05-inventory.md:213` for the section
+  5.5 Restrictions sentence ("A category cannot be edited, renamed, deactivated or deleted"). The
+  lines added to section 5.5 move that sentence to `:218`; line 213 now holds the Parent column's
+  **Top level** sentence. This slice may change only line 291 of `capability-status.md`, so the
+  re-anchor (`:213` to `:218`) is left to a slice allowed to change line 1229.
 - Nothing in this slice was run in a browser; the browser tiers and the builds run in hosted CI
   and were not run locally.
