@@ -321,7 +321,9 @@ describe('the allowance is the server figure', () => {
   it('renders each figure exactly as sent and derives none of them', async () => {
     renderPanel();
     await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
-    const bar = allowance();
+    // Found, not got: the bar is drawn once the listing read settles, and the
+    // wait above only proves the read was asked for (P1-32-PRE-OD-FLAKE1).
+    const bar = await screen.findByTestId('material-allowance');
     expect(within(bar).getByText('4.750')).toBeVisible();
     expect(within(bar).getByText('0.500')).toBeVisible();
     expect(within(bar).getByText('1.250')).toBeVisible();
@@ -804,7 +806,9 @@ describe('Arabic, right to left', () => {
     );
     await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
     expect(screen.getByText(AR['inventory.material.heading'] as string)).toBeVisible();
-    expect(within(allowance()).getByText('3.500')).toBeVisible();
+    // The heading is drawn on first paint; the bar only once the read settles.
+    const bar = await screen.findByTestId('material-allowance');
+    expect(within(bar).getByText('3.500')).toBeVisible();
   });
 });
 
