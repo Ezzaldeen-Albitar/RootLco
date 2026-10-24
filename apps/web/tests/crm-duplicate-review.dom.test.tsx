@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -76,6 +76,14 @@ beforeEach(() => {
   reviewDuplicateAction.mockResolvedValue({ status: 'idle' });
 });
 
+/**
+ * The Review row action's name. On the operational grid (P1-32-PRE-OD-CRM1C) a
+ * row action's name is its label followed by what it acts on, so the name
+ * BEGINS with the label. An exact-name query would find nothing at all, and the
+ * "no Review on a settled pair" case below would pass for that wrong reason.
+ */
+const review = () => new RegExp(`^${en['crm.duplicates.review']}`);
+
 function render(locale: 'en' | 'ar' = 'en') {
   const messages = locale === 'en' ? en : ar;
   const view = locale === 'en' ? renderLtr : renderRtl;
@@ -135,7 +143,7 @@ describe('the decision panel', () => {
     // `getAllByRole(...)[0]` is `HTMLElement | undefined` under
     // `noUncheckedIndexedAccess`. `getByRole` is the honest call here, because
     // exactly one row is rendered and it throws if that ever stops being true.
-    await user.click(screen.getByRole('button', { name: en['crm.duplicates.review'] }));
+    await user.click(screen.getByRole('button', { name: review() }));
 
     const text = document.body.textContent ?? '';
     // No detector internals: the operator is told what matched, not which
@@ -152,7 +160,7 @@ describe('the decision panel', () => {
     // `getAllByRole(...)[0]` is `HTMLElement | undefined` under
     // `noUncheckedIndexedAccess`. `getByRole` is the honest call here, because
     // exactly one row is rendered and it throws if that ever stops being true.
-    await user.click(screen.getByRole('button', { name: en['crm.duplicates.review'] }));
+    await user.click(screen.getByRole('button', { name: review() }));
 
     // Absent, not disabled. A disabled control says "this exists and you lack
     // permission", which is false.
@@ -165,7 +173,7 @@ describe('the decision panel', () => {
     await screen.findByText('Nadia Khoury');
     // Re-deciding something already settled is refused by the backend; the
     // control should never have been offered.
-    expect(screen.queryByRole('button', { name: en['crm.duplicates.review'] })).toBeNull();
+    expect(screen.queryByRole('button', { name: review() })).toBeNull();
   });
 });
 
@@ -402,13 +410,181 @@ describe('Arabic', () => {
     // page two `<h1>`s and the same string twice on screen.
     expect(screen.getByText(ar['crm.duplicates.intro'])).toBeInTheDocument();
   });
+
+  it('names the grid by the Arabic caption', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    expect(screen.getByRole('grid', { name: ar['crm.duplicates.caption'] })).toBeInTheDocument();
+  });
+
+  it('names each Review in Arabic by the pair it opens', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    const action = screen.getByRole('button', {
+      name: new RegExp(`^${ar['crm.duplicates.review']}`),
+    });
+    expect(action).toHaveAccessibleName(
+      `${ar['crm.duplicates.review']} Nadia Khoury · Nadia Khouri`
+    );
+  });
+
+  it('draws the pager right-to-left, in Arabic, Previous and Next closed on a single page', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    const pager = screen.getByRole('navigation', { name: ar['table.pagination'] });
+    expect(pager.closest('[dir]')?.getAttribute('dir')).toBe('rtl');
+    // That `dir` is the harness's, on the document element. Nothing between it
+    // and the grid or the pager sets a direction of its own, so both take the
+    // page's rather than a wrapper's.
+    const grid = screen.getByRole('grid', { name: ar['crm.duplicates.caption'] });
+    expect(grid.closest('[dir]')).toBe(document.documentElement);
+    expect(pager.closest('[dir]')).toBe(document.documentElement);
+    // The pager's two steps, in reading order and in Arabic.
+    expect(
+      within(pager)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    ).toEqual([ar['table.previousPage'], ar['table.nextPage']]);
+    expect(within(pager).getByText(ar['mui.pagination.page'].replace('{page}', '1'))).toBeVisible();
+    expect(within(pager).getByRole('button', { name: ar['table.previousPage'] })).toBeDisabled();
+    expect(within(pager).getByRole('button', { name: ar['table.nextPage'] })).toBeDisabled();
+  });
+
+  it('says an open pair is awaiting review under Decision, in Arabic too', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    const row = document.querySelector('[role="row"][data-id="cand-1"]') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(within(row).getByText(ar['vehicles.duplicateStatus.open'])).toBeInTheDocument();
+  });
+});
+
+describe('the Decision column', () => {
+  const decisionCell = (id: string) =>
+    document.querySelector(`[role="row"][data-id="${id}"] [data-field="decide"]`) as HTMLElement;
+
+  it('says an open pair is awaiting review rather than drawing a dash', async () => {
+    render();
+    await screen.findByText('Nadia Khoury');
+    expect(decisionCell('cand-1')).toHaveTextContent(en['vehicles.duplicateStatus.open']);
+    expect(decisionCell('cand-1')).not.toHaveTextContent('—');
+  });
+
+  it('shows the day a settled pair was decided, and a dash when no day is recorded', async () => {
+    listDuplicates.mockResolvedValue(
+      page([
+        candidate({
+          id: 'cand-dated',
+          status: 'dismissed',
+          reviewedAt: '2026-08-05T09:00:00.000Z',
+        }),
+        candidate({ id: 'cand-undated', status: 'merged', reviewedAt: null }),
+      ])
+    );
+    render();
+    await screen.findAllByText('Nadia Khoury');
+    expect(decisionCell('cand-dated').querySelector('time')).toHaveAttribute(
+      'dateTime',
+      '2026-08-05T09:00:00.000Z'
+    );
+    expect(decisionCell('cand-dated')).not.toHaveTextContent(en['vehicles.duplicateStatus.open']);
+    expect(decisionCell('cand-undated')).toHaveTextContent('—');
+    expect(decisionCell('cand-undated').querySelector('time')).toBeNull();
+  });
+});
+
+describe('the review panel follows the queue', () => {
+  it('closes an open panel when the status is changed', async () => {
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('Nadia Khoury');
+    await user.click(screen.getByRole('button', { name: review() }));
+    expect(screen.getByText(en['crm.duplicates.decideHeading'])).toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status']),
+      en['crm.duplicateStatus.dismissed']
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText(en['crm.duplicates.decideHeading'])).not.toBeInTheDocument()
+    );
+  });
+
+  it('closes the panel and re-reads the queue once a dismissal succeeds', async () => {
+    reviewDuplicateAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'crm.duplicates.dismissed',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('Nadia Khoury');
+    await user.click(screen.getByRole('button', { name: review() }));
+    const readsBefore = listDuplicates.mock.calls.length;
+
+    await user.type(
+      screen.getByLabelText(en['crm.customers.restrictions.reason'], { exact: false }),
+      'Different people who share a name'
+    );
+    await user.click(screen.getByRole('button', { name: en['crm.duplicates.dismiss'] }));
+
+    await waitFor(() => expect(reviewDuplicateAction).toHaveBeenCalledTimes(1));
+    // `onDecided`: the panel is gone and the queue is read again.
+    await waitFor(() =>
+      expect(screen.queryByText(en['crm.duplicates.decideHeading'])).not.toBeInTheDocument()
+    );
+    await waitFor(() => expect(listDuplicates.mock.calls.length).toBe(readsBefore + 1));
+  });
 });
 
 describe('this file is not vacuous', () => {
   it('really rendered a candidate row, which no previous test did', async () => {
     const { container } = render();
     await screen.findByText('Nadia Khoury');
-    expect(container.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
+    // The grid's rows are `role="row"` elements, not `<tr>`; a data row carries
+    // its row id, the header row does not.
+    const rows = container.querySelectorAll('[role="row"][data-id]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent('Nadia Khoury');
+  });
+
+  it('names the grid by its caption and offers its pager, Previous closed on page one', async () => {
+    render();
+    await screen.findByText('Nadia Khoury');
+    expect(screen.getByRole('grid', { name: en['crm.duplicates.caption'] })).toBeInTheDocument();
+    const pager = screen.getByRole('navigation', { name: en['table.pagination'] });
+    expect(within(pager).getByRole('button', { name: en['table.previousPage'] })).toBeDisabled();
+    // `hasMore: false` on the only page: there is nothing further to walk to.
+    expect(within(pager).getByRole('button', { name: en['table.nextPage'] })).toBeDisabled();
+  });
+
+  it('walks to the next page through the cursor the first page returned', async () => {
+    listDuplicates.mockResolvedValueOnce({
+      ...page([candidate()]),
+      hasMore: true,
+      nextCursor: 'cursor-2',
+    });
+    listDuplicates.mockResolvedValueOnce(page([candidate({ id: 'cand-2' })]));
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('Nadia Khoury');
+    await user.click(screen.getByRole('button', { name: en['table.nextPage'] }));
+    await waitFor(() => expect(listDuplicates).toHaveBeenCalledTimes(2));
+    // Same status, same page size, and the cursor the first page handed back.
+    expect(listDuplicates.mock.calls[1]?.[0]).toBe('open');
+    expect(listDuplicates.mock.calls[1]?.[1]).toMatchObject({ page: 2, pageSize: 25 });
+    expect(listDuplicates.mock.calls[1]?.[2]).toBe('cursor-2');
+  });
+
+  it('names each Review by the pair it opens, never by an identifier', async () => {
+    render();
+    await screen.findByText('Nadia Khoury');
+    const action = screen.getByRole('button', { name: review() });
+    expect(action).toHaveAccessibleName(
+      `${en['crm.duplicates.review']} Nadia Khoury · Nadia Khouri`
+    );
+    expect(action.textContent ?? '').not.toContain(ID_A);
   });
 
   it('renders no uuid anywhere in the queue', async () => {

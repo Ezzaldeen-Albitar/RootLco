@@ -59,11 +59,14 @@ const ADMIN = '/en/administration/users';
 /**
  * A list still drawn by the shared table (`DataTable`), for the table's own region.
  * The roles list was it until it moved onto the operational grid (P1-32-PRE-OD-ADM4),
- * then the audit log until it moved too (P1-32-PRE-OD-ADM6). The customer
- * duplicate queue is still the shared table, reads on arrival with no search,
- * and draws its one table even when the queue is empty.
+ * then the audit log (P1-32-PRE-OD-ADM6), then the customer duplicate queue
+ * (P1-32-PRE-OD-CRM1C). The vehicle duplicate queue is its twin and is still the
+ * shared table: it reads on arrival with no search, sits in `PageBody fill`, and
+ * draws its one table and its pager even when the queue is empty.
  */
-const TABLE_ROUTE = '/en/crm/customer-duplicates';
+const TABLE_ROUTE = '/en/vehicles/duplicates';
+/** The customer duplicate queue, on the operational grid since P1-32-PRE-OD-CRM1C. */
+const CUSTOMER_DUPLICATES = '/en/crm/customer-duplicates';
 const TOLERANCE = 2;
 
 /** Every viewport the acceptance criteria name, including two short ones. */
@@ -198,9 +201,10 @@ test.describe('scroll ownership', () => {
 
   test('the table stays inside its region and the pager stays reachable', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 700 });
-    // The customer duplicate queue, which is still the shared table: the users,
-    // roles and audit log lists are the operational grid since P1-32-PRE-OD-ADM3,
-    // -ADM4 and -ADM6 (ADR-022), and the users grid is measured below.
+    // The vehicle duplicate queue, which is still the shared table: the users,
+    // roles and audit log lists and the customer duplicate queue are the
+    // operational grid since P1-32-PRE-OD-ADM3, -ADM4, -ADM6 and -CRM1C (ADR-022),
+    // and those two grids are measured below.
     await page.goto(TABLE_ROUTE);
     await expect(page.getByRole('table')).toBeVisible();
 
@@ -218,6 +222,81 @@ test.describe('scroll ownership', () => {
     expect(measured.boxOverflow).toBe('auto');
     expect(measured.boxWithinViewport, 'the table region must fit the viewport').toBe(true);
     expect(measured.documentScrolls).toBe(false);
+
+    // The pager the title promises. The shared table draws it on every page,
+    // empty or not, so it is always there to be reached.
+    const pager = page.getByRole('navigation', { name: say('en', 'table.pagination') });
+    await pager.scrollIntoViewIfNeeded();
+    await expect(pager, 'the pager must be reachable').toBeInViewport();
+  });
+
+  test('the customer duplicate grid scrolls inside the main region and its pager stays reachable', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto(CUSTOMER_DUPLICATES);
+    await expect(
+      page.getByRole('grid', { name: say('en', 'crm.duplicates.caption') })
+    ).toBeVisible();
+
+    // The grid's own pager: drawn on every page, "Page 1" on arrival, and
+    // Previous closed because there is no page before the first.
+    const pager = page.getByRole('navigation', { name: say('en', 'table.pagination') });
+    await pager.scrollIntoViewIfNeeded();
+    await expect(pager, 'the pager must be reachable').toBeInViewport();
+    await expect(
+      pager.getByRole('button', { name: say('en', 'table.previousPage') })
+    ).toBeDisabled();
+    await expect(pager.getByRole('button', { name: say('en', 'table.nextPage') })).toBeVisible();
+
+    // Next is CLOSED when there is no further page (`hasMore` false). The read
+    // answers in a server action, so its `hasMore` is not visible to the
+    // browser, and the case assumes nothing about how many pairs the world
+    // holds: it walks forward until Next closes and holds it closed there.
+    // Two wrong reasons are ruled out on every page. Next is also disabled
+    // while a page loads, so each page is read only once the grid stops being
+    // busy; and a refused, unavailable or ended read draws its state panel
+    // instead of a page, so no such panel may be showing.
+    const queue = page.getByTestId('customer-duplicate-grid');
+    const pageLabel = page.getByTestId('customer-duplicate-grid-page');
+    const next = pager.getByRole('button', { name: say('en', 'table.nextPage') });
+    const pageSettled = async (): Promise<void> => {
+      await expect(queue.locator('[aria-busy="true"]')).toHaveCount(0);
+      for (const title of [
+        'state.unavailable.title',
+        'state.denied.title',
+        'state.expired.title',
+      ]) {
+        await expect(
+          page.getByText(say('en', title), { exact: true }),
+          `the queue must be read, not answered by "${title}"`
+        ).toHaveCount(0);
+      }
+      await expect(next, 'the pager must still be drawn under a read page').toBeVisible();
+    };
+
+    await pageSettled();
+    const MAX_PAGES = 20;
+    let pagesSeen = 1;
+    while (await next.isEnabled()) {
+      expect(
+        pagesSeen,
+        `Next was still open after ${MAX_PAGES} pages; the queue never reached its last page`
+      ).toBeLessThan(MAX_PAGES);
+      const before = (await pageLabel.textContent()) ?? '';
+      await next.click();
+      // The page label moves in the same render that starts the read, so a
+      // changed label means the next read has begun and "not busy" is its end.
+      await expect(pageLabel).not.toHaveText(before);
+      await pageSettled();
+      pagesSeen += 1;
+    }
+    await expect(next, 'Next must be closed on the last page').toBeDisabled();
+
+    const documentMoved = await page.evaluate(() => document.documentElement.scrollTop);
+    expect(documentMoved, 'reaching it must not scroll the document').toBeLessThanOrEqual(
+      TOLERANCE
+    );
   });
 
   test('the users grid scrolls inside the main region and its pager stays reachable', async ({
