@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { translate, translateDynamic, type Messages } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { listDuplicates } from '../identity-api';
@@ -44,6 +44,15 @@ interface Props {
   readonly messages: Messages;
 }
 
+/**
+ * One name of the pair, as an operator reads it. A missing display name is
+ * possible and is NOT the uuid's cue to appear — an internal identifier in a
+ * name slot reads as a customer reference.
+ */
+function memberName(messages: Messages, name: string | null): string {
+  return name ?? translate(messages, 'crm.duplicates.nameUnavailable');
+}
+
 export function DuplicateReviewScreen({ locale, messages }: Props) {
   // `open` by default: the queue exists to be worked through, and a reviewer
   // opening it wants the outstanding pairs, not a mixed history.
@@ -72,28 +81,35 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
     loadKey: status,
   });
 
-  const columns = useMemo<readonly Column<DuplicateCandidate>[]>(
+  /*
+   * On the operational grid (ADR-022) since P1-32-PRE-OD-CRM1C. The read, the
+   * status filter and the decision panel are unchanged; only the renderer moved.
+   * The pager is the grid's own, and it offers the same page sizes the shared
+   * table did, so every request this queue can send is one it could send before.
+   */
+  const columns = useMemo<readonly OperationalColumn<DuplicateCandidate>[]>(
     () => [
       {
         id: 'pair',
         headerKey: 'crm.duplicates.pair',
+        flex: 2,
         cell: (row) => {
           const [a, b] = pairMembers(row);
+          // Both names on the same line style. A first line drawn stronger than
+          // the second would be the layout choosing "the original".
           return (
-            <div className="flex flex-col gap-0.5">
+            <span className="flex h-full min-w-0 flex-col justify-center">
               {[a, b].map((member) => (
-                <span key={member.id}>
-                  {member.name ?? (
-                    // A missing display name is possible and is NOT the uuid's
-                    // cue to appear — an internal identifier in a name slot
-                    // reads as a customer reference.
-                    <span className="text-text-muted">
-                      {translate(messages, 'crm.duplicates.nameUnavailable')}
-                    </span>
-                  )}
+                <span
+                  key={member.id}
+                  className={`min-w-0 overflow-x-clip text-ellipsis whitespace-nowrap text-caption ${
+                    member.name === null ? 'text-text-muted' : 'text-text-primary'
+                  }`}
+                >
+                  {memberName(messages, member.name)}
                 </span>
               ))}
-            </div>
+            </span>
           );
         },
       },
@@ -122,6 +138,7 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
       {
         id: 'detectedAt',
         headerKey: 'crm.duplicates.detectedAt',
+        minChars: 18,
         cell: (row) => (
           <time dateTime={row.detectedAt} dir="ltr">
             {formatDateTime(row.detectedAt, locale)}
@@ -132,27 +149,15 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
         id: 'decide',
         headerKey: 'crm.duplicates.decision',
         cell: (row) =>
-          isActionable(row) ? (
-            <button
-              type="button"
-              onClick={() => setSelected(row)}
-              className="rounded-md border border-border px-2 py-1 text-caption text-text-primary"
-            >
-              {translate(messages, 'crm.duplicates.review')}
-            </button>
+          // A dismissed or merged pair is settled: it shows when, and its row
+          // offers no action (`rowActions` below). Re-deciding it is refused by
+          // the backend, and the control should never have been there.
+          !isActionable(row) && row.reviewedAt ? (
+            <time className="text-caption text-text-muted" dateTime={row.reviewedAt} dir="ltr">
+              {formatDate(row.reviewedAt, locale)}
+            </time>
           ) : (
-            // A dismissed or merged pair is settled. Offering a control on one
-            // would let a reviewer try to re-decide it; the backend refuses, but
-            // the control should never have been there.
-            <span className="text-caption text-text-muted">
-              {row.reviewedAt ? (
-                <time dateTime={row.reviewedAt} dir="ltr">
-                  {formatDate(row.reviewedAt, locale)}
-                </time>
-              ) : (
-                '—'
-              )}
-            </span>
+            <span className="text-caption text-text-muted">—</span>
           ),
       },
     ],
@@ -176,42 +181,48 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
       */}
       <p className="text-body text-text-secondary">{translate(messages, 'crm.duplicates.intro')}</p>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-caption text-text-secondary">
-            {translate(messages, 'crm.customers.column.status')}
-          </span>
-          <select
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value);
-              // The open panel belongs to a row that may not be in the next
-              // page. Closing it stops a decision being submitted against a
-              // candidate the reviewer can no longer see.
-              setSelected(null);
-            }}
-            className="rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
-          >
-            {DUPLICATE_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {translateDynamic(messages, `crm.duplicateStatus.${value}`)}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="w-full max-w-xs">
+        <FormSelectField
+          label={translate(messages, 'crm.customers.column.status')}
+          value={status}
+          options={DUPLICATE_STATUSES.map((value) => ({
+            value,
+            label: translateDynamic(messages, `crm.duplicateStatus.${value}`),
+          }))}
+          onChange={(value) => {
+            setStatus(value);
+            // The open panel belongs to a row that may not be in the next
+            // page. Closing it stops a decision being submitted against a
+            // candidate the reviewer can no longer see.
+            setSelected(null);
+          }}
+        />
       </div>
 
-      <DataTable<DuplicateCandidate>
+      <OperationalGrid<DuplicateCandidate>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'crm.duplicates.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'crm.duplicates.caption')}
+        table={table}
+        rowActions={(row) =>
+          isActionable(row)
+            ? [
+                {
+                  kind: 'button',
+                  label: translate(messages, 'crm.duplicates.review'),
+                  // Both names, so ten rows of "Review" are ten different
+                  // controls to a screen reader.
+                  about: pairMembers(row)
+                    .map((member) => memberName(messages, member.name))
+                    .join(' · '),
+                  onClick: () => setSelected(row),
+                },
+              ]
+            : []
+        }
+        testId="customer-duplicate-grid"
       />
 
       <p className="text-caption text-text-muted" lang={locale}>

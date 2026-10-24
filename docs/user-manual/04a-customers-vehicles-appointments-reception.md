@@ -373,11 +373,19 @@ Heading **"Review duplicate customers"** <!-- crm.duplicates.title --> .
 
 **Steps**
 
-1. The list is captioned "Pairs of customer records that may be the same person or company" <!-- crm.duplicates.caption -->
-   , with columns **"First record"**, **"Second record"**, **"Match"**, **"Detected"** <!-- crm.duplicates.memberA / .memberB / .score / .detectedAt -->
-   .
-2. Choose **"Review"** <!-- crm.duplicates.review --> on a row. The panel **"Review this pair"** <!-- crm.duplicates.decideHeading -->
-   opens.
+1. The table is named "Pairs of customer records that may be the same person or company" <!-- crm.duplicates.caption -->
+   , with the columns **"The two records"**, **"Match"**, **"Status"**, **"Detected"** and
+   **"Decision"** <!-- crm.duplicates.pair / .score / crm.customers.column.status / crm.duplicates.detectedAt / .decision -->
+   . Both names of a pair are shown the same way: neither is presented as the original or as the
+   copy. The **"Status"** <!-- crm.customers.column.status --> choice above the table shows
+   **"Open"** <!-- crm.duplicateStatus.open --> pairs when the screen opens; choose **"Dismissed"**
+   or **"Merged"** to see those instead. Changing it closes any pair you had open. Below the table,
+   **"Previous page"** <!-- table.previousPage --> and **"Next page"** <!-- table.nextPage --> move
+   through the queue, and **"Rows per page"** <!-- table.rowsPerPage --> sets how many pairs a page
+   shows.
+2. Choose **"Review"** <!-- crm.duplicates.review --> on an open pair. A pair that is already
+   settled has no **"Review"**; its **"Decision"** column shows the day it was decided. The panel
+   **"Review this pair"** <!-- crm.duplicates.decideHeading --> opens.
 3. Read **"Why these were matched"** <!-- crm.duplicates.basis --> . The reasons are in plain words:
    - "Both records use the same name, once spacing and capital letters are ignored." <!-- crm.duplicates.reason.name -->
    - "The same telephone number or email address is used on both records." <!-- crm.duplicates.reason.contact -->
@@ -395,9 +403,8 @@ Heading **"Review duplicate customers"** <!-- crm.duplicates.title --> .
 
 **Restrictions — merging is not available**
 
-The screen carries a merge affordance — **"Merge these records"** <!-- crm.duplicates.mergeHeading -->
-, **"Which record survives?"** <!-- crm.duplicates.survivorLegend --> , **"Merge records"** <!-- crm.duplicates.merge -->
-— but the action is blocked, and the screen states why:
+The screen offers no merge control of any kind — not even a greyed-out one — and the review panel
+states why:
 
 > "Merging two customer records is not available yet. The rules for it are pending an Owner
 > decision." <!-- crm.duplicates.mergePendingDecision -->
@@ -412,8 +419,7 @@ move contacts, addresses, vehicles, appointments or history from one record to t
 
 **If it goes wrong**
 
-- "A record cannot be merged into itself." <!-- crm.duplicates.survivorSameAsMerged -->
-- A standing reminder sits on the queue: "The system is only pointing this out. Nothing has been
+- A standing reminder sits in the review panel: "The system is only pointing this out. Nothing has been
   changed, and nothing will change until someone here decides." <!-- duplicates.warningNotDecision -->
 - Privacy: "The system keeps a note of what looked alike on each pair. It never keeps the customer's
   personal details as part of that note." <!-- crm.duplicates.basisNote -->
@@ -1111,8 +1117,14 @@ settled.
 3. Under **"Choose the vehicle"** <!-- receptions.workOrderStart.vehicleHeading --> the customer's
    own vehicles are offered — "Only the vehicles currently recorded for this customer are offered
    here. Earlier ones stay on the customer page." <!-- receptions.workOrderStart.currentOnlyNote -->
-   Choose one. The chosen one is echoed back under **"Selected vehicle"** <!-- receptions.workOrderStart.selectedVehicle -->
-   with its **"Vehicle number"**.
+   They are listed in a table, **"This customer's vehicles"** <!-- receptions.workOrderStart.vehicleLegend -->
+   , with the columns **"Vehicle"** <!-- receptions.wizard.vehicle --> and **"Role"** <!-- vehicles.relationships.role -->
+   . Choose **"Use this vehicle"** <!-- receptions.intake.vehicle.choose --> on one row. That
+   button stays pressed on the chosen row only; choosing another row moves it. The chosen vehicle is
+   echoed back under **"Selected vehicle"** <!-- receptions.workOrderStart.selectedVehicle --> with
+   its **"Vehicle number"**. Below the table, **"Previous page"** <!-- table.previousPage --> and
+   **"Next page"** <!-- table.nextPage --> move through the customer's vehicles ten at a time; each
+   is greyed out when there is no page in that direction.
 4. Choose **"Continue to check-in"** <!-- receptions.workOrderStart.continue --> . You arrive at the
    check-in screen (4A.5.3) with the customer and the vehicle already chosen.
 

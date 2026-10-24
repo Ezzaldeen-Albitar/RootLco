@@ -847,6 +847,16 @@ function stepProps(overrides: Partial<StepProps> = {}): StepProps {
   };
 }
 
+/**
+ * The step's "Use this vehicle" row actions (P1-32-PRE-OD-CRM1C). The list is on
+ * the operational grid, so a choice is a toggle button per row (`aria-pressed`)
+ * rather than a radio, and its name begins with the label.
+ */
+const chooseVehicle = (catalogue: Record<string, string> = en) =>
+  screen.findAllByRole('button', { name: named(catalogue['receptions.intake.vehicle.choose']!) });
+const firstChoice = async (catalogue: Record<string, string> = en) =>
+  (await chooseVehicle(catalogue))[0] as HTMLElement;
+
 describe('the entry point on the customer profile', () => {
   it('offers the action to a session that may open a reception visit', () => {
     renderLtr(
@@ -915,15 +925,18 @@ describe('the vehicle step that follows the customer profile', () => {
     // Never the identifier where a reference belongs.
     expect(fixed).not.toHaveTextContent(CUSTOMER_ID);
 
-    await screen.findByRole('radio');
+    await chooseVehicle();
   });
 
   it('reads that customer and offers the CURRENT relationships only', async () => {
     listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE, ENDED_LINK, DEAD_VEHICLE_ROW]));
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
 
-    const choices = await screen.findAllByRole('radio');
+    const choices = await chooseVehicle();
     expect(choices).toHaveLength(1);
+    expect(
+      screen.getByRole('grid', { name: en['receptions.workOrderStart.vehicleLegend'] })
+    ).toBeInTheDocument();
     expect(screen.getByText('V-0007')).toBeVisible();
     expect(screen.queryByText('V-0008')).not.toBeInTheDocument();
 
@@ -935,7 +948,13 @@ describe('the vehicle step that follows the customer profile', () => {
     listCustomerVehicles.mockReturnValue(new Promise(() => {}));
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
 
-    expect(screen.getByText(en['state.loading'])).toBeInTheDocument();
+    // The grid keeps its header and marks itself busy while the page loads; no
+    // row, and so no choice, exists yet.
+    expect(screen.getByRole('grid').closest('[aria-busy="true"]')).not.toBeNull();
+    expect(
+      screen.queryByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('work-order-start-empty')).not.toBeInTheDocument();
   });
 
   it('offers the existing find-or-add path when no vehicle fits', async () => {
@@ -1000,11 +1019,13 @@ describe('the vehicle step that follows the customer profile', () => {
     expect(
       screen.queryByText(en['receptions.workOrderStart.emptyOnThisPage'])
     ).not.toBeInTheDocument();
-    // Nothing further to look at, so the shared Pager renders nothing at all.
-    expect(screen.queryByRole('button', { name: en['table.nextPage'] })).not.toBeInTheDocument();
+    // Nothing further to look at. The grid draws its pager on every page
+    // (P1-32-PRE-OD-CRM1C), so the way onward is CLOSED rather than absent.
+    expect(screen.getByRole('button', { name: en['table.nextPage'] })).toBeDisabled();
+    expect(screen.getByRole('button', { name: en['table.previousPage'] })).toBeDisabled();
   });
 
-  it('offers the shared Pager, with no invented range, when a page is not the last', async () => {
+  it('offers the grid pager, with no invented range, when a page is not the last', async () => {
     listCustomerVehicles.mockResolvedValue(
       page([OWN_VEHICLE], { hasMore: true, nextCursor: 'the-next-cursor' })
     );
@@ -1012,9 +1033,26 @@ describe('the vehicle step that follows the customer profile', () => {
 
     expect(await screen.findByRole('button', { name: en['table.nextPage'] })).toBeEnabled();
     expect(screen.getByRole('button', { name: en['table.previousPage'] })).toBeDisabled();
+    // No rows-per-page choice: the step reads ten at a time, as it always has.
+    expect(screen.queryByLabelText(en['table.rowsPerPage'])).not.toBeInTheDocument();
+    expect(listCustomerVehicles.mock.calls[0]?.[1]).toMatchObject({ page: 1, pageSize: 10 });
   });
 
-  it('reports a failed read through the shared ListStates mapping, with its reference', async () => {
+  it('walks to the next page with the same page size and the cursor it was given', async () => {
+    listCustomerVehicles
+      .mockResolvedValueOnce(page([ENDED_LINK], { hasMore: true, nextCursor: 'the-next-cursor' }))
+      .mockResolvedValueOnce(page([OWN_VEHICLE]));
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    await user.click(await screen.findByRole('button', { name: en['table.nextPage'] }));
+
+    expect(await chooseVehicle()).toHaveLength(1);
+    expect(listCustomerVehicles.mock.calls[1]?.[1]).toMatchObject({ page: 2, pageSize: 10 });
+    expect(listCustomerVehicles.mock.calls[1]?.[2]).toBe('the-next-cursor');
+  });
+
+  it('reports a failed read through the grid state, with its reference', async () => {
     listCustomerVehicles.mockResolvedValue(
       page([], { status: 'error', correlationId: 'step-correlation-id' })
     );
@@ -1039,7 +1077,7 @@ describe('the vehicle step that follows the customer profile', () => {
 describe('continuing from the customer profile into the existing check-in flow', () => {
   it('offers no way onward until exactly one vehicle is chosen', async () => {
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
-    await screen.findByRole('radio');
+    await chooseVehicle();
 
     const control = screen.getByTestId('work-order-start-continue');
     expect(control).toBeDisabled();
@@ -1054,7 +1092,7 @@ describe('continuing from the customer profile into the existing check-in flow',
     const user = userEvent.setup();
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
 
-    await user.click(await screen.findByRole('radio'));
+    await user.click(await firstChoice());
 
     const control = screen.getByTestId('work-order-start-continue');
     expect(control).toHaveAttribute(
@@ -1070,7 +1108,7 @@ describe('continuing from the customer profile into the existing check-in flow',
     const user = userEvent.setup();
     renderRtl(<CustomerWorkOrderStartScreen {...stepProps({ locale: 'ar', messages: ar })} />);
 
-    await user.click(await screen.findByRole('radio'));
+    await user.click(await firstChoice(ar));
 
     expect(screen.getByTestId('work-order-start-continue')).toHaveAttribute(
       'href',
@@ -1090,12 +1128,19 @@ describe('continuing from the customer profile into the existing check-in flow',
     const user = userEvent.setup();
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
 
-    const choices = await screen.findAllByRole('radio');
+    const choices = await chooseVehicle();
     await user.click(choices[0] as HTMLElement);
     await user.click(choices[1] as HTMLElement);
 
+    const pressed = (await chooseVehicle()).filter(
+      (button) => button.getAttribute('aria-pressed') === 'true'
+    );
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]).toHaveAccessibleName(
+      `${en['receptions.intake.vehicle.choose']} V-0009 · 1HGCM82633A004352 · 2019`
+    );
     expect(
-      screen.getAllByRole('radio').filter((input) => (input as HTMLInputElement).checked)
+      (await chooseVehicle()).filter((button) => button.getAttribute('aria-pressed') === 'false')
     ).toHaveLength(1);
     expect(screen.getByTestId('work-order-start-continue')).toHaveAttribute(
       'href',
@@ -1208,7 +1253,7 @@ describe('continuing from the customer profile into the existing check-in flow',
     const user = userEvent.setup();
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
 
-    await user.click(await screen.findByRole('radio'));
+    await user.click(await firstChoice());
 
     expect(createVehicleAction).not.toHaveBeenCalled();
     expect(linkCustomerAction).not.toHaveBeenCalled();
@@ -1376,7 +1421,7 @@ describe('continuing from the customer profile into the existing check-in flow',
     const user = userEvent.setup();
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps({ canSearchVehicles: false })} />);
 
-    await user.click(await screen.findByRole('radio'));
+    await user.click(await firstChoice());
 
     const block = await selectedIdentity();
     expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
@@ -1391,7 +1436,7 @@ describe('continuing from the customer profile into the existing check-in flow',
     const user = userEvent.setup();
     renderRtl(<CustomerWorkOrderStartScreen {...stepProps({ locale: 'ar', messages: ar })} />);
 
-    await user.click(await screen.findByRole('radio'));
+    await user.click(await firstChoice(ar));
 
     const block = await selectedIdentity(ar);
     expect(await within(block).findByTestId('work-order-start-selected-plate')).toHaveTextContent(

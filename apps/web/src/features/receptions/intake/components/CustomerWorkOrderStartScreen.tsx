@@ -1,17 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
+import Button from '@mui/material/Button';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
+import { useServerTable, type ServerTable } from '@/components/data-table/use-server-table';
 import { PartyLabel } from '@/components/party/PartyLabel';
-import {
-  BackendUnavailableState,
-  ErrorState,
-  LoadingState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -129,16 +124,16 @@ export function CustomerWorkOrderStartScreen({
             }}
           />
           <div>
-            <button
+            <Button
               type="button"
+              variant="outlined"
               onClick={() => {
                 setAdding(false);
                 setPending(null);
               }}
-              className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             >
               {translate(messages, 'receptions.workOrderStart.backToList')}
-            </button>
+            </Button>
           </div>
         </>
       ) : (
@@ -206,13 +201,38 @@ function FixedCustomer({
   );
 }
 
+/** Offered here: an open relationship to a vehicle record that is still live. */
+function isOffered(entry: CustomerVehicleEntry): boolean {
+  return entry.active && entry.vehicleLifecycleStatus !== null;
+}
+
+/** A vehicle's identity in words, never its identifier — what its row action acts on. */
+function vehicleName(messages: Messages, entry: CustomerVehicleEntry): string {
+  const parts = [entry.vehicleDisplayNumber, entry.vin, entry.modelYear?.toString()].filter(
+    (part): part is string => typeof part === 'string' && part.length > 0
+  );
+  return parts.length > 0 ? parts.join(' · ') : translate(messages, 'vehicles.column.noReference');
+}
+
 /**
  * The customer's current vehicles, as a single-choice question.
  *
- * Radio buttons rather than a row of "use this one" buttons, because the rule
- * the step has to express is "exactly one": a radio group says that in the
- * markup, and a keyboard or screen-reader operator gets the same guarantee the
- * disabled Continue gives the mouse.
+ * On the operational grid (ADR-022) since P1-32-PRE-OD-CRM1C, the renderer the
+ * walk-in step's own list already uses. "Exactly one" is still said in the
+ * markup: each row's "Use this vehicle" is a toggle (`aria-pressed`), pressed on
+ * the chosen row only, so a keyboard or screen-reader operator hears which row
+ * is chosen with the button — the guarantee the disabled Continue gives the
+ * mouse.
+ *
+ * ## The grid is handed the filtered page, never told to filter
+ *
+ * The grid renders the rows it is given and filters nothing. So the screen
+ * hands it the same read with only the OFFERED rows of the fetched page in its
+ * response — the filter this screen always ran, unchanged — and the pager,
+ * which walks the read's cursor stack, still reaches every page. The page size
+ * is fixed at ten, as before (`honours.pageSize: false`): this list never
+ * offered a rows-per-page choice, and every request it sends is one it sent
+ * before.
  */
 function CurrentVehicleChoice({
   locale,
@@ -231,7 +251,6 @@ function CurrentVehicleChoice({
   readonly canAdd: boolean;
   readonly onAdd: () => void;
 }) {
-  const groupId = useId();
   const load = useCallback(
     (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
       listCustomerVehiclesCancellable(customer.id, request, cursor, signal),
@@ -241,12 +260,18 @@ function CurrentVehicleChoice({
     initial: { ...INITIAL_REQUEST, pageSize: 10 },
   });
 
-  const offered =
-    table.response === null
-      ? null
-      : table.response.rows.filter(
-          (entry) => entry.active && entry.vehicleLifecycleStatus !== null
-        );
+  const offeredResponse = useMemo(
+    () =>
+      table.response === null
+        ? null
+        : { ...table.response, rows: table.response.rows.filter(isOffered) },
+    [table.response]
+  );
+  const offeredTable: ServerTable<CustomerVehicleEntry> = {
+    ...table,
+    response: offeredResponse,
+    honours: { pageSize: false, sort: false },
+  };
 
   /*
    * A page whose rows were ALL filtered out is not the same fact as a customer
@@ -258,6 +283,45 @@ function CurrentVehicleChoice({
    * is untouched either way: it is what makes the first sentence actionable.
    */
   const morePages = table.response !== null && table.response.hasMore;
+
+  const columns = useMemo<readonly OperationalColumn<CustomerVehicleEntry>[]>(
+    () => [
+      {
+        id: 'vehicle',
+        headerKey: 'receptions.wizard.vehicle',
+        flex: 3,
+        cell: (entry) => (
+          <span className="flex flex-wrap items-center gap-2">
+            {entry.vehicleDisplayNumber ? (
+              <code className="font-mono text-caption" dir="ltr">
+                {entry.vehicleDisplayNumber}
+              </code>
+            ) : (
+              <span className="text-caption text-text-muted">
+                {translate(messages, 'vehicles.column.noReference')}
+              </span>
+            )}
+            {entry.vin ? (
+              <span className="font-mono text-caption" dir="ltr">
+                {entry.vin}
+              </span>
+            ) : (
+              <span className="text-caption text-text-muted">
+                {translate(messages, 'vehicles.column.noVin')}
+              </span>
+            )}
+            {entry.modelYear !== null ? <span dir="ltr">{entry.modelYear}</span> : null}
+          </span>
+        ),
+      },
+      {
+        id: 'role',
+        headerKey: 'vehicles.relationships.role',
+        cell: (entry) => translateDynamic(messages, `vehicles.role.${entry.relationshipRole}`),
+      },
+    ],
+    [messages]
+  );
 
   return (
     <section
@@ -272,81 +336,49 @@ function CurrentVehicleChoice({
         {translate(messages, 'receptions.workOrderStart.vehicleHeading')}
       </h2>
 
-      <fieldset className="flex flex-col gap-2 border-0 p-0">
-        <legend className="text-caption font-medium text-text-secondary">
-          {translate(messages, 'receptions.workOrderStart.vehicleLegend')}
-        </legend>
+      <p className="text-caption font-medium text-text-secondary">
+        {translate(messages, 'receptions.workOrderStart.vehicleLegend')}
+      </p>
 
-        <ListStates
-          messages={messages}
-          status={table.status}
-          correlationId={table.correlationId}
-          onRetry={table.refresh}
-          empty={
-            <p className="text-caption text-text-muted" data-testid="work-order-start-empty">
-              {translate(
-                messages,
-                morePages
-                  ? 'receptions.workOrderStart.emptyOnThisPage'
-                  : 'receptions.workOrderStart.empty'
-              )}
-            </p>
-          }
-          rows={offered}
-          render={(entry) => {
-            const inputId = `${groupId}-${entry.vehicleId}`;
-            return (
-              <li key={entry.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-                <input
-                  type="radio"
-                  id={inputId}
-                  name={`${groupId}-vehicle`}
-                  checked={chosen !== null && chosen.id === entry.vehicleId}
-                  onChange={() =>
-                    onChoose({
-                      id: entry.vehicleId,
-                      displayNumber: entry.vehicleDisplayNumber,
-                      vin: entry.vin,
-                      modelYear: entry.modelYear,
-                      alreadyLinked: true,
-                    })
-                  }
-                  className="border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                />
-                <label
-                  htmlFor={inputId}
-                  className="flex flex-wrap items-center gap-3 text-body text-text-primary"
-                >
-                  <span className="text-caption text-text-secondary">
-                    {translateDynamic(messages, `vehicles.role.${entry.relationshipRole}`)}
-                  </span>
-                  {entry.vehicleDisplayNumber ? (
-                    <code className="font-mono text-caption" dir="ltr">
-                      {entry.vehicleDisplayNumber}
-                    </code>
-                  ) : (
-                    <span className="text-caption text-text-muted">
-                      {translate(messages, 'vehicles.column.noReference')}
-                    </span>
-                  )}
-                  {entry.vin ? (
-                    <span className="font-mono text-caption" dir="ltr">
-                      {entry.vin}
-                    </span>
-                  ) : (
-                    <span className="text-caption text-text-muted">
-                      {translate(messages, 'vehicles.column.noVin')}
-                    </span>
-                  )}
-                  {entry.modelYear !== null ? <span dir="ltr">{entry.modelYear}</span> : null}
-                </label>
-              </li>
-            );
-          }}
-        />
-      </fieldset>
-
-      <Pager messages={messages} table={table} />
+      <OperationalGrid<CustomerVehicleEntry>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.workOrderStart.vehicleLegend')}
+        columns={columns}
+        rowId={(entry) => entry.id}
+        table={offeredTable}
+        rowActions={(entry) => [
+          {
+            kind: 'button',
+            label: translate(messages, 'receptions.intake.vehicle.choose'),
+            about: vehicleName(messages, entry),
+            pressed: chosen !== null && chosen.id === entry.vehicleId,
+            onClick: () =>
+              onChoose({
+                id: entry.vehicleId,
+                displayNumber: entry.vehicleDisplayNumber,
+                vin: entry.vin,
+                modelYear: entry.modelYear,
+                alreadyLinked: true,
+              }),
+          },
+        ]}
+        density="compact"
+        // "No vehicle recorded" and "none on this page" are this step's own
+        // sentences, below.
+        suppressEmptyState
+        testId="work-order-start-grid"
+      />
+      {table.status === 'idle' && offeredResponse !== null && offeredResponse.rows.length === 0 ? (
+        <p className="text-caption text-text-muted" data-testid="work-order-start-empty">
+          {translate(
+            messages,
+            morePages
+              ? 'receptions.workOrderStart.emptyOnThisPage'
+              : 'receptions.workOrderStart.empty'
+          )}
+        </p>
+      ) : null}
 
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'receptions.workOrderStart.currentOnlyNote')}
@@ -357,14 +389,15 @@ function CurrentVehicleChoice({
           <span className="text-caption text-text-secondary">
             {translate(messages, 'receptions.workOrderStart.addOffer')}
           </span>
-          <button
+          <Button
             type="button"
+            variant="outlined"
+            size="small"
             onClick={onAdd}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             data-testid="work-order-start-add"
           >
             {translate(messages, 'receptions.workOrderStart.addVehicle')}
-          </button>
+          </Button>
         </div>
       ) : (
         // The honest boundary: this operator can only choose from what is
@@ -406,14 +439,14 @@ function ContinueBar({
     return (
       <div className="flex flex-col gap-1">
         <div>
-          <button
+          <Button
             type="button"
+            variant="contained"
             disabled
             data-testid="work-order-start-continue"
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60"
           >
             {translate(messages, 'receptions.workOrderStart.continue')}
-          </button>
+          </Button>
         </div>
         <p className="text-caption text-text-muted">
           {translate(messages, 'receptions.workOrderStart.continueHint')}
@@ -424,13 +457,14 @@ function ContinueBar({
 
   return (
     <div className="flex flex-wrap items-center gap-4">
-      <Link
+      <Button
+        component={Link}
+        variant="contained"
         data-testid="work-order-start-continue"
         href={checkInWizardHref(locale, { customerId: customer.id, vehicleId: chosen.id })}
-        className="inline-block rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
       >
         {translate(messages, 'receptions.workOrderStart.continue')}
-      </Link>
+      </Button>
       <SelectedVehicleIdentity messages={messages} chosen={chosen} canRead={canReadVehicle} />
     </div>
   );
@@ -572,114 +606,6 @@ function SelectedVehicleIdentity({
           ) : null}
         </span>
       ) : null}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * Shared list scaffolding
- * ------------------------------------------------------------------ */
-
-/**
- * The states every list in this step must be able to show, once.
- *
- * Session expiry deliberately gets no Retry: re-issuing the same request with
- * the same dead session fails identically, and the button would promise
- * otherwise.
- *
- * Moved here from `IntakeVehicleStep.tsx`, its only other user, when the walk-in
- * vehicle step moved onto `OperationalGrid` (ADR-022): this screen lists the
- * same read with the same six outcomes and has not moved yet.
- */
-function ListStates<Row>({
-  messages,
-  status,
-  correlationId,
-  onRetry,
-  empty,
-  rows,
-  render,
-}: {
-  readonly messages: Messages;
-  readonly status: ReturnType<typeof useServerTable<Row>>['status'];
-  readonly correlationId: string | undefined;
-  readonly onRetry: () => void;
-  readonly empty: ReactNode;
-  readonly rows: readonly Row[] | null;
-  readonly render: (row: Row) => ReactNode;
-}) {
-  const retry = (
-    <button
-      type="button"
-      onClick={onRetry}
-      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-    >
-      {translate(messages, 'state.retry')}
-    </button>
-  );
-
-  if (status === 'loading') return <LoadingState messages={messages} />;
-  if (status === 'denied') {
-    return (
-      <PermissionDeniedState messages={messages} {...(correlationId ? { correlationId } : {})} />
-    );
-  }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
-  if (status === 'unavailable') {
-    return (
-      <BackendUnavailableState
-        messages={messages}
-        action={retry}
-        {...(correlationId ? { correlationId } : {})}
-      />
-    );
-  }
-  if (status === 'error' || status === 'not-found') {
-    return (
-      <ErrorState
-        messages={messages}
-        action={retry}
-        {...(correlationId ? { correlationId } : {})}
-      />
-    );
-  }
-  if (rows === null) return null;
-  if (rows.length === 0) return <>{empty}</>;
-
-  return (
-    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-      {rows.map(render)}
-    </ul>
-  );
-}
-
-/** Previous/Next with no invented range — the operations publish no count. */
-function Pager<Row>({
-  messages,
-  table,
-}: {
-  readonly messages: Messages;
-  readonly table: ReturnType<typeof useServerTable<Row>>;
-}) {
-  if (!table.response || (!table.response.hasMore && table.request.page <= 1)) return null;
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        disabled={table.request.page <= 1}
-        onClick={() => table.setRequest(withPage(table.request, table.request.page - 1))}
-        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        {translate(messages, 'table.previousPage')}
-      </button>
-      <button
-        type="button"
-        disabled={!table.response.hasMore}
-        onClick={() => table.setRequest(withPage(table.request, table.request.page + 1))}
-        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        {translate(messages, 'table.nextPage')}
-      </button>
     </div>
   );
 }

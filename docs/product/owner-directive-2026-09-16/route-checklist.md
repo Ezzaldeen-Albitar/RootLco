@@ -1798,9 +1798,9 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/appointments/new`                                   | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, states                             | F1–F6; G1–G9, G11; P1–P10; E1–E4; S1–S4          | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/appointments`                                       | `FilterToolbar`, `OperationalGrid`, states                                                               | G1–G11; S1–S5; T1, T7                            | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/credit-notes`                                       | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states                 | F1–F6; G1–G9, G12, G13; P1–P10; T1; D1–D4; S1–S4 | migrated — see below the table                                               | focused suites, en and ar — see below       |
-| `/crm/customer-duplicates`                            | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
+| `/crm/customer-duplicates`                            | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | migrated — see below the table (CRM1C)                                       | focused suites, en and ar — see below       |
 | `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
-| `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                                 | not run — nothing migrated                  |
+| `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table (CRM1C)                                       | focused suites, en and ar — see below       |
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                                      | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
 | `/inventory/adjustments`                              | form fields, states                                                                                      | F1–F7; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -7883,6 +7883,84 @@ Known limitations and recorded gaps, one line each:
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in an existing file (no web test file added or
   removed): the hub cases live in `audit-log.dom.test.tsx`.
+
+### Customer duplicates and the work-order start on Material UI (`P1-32-PRE-OD-CRM1C`)
+
+`/crm/customer-duplicates` and `/crm/customers/[customerId]/work-order/new` moved onto the shared
+wrappers. Presentation only: no route page, adapter, contract, permission, catalogue entry or
+request changed. `identity-api.ts`, `identity-contract.ts`, `DuplicateDecisionPanel.tsx`,
+`intake-handoff.ts`, `IntakeVehicleStep.tsx`, `VehicleDuplicateReviewScreen.tsx` and both
+`page.tsx` files are unchanged.
+
+What moved to which wrapper on `/crm/customer-duplicates` (`DuplicateReviewScreen.tsx`):
+
+- The queue is `OperationalGrid` driven by the same `useServerTable` read, still keyed on the
+  status (`loadKey: status`), so Previous and Next walk the read's cursor (G1–G9). Its name is the
+  catalogue's caption. The page sizes offered are the ones the shared table offered, so every
+  request the queue can send is one it could send before.
+- "Review" is a row action, offered only on an open pair, and its name carries both names of the
+  pair, so ten rows of "Review" are ten different controls. A settled pair has no action; its
+  "Decision" cell shows the day it was decided, or a dash.
+- Both names of a pair are drawn in the same style, one above the other. A missing name still reads
+  "Name unavailable" and never the identifier.
+- The status choice is `FormSelectField` (native). Changing it still closes an open panel.
+- A refused, ended or failed read is the grid's own state.
+
+What moved on `/crm/customers/[customerId]/work-order/new` (`CustomerWorkOrderStartScreen.tsx`):
+
+- The customer's current vehicles are `OperationalGrid`, columns "Vehicle" and "Role", with one
+  "Use this vehicle" row action per row that is a toggle (`pressed`, G12) in place of a radio. The
+  grid is handed the same read with only the offered rows of the fetched page in its response (an
+  open relationship to a live vehicle, the filter the screen always ran), because the grid filters
+  nothing. The page size stays ten and no rows-per-page choice is offered
+  (`honours.pageSize: false`).
+- "No vehicle is recorded…" and "No vehicle on this page…" are still the step's own sentences.
+- Continue, "Find or add a vehicle" and "Back to this customer's vehicles" are Material buttons.
+  Continue is still a disabled button without a vehicle and a link with one.
+- The step's own `ListStates` and `Pager` are removed; the grid draws the states and the pager. The
+  form fields and pickers on this route belong to the find-or-add sub-flow (`IntakeVehicleStep`),
+  which this slice does not change.
+
+Deliberate behaviour changes:
+
+- The work-order step's pager is drawn on every page, with "Page N"; on a single page Previous and
+  Next are shown disabled, where the step used to draw no pager at all.
+- While the vehicle list loads, the grid keeps its header over skeleton rows instead of the "Loading"
+  sentence. A "not found" answer is the grid's not-found state, which offers no retry, where the
+  step used to draw the general error with a retry.
+- The duplicate queue's score column and dates are laid out by the grid; the date column is never
+  narrower than a whole date and time.
+
+Tests, each in an existing file (no web test file added or removed):
+
+- `crm-duplicate-review.dom.test.tsx`: Review is found by a name that begins with its label (an
+  exact name would also have made the "no Review on a settled pair" case pass for the wrong
+  reason); the row count reads the grid's rows instead of `tbody tr`; new cases for the grid's name
+  and pager on page one, a walk to page two with the same status, page size and the returned cursor,
+  and Review's name carrying the pair.
+- `reception-walkin.dom.test.tsx`: the step's cases choose with the "Use this vehicle" toggle
+  instead of a radio, and "exactly one" is read from `aria-pressed`; loading is read from the grid's
+  busy state; the single-page case now holds Next and Previous disabled instead of absent; new
+  checks that no rows-per-page choice is offered and the first read asks for ten, and a new case
+  walks to page two with page size ten and the returned cursor.
+- `tests/e2e/authenticated/shared-ux.spec.ts`: the shared table's region case now measures
+  `/en/vehicles/duplicates`, the twin queue still drawn by `DataTable`, and also checks that its
+  pager scrolls into view, which the case's title promised and did not check. A new case on
+  `/en/crm/customer-duplicates` finds the grid by its caption, scrolls its pager into view, holds
+  Previous disabled and Next present, and holds the document still. On an empty queue these are
+  structural checks, not proof of layout with rows. Not run locally; it runs in hosted CI.
+
+Manual: `04a-customers-vehicles-appointments-reception.md` §4A.2.7 now describes the columns the
+queue draws, the status choice, the pager and a merge control that is absent (it described "First
+record" and "Second record" columns and a merge form that the screen does not render); §4A.5.0
+describes the "Use this vehicle" row action and the pager.
+
+Known limitations and recorded gaps, one line each:
+
+- Moving to another page of the duplicate queue does not close an open review panel; only a change
+  of status does, as before. Left for a reviewer to decide.
+- Recorded gap: `capability-status.md` has no row naming either route; not changed here.
+- `/vehicles/duplicates` is still drawn by `DataTable` until its own slice.
 
 ### Numbering rules, taxes, currencies and system settings on Material UI (`P1-32-PRE-OD-ADM5`)
 
