@@ -243,8 +243,8 @@ status"** and **"Preferred language"** as above.
 **Label: IMPLEMENTED (UI), with one section not built**
 
 **Where** — `/{locale}/crm/customers/{customerId}`. Heading **"Customer"** <!-- crm.customers.profile.title -->
-. A section rail labelled **"Customer sections"** <!-- crm.customers.profile.sections --> runs down
-the side.
+. A row of section buttons labelled **"Customer sections"** <!-- crm.customers.profile.sections -->
+sits under the customer's details.
 
 | Section                                                                | State                       | Write permission                                                                      |
 | ---------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------- |

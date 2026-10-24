@@ -362,3 +362,133 @@ describe('Arabic', () => {
     ).toBeInTheDocument();
   });
 });
+
+/*
+ * P1-32-PRE-OD-CRM2A — the section buttons, the work-order link and the name
+ * moved onto Material UI. Appended here, and the modules it needs are loaded
+ * below rather than at the top, so no line above moves: `:109-151` is a range
+ * the P1-27 matrix cites.
+ */
+const { BOTH_DIRECTIONS } = await import('./render');
+const { UiFoundationProvider } = await import('@/components/ui-foundation/UiFoundationProvider');
+const { muiTextOf } = await import('@/components/ui-foundation/mui-text');
+
+const SECTION_ORDER = [
+  'overview',
+  'contacts',
+  'addresses',
+  'preferences',
+  'consents',
+  'notes',
+  'alerts',
+  'tags',
+  'restrictions',
+  'timeline',
+  'vehicles',
+] as const;
+
+function sectionButtons(messages: typeof en): HTMLButtonElement[] {
+  const nav = screen.getByRole('navigation', { name: messages['crm.customers.profile.sections'] });
+  return [...nav.querySelectorAll('button')];
+}
+
+function current(buttons: readonly HTMLButtonElement[]): string[] {
+  return buttons
+    .filter((button) => button.getAttribute('aria-current') === 'page')
+    .map((button) => button.textContent ?? '');
+}
+
+describe('the section buttons stay native buttons on Material UI', () => {
+  it.each(BOTH_DIRECTIONS)(
+    'keeps the structure and moves aria-current on click, Enter and Space in %s',
+    async (locale, renderIn) => {
+      const messages = locale === 'en' ? en : ar;
+      const label = (name: (typeof SECTION_ORDER)[number]) =>
+        messages[`crm.customers.profile.section.${name}`];
+      const user = userEvent.setup();
+      renderIn(<CustomerProfileScreen locale={locale} messages={messages} customer={INDIVIDUAL} />);
+
+      const buttons = sectionButtons(messages);
+      expect(buttons).toHaveLength(SECTION_ORDER.length);
+      const byName = (name: (typeof SECTION_ORDER)[number]): HTMLButtonElement => {
+        const button = buttons[SECTION_ORDER.indexOf(name)];
+        if (button === undefined) throw new Error(`no ${name} button`);
+        return button;
+      };
+      for (const name of SECTION_ORDER) {
+        const button = byName(name);
+        expect(button.tagName).toBe('BUTTON');
+        expect(button.getAttribute('type')).toBe('button');
+        expect(button.parentElement?.tagName).toBe('LI');
+        expect(button.parentElement?.parentElement?.tagName).toBe('UL');
+        expect(button.textContent?.startsWith(label(name))).toBe(true);
+      }
+
+      expect(current(buttons)).toEqual([label('overview')]);
+
+      await user.click(byName('contacts'));
+      expect(current(buttons)).toEqual([label('contacts')]);
+      expect(byName('overview').hasAttribute('aria-current')).toBe(false);
+
+      byName('addresses').focus();
+      await user.keyboard('{Enter}');
+      expect(current(buttons)).toEqual([label('addresses')]);
+
+      byName('notes').focus();
+      await user.keyboard(' ');
+      expect(current(buttons)).toEqual([label('notes')]);
+
+      if (locale === 'ar') {
+        const planned = buttons.filter((button) =>
+          (button.textContent ?? '').includes(ar['nav.planned'])
+        );
+        expect(planned).toHaveLength(1);
+        expect(planned[0]).toBe(byName('vehicles'));
+      }
+    }
+  );
+});
+
+describe('Material UI under the foundation provider', () => {
+  it.each(BOTH_DIRECTIONS)(
+    'renders the buttons, the link and the name from the %s cache',
+    (locale, renderIn) => {
+      const messages = locale === 'en' ? en : ar;
+      renderIn(
+        <UiFoundationProvider locale={locale} text={muiTextOf(messages)}>
+          <CustomerProfileScreen
+            locale={locale}
+            messages={messages}
+            customer={INDIVIDUAL}
+            canStartWorkOrder
+          />
+        </UiFoundationProvider>
+      );
+
+      const buttons = sectionButtons(messages);
+      expect(buttons).toHaveLength(SECTION_ORDER.length);
+      for (const button of buttons) expect(button).toHaveClass('MuiButton-root');
+
+      const link = screen.getByTestId('customer-new-work-order');
+      expect(link.tagName).toBe('A');
+      expect(link).toHaveClass('MuiButton-root');
+      expect(link.getAttribute('href')).toBe(
+        `/${locale}/crm/customers/${INDIVIDUAL.id}/work-order/new`
+      );
+      expect(link.hasAttribute('role')).toBe(false);
+
+      const name = screen.getByRole('heading', { name: INDIVIDUAL.displayName });
+      expect(name.tagName).toBe('H2');
+      expect(name).toHaveClass('MuiTypography-root');
+
+      const emotion = [...buttons, link, name]
+        .flatMap((element) => [...element.classList])
+        .filter((className) => /^mui(?:rtl)?-/.test(className));
+      expect(emotion.length).toBeGreaterThan(0);
+      for (const className of emotion) {
+        if (locale === 'ar') expect(className).toMatch(/^muirtl-/);
+        else expect(className).not.toMatch(/^muirtl-/);
+      }
+    }
+  );
+});

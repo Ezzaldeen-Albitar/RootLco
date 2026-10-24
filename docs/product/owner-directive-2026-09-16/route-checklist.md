@@ -7756,6 +7756,69 @@ Known limitations and recorded gaps of this slice, one line each:
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
   W37 needs a database and was not run locally. They run in hosted CI.
 
+### Customer profile shell, section buttons, header and overview on Material UI (`P1-32-PRE-OD-CRM2A`)
+
+Part one of three for `/crm/customers/[customerId]`, presentation only, in
+`CustomerProfileScreen.tsx`. Nothing about how the profile reads, authorizes or scopes changed: the
+same page gate, the same reads and writes, the same message keys, and the same route branch scope.
+No route, operation, permission code, migration or message key was added, and no new request is
+made. The route stays **not migrated** in the table above until part three (`P1-32-PRE-OD-CRM2C`,
+the status form and the eight section forms) lands; part two (`P1-32-PRE-OD-CRM2B`) moves the
+section lists onto `OperationalGrid`.
+
+What moved:
+
+- The eleven section buttons are Material's `Button` (`variant="text"`, `type="button"`), which
+  renders a native `<button>`. They stay in `nav > ul > li`, in the same order, with the same names
+  (the label, and on Vehicles the "planned" word inside the button), the same `aria-current="page"`
+  on the selected one, the natural tab order, and Enter and Space from the browser. The Tailwind
+  classes stay; `border-solid` (on the selected one) and `font-normal` (on the others) are added
+  because Material's button base clears the border style and sets a medium weight, which the plain
+  element did not have, so the underline and the weight look as before.
+- The New work order entry is `Button component={Link}` with `variant="contained"`: still a link
+  (`<a href>`, no `role` attribute) to the same address, with the same test id, shown only with
+  `canStartWorkOrder`. Its hand-made button classes went, since the contained button supplies the
+  same look.
+- The customer's name is `Typography component="h2"` with the same class, so the page still has
+  one `<h1>` (from the page header) and the name is still an `<h2>`.
+
+What deliberately did not move, and why:
+
+- The facts list and the overview stay native `<dl>`, `<dt>` and `<dd>`, as other migrated screens
+  keep them, and the header stays a native `<header>` with the status form as its last child.
+- The status stays a fact in words; it does not become a chip, which would say the same word twice.
+- Layout stays Tailwind (ADR-022 §3.3): no `sx`, no `styled()`, no Stack or Box.
+- Material's Tabs were rejected: they would change the roles to tab and tablist and the keyboard to
+  a roving focus, which is a behaviour change for the dependent suites and the manual.
+
+Manual: 4A.2.4 in `docs/user-manual/04a-customers-vehicles-appointments-reception.md` said a
+section rail "runs down the side". That was already untrue before this slice — the sections are a
+horizontal, wrapping row under the customer's details — and the sentence now says so. Nothing else
+in the section changed.
+
+Tests: four cases appended to `crm-customer-profile.dom` (no web test file added). In en and ar,
+each section button is a native button of type button inside a list item of a list, exactly one is
+the current one (Overview first), and the current one moves on a click, on Enter and on Space; in
+ar exactly one button carries the "planned" word, and it is Vehicles. Under the foundation provider,
+in en and ar, every section button and the New work order link carry Material's button class, the
+link is an `<a>` with the same address and test id and no `role`, the name is an `<h2>` with
+Material's typography class, and their style classes come from the right-to-left cache in ar and
+never in en. No existing case changed.
+
+Known limitations and recorded gaps of this slice, one line each:
+
+- The customer reference, the name and the fact values carry no direction isolation; that is a
+  separate markup change.
+- Material's button adds a hover tint and a press ripple to the section buttons and the link.
+- Enter and Space are proven with jsdom's simulated keyboard, not a browser.
+- The full web tier with coverage ran once locally and did not pass: 18 cases in seven files that do
+  not render this screen timed out under load, so no coverage report was written and the coverage
+  gate was not run locally. Those seven files passed when run on their own afterwards; the hosted
+  run is the record.
+- Not run locally: the full unit, database and backend tiers, the browser tiers (including the
+  authenticated accessibility scan, the only colour-contrast check) and the builds. They run in
+  hosted CI.
+
 ### The audit log with names, and the administration hub (`P1-32-PRE-OD-ADM6`)
 
 `/administration/audit-log` moved onto the shared wrappers, and its rows name people. Until now a
