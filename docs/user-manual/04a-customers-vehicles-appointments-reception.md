@@ -445,7 +445,9 @@ Navigation: **"Vehicles"** <!-- nav.vehicles --> (المركبات) and **"Revie
    do." <!-- vehicles.search.idleBody -->
 2. The quickest way in is the single box **"Search by make, model, plate, VIN or vehicle
    reference"** <!-- vehicles.search.q --> — "Part of any of them. A plate also finds a vehicle by a
-   plate it carried before." <!-- vehicles.search.qHint --> Or fill in any of:
+   plate it carried before." <!-- vehicles.search.qHint --> Escape empties the box, and so does the ×
+   button at its end, **"Clear what you typed"** <!-- search.clear --> , shown while the box holds
+   text. Or fill in any of:
    - **"Make"** <!-- vehicles.search.make --> and **"Model"** <!-- vehicles.search.model --> —
      "Matches any part of the name." <!-- vehicles.search.containsHint -->
    - **"Registration plate"** <!-- vehicles.search.plate --> — "Finds the current plate or any
@@ -456,14 +458,22 @@ Navigation: **"Vehicles"** <!-- nav.vehicles --> (المركبات) and **"Revie
    - **"Vehicle reference"** <!-- vehicles.search.vehicleNumber --> — "Exact match." <!-- vehicles.search.exactHint -->
      Optional narrowing: **"Status"** <!-- vehicles.search.lifecycleStatus --> and **"Powertrain"** <!-- vehicles.search.powertrainCategory -->
      , both defaulting to **"Any"** <!-- vehicles.search.anyOption --> .
-3. Choose **"Search"** <!-- vehicles.search.submit --> . **"Clear"** <!-- vehicles.search.clear -->
-   resets the form. The search box, the make and the model each need at least two characters:
+3. Choose **"Search"** <!-- vehicles.search.submit --> . Pressing Enter in any box does the same.
+   Typing or choosing alone does nothing — there is no search-as-you-type. **"Clear"** <!-- vehicles.search.clear -->
+   resets the form and removes the results. The search box, the make and the model each need at
+   least two characters:
    "The search box, make and model each need at least two characters." <!-- vehicles.search.tooShort -->
 
-**Result** — heading **"Search results"** <!-- vehicles.search.resultsHeading --> , table captioned
-"Vehicle search results" <!-- vehicles.search.caption --> , with a **"Plate"** <!-- vehicles.column.plate -->
-and an **"Owner"** <!-- vehicles.column.owner --> column and the row action **"Open"** <!-- vehicles.search.open -->
-. Missing values read "No plate recorded", "No VIN recorded", "No reference", "No make recorded" <!-- vehicles.column.noPlate / .noVin / .noReference / .noMake -->
+**Result** — a grid under the heading **"Search results"** <!-- vehicles.search.resultsHeading -->
+(read by a screen reader, not drawn), which a screen reader names "Vehicle search results" <!-- vehicles.search.caption -->
+, with the columns **"Reference"** <!-- vehicles.column.reference --> , **"Plate"** <!-- vehicles.column.plate -->
+, **"Owner"** <!-- vehicles.column.owner --> , **"VIN"** <!-- vehicles.column.vin --> , **"Make"** <!-- vehicles.column.make -->
+(with the model under it), **"Year"** <!-- vehicles.column.modelYear --> , **"Status"** <!-- crm.customers.column.status -->
+, **"Powertrain"** <!-- vehicles.column.powertrain --> and **"Workshop"** <!-- vehicles.column.workshop -->
+, in that order, and the row action **"Open"** <!-- vehicles.search.open --> . The columns cannot be
+sorted. Below the grid, **"Previous page"** <!-- table.previousPage --> and **"Next page"** <!-- table.nextPage -->
+move between pages, and the page number is shown without a total, because the search does not count
+its results. Missing values read "No plate recorded", "No VIN recorded", "No reference", "No make recorded" <!-- vehicles.column.noPlate / .noVin / .noReference / .noMake -->
 .
 
 **A vehicle found by an old plate says so.** The row is marked **"Matched a previous plate"** <!-- vehicles.search.previousPlate -->
@@ -498,18 +508,27 @@ optional." <!-- vehicles.create.description -->
 
 1. Group **"Identity"** <!-- vehicles.create.identity --> : **"VIN"** <!-- vehicles.create.vin --> —
    "Optional. Stored as entered and matched in normalised form." <!-- vehicles.create.vinHint -->
-   Use **"Check VIN"** <!-- vehicles.vin.check --> before saving (4A.3.5).
+   Use **"Check VIN"** <!-- vehicles.vin.check --> before saving (4A.3.5). In the same group,
+   **"Reference"** <!-- vehicles.column.reference --> — "Optional. Your own reference for this
+   vehicle." <!-- vehicles.create.displayNumberHint -->
 2. Group **"Make and model"** <!-- vehicles.create.catalogue --> : **"Make"**, then **"Model"**,
-   then **"Trim"** <!-- vehicles.field.make_id / .model_id / .trim_id --> . These depend on each
-   other in order — "Choose a make first." <!-- vehicles.create.chooseMakeFirst --> and "Choose a
-   model first." <!-- vehicles.create.chooseModelFirst -->
-3. Group **"Details"** <!-- vehicles.create.descriptive --> : **"Model year"** <!-- vehicles.field.model_year -->
-   ("Optional. Between 1900 and 2100." <!-- vehicles.create.yearHint --> ), **"Powertrain"** <!-- vehicles.field.powertrain_type_id -->
-   , **"Powertrain category"** <!-- vehicles.field.powertrain_category --> ("The broad category. The
-   specific powertrain type is chosen above." <!-- vehicles.create.categoryVsType --> ), **"Body
-   type"** <!-- vehicles.field.body_type_id --> , **"Colour"** <!-- vehicles.create.color --> , and
-   your own reference — "Optional. Your own reference for this vehicle." <!-- vehicles.create.displayNumberHint -->
-4. Choose **"Create vehicle"** <!-- vehicles.create.submit --> .
+   then **"Trim"** <!-- vehicles.column.make / .model / .trim --> . These depend on each other in
+   order — "Choose a make first." <!-- vehicles.create.chooseMakeFirst --> and "Choose a model
+   first." <!-- vehicles.create.chooseModelFirst --> The same group holds **"Body type"** <!-- vehicles.column.bodyType -->
+   and **"Powertrain type"** <!-- vehicles.column.powertrainType --> . Every list starts with **"Not
+   specified"** <!-- vehicles.create.catalogueAny --> . Under a list, a line says when it could not be
+   loaded — "This list could not be loaded." <!-- vehicles.create.catalogueUnavailable --> — when it
+   is empty — "Nothing available yet." <!-- vehicles.create.catalogueEmpty --> — or when only its
+   first part is shown — "Showing the first part of a long list. Some entries are not shown." <!-- vehicles.create.catalogueTruncated -->
+3. Group **"Details"** <!-- vehicles.create.descriptive --> : **"Year"** <!-- vehicles.column.modelYear -->
+   ("Optional. Between 1900 and 2100." <!-- vehicles.create.yearHint --> ), **"Colour"** <!-- vehicles.create.color -->
+   ("Optional." <!-- vehicles.create.optionalHint --> ) and **"Powertrain"** <!-- vehicles.column.powertrain -->
+   ("The broad category. The specific powertrain type is chosen above." <!-- vehicles.create.categoryVsType -->
+   ), which starts at **"Not specified"** <!-- vehicles.create.categoryDefault --> .
+4. Choose **"Create vehicle"** <!-- vehicles.create.submit --> . While it saves, the button reads
+   **"Working…"** <!-- form.pending --> and cannot be pressed again. A value the form refuses is
+   named under its own field, and a screen reader reads it with that field; what you typed and
+   chose stays on the form.
 
 **Result** — "Vehicle created." <!-- vehicles.create.created --> The record is a draft: "A new
 vehicle is created as a draft. Details can be completed later." <!-- vehicles.create.draftNote -->
@@ -1961,6 +1980,24 @@ screenshot of a page that shows customer details when the reference alone will d
 
 <!--
 SOURCES
+REVISION 2026-10-24 — sections 4A.3.1 (find a vehicle) and 4A.3.2 (add a vehicle) were re-read
+when the two screens moved onto Material UI (P1-32-PRE-OD-VEH1), on a branch from develop
+4ea2986a7592a1da0a286798396ba38a8216f7b1. In 4A.3.2 the reference box is in "Identity", body type
+and "Powertrain type" are in "Make and model", the labels are "Year", "Powertrain type" and
+"Powertrain" as the screen draws them, and the field annotations name the keys the screen reads
+(`vehicles.column.*`). In 4A.3.1 the results are a grid with an accessible name rather than a table
+with a caption; the columns, the pager, Escape and the clear button were added, and Clear is said to
+remove the results. The catalogue notes, the pending label and the field errors were added to
+4A.3.2. Everything else is carried unchanged, and the line citations in the older revisions below
+refer to the file as it was then.
+
+Read for this revision:
+- apps/web/src/features/vehicles/components/VehicleSearchScreen.tsx
+- apps/web/src/features/vehicles/components/VehicleCreateScreen.tsx
+- apps/web/src/components/data/OperationalGrid.tsx — the pager label and the absent total
+- apps/web/src/i18n/messages/en.json — the `vehicles.search.*`, `vehicles.column.*` and
+  `vehicles.create.*` keys
+
 REVISION 2026-09-21 — sections 4A.2.4, 4A.5.0 (new), 4A.5.5, 4A.5.8, 4A.5.9 and 4A.8 were re-read
 and written at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9. Everything else in this part is
 carried unchanged from the readings recorded below and was not re-read.

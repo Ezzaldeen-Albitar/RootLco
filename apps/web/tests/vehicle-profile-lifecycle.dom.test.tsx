@@ -951,7 +951,7 @@ describe('the field errors a real 422 carries reach the controls it names', () =
   it('puts a VIN violation on the VIN control, which took no error prop at all', async () => {
     /*
      * `VinField` has accepted an `error` prop since `FE-020` and
-     * `VehicleCreateScreen.tsx:231` passes one. This screen mounted the same
+     * `VehicleCreateScreen` passes one to its `VinField`. This screen mounted the same
      * component without it, so the server's verdict on a VIN — the field most
      * likely to be refused, its uniqueness being enforced by an index the client
      * can only preview — had nowhere to land.

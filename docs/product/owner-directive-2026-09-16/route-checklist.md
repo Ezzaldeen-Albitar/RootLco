@@ -1843,8 +1843,8 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/technicians/[technicianProfileId]`                  | form fields, `OperationalGrid`, `DateField`, `ZonedDateTimeField`, `FormDialog`, `ConfirmDialog`, states | F1–F6; G1–G9; E1–E4; D1–D4; S1–S4                | migrated (ADM2B) — built on Material UI (`P1-32-PRE-OD-ADM2B`)               | focused suite, en and ar — see that section |
 | `/vehicles/[vehicleId]`                               | form fields, `OperationalGrid`, `EntityPicker`, states                                                   | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                                 | not run — nothing migrated                  |
 | `/vehicles/duplicates`                                | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/vehicles/new`                                       | `OperationalGrid`, states                                                                                | G1–G9; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                  |
-| `/vehicles`                                           | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                  |
+| `/vehicles/new`                                       | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table (VEH1)                                        | focused suites, en and ar — see below       |
+| `/vehicles`                                           | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | migrated — see below the table (VEH1)                                        | focused suites, en and ar — see below       |
 | `/work-orders/[workOrderId]/closure`                  | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | form fields, states                                                                                      | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below       |
 | `/work-orders/[workOrderId]`                          | form fields, `OperationalGrid`, states                                                                   | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below       |
@@ -7755,6 +7755,118 @@ Known limitations and recorded gaps of this slice, one line each:
   run only in the authenticated tier and were not run locally.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
   W37 needs a database and was not run locally. They run in hosted CI.
+
+### Vehicle search and vehicle creation on Material UI (`P1-32-PRE-OD-VEH1`)
+
+`/vehicles` and `/vehicles/new` moved onto the shared Material wrappers. The change is presentation
+only, in `features/vehicles/components/VehicleSearchScreen.tsx` and `VehicleCreateScreen.tsx`. No
+migration, route, operation, permission code, audit action or catalogue key was added. The two
+pages (`requireSession`, `veh.vehicle.read`, `veh.vehicle.manage`, `PermissionDeniedState`),
+`api.ts`, `contract.ts`, `vehicle-search-read.ts`, `vehicle-search-read.server.ts`,
+`catalogue-api.ts`, `VinField.tsx`, `SearchBox`, `DigitsEcho`, `FilterToolbar`, `OperationalGrid`
+and the form wrappers are unchanged.
+
+What `/vehicles` now renders:
+
+- The results are `OperationalGrid` over `useSearchRequest(...).table`, named by
+  `vehicles.search.caption` under the visually hidden `vehicles.search.resultsHeading`, with the
+  nine columns in their order (reference, plate, owner, VIN, make, year, status, powertrain,
+  workshop), none of them offering a sort, and `suppressEmptyState`. The previous-plate badge
+  (`data-testid="previous-plate-badge"`), the model under the make and the merged-into sentence
+  under the status are each the second line of a `TwoLineCell`. Codes keep `dir="ltr"` and names
+  keep `<bdi>`. The four make outcomes are unchanged. The row action is a button labelled
+  `vehicles.search.open` that opens `/{locale}/vehicles/{id}`. The search honours neither a page
+  size nor a sort, so the grid draws no rows-per-page control and no sorting header, and the pager
+  says "Page N" only.
+- The search box is `FormTextField` (`type="search"`, `dir="auto"`, `inputMode="text"`, no spell
+  check, no autocomplete, 80 characters, the hint as its description) with `DigitsEcho` under it.
+  Escape empties it, and a clear (×) control at its logical end, named by `search.clear`, does the
+  same while it holds text. The VIN, plate and reference boxes (64, 32 and 64 characters, left to
+  right) and the make and model boxes (80 characters, `dir="auto"`) are `FormTextField`s with their
+  hints as descriptions; the normalised VIN line and the digit echo under the plate and the
+  reference stay. Status and powertrain are `FormSelectField`s whose first, empty option is "Any".
+- Search (`type="submit"`, disabled while the form is empty), Clear and the create link are
+  Material `Button`s; the link and the zero-result offer (`data-testid="create-vehicle-from-no-results"`)
+  appear only with `canCreate`. The idle sentence is `MuiEmptyState` with the screen's idle keys.
+  `needCriteria`, the `role="alert"` `tooShort` sentence and `exactMatchNote` are unchanged.
+
+What `/vehicles/new` now renders:
+
+- `<form action={submit}>` with the same field names (`vin`, `displayNumber`, `makeId`, `modelId`,
+  `trimId`, `bodyTypeId`, `powertrainTypeId`, `modelYear`, `color`, `powertrainCategory`). The
+  reference, year and colour are `FormTextField`s (40, 4 and 40 characters; the reference and the
+  year left to right, the year with a numeric keypad, the colour `dir="auto"`). `VinField` is
+  unchanged, with `excludeVehicleId={null}`.
+- The five catalogue selects are `FormSelectField`s inside `CatalogueSelect`, keyed on the attempt
+  counter as before; the option value is the catalogue id and its label the name, the placeholder
+  is `vehicles.create.catalogueAny`, and the disabled-reason, loading, unavailable, empty and
+  truncated note is the field's description. The powertrain category is a `FormSelectField` keyed
+  the same way, with `categoryVsType` as its description.
+- Each field error is the translated sentence passed to the wrapper, so it is named by the
+  control's `aria-describedby` and `aria-errormessage`. Before the move, the hand-built boxes and
+  selects pointed `aria-describedby` at their hint or note only.
+- Submit is a Material `Button` reading `form.pending` while the action runs. The failure banner is
+  a Material `Alert` with the same message, `FailureExplanation` and correlation reference, shown
+  in the same cases. The success card keeps its three exits, now Material `Button`s.
+
+What is read and written is unchanged. The search loader still calls
+`searchVehiclesCancellable(criteria, INITIAL_REQUEST, cursor, signal)` with the working context's
+version; an empty form and a one-character box, make or model still send nothing; the results are
+still mounted only after a submission and keyed on the submitted criteria; the raw VIN is sent and
+the normalised form only shown. Creation still validates in the action, advances `attempt` on a
+client refusal, sends no idempotency key, loads models and trims only after a choice and clears the
+dependants on a change.
+
+Held by `apps/web/tests/vehicle-screens.dom.test.tsx` (51 cases kept, 8 added: four, each run in
+English and in Arabic inside `UiFoundationProvider`), `apps/web/tests/vehicle-create.dom.test.tsx`
+(17 cases kept, 10 added: five, each run in English and in Arabic), and by
+`search-empty-states.dom.test.tsx`, `vin-create-validation.dom.test.tsx` and
+`form-reset-class.test.ts`, unchanged:
+
+| Property                                                                       | Case                                                                  |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| No request before a submission, nor while typing in any box or choosing        | "calls the backend zero times…", "sends exactly the criteria…" (both) |
+| The criteria are sent exactly as entered, all eight, with no cursor            | "sends exactly the criteria entered…" (en, ar)                        |
+| Next page spends the returned cursor; Previous page asks again with none       | "walks the cursor the search returned…" (en, ar)                      |
+| Material fields and grid, in the page direction and style cache                | "renders the boxes, the selects and the grid…" (en, ar)               |
+| Clear removes the results; the create link needs permission                    | "clears the results with the criteria…" (en, ar), `search-empty-…`    |
+| The action receives exactly the names and values entered                       | "hands the action exactly the names…" (en, ar)                        |
+| A client refusal never calls the action and keeps the typed value              | "refuses an out-of-range year…" (en, ar)                              |
+| The pending label, and no second press while the action runs                   | "says it is working…" (en, ar)                                        |
+| Material fields in the page direction, left-to-right codes, the catalogue note | "renders the Material fields in the page direction…" (en, ar)         |
+| Each field error is named by its control                                       | "announces each field error with its own control" (en, ar)            |
+| Selections survive a client and a server failure                               | "keeps the catalogue selections…", "keeps them when the CLIENT…"      |
+
+Test changes forced by the move, the asserted behaviour unchanged: a disabled Material button has
+`pointer-events: none`, so "refuses to search on empty criteria" sets up `userEvent` with
+`pointerEventsCheck: 0` and still presses it and asserts that nothing was sent. The screen now
+imports `components/data`, so `apps/web/tests/p1-27-security.test.ts` records it as `in-surface` in
+its own copy of `MODULE_DISPOSITION` (the gate script's copy already did), and the count of modules
+the derivation finds moves from 14 to 15. `form-reset-class.test.ts` was not edited: the create
+screen's reference, year and colour are controlled `FormTextField`s, which that scan counts as
+guarded text controls, so the screen still contributes guarded controls.
+
+Known limitations and follow-ups, one line each:
+
+- The form-reset scan does not know `FormSelectField`, so the six selects are held by the two DOM
+  cases above, not by the scan.
+- `VinField` is not on Material UI.
+- The make catalogue of a provisioned organisation is empty (CC-OD-28); make and model search can
+  still never match.
+- `/vehicles` offers no phone or owner-name search; the operation has no such parameter.
+- The row action is named "Open" alone; it does not announce the vehicle it opens.
+- `accessibility.spec.ts` finds rows with `tbody tr`, which the data grid does not draw; that case
+  already skips on `/vehicles`, because the list shows no rows until a search runs. It is not
+  coverage of this grid. Not changed.
+- The `crm-and-vehicles.spec.ts` comment above the typing case still calls this search a Server
+  Action. Not changed.
+- `vehicles/page.tsx` cites `new/page.tsx:74` for a line that is now `:83`. Not changed.
+- Once the customer search also stops importing `SearchBox`, `components/search` leaves the module
+  set `p1-27-security.test.ts` derives, and its disposition and count move again.
+- `docs/phase-1/phase-1-27/task-matrix.json` cites line ranges of these two files that no longer
+  point at the same code. The matrix is frozen and was not changed.
+- Not run locally: the authenticated browser tier (`crm-and-vehicles.spec.ts`,
+  `accessibility.spec.ts`); it runs in hosted CI.
 
 ### The audit log with names, and the administration hub (`P1-32-PRE-OD-ADM6`)
 

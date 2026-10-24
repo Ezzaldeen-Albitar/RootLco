@@ -3,14 +3,21 @@
 import { useCallback, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { SearchBox } from '@/components/search/SearchBox';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import {
+  OperationalGrid,
+  TwoLineCell,
+  type OperationalColumn,
+} from '@/components/data/OperationalGrid';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { useSearchRequest } from '@/lib/api/use-search-request';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
-import { EmptyState } from '@/components/states/States';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -33,11 +40,11 @@ import {
 } from '../contract';
 
 /**
- * Vehicle search (`FE-017`).
+ * Vehicle search (`FE-017`), on Material UI since `P1-32-PRE-OD-VEH1`.
  *
  * ## Nothing is requested until the operator asks
  *
- * `useServerTable` reads on mount, so the results table is a **separately
+ * The search reads when it is mounted, so the results are a **separately
  * mounted component** rather than a hook held at the top of this screen. That
  * makes "no request before intent" structural: before submission the component
  * that would issue the read does not exist. Guarding it with a flag two files
@@ -62,6 +69,25 @@ import {
  * Criteria live in screen state, never in the address bar (`P1-27-SEC-002`).
  * Digits typed on an Arabic keyboard are echoed as Western digits for reading
  * only; the value is sent as typed and the backend folds it.
+ *
+ * ## On Material UI (`P1-32-PRE-OD-VEH1`)
+ *
+ * Presentation only. The boxes and the two selects are the shared Material form
+ * fields, the idle sentence is `MuiEmptyState`, and the results are
+ * `OperationalGrid` over the search's own `table`. What is read, when, and with
+ * which criteria is exactly as before: the loader, the submission rule and the
+ * key the results are mounted under did not change.
+ *
+ * The filters stay in this screen's own form rather than in `FilterToolbar`.
+ * The toolbar offers a search box, chips, selects and a period, and no free-text
+ * filter, so the VIN, plate, reference, make and model boxes would have had to
+ * sit outside it — two forms for one search, each with its own Enter.
+ *
+ * The shared search box is no longer used here. What it gave this box is kept on
+ * the Material field: `type="search"`, `dir="auto"`, no spell check, no
+ * autocomplete, a text keypad, Escape to empty the box, and the clear (×)
+ * control at the box's logical end, named by the shared `search.clear` words.
+ * Enter is the form's own submission, as it is in every other box here.
  */
 
 interface Props {
@@ -85,12 +111,11 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
   const [tooShort, setTooShort] = useState(false);
 
   /*
-   * One submission path, shared by the form and by the search box.
+   * One submission path, and the rule that decides what a submission does.
    *
-   * `SearchBox` intercepts Enter rather than relying on implicit submission —
-   * it is used outside a form on other surfaces — so the rule that decides what
-   * a submission does has to live somewhere both can reach it. Two copies would
-   * be two chances for the too-short refusal to disagree with itself.
+   * Every box is inside the form, so Enter in any of them and the Search button
+   * all arrive here. The too-short refusal is decided once, in one place, so it
+   * cannot disagree with itself.
    */
   const submitSearch = () => {
     if (blocked) return;
@@ -103,6 +128,12 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
     setSubmitted(draft);
   };
 
+  const vinNote =
+    draft.vin.trim().length > 0 &&
+    normalizeVinForDisplay(draft.vin) !== draft.vin.trim().toUpperCase()
+      ? `${translate(messages, 'vehicles.search.vinNormalized')} ${normalizeVinForDisplay(draft.vin)}`
+      : null;
+
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <form
@@ -114,130 +145,139 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
         className="rounded-lg border border-border bg-surface p-4"
       >
         {/*
-          The shared search box (P1-32), replacing a hand-rolled input.
-          
-          What it brings that the hand-rolled one did not: a clear control,
-          Escape to empty the box, Enter handled explicitly rather than by
-          implicit form submission, an `inputMode` that does not summon a
-          digits-only keypad for a box that also takes a make or a model, and
-          the same non-colour error cue every other field carries. The words
-          stay this screen's — they say what may be typed HERE.
+          The prominent box. The words stay this screen's — they say what may be
+          typed HERE. Escape empties it and the clear control does the same.
+
+          NOT marked invalid by `tooShort`: that refusal is about the free-text
+          box, the make OR the model, and marking only this control invalid
+          would point the operator at the wrong field. The form states it once,
+          below, exactly as it did before.
         */}
-        <div className="mb-3">
-          <SearchBox
-            messages={messages}
+        <div className="mb-3 flex flex-col gap-1">
+          <FormTextField
             label={translate(messages, 'vehicles.search.q')}
-            example={translate(messages, 'vehicles.search.qHint')}
+            description={translate(messages, 'vehicles.search.qHint')}
+            type="search"
+            inputMode="text"
+            dir="auto"
+            spellCheck={false}
+            autoComplete="off"
             value={draft.q}
             maxLength={MAX_VEHICLE_TEXT}
             onChange={(next) => set('q', next)}
-            onSubmit={submitSearch}
-            // NOT wired to `tooShort`: that refusal is about the free-text box,
-            // the make OR the model, and marking only this control invalid would
-            // point the operator at the wrong field. The form states it once,
-            // below, exactly as it did before.
-            inlineSubmit={false}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && draft.q.length > 0) {
+                event.preventDefault();
+                set('q', '');
+              }
+            }}
+            endAdornment={
+              draft.q.length > 0 ? (
+                <IconButton
+                  type="button"
+                  size="small"
+                  aria-label={translate(messages, 'search.clear')}
+                  onClick={() => set('q', '')}
+                >
+                  <span aria-hidden="true">&times;</span>
+                </IconButton>
+              ) : undefined
+            }
             testId="vehicle-search-box"
           />
           <DigitsEcho messages={messages} value={draft.q} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field
-            messages={messages}
-            id={`${formId}-vin`}
-            labelKey="vehicles.search.vin"
-            hintKey="vehicles.search.vinHint"
-            value={draft.vin}
-            onChange={(v) => set('vin', v)}
-            maxLength={MAX_VIN_FRAGMENT}
-            dir="ltr"
-            // Shown, not applied. The raw value is what gets sent; the backend
-            // normalises authoritatively. Two normalisers that disagree is how a
-            // search box and a database look at different vehicles.
-            note={
-              draft.vin.trim().length > 0 &&
-              normalizeVinForDisplay(draft.vin) !== draft.vin.trim().toUpperCase()
-                ? `${translate(messages, 'vehicles.search.vinNormalized')} ${normalizeVinForDisplay(draft.vin)}`
-                : null
-            }
-          />
-          <Field
-            messages={messages}
-            id={`${formId}-plate`}
-            labelKey="vehicles.search.plate"
-            hintKey="vehicles.search.plateHint"
-            value={draft.plate}
-            onChange={(v) => set('plate', v)}
-            maxLength={MAX_PLATE_FRAGMENT}
-            dir="ltr"
-            note={null}
-            echo
-          />
-          <Field
-            messages={messages}
-            id={`${formId}-number`}
-            labelKey="vehicles.search.vehicleNumber"
-            hintKey="vehicles.search.exactHint"
-            value={draft.vehicleNumber}
-            onChange={(v) => set('vehicleNumber', v)}
-            maxLength={MAX_VEHICLE_NUMBER}
-            dir="ltr"
-            note={null}
-            echo
-          />
-          <Field
-            messages={messages}
-            id={`${formId}-make`}
-            labelKey="vehicles.search.make"
-            hintKey="vehicles.search.containsHint"
+          <div className="flex flex-col gap-1">
+            <FormTextField
+              label={translate(messages, 'vehicles.search.vin')}
+              description={translate(messages, 'vehicles.search.vinHint')}
+              value={draft.vin}
+              onChange={(next) => set('vin', next)}
+              maxLength={MAX_VIN_FRAGMENT}
+              dir="ltr"
+              spellCheck={false}
+            />
+            {/* Shown, not applied. The raw value is what gets sent; the backend
+                normalises authoritatively. Two normalisers that disagree is how
+                a search box and a database look at different vehicles. */}
+            {vinNote ? (
+              <p className="text-caption text-text-muted" dir="ltr">
+                {vinNote}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <FormTextField
+              label={translate(messages, 'vehicles.search.plate')}
+              description={translate(messages, 'vehicles.search.plateHint')}
+              value={draft.plate}
+              onChange={(next) => set('plate', next)}
+              maxLength={MAX_PLATE_FRAGMENT}
+              dir="ltr"
+              spellCheck={false}
+            />
+            <DigitsEcho messages={messages} value={draft.plate} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <FormTextField
+              label={translate(messages, 'vehicles.search.vehicleNumber')}
+              description={translate(messages, 'vehicles.search.exactHint')}
+              value={draft.vehicleNumber}
+              onChange={(next) => set('vehicleNumber', next)}
+              maxLength={MAX_VEHICLE_NUMBER}
+              dir="ltr"
+              spellCheck={false}
+            />
+            <DigitsEcho messages={messages} value={draft.vehicleNumber} />
+          </div>
+          <FormTextField
+            label={translate(messages, 'vehicles.search.make')}
+            description={translate(messages, 'vehicles.search.containsHint')}
             value={draft.make}
-            onChange={(v) => set('make', v)}
+            onChange={(next) => set('make', next)}
             maxLength={MAX_VEHICLE_TEXT}
             dir="auto"
-            note={null}
           />
-          <Field
-            messages={messages}
-            id={`${formId}-model`}
-            labelKey="vehicles.search.model"
-            hintKey="vehicles.search.containsHint"
+          <FormTextField
+            label={translate(messages, 'vehicles.search.model')}
+            description={translate(messages, 'vehicles.search.containsHint')}
             value={draft.model}
-            onChange={(v) => set('model', v)}
+            onChange={(next) => set('model', next)}
             maxLength={MAX_VEHICLE_TEXT}
             dir="auto"
-            note={null}
           />
 
-          <Select
-            messages={messages}
-            id={`${formId}-lifecycle`}
-            labelKey="vehicles.search.lifecycleStatus"
+          {/* "Any" first and empty, so choosing it again drops the filter. */}
+          <FormSelectField
+            label={translate(messages, 'vehicles.search.lifecycleStatus')}
             value={draft.lifecycleStatus}
-            onChange={(v) => set('lifecycleStatus', v)}
-            options={VEHICLE_LIFECYCLE_STATUSES}
-            prefix="vehicles.lifecycle."
+            placeholder={translate(messages, 'vehicles.search.anyOption')}
+            options={VEHICLE_LIFECYCLE_STATUSES.map((value) => ({
+              value,
+              label: translateDynamic(messages, `vehicles.lifecycle.${value}`),
+            }))}
+            onChange={(next) => set('lifecycleStatus', next)}
           />
-          <Select
-            messages={messages}
-            id={`${formId}-powertrain`}
-            labelKey="vehicles.search.powertrainCategory"
+          <FormSelectField
+            label={translate(messages, 'vehicles.search.powertrainCategory')}
             value={draft.powertrainCategory}
-            onChange={(v) => set('powertrainCategory', v)}
-            options={POWERTRAIN_CATEGORIES}
-            prefix="vehicles.powertrain."
+            placeholder={translate(messages, 'vehicles.search.anyOption')}
+            options={POWERTRAIN_CATEGORIES.map((value) => ({
+              value,
+              label: translateDynamic(messages, `vehicles.powertrain.${value}`),
+            }))}
+            onChange={(next) => set('powertrainCategory', next)}
           />
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={blocked}
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
-          >
+          <Button type="submit" variant="contained" disabled={blocked}>
             {translate(messages, 'vehicles.search.submit')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outlined"
             onClick={() => {
               setDraft(EMPTY_CRITERIA);
               setTooShort(false);
@@ -245,17 +285,18 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
               // form would show an answer to a question no longer on screen.
               setSubmitted(null);
             }}
-            className="rounded-md border border-border px-4 py-2 text-body text-text-primary"
           >
             {translate(messages, 'vehicles.search.clear')}
-          </button>
+          </Button>
           {canCreate ? (
-            <Link
+            <Button
+              component={Link}
               href={`/${locale}/vehicles/new`}
-              className="ms-auto rounded-md border border-border px-4 py-2 text-body text-text-primary"
+              variant="outlined"
+              className="ms-auto"
             >
               {translate(messages, 'vehicles.create.title')}
-            </Link>
+            </Button>
           ) : null}
         </div>
 
@@ -272,14 +313,15 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
       </form>
 
       {submitted === null ? (
-        <EmptyState
+        // Not an empty result — nothing has been asked, so nothing is missing.
+        <MuiEmptyState
           messages={messages}
           titleKey="vehicles.search.idleTitle"
           descriptionKey="vehicles.search.idleBody"
         />
       ) : (
         // Mounted only after submission — see the docblock. The key restarts the
-        // table on a new search rather than paging the previous one.
+        // grid on a new search rather than paging the previous one.
         <VehicleSearchResults
           key={JSON.stringify(submitted)}
           locale={locale}
@@ -343,7 +385,7 @@ function VehicleSearchResults({
    * `useServerTable` reads whenever its key moves and has no notion of a term
    * settling, of an explicit submission, or of an answer being superseded.
    * `useSearchRequest` owns those three and hands back the same page contract,
-   * so the table and its pager below are unchanged — Previous and Next still
+   * so the grid and its pager below walk it unchanged — Previous and Next still
    * walk the cursor stack, and a criteria or branch change still restarts at
    * page one.
    */
@@ -352,7 +394,6 @@ function VehicleSearchResults({
     load,
     version: workingContextVersion,
   });
-  const table = search.table;
   const router = useRouter();
 
   const makeById = useMemo(
@@ -360,7 +401,8 @@ function VehicleSearchResults({
     [makes]
   );
 
-  const columns = useMemo<readonly Column<VehicleSearchHit>[]>(
+  // No column offers a sort: the operation has no sort parameter.
+  const columns = useMemo<readonly OperationalColumn<VehicleSearchHit>[]>(
     () => [
       {
         id: 'displayNumber',
@@ -386,38 +428,42 @@ function VehicleSearchResults({
          * vehicle no longer carries — a badge naming that plate and the date it
          * stopped being valid. Without the badge an operator who typed an old
          * plate sees a different plate in the row and concludes the search is
-         * wrong.
+         * wrong. The badge is the cell's second line, so it fits the row.
          */
         cell: (row) => (
-          <span className="flex flex-col gap-1">
-            {row.activePlate ? (
-              <code className="font-mono text-caption" dir="ltr">
-                {row.activePlate}
-              </code>
-            ) : (
-              <span className="text-text-muted">
-                {translate(messages, 'vehicles.column.noPlate')}
-              </span>
-            )}
-            {row.plateMatch && !row.plateMatch.active ? (
-              <span
-                data-testid="previous-plate-badge"
-                className="inline-flex flex-wrap items-center gap-1 rounded-md border border-warning-border bg-warning-subtle px-2 py-0.5 text-caption text-text-primary"
-              >
-                <span>
-                  {row.plateMatch.validTo
-                    ? translate(messages, 'vehicles.search.previousPlateUntil')
-                    : translate(messages, 'vehicles.search.previousPlate')}
-                </span>
-                {row.plateMatch.validTo ? (
-                  <bdi>{formatDate(row.plateMatch.validTo, locale)}</bdi>
-                ) : null}
-                <code className="font-mono" dir="ltr">
-                  {row.plateMatch.plate}
+          <TwoLineCell
+            primary={
+              row.activePlate ? (
+                <code className="font-mono text-caption" dir="ltr">
+                  {row.activePlate}
                 </code>
-              </span>
-            ) : null}
-          </span>
+              ) : (
+                <span className="text-text-muted">
+                  {translate(messages, 'vehicles.column.noPlate')}
+                </span>
+              )
+            }
+            secondary={
+              row.plateMatch && !row.plateMatch.active ? (
+                <span
+                  data-testid="previous-plate-badge"
+                  className="inline-flex items-center gap-1 rounded-md border border-warning-border bg-warning-subtle px-2 text-caption text-text-primary"
+                >
+                  <span>
+                    {row.plateMatch.validTo
+                      ? translate(messages, 'vehicles.search.previousPlateUntil')
+                      : translate(messages, 'vehicles.search.previousPlate')}
+                  </span>
+                  {row.plateMatch.validTo ? (
+                    <bdi>{formatDate(row.plateMatch.validTo, locale)}</bdi>
+                  ) : null}
+                  <code className="font-mono" dir="ltr">
+                    {row.plateMatch.plate}
+                  </code>
+                </span>
+              ) : null
+            }
+          />
         ),
       },
       {
@@ -481,12 +527,10 @@ function VehicleSearchResults({
           // below stays for a hit whose name did not resolve.
           if (row.makeName) {
             return (
-              <span className="flex flex-col">
-                <bdi>{row.makeName}</bdi>
-                {row.modelName ? (
-                  <bdi className="text-caption text-text-secondary">{row.modelName}</bdi>
-                ) : null}
-              </span>
+              <TwoLineCell
+                primary={<bdi>{row.makeName}</bdi>}
+                secondary={row.modelName ? <bdi>{row.modelName}</bdi> : null}
+              />
             );
           }
           if (row.makeId === null) {
@@ -524,29 +568,29 @@ function VehicleSearchResults({
         id: 'lifecycleStatus',
         headerKey: 'crm.customers.column.status',
         cell: (row) => (
-          <span className="flex flex-col">
-            <span>{translateDynamic(messages, `vehicles.lifecycle.${row.lifecycleStatus}`)}</span>
-            {row.mergedIntoId ? (
-              // A merged vehicle is RETURNED by search, not hidden, and every
-              // write against it answers 409. Saying so here is what stops an
-              // operator selecting it and meeting an unexplained conflict.
-              //
-              // Stated, not linked — but NOT because the route is missing. That
-              // was the original reason and it stopped being true when `FE-019`
-              // added row navigation to that very route, fifty lines below, in
-              // this file. The sentence outlived the fact for a whole phase,
-              // because nothing in the repository reads comments.
-              //
-              // The real reason: search publishes only `mergedIntoId`, an opaque
-              // identifier with no readable label, so a link here would be a bare
-              // uuid — which this product does not show. The operator reaches the
-              // surviving record by searching for it, or from the duplicate queue
-              // where both sides are named.
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'vehicles.column.mergedInto')}
-              </span>
-            ) : null}
-          </span>
+          <TwoLineCell
+            primary={translateDynamic(messages, `vehicles.lifecycle.${row.lifecycleStatus}`)}
+            secondary={
+              row.mergedIntoId
+                ? // A merged vehicle is RETURNED by search, not hidden, and every
+                  // write against it answers 409. Saying so here is what stops an
+                  // operator selecting it and meeting an unexplained conflict.
+                  //
+                  // Stated, not linked — but NOT because the route is missing. That
+                  // was the original reason and it stopped being true when `FE-019`
+                  // added row navigation to that very route, further down this
+                  // file. The sentence outlived the fact for a whole phase,
+                  // because nothing in the repository reads comments.
+                  //
+                  // The real reason: search publishes only `mergedIntoId`, an opaque
+                  // identifier with no readable label, so a link here would be a bare
+                  // uuid — which this product does not show. The operator reaches the
+                  // surviving record by searching for it, or from the duplicate queue
+                  // where both sides are named.
+                  translate(messages, 'vehicles.column.mergedInto')
+                : null
+            }
+          />
         ),
       },
       {
@@ -577,26 +621,23 @@ function VehicleSearchResults({
   );
 
   return (
-    <section aria-labelledby="vehicle-results-heading" className="flex min-h-0 flex-col">
+    <section aria-labelledby="vehicle-results-heading" className="flex min-h-0 flex-col gap-3">
       <h2 id="vehicle-results-heading" className="sr-only">
         {translate(messages, 'vehicles.search.resultsHeading')}
       </h2>
-      <DataTable<VehicleSearchHit>
+      <OperationalGrid<VehicleSearchHit>
         messages={messages}
+        locale={locale}
+        // The caption the table carried is the grid's accessible name.
+        label={translate(messages, 'vehicles.search.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'vehicles.search.caption')}
+        table={search.table}
         /*
          * `P1-27-FE-002`, the vehicle half. Same defect and same cause as the
-         * customer search: the criteria live outside `TableRequest`, so
-         * `isNarrowed` is permanently false and a search matching nothing said
-         * "Nothing here yet" about the tenant's entire fleet.
+         * customer search: the criteria live outside `TableRequest`, so the
+         * grid's own empty state would make a claim about the tenant's entire
+         * fleet.
          *
          * Unlike the customer search this screen had no zero-result block of its
          * own, so one is added below rather than only suppressing the wrong one.
@@ -617,15 +658,14 @@ function VehicleSearchResults({
          * and nothing navigated to it. The CRM search has carried this row action
          * since Wave 2; the vehicle search never gained one.
          */
-        rowActions={(row) => (
-          <button
-            type="button"
-            onClick={() => router.push(`/${locale}/vehicles/${row.id}`)}
-            className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-          >
-            {translate(messages, 'vehicles.search.open')}
-          </button>
-        )}
+        rowActions={(row) => [
+          {
+            kind: 'button',
+            label: translate(messages, 'vehicles.search.open'),
+            onClick: () => router.push(`/${locale}/vehicles/${row.id}`),
+          },
+        ]}
+        testId="vehicle-search-grid"
       />
       {/*
         A search that matched nothing is a statement about the SEARCH, not about
@@ -644,13 +684,14 @@ function VehicleSearchResults({
             {translate(messages, 'vehicles.search.noMatch')}
           </p>
           {canCreate ? (
-            <Link
+            <Button
+              component={Link}
               href={`/${locale}/vehicles/new`}
+              variant="outlined"
               data-testid="create-vehicle-from-no-results"
-              className="inline-flex items-center rounded-md border border-border px-4 py-2 text-body font-medium text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
             >
               {translate(messages, 'vehicles.create.title')}
-            </Link>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -659,96 +700,5 @@ function VehicleSearchResults({
         {translate(messages, 'vehicles.search.exactMatchNote')}
       </p>
     </section>
-  );
-}
-
-function Field({
-  messages,
-  id,
-  labelKey,
-  hintKey,
-  value,
-  onChange,
-  maxLength,
-  dir,
-  note,
-  echo = false,
-}: {
-  readonly messages: Messages;
-  readonly id: string;
-  readonly labelKey: string;
-  readonly hintKey: string;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly maxLength: number;
-  readonly dir: 'ltr' | 'rtl' | 'auto';
-  readonly note: string | null;
-  /** Echo Arabic-Indic digits as Western digits under the box, for reading only. */
-  readonly echo?: boolean;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-caption text-text-secondary">
-        {translateDynamic(messages, labelKey)}
-      </label>
-      <input
-        id={id}
-        type="text"
-        dir={dir}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        maxLength={maxLength}
-        aria-describedby={`${id}-hint`}
-        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
-      />
-      <p id={`${id}-hint`} className="mt-1 text-caption text-text-muted">
-        {translateDynamic(messages, hintKey)}
-      </p>
-      {note ? (
-        <p className="mt-1 text-caption text-text-muted" dir="ltr">
-          {note}
-        </p>
-      ) : null}
-      {echo ? <DigitsEcho messages={messages} value={value} /> : null}
-    </div>
-  );
-}
-
-function Select({
-  messages,
-  id,
-  labelKey,
-  value,
-  onChange,
-  options,
-  prefix,
-}: {
-  readonly messages: Messages;
-  readonly id: string;
-  readonly labelKey: string;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly options: readonly string[];
-  readonly prefix: string;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-caption text-text-secondary">
-        {translateDynamic(messages, labelKey)}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
-      >
-        <option value="">{translate(messages, 'vehicles.search.anyOption')}</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {translateDynamic(messages, `${prefix}${option}`)}
-          </option>
-        ))}
-      </select>
-    </div>
   );
 }
