@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -200,15 +202,21 @@ export function CustomerProfileScreen({
             const built = BUILT.includes(name);
             return (
               <li key={name}>
-                <button
+                {/* Still a native `<button>`: Material UI's `Button` renders one,
+                    so the role, the natural tab order and Enter/Space are the
+                    browser's. `border-solid` and `font-normal` restore what the
+                    reset gave the plain element and `ButtonBase` takes away
+                    (`border: 0`, the button type's medium weight). */}
+                <Button
                   type="button"
+                  variant="text"
                   onClick={() => setSection(name)}
                   aria-current={active ? 'page' : undefined}
                   className={[
                     'rounded-t-md px-3 py-2 text-body',
                     active
-                      ? 'border-b-2 border-primary font-medium text-text-primary'
-                      : 'text-text-secondary',
+                      ? 'border-b-2 border-solid border-primary font-medium text-text-primary'
+                      : 'font-normal text-text-secondary',
                   ].join(' ')}
                 >
                   {translateDynamic(messages, `crm.customers.profile.section.${name}`)}
@@ -219,7 +227,7 @@ export function CustomerProfileScreen({
                       {translate(messages, 'nav.planned')}
                     </span>
                   )}
-                </button>
+                </Button>
               </li>
             );
           })}
@@ -489,7 +497,9 @@ function ProfileHeader({
           same size on screen as before — the level is a fact about the outline,
           not about the type scale.
         */}
-        <h2 className="text-page-title font-semibold text-text-primary">{customer.displayName}</h2>
+        <Typography component="h2" className="text-page-title font-semibold text-text-primary">
+          {customer.displayName}
+        </Typography>
         {customer.displayNumber ? (
           <code className="font-mono text-caption text-text-secondary">
             {customer.displayNumber}
@@ -535,13 +545,14 @@ function ProfileHeader({
          * that states its own address can point at a screen that moved.
          */
         <div className="mt-4 border-t border-border pt-3">
-          <Link
+          <Button
+            component={Link}
             href={customerWorkOrderStartHref(locale, customer.id)}
-            className="inline-block rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
+            variant="contained"
             data-testid="customer-new-work-order"
           >
             {translate(messages, 'crm.customers.profile.newWorkOrder')}
-          </Link>
+          </Button>
         </div>
       ) : null}
 
