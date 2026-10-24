@@ -4568,6 +4568,7 @@
   "platform.provision.noSubscription": "No subscription for now",
   "platform.provision.organization": "Organisation",
   "platform.provision.plan": "Plan",
+  "platform.provision.planDraftHint": "Saved as a draft only. It does not give the organisation a plan or its limits. After creating the organisation, give it a plan with Assign plan on its page.",
   "platform.provision.referenceUnavailable": "The list of choices could not be loaded, so nothing can be chosen here yet. Use Try again to load it.",
   "platform.provision.registration": "Commercial registration number",
   "platform.provision.startDate": "Start date",

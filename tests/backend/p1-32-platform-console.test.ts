@@ -885,6 +885,68 @@ describe('platform.plan-create / plan-list / plan-update', () => {
   });
 });
 
+// Declared after the plan describe on purpose: PLAN_SMALL exists and is active
+// here, so the refusal below can only come from the boundary, not from the
+// unknown-plan answer org.provision_organization would otherwise give.
+describe('platform.organization-provision body', () => {
+  function provisionBody(code: string, subscription: Record<string, unknown>) {
+    return {
+      tenant: { code, display_name: 'Console raw status', locale: 'en', timezone: 'UTC' },
+      company: { code: 'odpcc', legal_name: 'Console probe company', base_currency: 'JOD' },
+      branch: { code: 'main', name: 'Main', timezone: 'UTC' },
+      owner: { email: `${code}@fixture.test`, displayName: 'Console probe owner' },
+      subscription,
+    };
+  }
+
+  it('refuses a subscription that names its own status, and creates nothing', async () => {
+    // CC-OD-24 / PLAN01: the stored subscription state is never the caller's
+    // choice, so a body naming one is refused before any row is written.
+    const code = `odpc_rawstatus_${RUN}`;
+    asHolder();
+    const result = await call<{
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(organizationProvisionRoute, {
+      path: '/platform/organizations',
+      idempotencyKey: randomUUID(),
+      body: provisionBody(code, { plan_code: PLAN_SMALL, status: 'active' }),
+    });
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+    expect(result.body.violations).toEqual([
+      { path: 'body.subscription', rule: 'unrecognized_keys' },
+    ]);
+    const created = await admin.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM org.tenants WHERE tenant_code = $1',
+      [code]
+    );
+    expect(created.rows[0]?.count).toBe(0);
+  });
+
+  it('still provisions the same body without a status, storing the plan as a draft', async () => {
+    const code = `odpc_draftplan_${RUN}`;
+    asHolder();
+    const result = await call<{ tenantId: string }>(organizationProvisionRoute, {
+      path: '/platform/organizations',
+      idempotencyKey: randomUUID(),
+      body: provisionBody(code, { plan_code: PLAN_SMALL }),
+    });
+    expect(result.status).toBe(201);
+    const stored = await admin.query<{ tenant_id: string; status: string; plan_code: string }>(
+      `SELECT s.tenant_id, s.status, p.plan_code
+         FROM org.tenant_subscriptions s
+         JOIN org.subscription_plans p ON p.id = s.plan_id
+         JOIN org.tenants t ON t.id = s.tenant_id
+        WHERE t.tenant_code = $1`,
+      [code]
+    );
+    expect(stored.rows).toEqual([
+      { tenant_id: result.body.tenantId, status: 'draft', plan_code: PLAN_SMALL },
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Subscriptions
 // ---------------------------------------------------------------------------
