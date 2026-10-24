@@ -410,6 +410,120 @@ describe('Arabic', () => {
     // page two `<h1>`s and the same string twice on screen.
     expect(screen.getByText(ar['crm.duplicates.intro'])).toBeInTheDocument();
   });
+
+  it('names the grid by the Arabic caption', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    expect(screen.getByRole('grid', { name: ar['crm.duplicates.caption'] })).toBeInTheDocument();
+  });
+
+  it('names each Review in Arabic by the pair it opens', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    const action = screen.getByRole('button', {
+      name: new RegExp(`^${ar['crm.duplicates.review']}`),
+    });
+    expect(action).toHaveAccessibleName(
+      `${ar['crm.duplicates.review']} Nadia Khoury · Nadia Khouri`
+    );
+  });
+
+  it('draws the pager right-to-left, in Arabic, Previous and Next closed on a single page', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    const pager = screen.getByRole('navigation', { name: ar['table.pagination'] });
+    expect(pager.closest('[dir]')?.getAttribute('dir')).toBe('rtl');
+    expect(within(pager).getByText(ar['mui.pagination.page'].replace('{page}', '1'))).toBeVisible();
+    expect(within(pager).getByRole('button', { name: ar['table.previousPage'] })).toBeDisabled();
+    expect(within(pager).getByRole('button', { name: ar['table.nextPage'] })).toBeDisabled();
+  });
+
+  it('says an open pair is awaiting review under Decision, in Arabic too', async () => {
+    render('ar');
+    await screen.findByText('Nadia Khoury');
+    const row = document.querySelector('[role="row"][data-id="cand-1"]') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(within(row).getByText(ar['vehicles.duplicateStatus.open'])).toBeInTheDocument();
+  });
+});
+
+describe('the Decision column', () => {
+  const decisionCell = (id: string) =>
+    document.querySelector(`[role="row"][data-id="${id}"] [data-field="decide"]`) as HTMLElement;
+
+  it('says an open pair is awaiting review rather than drawing a dash', async () => {
+    render();
+    await screen.findByText('Nadia Khoury');
+    expect(decisionCell('cand-1')).toHaveTextContent(en['vehicles.duplicateStatus.open']);
+    expect(decisionCell('cand-1')).not.toHaveTextContent('—');
+  });
+
+  it('shows the day a settled pair was decided, and a dash when no day is recorded', async () => {
+    listDuplicates.mockResolvedValue(
+      page([
+        candidate({
+          id: 'cand-dated',
+          status: 'dismissed',
+          reviewedAt: '2026-08-05T09:00:00.000Z',
+        }),
+        candidate({ id: 'cand-undated', status: 'merged', reviewedAt: null }),
+      ])
+    );
+    render();
+    await screen.findAllByText('Nadia Khoury');
+    expect(decisionCell('cand-dated').querySelector('time')).toHaveAttribute(
+      'dateTime',
+      '2026-08-05T09:00:00.000Z'
+    );
+    expect(decisionCell('cand-dated')).not.toHaveTextContent(en['vehicles.duplicateStatus.open']);
+    expect(decisionCell('cand-undated')).toHaveTextContent('—');
+    expect(decisionCell('cand-undated').querySelector('time')).toBeNull();
+  });
+});
+
+describe('the review panel follows the queue', () => {
+  it('closes an open panel when the status is changed', async () => {
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('Nadia Khoury');
+    await user.click(screen.getByRole('button', { name: review() }));
+    expect(screen.getByText(en['crm.duplicates.decideHeading'])).toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status']),
+      en['crm.duplicateStatus.dismissed']
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText(en['crm.duplicates.decideHeading'])).not.toBeInTheDocument()
+    );
+  });
+
+  it('closes the panel and re-reads the queue once a dismissal succeeds', async () => {
+    reviewDuplicateAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'crm.duplicates.dismissed',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('Nadia Khoury');
+    await user.click(screen.getByRole('button', { name: review() }));
+    const readsBefore = listDuplicates.mock.calls.length;
+
+    await user.type(
+      screen.getByLabelText(en['crm.customers.restrictions.reason'], { exact: false }),
+      'Different people who share a name'
+    );
+    await user.click(screen.getByRole('button', { name: en['crm.duplicates.dismiss'] }));
+
+    await waitFor(() => expect(reviewDuplicateAction).toHaveBeenCalledTimes(1));
+    // `onDecided`: the panel is gone and the queue is read again.
+    await waitFor(() =>
+      expect(screen.queryByText(en['crm.duplicates.decideHeading'])).not.toBeInTheDocument()
+    );
+    await waitFor(() => expect(listDuplicates.mock.calls.length).toBe(readsBefore + 1));
+  });
 });
 
 describe('this file is not vacuous', () => {

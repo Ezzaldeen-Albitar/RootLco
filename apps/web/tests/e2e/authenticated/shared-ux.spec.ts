@@ -248,6 +248,25 @@ test.describe('scroll ownership', () => {
       pager.getByRole('button', { name: say('en', 'table.previousPage') })
     ).toBeDisabled();
     await expect(pager.getByRole('button', { name: say('en', 'table.nextPage') })).toBeVisible();
+
+    // Next is CLOSED when there is no further page (`hasMore` false). The read
+    // answers in a server action, so its `hasMore` is not visible to the
+    // browser; a page shorter than the page size is the end of the set, so the
+    // case reads the settled page's row count against the page size and holds
+    // Next disabled. Waiting for the grid to stop being busy matters: Next is
+    // also disabled while a page loads, which would pass for the wrong reason.
+    const queue = page.getByTestId('customer-duplicate-grid');
+    await expect(queue.locator('[aria-busy="true"]')).toHaveCount(0);
+    const pageSize = Number.parseInt(
+      await pager.getByLabel(say('en', 'table.rowsPerPage')).inputValue(),
+      10
+    );
+    const rowsOnPage = await queue.locator('[role="row"][data-id]').count();
+    expect(rowsOnPage, 'the acceptance world holds less than one page of open pairs').toBeLessThan(
+      pageSize
+    );
+    await expect(pager.getByRole('button', { name: say('en', 'table.nextPage') })).toBeDisabled();
+
     const documentMoved = await page.evaluate(() => document.documentElement.scrollTop);
     expect(documentMoved, 'reaching it must not scroll the document').toBeLessThanOrEqual(
       TOLERANCE

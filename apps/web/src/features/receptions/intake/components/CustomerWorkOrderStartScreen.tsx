@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Button from '@mui/material/Button';
 import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
@@ -233,6 +233,22 @@ function vehicleName(messages: Messages, entry: CustomerVehicleEntry): string {
  * is fixed at ten, as before (`honours.pageSize: false`): this list never
  * offered a rows-per-page choice, and every request it sends is one it sent
  * before.
+ *
+ * ## The question is a named group, and the grid has a name of its own
+ *
+ * The radios sat in a `fieldset` whose `legend` named the question once. The
+ * grid keeps that: the visible "This customer's vehicles" line labels a group
+ * (`role="group"`, `aria-labelledby`) around the grid, and the grid is named
+ * for what its rows are — relationship records — so a screen reader hears the
+ * question once and does not hear the same words again as the grid's name.
+ *
+ * ## Loading is announced, not only drawn
+ *
+ * The grid draws skeleton rows and marks itself busy, which says nothing to a
+ * screen reader. The step's former loading state said "Loading" in a polite
+ * status, and that sentence is kept: a visually hidden status that holds it
+ * while the page loads and is empty otherwise, mounted throughout so the change
+ * is announced.
  */
 function CurrentVehicleChoice({
   locale,
@@ -259,6 +275,7 @@ function CurrentVehicleChoice({
   const table = useServerTable<CustomerVehicleEntry>(load, {
     initial: { ...INITIAL_REQUEST, pageSize: 10 },
   });
+  const legendId = useId();
 
   const offeredResponse = useMemo(
     () =>
@@ -336,49 +353,67 @@ function CurrentVehicleChoice({
         {translate(messages, 'receptions.workOrderStart.vehicleHeading')}
       </h2>
 
-      <p className="text-caption font-medium text-text-secondary">
-        {translate(messages, 'receptions.workOrderStart.vehicleLegend')}
-      </p>
-
-      <OperationalGrid<CustomerVehicleEntry>
-        messages={messages}
-        locale={locale}
-        label={translate(messages, 'receptions.workOrderStart.vehicleLegend')}
-        columns={columns}
-        rowId={(entry) => entry.id}
-        table={offeredTable}
-        rowActions={(entry) => [
-          {
-            kind: 'button',
-            label: translate(messages, 'receptions.intake.vehicle.choose'),
-            about: vehicleName(messages, entry),
-            pressed: chosen !== null && chosen.id === entry.vehicleId,
-            onClick: () =>
-              onChoose({
-                id: entry.vehicleId,
-                displayNumber: entry.vehicleDisplayNumber,
-                vin: entry.vin,
-                modelYear: entry.modelYear,
-                alreadyLinked: true,
-              }),
-          },
-        ]}
-        density="compact"
-        // "No vehicle recorded" and "none on this page" are this step's own
-        // sentences, below.
-        suppressEmptyState
-        testId="work-order-start-grid"
-      />
-      {table.status === 'idle' && offeredResponse !== null && offeredResponse.rows.length === 0 ? (
-        <p className="text-caption text-text-muted" data-testid="work-order-start-empty">
-          {translate(
-            messages,
-            morePages
-              ? 'receptions.workOrderStart.emptyOnThisPage'
-              : 'receptions.workOrderStart.empty'
-          )}
+      <div
+        role="group"
+        aria-labelledby={legendId}
+        className="flex flex-col gap-3"
+        data-testid="work-order-start-vehicle-group"
+      >
+        <p id={legendId} className="text-caption font-medium text-text-secondary">
+          {translate(messages, 'receptions.workOrderStart.vehicleLegend')}
         </p>
-      ) : null}
+
+        <p
+          role="status"
+          aria-live="polite"
+          className="sr-only"
+          data-testid="work-order-start-loading"
+        >
+          {table.status === 'loading' ? translate(messages, 'state.loading') : null}
+        </p>
+
+        <OperationalGrid<CustomerVehicleEntry>
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'vehicles.relationships.caption')}
+          columns={columns}
+          rowId={(entry) => entry.id}
+          table={offeredTable}
+          rowActions={(entry) => [
+            {
+              kind: 'button',
+              label: translate(messages, 'receptions.intake.vehicle.choose'),
+              about: vehicleName(messages, entry),
+              pressed: chosen !== null && chosen.id === entry.vehicleId,
+              onClick: () =>
+                onChoose({
+                  id: entry.vehicleId,
+                  displayNumber: entry.vehicleDisplayNumber,
+                  vin: entry.vin,
+                  modelYear: entry.modelYear,
+                  alreadyLinked: true,
+                }),
+            },
+          ]}
+          density="compact"
+          // "No vehicle recorded" and "none on this page" are this step's own
+          // sentences, below.
+          suppressEmptyState
+          testId="work-order-start-grid"
+        />
+        {table.status === 'idle' &&
+        offeredResponse !== null &&
+        offeredResponse.rows.length === 0 ? (
+          <p className="text-caption text-text-muted" data-testid="work-order-start-empty">
+            {translate(
+              messages,
+              morePages
+                ? 'receptions.workOrderStart.emptyOnThisPage'
+                : 'receptions.workOrderStart.empty'
+            )}
+          </p>
+        ) : null}
+      </div>
 
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'receptions.workOrderStart.currentOnlyNote')}

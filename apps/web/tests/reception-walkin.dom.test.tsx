@@ -935,7 +935,7 @@ describe('the vehicle step that follows the customer profile', () => {
     const choices = await chooseVehicle();
     expect(choices).toHaveLength(1);
     expect(
-      screen.getByRole('grid', { name: en['receptions.workOrderStart.vehicleLegend'] })
+      screen.getByRole('grid', { name: en['vehicles.relationships.caption'] })
     ).toBeInTheDocument();
     expect(screen.getByText('V-0007')).toBeVisible();
     expect(screen.queryByText('V-0008')).not.toBeInTheDocument();
@@ -944,10 +944,69 @@ describe('the vehicle step that follows the customer profile', () => {
     expect(customerId).toBe(CUSTOMER_ID);
   });
 
+  it.each([
+    ['en', en, renderLtr],
+    ['ar', ar, renderRtl],
+  ] as const)(
+    'names the question once, as a group, and the grid by what its rows are (%s)',
+    async (locale, catalogue, view) => {
+      /*
+       * The radios sat in a fieldset whose legend named the question. The grid
+       * replaced the legend with a paragraph and took the same words as its own
+       * name, so the group was gone and the words were heard twice.
+       */
+      view(<CustomerWorkOrderStartScreen {...stepProps({ locale, messages: catalogue })} />);
+      await chooseVehicle(catalogue);
+
+      const group = screen.getByRole('group', {
+        name: catalogue['receptions.workOrderStart.vehicleLegend'],
+      });
+      const grid = within(group).getByRole('grid');
+      expect(grid).toHaveAccessibleName(catalogue['vehicles.relationships.caption']);
+      expect(catalogue['vehicles.relationships.caption']).not.toBe(
+        catalogue['receptions.workOrderStart.vehicleLegend']
+      );
+      // The question's words name the group and nothing else.
+      expect(
+        screen.queryByRole('grid', { name: catalogue['receptions.workOrderStart.vehicleLegend'] })
+      ).not.toBeInTheDocument();
+      // The section is still named by its visible heading, a third distinct name.
+      expect(
+        screen.getByRole('region', { name: catalogue['receptions.workOrderStart.vehicleHeading'] })
+      ).toBe(screen.getByTestId('work-order-start-vehicle'));
+    }
+  );
+
+  it.each([
+    ['en', en, renderLtr],
+    ['ar', ar, renderRtl],
+  ] as const)(
+    'announces the loading state before the list answers, and stops once it has (%s)',
+    async (locale, catalogue, view) => {
+      let answer: (value: unknown) => void = () => {};
+      listCustomerVehicles.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      view(<CustomerWorkOrderStartScreen {...stepProps({ locale, messages: catalogue })} />);
+
+      // Said, not only drawn: the skeleton rows are silent to a screen reader.
+      const status = within(screen.getByTestId('work-order-start-vehicle')).getByRole('status');
+      expect(status).toHaveTextContent(catalogue['state.loading']);
+      expect(status).toHaveAttribute('aria-live', 'polite');
+
+      answer(page([OWN_VEHICLE]));
+      await chooseVehicle(catalogue);
+      expect(status).toBeEmptyDOMElement();
+    }
+  );
+
   it('shows the loading state before the list answers', () => {
     listCustomerVehicles.mockReturnValue(new Promise(() => {}));
     renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
 
+    expect(screen.getByTestId('work-order-start-loading')).toHaveTextContent(en['state.loading']);
     // The grid keeps its header and marks itself busy while the page loads; no
     // row, and so no choice, exists yet.
     expect(screen.getByRole('grid').closest('[aria-busy="true"]')).not.toBeNull();
@@ -1072,6 +1131,77 @@ describe('the vehicle step that follows the customer profile', () => {
     expect(await screen.findByText(en['state.denied.title'])).toBeVisible();
     expect(screen.queryByTestId('work-order-start-empty')).not.toBeInTheDocument();
   });
+
+  /*
+   * The three outcomes the step's own `ListStates` drew differently before the
+   * grid (P1-32-PRE-OD-CRM1C). "Not found" is the deliberate change: it was the
+   * general error with a retry, and is now the grid's not-found state, which
+   * offers none — the same request finds the same nothing.
+   */
+  it.each([
+    ['en', en, renderLtr],
+    ['ar', ar, renderRtl],
+  ] as const)(
+    'reports a not-found answer as not found, with no retry (%s)',
+    async (locale, catalogue, view) => {
+      listCustomerVehicles.mockResolvedValue(
+        page([], { status: 'not-found', correlationId: 'step-not-found-id' })
+      );
+      view(<CustomerWorkOrderStartScreen {...stepProps({ locale, messages: catalogue })} />);
+
+      expect(await screen.findByText(catalogue['state.notFound.title'])).toBeVisible();
+      expect(screen.queryByText(catalogue['state.error.title'])).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: catalogue['state.retry'] })
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId('work-order-start-empty')).not.toBeInTheDocument();
+    }
+  );
+
+  it.each([
+    ['en', en, renderLtr],
+    ['ar', ar, renderRtl],
+  ] as const)(
+    'reports an unavailable read with its reference, and re-reads on Retry (%s)',
+    async (locale, catalogue, view) => {
+      listCustomerVehicles.mockResolvedValue(
+        page([], { status: 'unavailable', correlationId: 'step-unavailable-id' })
+      );
+      const user = userEvent.setup();
+      view(<CustomerWorkOrderStartScreen {...stepProps({ locale, messages: catalogue })} />);
+
+      expect(await screen.findByText(catalogue['state.unavailable.title'])).toBeVisible();
+      expect(screen.getByText('step-unavailable-id')).toBeVisible();
+      expect(screen.queryByTestId('work-order-start-empty')).not.toBeInTheDocument();
+
+      const readsBefore = listCustomerVehicles.mock.calls.length;
+      listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE]));
+      await user.click(screen.getByRole('button', { name: catalogue['state.retry'] }));
+      expect(await chooseVehicle(catalogue)).toHaveLength(1);
+      expect(listCustomerVehicles).toHaveBeenCalledTimes(readsBefore + 1);
+    }
+  );
+
+  it.each([
+    ['en', en, renderLtr],
+    ['ar', ar, renderRtl],
+  ] as const)(
+    'reports an ended session with the way back to sign in and no retry (%s)',
+    async (locale, catalogue, view) => {
+      listCustomerVehicles.mockResolvedValue(page([], { status: 'expired', correlationId: null }));
+      view(<CustomerWorkOrderStartScreen {...stepProps({ locale, messages: catalogue })} />);
+
+      expect(await screen.findByText(catalogue['state.expired.title'])).toBeVisible();
+      expect(screen.getByRole('link', { name: catalogue['auth.backToLogin'] })).toHaveAttribute(
+        'href',
+        `/${locale}/login`
+      );
+      expect(
+        screen.queryByRole('button', { name: catalogue['state.retry'] })
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId('work-order-start-empty')).not.toBeInTheDocument();
+    }
+  );
 });
 
 describe('continuing from the customer profile into the existing check-in flow', () => {

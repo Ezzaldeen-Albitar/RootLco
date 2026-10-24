@@ -149,10 +149,16 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
         id: 'decide',
         headerKey: 'crm.duplicates.decision',
         cell: (row) =>
-          // A dismissed or merged pair is settled: it shows when, and its row
-          // offers no action (`rowActions` below). Re-deciding it is refused by
-          // the backend, and the control should never have been there.
-          !isActionable(row) && row.reviewedAt ? (
+          // An open pair is still waiting for its decision, and says so — its
+          // Review is in the row-action column. A dismissed or merged pair is
+          // settled: it shows when, if that day was recorded, and its row offers
+          // no action (`rowActions` below). Re-deciding it is refused by the
+          // backend, and the control should never have been there.
+          isActionable(row) ? (
+            <span className="text-caption text-text-secondary">
+              {translate(messages, 'vehicles.duplicateStatus.open')}
+            </span>
+          ) : row.reviewedAt ? (
             <time className="text-caption text-text-muted" dateTime={row.reviewedAt} dir="ltr">
               {formatDate(row.reviewedAt, locale)}
             </time>
