@@ -8211,9 +8211,9 @@ Open, recorded by this round and not changed by it:
 
 ### The console's session outage reads as unavailable (`P1-32-PRE-OD-CONSOLEFIX`)
 
-This slice closes one item the `P1-32-PRE-OD-AUTHB` record left open, and removes four console
-exports nothing used. It changes the web application only: no backend behaviour, no API contract,
-no permission code, no message and no route changed.
+This slice closes one item the `P1-32-PRE-OD-AUTHB` record left open. It changes the web
+application only: no backend behaviour, no API contract, no permission code, no message and no
+route changed.
 
 - The console's session guard (`requirePlatformSession` in `features/platform/api/session.ts`)
   sent every answer that was not a session, not an expiry and not a missing cookie to sign-in with
@@ -8226,9 +8226,8 @@ no permission code, no message and no route changed.
   still lands on `reason=forbidden` with no intended page, and an expired token still takes the
   session-ended route. How the session is read, and where sign-in goes afterwards
   (`destinationAfterSignIn`), are unchanged.
-- `features/platform/components/ui.tsx` no longer exports `PRIMARY_BUTTON`, `SECONDARY_BUTTON`,
-  `SimpleTable` or `Cell`; no file imported them. It still exports `Section`, `SECTION_HINT`,
-  `StatusBadge` and `ReadFailure`.
+- `features/platform/components/ui.tsx` is not changed by this slice; it is the same as on
+  `develop`.
 
 Tests: `apps/web/tests/platform-login-routing.test.ts` gains six cases, three in each language (56
 to 62 executed in that file): a 503 platform read and a platform answer of the wrong shape each
@@ -8242,8 +8241,13 @@ Open, recorded by this slice and not changed by it:
 
 - Sign-out not reading the backend's answer (`features/authentication/actions/logout.ts`, the
   first open item of the `P1-32-PRE-OD-AUTHB` record) waits on a planner ruling.
-- The note in `.github/ci-baselines/coverage-baseline.web.json` that names `ui.tsx` as the weakest
-  console file at 11 of 16 lines is now stale, because the lines it counted as not run are gone.
-  That file is changed only with Owner approval, so it is left as it is.
+- Follow-up, not done here: `features/platform/components/ui.tsx` exports `PRIMARY_BUTTON`,
+  `SECONDARY_BUTTON`, `SimpleTable` and `Cell`, and no file imports any of the four. Its other
+  exports are in use: `ReadFailure` by three console pages, and `Section`, `SECTION_HINT` and
+  `StatusBadge` by eight console components. Removing the four makes `ui.tsx` a changed file, and
+  a changed file must reach the 60% line-coverage floor the web coverage gate applies to touched
+  files, which `ui.tsx` does not meet. So the removal must either bring that file's line coverage
+  to the floor (for example with a test that renders `ReadFailure`), or come with the console's
+  MUI retirement, which waits on the Owner's `PLAN01` decision.
 - No browser run reaches the console during an outage; the redirect is held by
   `platform-login-routing.test.ts`, which stops at the redirect address.
