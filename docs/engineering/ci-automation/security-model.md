@@ -314,6 +314,75 @@ The bounded authority in point 3 was not used: no other advisory blocked the req
 manifest, override or exception was added and no gate was changed (change-control row CC-OD-60).
 From P1-32-PRE-OD-DEP7.
 
+**Next.js, zod and fast-uri advisories (2026-10-24): one batch, prepared, not landed.** Three
+packages carried advisories that block the required audit. `next` 16.3.8 (production, pinned
+exactly in the root, apps/web and apps/api manifests) is named by GHSA-673q-mjm6-r5xr (critical,
+remote code execution in `use cache` functions returning typed arrays, published and reviewed
+2026-10-22 16:42:31 UTC), GHSA-2464-fhr4-w9xw (critical, remote code execution in the Image
+Optimization API through the `sharp` library on glibc-based Linux, 15:52:53 UTC) and
+GHSA-p3m5-59mp-jv5r (CVE-2026-94482, high, denial of service in the App Router when at least one
+Server Action exists, 15:50:34 UTC). Each names `>= 16.0.0, <= 16.4.0` and is patched in 16.4.1;
+the three exact pins move to 16.4.1. `zod` 4.4.3 (production, declared `^4.3.6` in the root,
+apps/web and apps/api manifests) is named by GHSA-mrhx-c7xc-m3w5 (CVE-2023-54404, high, memory
+exhaustion while validating an array schema without a length constraint, published 2026-10-01
+18:32:46 UTC and reviewed 2026-10-23 18:26:50 UTC), which names `< 4.6.6` and is patched in 4.6.6;
+4.6.6 was inside the declared range, and the three declarations are raised to `^4.6.6` so that the
+manifests, not only the lockfile, exclude every vulnerable release. `fast-uri` 4.2.1 (development
+only, reached through stylelint, table and ajv 8.20.0) is named by GHSA-w74x-v6f9-j3xg
+(CVE-2026-110306) and GHSA-wjr9-j795-jxcr (CVE-2026-110180), both medium, and by
+GHSA-xhq7-xmqj-769h (CVE-2026-110095) and GHSA-333x-w4r6-6crp (CVE-2026-110725), both low, all
+published and reviewed on 2026-10-23 between 21:36:40 and 21:41:36 UTC and patched on the 4.x line
+in 4.2.3. No workspace declares `fast-uri`; ajv declares `^3.0.1` and the existing root override
+`"fast-uri": "^4.1.5"` decided the version; that override admitted 4.2.3, and its floor is raised
+to `^4.2.3`, as P1-32-PRE-OD-DEP-01 (`87f1eebf`) raised it before. The lockfile changes 15 nodes
+against develop `4ea2986a`: the three workspace declarations (`next` 16.4.1 and `zod` `^4.6.6`),
+`next`, `@next/env` and the eight `@next/swc-*` binaries at 16.4.1 (the
+optional `sharp` range of `next` moves from `^0.35.4` to `^0.35.5`; the locked `sharp` stays
+0.35.5), `zod` at 4.6.6 and `fast-uri` at 4.2.3. Every new integrity value equals the registry's
+`dist.integrity`. `npm update` would take zod 4.6.7, and a root override of `zod` is refused
+(EOVERRIDE, a root dependency), so the root `zod` declaration was pinned to 4.6.6 and the
+`fast-uri` override set to 4.2.3 for one lockfile-only install with npm 11.13.0; the manifest
+was then restored byte for byte and the lockfile regenerated, which kept both versions; raising
+the floors afterwards changed only the three workspace declarations in the lockfile. No override
+or exception was added and no gate was changed. `eslint-config-next` and
+`@next/eslint-plugin-next` stay at 16.3.8 deliberately: neither is named by an advisory, their
+peers (`eslint >=9.0.0`, `typescript >=3.3.1`) are satisfied, and lint passed in hosted CI on
+this branch. P1-32-PRE-OD-DEP2-01 (`160a6769`) moved them together with `next`; a later
+development-tooling slice may align them again. Exposure, from the tree: apps/web holds 61
+`'use server'` modules and apps/api none, so the Server Action advisory applies to the web
+application; no source module uses `'use cache'`, neither `next.config.ts` sets
+`cacheComponents` or an `images` block (`dangerouslyAllowSVG` stays at its default, off), no
+file imports `next/image`, and apps/web/public holds one SVG (`favicon.svg`). The locally served
+site listened only on `[::1]:3000` and `[::1]:3100` when measured on 2026-10-24. In apps/api,
+15 of the 17 `z.array` schemas (counted by parsing the TypeScript, which includes the multi-line
+`z.array` forms) carry a `.max()` bound; two carry none: `coverage` in
+`apps/api/src/app/api/v1/warranty-policies/route.ts:207` and `items` in
+`apps/api/src/app/api/v1/delivery-checklist-templates/route.ts:136`. **zod 4.5 and 4.6 change
+behaviour, and one change alters the published contract.** zod 4.5.0 made seconds mandatory in
+`z.iso.datetime()` and `z.string().datetime()`: the 31 request fields in apps/api that use them
+now answer 400 to an instant without seconds (for example `2026-10-24T09:15Z`), which they
+accepted at 4.4.3, and the export route's own response check (`asOf`, `generatedAt`) requires
+seconds too; those two values come from `Date.prototype.toISOString()`, which always writes
+them. The web client always sends seconds (`composeInstant` in
+`apps/web/src/components/forms/instant.ts`), and no test value, fixture or source path sends an
+instant without seconds. The generated `docs/api/openapi.v1.json` changes in five places, the
+date-time patterns in the reports export, rows and snapshots schemas, and was regenerated with
+`UPDATE_OPENAPI=1` on `tests/openapi-contract.test.ts`. Two tests pin the new contract:
+`tests/unit/p1-32-zod-datetime-seconds.test.ts` (one route schema of each form refuses
+`2026-10-24T10:15Z` and accepts `2026-10-24T10:15:00Z`) and the composeInstant cases at the end
+of `apps/web/tests/appointments-window-support.test.ts` (`composeInstant` always emits seconds,
+and both schema forms accept its output). The alternative, keeping secondless
+instants accepted, is an API source change that the `dependency-security` ownership profile
+forbids, so it would be its own slice and was not taken. Other stricter zod behaviours in the
+same releases: a `__proto__` key is always stripped, and `.strict()` reports one as an
+unrecognised key; a strict object with an extra key and a bad value reports both issues instead
+of the first; string `.min()`, `.max()` and `.length()` count Unicode code points instead of
+UTF-16 code units, which changes only input outside the Basic Multilingual Plane; and
+`z.toJSONSchema` folds chained bounds instead of keeping the last one written. Because two
+production dependencies move and the published contract changes, the batch is outside the
+bounded development-only authority quoted above, and **landing requires the Owner's approval**
+(change-control row CC-OD-61). From P1-32-PRE-OD-DEP8.
+
 ### The one development exception, and why it is gone
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this

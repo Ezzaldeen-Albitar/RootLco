@@ -167,7 +167,7 @@
   "overrides": {
     "postcss": "^8.5.24",
     "sharp": "^0.35.5",
-    "fast-uri": "^4.1.5",
+    "fast-uri": "^4.2.3",
     "brace-expansion@<1.1.21": "^1.1.21",
     "brace-expansion@>=4.0.0 <5.0.12": "^5.0.12",
     "nanoid": "^3.3.17",
@@ -182,13 +182,13 @@
     "@aws-sdk/s3-request-presigner": "3.1111.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.97.0",
-    "next": "16.3.8",
+    "next": "16.4.1",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sharp": "^0.35.5",
-    "zod": "^4.3.6"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^20",
