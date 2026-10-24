@@ -105,7 +105,7 @@ export interface ActionState {
    *
    * Every render site in the application already assumes that and translates —
    * `RecordForm.tsx:169`, `RolesScreen.tsx:194,200`, `UsersScreen.tsx:429,436`,
-   * `CustomerProfileScreen.tsx:417-419`, `CustomerCreateScreen.tsx:409` and the
+   * `CustomerProfileScreen.tsx:417-419`, `CustomerCreateScreen.tsx:122` and the
    * vehicle screens. They were right and this sentence was wrong.
    */
   readonly fieldErrors?: Readonly<Record<string, string>>;

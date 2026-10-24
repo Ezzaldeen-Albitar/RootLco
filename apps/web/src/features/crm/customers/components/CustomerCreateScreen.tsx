@@ -1,9 +1,12 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { Icon } from '@/components/primitives/Icon';
-import { controlClass } from '@/components/forms/Field';
 import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -58,6 +61,15 @@ import {
  * Creation accepts `prospect` and `active` only. The search filter offers all
  * five because a customer can *reach* the others; it cannot be *born* there. A
  * form offering the search vocabulary would 422 on three of its five options.
+ *
+ * ## On the Material UI wrappers (`P1-32-PRE-OD-CRM1A`, ADR-022)
+ *
+ * Presentation only: the same field names, bounds, actions and requests as
+ * before. `FormTextField` and `FormSelectField` carry the `FieldFrame` contract
+ * (`components/forms/mui/field-wiring.tsx`), which marks a required box with
+ * `aria-required` and never with the native `required` — so an empty name is
+ * not stopped by the browser but by the Server Action's own schema, which
+ * refuses it with `field.required` before any request is made.
  */
 
 interface Props {
@@ -100,10 +112,32 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
    */
   const formRef = useFocusFirstInvalid(state);
   const corrections = useClearOnCorrect(state);
-  const set = (name: string) => (value: string) => {
-    corrections.noteEdited(name);
+  const set = (name: string) => (value: string) =>
     setValues((current) => ({ ...current, [name]: value }));
+  const edited = (name: string) => () => corrections.noteEdited(name);
+
+  // Every value in `fieldErrors` is a catalogue key, translated here.
+  const fieldError = (name: string): string | undefined => {
+    const key = corrections.errorFor(name);
+    return key === undefined ? undefined : translateDynamic(messages, key);
   };
+  const optional = (labelKey: string) =>
+    `${translateDynamic(messages, labelKey)} ${translate(messages, 'field.optional')}`;
+
+  /*
+   * The chosen status, written back AFTER React's reset of the form — see the
+   * `NEW-FE-01` note at the status select below for why the remount alone is
+   * not enough on the Material select. A layout effect runs after the reset in
+   * the same commit and before paint, and it writes the DOM only, never state,
+   * so nothing re-renders and nothing flickers.
+   */
+  const lifecycle = values['lifecycleStatus'] ?? 'prospect';
+  useLayoutEffect(() => {
+    const select = formRef.current?.elements.namedItem('lifecycleStatus');
+    if (select instanceof HTMLSelectElement && select.value !== lifecycle) {
+      select.value = lifecycle;
+    }
+  }, [formRef, lifecycle, state.attempt]);
 
   if (state.status === 'success' && state.created) {
     return <CreationOutcome locale={locale} messages={messages} state={state} />;
@@ -115,92 +149,100 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
         `role="alert"` and `key` on the attempt: submitting the same wrong value
         twice produces an identical state object, React sees no change, and the
         second failure is announced to nobody.
+
+        An inline `Alert` rather than `MuiFormFeedback`, because that banner
+        draws nothing for a state without a `messageKey` — and `fromFailure`
+        returns a caller's cancellation with none (`lib/forms/action-result.ts`).
+        This banner has always said `form.formError` for that case instead.
       */}
       {state.status !== 'idle' ? (
-        <p
+        <Alert
           key={state.attempt}
+          severity="error"
+          variant="outlined"
           role="alert"
-          className="rounded-md border border-error bg-surface px-3 py-2 text-body text-error"
+          className="w-full"
         >
-          {translateWithValues(messages, state.messageKey ?? 'form.formError', state.messageValues)}
-          <FailureExplanation
-            messages={messages}
-            messageKey={state.messageKey ?? 'form.formError'}
-          />
+          <p>
+            {translateWithValues(
+              messages,
+              state.messageKey ?? 'form.formError',
+              state.messageValues
+            )}
+            <FailureExplanation
+              messages={messages}
+              messageKey={state.messageKey ?? 'form.formError'}
+            />
+          </p>
           {state.correlationId ? (
-            <span className="ms-2 text-caption text-text-muted">
+            <p className="mt-1 text-caption text-text-muted">
               {translate(messages, 'state.correlationId')}{' '}
-              <code className="font-mono">{state.correlationId}</code>
-            </span>
+              <code className="font-mono text-text-secondary">{state.correlationId}</code>
+            </p>
           ) : null}
-        </p>
+        </Alert>
       ) : null}
 
       {kind === 'individual' ? (
         <>
-          <TextField
+          <FormTextField
             name="givenName"
+            label={translate(messages, 'crm.customers.create.givenName')}
             value={values['givenName'] ?? ''}
-            onValueChange={set('givenName')}
-            labelKey="crm.customers.create.givenName"
-            messages={messages}
+            onEdit={edited('givenName')}
+            onChange={set('givenName')}
             maxLength={MAX_PERSON_NAME}
             required
-            error={corrections.errorFor('givenName')}
+            error={fieldError('givenName')}
           />
-          <TextField
+          <FormTextField
             name="familyName"
+            label={translate(messages, 'crm.customers.create.familyName')}
             value={values['familyName'] ?? ''}
-            onValueChange={set('familyName')}
-            labelKey="crm.customers.create.familyName"
-            messages={messages}
+            onEdit={edited('familyName')}
+            onChange={set('familyName')}
             maxLength={MAX_PERSON_NAME}
             required
-            error={corrections.errorFor('familyName')}
+            error={fieldError('familyName')}
           />
-          <TextField
+          {/* Individual only: a company carries no preferred language here. */}
+          <FormTextField
             name="preferredLocale"
+            label={optional('crm.customers.create.preferredLocale')}
+            description={translate(messages, 'crm.customers.create.preferredLocaleHint')}
             value={values['preferredLocale'] ?? ''}
-            onValueChange={set('preferredLocale')}
-            labelKey="crm.customers.create.preferredLocale"
-            hintKey="crm.customers.create.preferredLocaleHint"
-            messages={messages}
+            onEdit={edited('preferredLocale')}
+            onChange={set('preferredLocale')}
             maxLength={10}
-            error={corrections.errorFor('preferredLocale')}
+            error={fieldError('preferredLocale')}
           />
         </>
       ) : (
         <>
-          <TextField
+          <FormTextField
             name="legalName"
+            label={translate(messages, 'crm.customers.create.legalName')}
             value={values['legalName'] ?? ''}
-            onValueChange={set('legalName')}
-            labelKey="crm.customers.create.legalName"
-            messages={messages}
+            onEdit={edited('legalName')}
+            onChange={set('legalName')}
             maxLength={MAX_COMPANY_NAME}
             required
-            error={corrections.errorFor('legalName')}
+            error={fieldError('legalName')}
           />
-          <TextField
+          <FormTextField
             name="tradeName"
+            label={optional('crm.customers.create.tradeName')}
+            description={translate(messages, 'crm.customers.create.tradeNameHint')}
             value={values['tradeName'] ?? ''}
-            onValueChange={set('tradeName')}
-            labelKey="crm.customers.create.tradeName"
-            hintKey="crm.customers.create.tradeNameHint"
-            messages={messages}
+            onEdit={edited('tradeName')}
+            onChange={set('tradeName')}
             maxLength={MAX_COMPANY_NAME}
-            error={corrections.errorFor('tradeName')}
+            error={fieldError('tradeName')}
           />
         </>
       )}
 
       <div className="flex flex-col gap-1">
-        <label
-          className="text-caption font-medium text-text-secondary"
-          htmlFor="crm-create-lifecycle"
-        >
-          {translate(messages, 'crm.customers.create.lifecycleStatus')}
-        </label>
         {/*
           Three parts, and none of them is optional. Written out because the
           obvious one-line fix looks complete, is not, and passes review.
@@ -229,7 +271,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
           reconciler sees no change and never writes the DOM back: the reset wins
           and the element silently disagrees with the state that drives it.
 
-          So:
+          So the native select shipped here was:
             - `onChange` records the choice in `values`, which is what the rest
               of this form already relies on;
             - `key` on the attempt counter remounts the element after each
@@ -238,43 +280,49 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
               also what `form.reset()` restores to, so the reset now lands on the
               operator's choice instead of overriding it.
 
+          On Material UI (`P1-32-PRE-OD-CRM1A`) the third part is not available:
+          `FormSelectField` is controlled by type and takes no `defaultValue`.
+          The key alone was measured NOT to be enough — React 19 runs the reset
+          at the end of the commit that also mounts the new element, so a
+          mount seeded through `value` (which never sets `defaultSelected`) is
+          reset to the first option, "Prospect", in the same commit. So `onChange`
+          and the `key` stay, and the layout effect above the early return
+          writes the held choice back after the reset, before paint.
+
           The same hole exists wherever a `<select>` sits in a `<form action={…}>`.
           `components/forms/RecordForm.tsx` is not visibly affected only because
           its default is the empty placeholder, which is also where the reset
           lands — the two coincide, so nothing shows. Raised as `NEW-FE-01`
           rather than changed blind here.
         */}
-        <select
+        <FormSelectField
           key={`lifecycle-${state.attempt ?? 0}`}
-          id="crm-create-lifecycle"
+          label={translate(messages, 'crm.customers.create.lifecycleStatus')}
           name="lifecycleStatus"
-          defaultValue={values['lifecycleStatus'] ?? 'prospect'}
-          onChange={(event) => set('lifecycleStatus')(event.target.value)}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-        >
-          {/* Two options, because creation accepts two. */}
-          {CREATABLE_LIFECYCLE_STATUSES.map((value) => (
-            <option key={value} value={value}>
-              {translateDynamic(messages, `crm.lifecycle.${value}`)}
-            </option>
-          ))}
-        </select>
+          value={values['lifecycleStatus'] ?? 'prospect'}
+          onEdit={edited('lifecycleStatus')}
+          onChange={set('lifecycleStatus')}
+          // Two options, because creation accepts two.
+          options={CREATABLE_LIFECYCLE_STATUSES.map((value) => ({
+            value,
+            label: translateDynamic(messages, `crm.lifecycle.${value}`),
+          }))}
+          error={fieldError('lifecycleStatus')}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="submit"
+          variant="contained"
           disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60"
+          aria-busy={pending || undefined}
         >
           {translate(messages, pending ? 'form.saving' : 'form.submit')}
-        </button>
-        <Link
-          href={`/${locale}/crm/customers`}
-          className="rounded-md border border-border px-4 py-2 text-body text-text-secondary"
-        >
+        </Button>
+        <Button component={Link} href={`/${locale}/crm/customers`} variant="outlined">
           {translate(messages, 'form.cancel')}
-        </Link>
+        </Button>
       </div>
     </form>
   );
@@ -358,93 +406,17 @@ function CreationOutcome({
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <Link
+        <Button
+          component={Link}
           href={`/${locale}/crm/customers/${created.customerId}`}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
+          variant="contained"
         >
           {translate(messages, 'crm.customers.create.openCreated')}
-        </Link>
-        <Link
-          href={`/${locale}/crm/customers`}
-          className="rounded-md border border-border px-4 py-2 text-body text-text-secondary"
-        >
+        </Button>
+        <Button component={Link} href={`/${locale}/crm/customers`} variant="outlined">
           {translate(messages, 'crm.customers.create.backToSearch')}
-        </Link>
+        </Button>
       </div>
-    </div>
-  );
-}
-
-function TextField({
-  name,
-  labelKey,
-  hintKey,
-  messages,
-  maxLength,
-  required,
-  error,
-  value,
-  onValueChange,
-}: {
-  readonly name: string;
-  readonly labelKey: string;
-  readonly hintKey?: string;
-  readonly messages: Messages;
-  readonly maxLength: number;
-  readonly required?: boolean;
-  readonly error?: string | undefined;
-  readonly value: string;
-  readonly onValueChange: (next: string) => void;
-}) {
-  const id = `crm-create-${name}`;
-  const hintId = hintKey ? `${id}-hint` : undefined;
-  const errorId = error ? `${id}-error` : undefined;
-  const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
-
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-caption font-medium text-text-secondary" htmlFor={id}>
-        {translateDynamic(messages, labelKey)}
-        {required ? null : (
-          <span className="ms-1 text-text-muted">{translate(messages, 'field.optional')}</span>
-        )}
-      </label>
-      <input
-        id={id}
-        name={name}
-        type="text"
-        maxLength={maxLength}
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-        // `aria-invalid` and a described error AND the red edge — a colour is
-        // not an announcement, and an announcement is not a mark a sighted
-        // operator can find (browser QA part 7, row 6.2: the refused box kept
-        // the same grey edge as a valid one). `controlClass` is the edge every
-        // `FieldFrame` control carries, so this box is marked the same way.
-        aria-invalid={error ? true : undefined}
-        aria-errormessage={errorId}
-        aria-describedby={describedBy}
-        className={controlClass(Boolean(error))}
-      />
-      {hintKey ? (
-        <span id={hintId} className="text-caption text-text-muted">
-          {translateDynamic(messages, hintKey)}
-        </span>
-      ) : null}
-      {error ? (
-        // The same shape-and-colour cue `FieldFrame` gives every refused field.
-        // The id is on the sentence, not the paragraph, so what the control
-        // points at is the sentence alone and never the decorative mark.
-        <p role="alert" className="flex items-start gap-1.5 text-caption text-error">
-          <span
-            aria-hidden="true"
-            className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
-          >
-            !
-          </span>
-          <span id={errorId}>{translateDynamic(messages, error)}</span>
-        </p>
-      ) : null}
     </div>
   );
 }

@@ -192,15 +192,17 @@ Navigation group **"Customers"** <!-- nav.group.customers --> — in Arabic "ا�
 
 1. **"Given name"** <!-- crm.customers.create.givenName --> — _required_. Example: Layla.
 2. **"Family name"** <!-- crm.customers.create.familyName --> — _required_. Example: Al-Mansour.
-3. **"Initial status"** <!-- crm.customers.create.lifecycleStatus --> — _required_; choose from the
-   lifecycle values.
-4. **"Preferred language"** <!-- crm.customers.create.preferredLocale --> — optional. "A registered
+3. **"Preferred language"** <!-- crm.customers.create.preferredLocale --> — optional. "A registered
    platform language code, for example ar or en." <!-- crm.customers.create.preferredLocaleHint -->
-5. Submit.
+4. **"Initial status"** <!-- crm.customers.create.lifecycleStatus --> — always has a value. There
+   are two choices, **"Prospect"** <!-- crm.lifecycle.prospect --> and **"Active"** <!-- crm.lifecycle.active -->;
+   **"Prospect"** is chosen until you change it.
+5. Select **"Save"** <!-- form.submit -->.
 
-**Result** — "Customer created." <!-- crm.customers.create.created --> The screen adds "No customer
-number has been issued yet." <!-- crm.customers.create.noNumberYet --> — a customer number is not
-produced at creation. Links **"Open the new customer"** <!-- crm.customers.create.openCreated -->
+**Result** — "Customer created." <!-- crm.customers.create.created --> When the workshop issues
+customer numbers, the new customer's number is shown beside that sentence. When no number has been
+issued, the screen says "No customer number has been issued yet." <!-- crm.customers.create.noNumberYet -->
+instead; that is not an error. Links **"Open the new customer"** <!-- crm.customers.create.openCreated -->
 and **"Back to search"** <!-- crm.customers.create.backToSearch --> follow.
 
 **Restrictions** — duplicate checking happens **after** the record is written, not before. The
@@ -223,16 +225,18 @@ the record is created." <!-- crm.customers.create.description --> Search before 
 
 **Label: IMPLEMENTED (UI)**
 
-Identical to 4A.2.2 except for the name fields.
+Identical to 4A.2.2 except for the name fields, and the company form has no **"Preferred
+language"**.
 
 **Where** — **"Add a company customer"** <!-- crm.customers.search.createCompany -->
-(`/{locale}/crm/customers/new/organization`). Heading **"New company customer"** <!-- crm.customers.create.companyTitle -->
-.
+(`/{locale}/crm/customers/new/company`). Heading **"New company customer"** <!-- crm.customers.create.companyTitle -->
+. Only two kinds of customer can be created here: individual and company.
 
 **Steps** — **"Legal name"** <!-- crm.customers.create.legalName --> (_required_); **"Trading
 name"** <!-- crm.customers.create.tradeName --> (optional) — "The brand the company trades under, if
 it differs from the legal name." <!-- crm.customers.create.tradeNameHint --> ; then **"Initial
-status"** and **"Preferred language"** as above.
+status"** as above (**"Prospect"** or **"Active"**, **"Prospect"** until you change it), and
+**"Save"**.
 
 **Result, Restrictions, If it goes wrong** — as 4A.2.2.
 

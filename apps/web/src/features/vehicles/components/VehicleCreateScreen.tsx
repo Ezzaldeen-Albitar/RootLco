@@ -446,7 +446,7 @@ function CatalogueSelect({
    * does not survive the reset React performs once the action settles — the prop
    * is unchanged between renders, so the reconciler writes nothing and the reset
    * wins. That was measured on the customer form and recorded at
-   * `CustomerCreateScreen.tsx:197-207`; every select here had the same shape.
+   * `CustomerCreateScreen.tsx:262-272`; every select here had the same shape.
    */
   readonly attempt: number;
 }) {
