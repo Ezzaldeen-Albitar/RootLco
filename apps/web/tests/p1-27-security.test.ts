@@ -228,8 +228,8 @@ function importedModuleDirectories(): readonly string[] {
  * "excluded".
  */
 const MODULE_DISPOSITION = {
-  /** Renders every customer and vehicle row. Was in NO list, by either name. */
-  'components/data-table': 'in-surface',
+  'components/data': 'in-surface', // `OperationalGrid`: the customer search grid (CRM1B)
+  'components/data-table': 'in-surface', // Renders every customer and vehicle row. Was in NO list, by either name.
   'components/duplicates': 'in-surface',
   'components/forms': 'in-surface',
   'components/party': 'in-surface',
@@ -398,7 +398,7 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
     // Anti-vacuity: the derivation really read something. A regex that matched
     // nothing would make the equality below a comparison of two empty sets.
     expect(imported.length, 'no module imports were discovered — the derivation is broken').toBe(
-      14
+      15
     );
     expect(imported, 'a module the CRM/vehicle trees import has no recorded disposition').toEqual(
       Object.keys(MODULE_DISPOSITION).sort()

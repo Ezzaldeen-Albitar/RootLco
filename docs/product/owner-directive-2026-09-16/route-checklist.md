@@ -8055,7 +8055,10 @@ Test changes forced by the move, the asserted behaviour unchanged: the row link'
 "Open" followed by the customer's name, so it is matched from its start and its full name is
 asserted; the name is now also in that link, so the cases that waited for a name find its grid
 cell rather than any text; and the rate-limit case looks for `state.unavailable.title` rather than
-any `role="status"`, which the idle sentence also carries.
+any `role="status"`, which the idle sentence also carries. The screen now imports
+`components/data`, so `apps/web/tests/p1-27-security.test.ts` records it as `in-surface` in its
+own copy of `MODULE_DISPOSITION` (the gate script's copy already did), and the count of modules the
+derivation finds moves from 14 to 15; the SEC-002 sweeps of that file now also read the grid.
 
 Known limitations and follow-ups, one line each:
 
