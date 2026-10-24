@@ -7179,6 +7179,62 @@ Residual items, one line each:
 - No end-to-end spec under `apps/web/tests/e2e` references the changed selectors, so no end-to-end selector drift was found.
 - The verifier's temporary probe file inside the worktree (vitest cannot resolve bare imports from outside it) was deleted afterwards; nothing of it is committed.
 
+### A returning vehicle's earlier finished visits on the check-in screen (P1-32-PRE-OD-CHKPV)
+
+Once a vehicle is chosen on `/{locale}/receptions/check-in`, a new section lists that vehicle's
+earlier finished visits at the working branch: the visit number, the status in words, the time it
+was received on the branch's clock (isolated in `<bdi>`), and a "View this visit" link to
+`/{locale}/receptions/check-in/{id}`. The list is read-only and one page of ten, most recently
+received first; when the server holds more, a sentence says so and no pager is offered. A complete
+empty page says the vehicle has no earlier finished visits at this branch. A read that is refused,
+unavailable, expired, for an unknown branch or failed says that instead, with the reference and
+Retry on the same outcomes as the open-visit lookup, and never the "no earlier visits" sentence.
+
+This is related to R06 (returning vehicle summary) and does not satisfy it. It reads no evidence,
+odometer readings, complaints or diagnostics, and no other branch. The R06 row in the completion
+plan crosswalk of [capability-status.md](capability-status.md) is unchanged, because that section
+carries no status. Whether a unified vehicle service history is a deliverable at all is the open
+Owner decision recorded in [owner-requirements-2026-09-06.md](../owner-requirements-2026-09-06.md)
+(the vehicle-history requirement and its remaining gap); this slice does not answer it.
+
+| Route                  | What changed                                                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/receptions/check-in` | A second read of `rec.reception-list` with `{ vehicleId, statusGroup: 'finished' }`, rendered as the earlier-visits section between the open-visit notice and the receiving employee. |
+
+Contract used, unchanged: `GET /api/v1/receptions` (`rec.reception-list`, `rec.reception.read`,
+branch scope), through the existing web transport `listReceptionsCancellable` (`POST
+/reads/receptions`), which already carried `statusGroup`. No operation, permission, schema,
+OpenAPI entry or backend file changed. The scope is the concrete working branch, so under "All my
+branches" nothing is asked. The read is asked under exactly the condition of the open-visit lookup,
+so it also fires on arrival when the walk-in handoff's vehicle is pre-selected. The link is drawn
+for every row: the check-in page and the visit page are both gated by `rec.reception.read`.
+
+Behaviour differences, one line each:
+
+- Each vehicle choice now makes two `rec.reception-list` calls instead of one. The operation's rate-limit policy is `expensive-read`.
+- The section sits inside the create form, which is drawn only with `rec.reception.manage`. An operator who can read visits but not open one never chooses a vehicle and sees no list; this is unchanged.
+- The open-visit lookup, its resume banner, its eight outcomes and their sentences are unchanged, and the section is derived state: it is not unsaved work and the branch-change discard is unchanged.
+
+Tests: `apps/web/tests/reception-checkin.dom.test.tsx` gains twelve cases at the end of the file:
+nothing is asked before a vehicle is chosen, then one read with the finished criteria, the branch
+scope and a page of ten; the rows with number, status, received time and link; the empty sentence;
+the "more exist" note with no pager; each of the five failure outcomes with its own sentence,
+reference and Retry, the resume banner standing beside it; the walk-in handoff asking on arrival;
+and two Arabic renders, right to left, with the time in `<bdi>`. The existing case that read the
+open-visit criteria from the last call now selects the call by its criteria, and its mock answers
+the two reads apart. No web test file was added.
+
+Known limitations, one line each:
+
+- No backend test combines `vehicleId` with `statusGroup`; `tests/backend/p1-27-reception-reads.test.ts` covers the group filter alone. The combined filter has no direct backend proof in this slice.
+- The link label is "View this visit", not the reception queue's "Open the visit": the queue's label is the same text, in both languages, as this form's own submit button.
+- The open-visit lookup's page of ten already returns finished visits too; the second read was kept so the list states its own completeness rather than inferring it from a read asked a different question.
+- Not run for this slice: the backend and database tiers, any Playwright tier, and any check in a real browser.
+
+Follow-ups: the full R06 summary (last odometer, complaints, evidence) needs a per-vehicle
+cross-visit read and an API, and the vehicle-history Owner decision first. A "see all in the queue"
+link filtered by vehicle was not checked against the queue's address handling.
+
 ### D6 follow-up: a price that moves while a part is quoted, part names on the invoice preview (P1-32-PRE-OD-FD6F, ADR-023 D6)
 
 Follow-up to P1-32-PRE-OD-FD6 (#510). The service reads a part's selling price and tax rate and
