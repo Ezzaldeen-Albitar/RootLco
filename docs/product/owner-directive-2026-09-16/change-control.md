@@ -145,6 +145,14 @@ sign-in fault that had to be cleared before the journey could be completed is `P
 already exists in `docs/phase-1/phase-1-26/findings.md` with its own routing, and no part of it is
 re-declared as a new finding here.
 
+**CC-OD-24, interim note dated 2026-10-24 (P1-32-PRE-OD-PLAN01I, the PLAN01 interim rule).** The
+provisioning route no longer accepts `subscription.status`: a body that names one is refused with
+422 `ERR-VAL-001` before any row is written, so a caller can no longer choose the stored state of
+the subscription it names. The provisioning form now labels its **Plan** choice as a draft that
+gives the organisation no plan and no limits, and points to **Assign plan** on the organisation's
+page. Rows already stored are unchanged. CC-OD-24 itself stays **open**: whether the form should
+assign the plan it names is still the Owner's PLAN01 decision.
+
 ## Rules
 
 - A row closes only with a dated note naming the merged pull request that closed it. The note is

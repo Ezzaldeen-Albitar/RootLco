@@ -18,7 +18,7 @@ the other parts of the manual, named at the end of each step.
 
 | Who                         | What they do here                                                                     | Where they work                         |
 | --------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
-| The **platform owner**      | Creates the organisation, gives it a plan, and invites its first administrator.       | The Platform Owner Console (Part 2A).   |
+| The **platform owner**      | Creates the organisation, invites its first administrator, then assigns it a plan.    | The Platform Owner Console (Part 2A).   |
 | The **first administrator** | Sets their own password, adds branches, invites everyone else, and sets up inventory. | The workspace, Administration (Part 2). |
 | Everyone else               | Receives the vehicle, does the work, hands it back and takes the money.               | The workspace (Parts 4A to 6).          |
 
@@ -86,10 +86,11 @@ everybody else, at http://localhost:3100/en/login. **Steps:**
    area: the application sends them to the **Platform Owner Console** because of what their account
    holds, and shows **"Platform Owner Console"** as the area they are in.
 2. **Organisations** → **New organisation**. One form creates the organisation, its first company,
-   its first branch and its first administrator together, and optionally gives it a subscription
-   plan. Every field is listed in Part 2A, §2A.7.
+   its first branch and its first administrator together. A plan chosen on this form is saved as a
+   draft only and gives the organisation no plan or limits. Every field is listed in Part 2A, §2A.7.
 3. **Create organisation**. The result says what happened next: _"Organisation created. The first
    administrator receives an email to set a password."_
+4. On the new organisation's page, **Assign plan** gives it its plan (Part 2A, §2A.11).
 
 **Result:** an organisation exists, with one company, one branch, numbering ready for that branch,
 and one invited administrator. **Restrictions:** nobody inside an organisation can do any of this —

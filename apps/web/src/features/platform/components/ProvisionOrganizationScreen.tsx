@@ -372,6 +372,7 @@ export function ProvisionOrganizationScreen({
               onChange={retain('planCode')}
               error={fieldError('planCode')}
               label={t('platform.provision.plan')}
+              description={t('platform.provision.planDraftHint')}
               placeholder={t('platform.provision.noSubscription')}
               options={activePlans.map((plan) => ({
                 value: plan.planCode,

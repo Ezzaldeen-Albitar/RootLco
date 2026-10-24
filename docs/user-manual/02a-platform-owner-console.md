@@ -328,7 +328,11 @@ an organisation page offer the base currency and the time zone the same way.
 administrator receives an email with a link to set a password."_
 
 **Subscription (optional).** Choose a **Plan** and a **Start date**, or choose **"No subscription
-for now"**.
+for now"**. A plan chosen here is saved as a draft only: it does not give the organisation a plan
+or its limits. The hint under **Plan** says _"Saved as a draft only. It does not give the
+organisation a plan or its limits. After creating the organisation, give it a plan with Assign plan
+on its page."_ To give the organisation its plan, use **Assign plan** on the organisation's page
+(§2A.11).
 
 **Activate the organisation now** is a tick box. The hint says _"Leave this clear to keep the
 organisation in setup until you activate it."_ An organisation left in setup shows the status

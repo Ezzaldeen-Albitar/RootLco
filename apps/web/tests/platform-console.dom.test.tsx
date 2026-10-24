@@ -3267,6 +3267,34 @@ describe('provisioning an organisation', () => {
     expect(currency).not.toHaveAttribute('dir', 'ltr');
     expect(screen.queryAllByRole('button', { name: M('form.retry') })).toHaveLength(0);
   });
+
+  /**
+   * The plan chosen here is stored as a draft only (CC-OD-24, the PLAN01
+   * interim rule), so the select says so on itself, in both languages.
+   */
+  it.each([
+    ['en', renderLtr, EN],
+    ['ar', renderRtl, AR],
+  ] as const)(
+    '%s: says the plan chosen here is saved as a draft only',
+    (locale, paint, catalogue) => {
+      const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+      paint(
+        <ProvisionOrganizationScreen
+          locale={locale}
+          messages={getMessages(locale)}
+          plans={[plan, retired]}
+          referenceValues={references}
+          canActivate={false}
+        />
+      );
+      const planSelect = within(section(M('platform.provision.subscription'))).getByLabelText(
+        new RegExp(`^${M('platform.provision.plan')}`)
+      );
+      expect(planSelect.tagName).toBe('SELECT');
+      expect(planSelect).toHaveAccessibleDescription(M('platform.provision.planDraftHint'));
+    }
+  );
 });
 
 describe('the plan catalogue', () => {

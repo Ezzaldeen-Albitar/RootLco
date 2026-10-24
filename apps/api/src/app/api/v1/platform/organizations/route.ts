@@ -141,7 +141,7 @@ const ProvisionBody = z
     subscription: z
       .object({
         plan_code: z.string().min(1).max(63),
-        status: z.string().max(32).optional(),
+        // No `status`: a caller may not choose the stored state (CC-OD-24, PLAN01).
         effective_from: z.string().optional(),
       })
       .strict()

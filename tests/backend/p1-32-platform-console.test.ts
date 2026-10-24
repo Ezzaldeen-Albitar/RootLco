@@ -720,6 +720,33 @@ describe('platform.organization-detail', () => {
   });
 });
 
+describe('platform.organization-provision body', () => {
+  it('refuses a subscription that names its own status, and creates nothing', async () => {
+    // CC-OD-24 / PLAN01: the stored subscription state is never the caller's
+    // choice, so a body naming one is refused before any row is written.
+    const code = `odpc_rawstatus_${RUN}`;
+    asHolder();
+    const result = await call<{ code: string }>(organizationProvisionRoute, {
+      path: '/platform/organizations',
+      idempotencyKey: randomUUID(),
+      body: {
+        tenant: { code, display_name: 'Console raw status', locale: 'en', timezone: 'UTC' },
+        company: { code: 'odpcc', legal_name: 'Console probe company', base_currency: 'JOD' },
+        branch: { code: 'main', name: 'Main', timezone: 'UTC' },
+        owner: { email: `${code}@fixture.test`, displayName: 'Console probe owner' },
+        subscription: { plan_code: PLAN_SMALL, status: 'active' },
+      },
+    });
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+    const created = await admin.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM org.tenants WHERE tenant_code = $1',
+      [code]
+    );
+    expect(created.rows[0]?.count).toBe(0);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Plans
 // ---------------------------------------------------------------------------

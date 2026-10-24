@@ -4568,6 +4568,7 @@
   "platform.provision.noSubscription": "بدون اشتراك حاليًا",
   "platform.provision.organization": "المؤسسة",
   "platform.provision.plan": "الخطة",
+  "platform.provision.planDraftHint": "تُحفظ كمسودة فقط، ولا تمنح المؤسسة خطة ولا حدودها. بعد إنشاء المؤسسة، امنحها خطة باستخدام «تعيين خطة» في صفحتها.",
   "platform.provision.referenceUnavailable": "تعذّر تحميل قائمة الخيارات، لذلك لا يمكن الاختيار منها بعد. استخدم «إعادة المحاولة» لتحميلها.",
   "platform.provision.registration": "رقم السجل التجاري",
   "platform.provision.startDate": "تاريخ البدء",
