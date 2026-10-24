@@ -15,7 +15,11 @@ import { SESSION_ENDED_SEGMENT } from '@/features/authentication/api/session-end
  *      lands on the console — at sign-in, and when it opens the workspace root;
  *   3. an account refused by both keeps today's destination and today's
  *      `reason=forbidden`;
- *   4. the console itself admits only a platform session carrying authority.
+ *   4. the console itself admits only a platform session carrying authority;
+ *   5. a platform session read the backend could not answer — a 5xx, or a 200
+ *      of the wrong shape — lands on sign-in with `reason=unavailable` and the
+ *      console page being refused, not with `reason=forbidden`, and its cookie
+ *      kept (P1-32-PRE-OD-CONSOLEFIX).
  *
  * The backend is a stubbed `fetch` that answers by path, so each case states
  * exactly what each of the two session reads said.
@@ -326,6 +330,24 @@ describe('the console admits only a platform session with authority', () => {
     expect(state.ok).toBe(false);
     if (!state.ok) expect(state.problem).toBe('unavailable');
   });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`sends a platform read that failed with a 5xx to sign in as unavailable (${locale})`, async () => {
+      backend({ tenant: 403, platform: 503 });
+      expect(await redirectTarget(() => requirePlatformSession(locale))).toBe(
+        `/${locale}/login?reason=unavailable`
+      );
+      expect(jar.set).toEqual([]);
+    });
+
+    it(`sends a malformed platform answer to sign in as unavailable (${locale})`, async () => {
+      backend({ tenant: 403, platform: 200, platformBody: { userId: USER } });
+      expect(await redirectTarget(() => requirePlatformSession(locale))).toBe(
+        `/${locale}/login?reason=unavailable`
+      );
+      expect(jar.set).toEqual([]);
+    });
+  }
 
   it('sends an expired token through the session-ended route', async () => {
     backend({ tenant: 401, platform: 401 });
@@ -654,6 +676,22 @@ describe('the console sends its refused page to sign-in with it', () => {
     jar.requestedPath = '/en/platform/organizations';
     expect(await redirectTarget(() => requirePlatformSession('en'))).toBe(
       '/en/login?reason=forbidden'
+    );
+  });
+
+  it('carries the console page for a platform read that failed with a 5xx', async () => {
+    backend({ tenant: 403, platform: 503 });
+    jar.requestedPath = '/ar/platform/plans';
+    expect(await redirectTarget(() => requirePlatformSession('ar'))).toBe(
+      '/ar/login?reason=unavailable&intended=%2Far%2Fplatform%2Fplans'
+    );
+  });
+
+  it('carries the console page for a malformed platform answer', async () => {
+    backend({ tenant: 403, platform: 200, platformBody: { userId: USER } });
+    jar.requestedPath = '/en/platform/organizations';
+    expect(await redirectTarget(() => requirePlatformSession('en'))).toBe(
+      '/en/login?reason=unavailable&intended=%2Fen%2Fplatform%2Forganizations'
     );
   });
 });

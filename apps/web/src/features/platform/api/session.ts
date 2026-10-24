@@ -78,19 +78,24 @@ export async function readPlatformSession(
  * The platform session, or a redirect away from the console.
  *
  * An expired token takes the session-ended route so the cookie is cleared
- * legally; a visitor with no cookie is sent to sign in; every other answer —
- * a tenant user, an operator whose authority was revoked, a backend that could
- * not answer — lands on sign-in with `reason=forbidden` and its cookie kept.
+ * legally; a visitor with no cookie is sent to sign in; a refusal — a tenant
+ * user, an operator whose authority was revoked — lands on sign-in with
+ * `reason=forbidden`; and a backend that could not answer — a failure that is
+ * not a refusal, or an answer of the wrong shape — lands on sign-in with
+ * `reason=unavailable` (P1-32-PRE-OD-CONSOLEFIX). Only the expired token loses
+ * its cookie: `unavailable` keeps it, because destroying a good session over a
+ * hiccup would turn an outage into a re-authentication.
  */
 export async function requirePlatformSession(locale: Locale): Promise<PlatformSession> {
   const state = await readPlatformSession();
   if (state.ok) return state.session;
   // The console page being refused travels to sign-in, re-checked at every hop,
-  // so the operator returns to it (P1-32-PRE-OD-AUTHB). A refusal carries none:
-  // signing in again as the same account would be refused again.
+  // so the operator returns to it (P1-32-PRE-OD-AUTHB) — after an outage as well
+  // as after an expiry. A refusal carries none: signing in again as the same
+  // account would be refused again.
   if (state.problem === 'expired') redirect(sessionEndedPath(locale, await requestedPath()));
-  if (state.problem === 'signed-out') {
-    redirect(signInPath(locale, 'signed-out', await requestedPath()));
+  if (state.problem === 'signed-out' || state.problem === 'unavailable') {
+    redirect(signInPath(locale, state.problem, await requestedPath()));
   }
   redirect(signInPath(locale, 'forbidden'));
 }

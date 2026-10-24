@@ -8141,8 +8141,9 @@ Open, older than this slice and not changed by it:
 - Sign-out clears the cookie and then asks the backend to end the session without reading the
   answer (`features/authentication/actions/logout.ts`). When that request fails, the browser is
   signed out and the server-side session ends only by expiry or by inactivity.
-- An outage on the console's session read sends the operator to sign-in with `reason=forbidden`
-  (`features/platform/api/session.ts`, `requirePlatformSession`), so it reads as an account without
+- Closed by `P1-32-PRE-OD-CONSOLEFIX` (its record follows this slice). An outage on the console's
+  session read sent the operator to sign-in with `reason=forbidden`
+  (`features/platform/api/session.ts`, `requirePlatformSession`), so it read as an account without
   access rather than as the service being unavailable.
 - The intended path is a path of this application and nothing else, but a path can hold a record's
   identifier (a customer or a work order page), and that identifier then travels in the sign-in
@@ -8207,3 +8208,42 @@ Open, recorded by this round and not changed by it:
   database.
 - `LoginForm.tsx` imports the parameter name from `intended-path.ts`, which brings both navigation
   models into the sign-in bundle. Noted, not measured.
+
+### The console's session outage reads as unavailable (`P1-32-PRE-OD-CONSOLEFIX`)
+
+This slice closes one item the `P1-32-PRE-OD-AUTHB` record left open, and removes four console
+exports nothing used. It changes the web application only: no backend behaviour, no API contract,
+no permission code, no message and no route changed.
+
+- The console's session guard (`requirePlatformSession` in `features/platform/api/session.ts`)
+  sent every answer that was not a session, not an expiry and not a missing cookie to sign-in with
+  `reason=forbidden`. A backend that could not answer (any failure that is not a 401 or a 403) and
+  an answer of the wrong shape therefore read as an account without access. Both now land on
+  `/<locale>/login?reason=unavailable`, the sentence the sign-in page already had for a session it
+  could not confirm, and carry the console page being opened as `intended`, as the expired and
+  signed-out cases already did. The cookie is kept: destroying a good session over an outage would
+  turn it into a re-authentication. A refusal (a 403, or a session with no platform authority)
+  still lands on `reason=forbidden` with no intended page, and an expired token still takes the
+  session-ended route. How the session is read, and where sign-in goes afterwards
+  (`destinationAfterSignIn`), are unchanged.
+- `features/platform/components/ui.tsx` no longer exports `PRIMARY_BUTTON`, `SECONDARY_BUTTON`,
+  `SimpleTable` or `Cell`; no file imported them. It still exports `Section`, `SECTION_HINT`,
+  `StatusBadge` and `ReadFailure`.
+
+Tests: `apps/web/tests/platform-login-routing.test.ts` gains six cases, three in each language (56
+to 62 executed in that file): a 503 platform read and a platform answer of the wrong shape each
+land on `reason=unavailable` in English and in Arabic with no cookie written, and each shape
+carries the requested console page as `intended` (one in each language). The jar's `delete()`
+throws, so a cleared cookie fails every case. No test file was added; the web test-file count is
+unchanged. Measured by mutation, against the guard as it was: all six new cases fail (each lands on
+`reason=forbidden`) and the 56 older cases pass.
+
+Open, recorded by this slice and not changed by it:
+
+- Sign-out not reading the backend's answer (`features/authentication/actions/logout.ts`, the
+  first open item of the `P1-32-PRE-OD-AUTHB` record) waits on a planner ruling.
+- The note in `.github/ci-baselines/coverage-baseline.web.json` that names `ui.tsx` as the weakest
+  console file at 11 of 16 lines is now stale, because the lines it counted as not run are gone.
+  That file is changed only with Owner approval, so it is left as it is.
+- No browser run reaches the console during an outage; the redirect is held by
+  `platform-login-routing.test.ts`, which stops at the redirect address.
