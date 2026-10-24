@@ -235,16 +235,23 @@ const EAST_OF_UTC = 'Asia/Riyadh';
  * decoder builds a local-midnight `Date` — so this is what turns the day-fidelity
  * assertions into real tests instead of ones that pass on a UTC agent whatever
  * the implementation does.
+ *
+ * The restore ASSIGNS the zone the process resolved before the change. Deleting
+ * `TZ` does not reset a zone Node has already resolved, so a delete would leave
+ * every later case in this file east of UTC and make the file order-dependent.
  */
 async function withEasternClock<T>(body: () => Promise<T>): Promise<T> {
   const previous = process.env.TZ;
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   process.env.TZ = EAST_OF_UTC;
+  let result: T;
   try {
-    return await body();
+    result = await body();
   } finally {
-    if (previous === undefined) delete process.env.TZ;
-    else process.env.TZ = previous;
+    process.env.TZ = previous ?? zone;
   }
+  expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
+  return result;
 }
 
 async function scalar<T>(sql: string, values: readonly unknown[] = []): Promise<T | null> {

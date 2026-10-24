@@ -1822,6 +1822,7 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
 
   it('shows the stored due day and received day to a reader west of UTC, buttons included', () => {
     const previous = process.env.TZ;
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     process.env.TZ = 'America/Los_Angeles';
     try {
       // The premise: the clock really is west of UTC, so reading a stored day as
@@ -1848,9 +1849,11 @@ describe.each(BOTH_DIRECTIONS)('%s: the organisation page on Material UI', (loca
         ).toHaveAccessibleName(`${M(key)} ${about}`);
       }
     } finally {
-      if (previous === undefined) delete process.env.TZ;
-      else process.env.TZ = previous;
+      // Assigned, never deleted: deleting TZ does not reset a zone Node has
+      // already resolved, and every later case would run west of UTC.
+      process.env.TZ = previous ?? zone;
     }
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
   });
 
   it('says that no charge was recorded, or none with the chosen status, in its own words', () => {

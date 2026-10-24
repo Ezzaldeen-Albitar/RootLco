@@ -17,7 +17,7 @@ import {
 } from '@/components/ui-foundation/mui-locale';
 import { MUI_TEXT_PREFIX, muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
-import { intlLocale } from '@/lib/format';
+import { formatCalendarDay, formatDate, intlLocale } from '@/lib/format';
 
 /**
  * The texts Material UI and MUI X render (ADR-022), built by `muiLocaleText`
@@ -257,5 +257,16 @@ describe('the Arabic 12-hour clock, both ways', () => {
     expect(english.parse('30/09/2026 15:00', 'DD/MM/YYYY HH:mm')?.format('HH:mm')).toBe('15:00');
     expect(english.parse('30/09/2026 03:00 PM', FIELD_FORMAT)?.format('HH:mm')).toBe('15:00');
     expect(english.parse('30/09/2026 25:00', 'DD/MM/YYYY HH:mm')?.isValid()).toBe(false);
+  });
+});
+
+describe('a value that is not a calendar day', () => {
+  it('renders exactly as the date formatter renders it, in both languages', () => {
+    // An instant is not a stored day, so the calendar-day path must not claim it:
+    // it falls back to the reader's clock, the same as every other date.
+    const instant = '2026-09-01T23:30:00Z';
+    for (const locale of ['en', 'ar'] as const) {
+      expect(formatCalendarDay(instant, locale)).toBe(formatDate(instant, locale));
+    }
   });
 });
