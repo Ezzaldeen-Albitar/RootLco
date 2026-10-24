@@ -199,20 +199,28 @@ management permission, held for the whole organisation."** <!-- inventory.setup.
    . For the example: `Filters (example)`.
 3. Optionally enter **Description** <!-- inventory.setup.descriptionField --> , at most 2,000
    characters <!-- inventory.setup.descriptionTooLong --> .
-4. Optionally choose **Parent category** <!-- inventory.setup.category.parent --> . The help says
+4. Optionally choose **Parent category** <!-- inventory.setup.category.parent --> from the category
+   tree shown beneath the label. The help says
    **"Optional. Only an active category can be a parent."** <!-- inventory.setup.category.parentHelp -->
-   Leave it as **No parent** <!-- inventory.setup.category.noParent --> for a top-level category.
+   Choose the **No parent** <!-- inventory.setup.category.noParent --> row, or leave nothing
+   chosen, for a top-level category.
 5. Press **Create category**.
 
 **Result** — **"Category created."** <!-- inventory.setup.category.success --> The new row appears
 in the table **Item categories of this organisation** <!-- inventory.setup.categories.caption -->
 with the columns **Code**, **Name**, **Parent** and **Status** <!-- inventory.setup.categories.column.code / .name / .parent / .status -->
-. Status reads **Active** <!-- inventory.setup.status.active --> or **Inactive** <!-- inventory.setup.status.inactive -->
-.
+. **Parent** shows the parent's name with the path above it, for example "Brakes / Pads"; a
+top-level category shows **Top level** <!-- inventory.setup.categories.topLevel --> , and a row
+whose parent is not in the list says **"Its parent category is not in the list, so it is shown at
+the top level."** <!-- inventory.categories.misplaced --> Status reads **Active** <!-- inventory.setup.status.active -->
+or **Inactive** <!-- inventory.setup.status.inactive --> .
 
 **Restrictions** — Codes are unique in the organisation. A category cannot be edited, renamed,
-deactivated or deleted from any screen after it is created. The list may be capped: **"More
-categories exist than this page shows."** <!-- inventory.setup.categories.truncated -->
+deactivated or deleted from any screen after it is created. The list reads every page of
+categories. **"More categories exist than this page shows."** <!-- inventory.setup.categories.truncated -->
+appears only when the reading stopped early: the service repeated a page, or the reading reached
+its limit of 500 pages. To see the whole tree, follow **Browse the category tree** <!-- inventory.setup.categories.browse -->
+(see 5.5.1).
 
 **If it goes wrong**
 
@@ -226,6 +234,59 @@ categories exist than this page shows."** <!-- inventory.setup.categories.trunca
   — the read failed; **Try again** <!-- form.retry --> .
 - **"The category list was refused for this account."** <!-- inventory.setup.categories.refused -->
   — your account may not read categories.
+
+**Screenshot** — no screenshot available at this version.
+
+### 5.5.1 Browse the category tree — IMPLEMENTED (UI), read only
+
+**Where** — **Inventory** → **Item categories** <!-- nav.inventoryCategories --> . The same page
+opens from **Browse the category tree** <!-- inventory.setup.categories.browse --> on the setup
+page, on the vehicle-specification form and in the header of an item's page.
+
+**Who** — Anyone holding `inv.item.read`. Anyone else is refused before anything is read.
+
+**What it shows**
+
+- The **Category tree** <!-- inventory.categories.tree.heading --> : every category of the
+  organisation under its parent, each name with its code beside it, and an inactive category
+  labelled **Inactive** <!-- inventory.setup.status.inactive --> . The category pickers on the
+  setup page and the vehicle-specification form show the name alone, with one exception: when two
+  categories under the same parent share a name (letter case and extra spaces aside), each of them
+  shows its code in brackets after the name, so the two can be told apart. This tree always keeps
+  the code.
+- **Find a category** <!-- inventory.categories.search.label --> : **"Type part of a name or a
+  code, for example brakes. Each match is shown under the categories above it."** <!-- inventory.categories.search.help -->
+- **Expand all** <!-- inventory.categories.expandAll --> and **Collapse all** <!-- inventory.categories.collapseAll -->
+  .
+- Under **Chosen category** <!-- inventory.categories.detail.heading --> : the chosen category's
+  **Category path** <!-- inventory.categories.path.label --> , its code, its status, its
+  **Sub-categories** <!-- inventory.categories.detail.subcategories --> and its description.
+- The items filed directly under the chosen category, each a link to its item page. The page says
+  **"Only items filed directly under this category are listed. Items of a sub-category are listed
+  when that sub-category is chosen."** <!-- inventory.categories.items.scope -->
+
+**Read only** — The page says **"Category names and positions cannot be changed here. Renaming,
+moving and retiring a category are pending an Owner decision."** <!-- inventory.categories.readOnly.body -->
+and **"Every item belongs to exactly one category, so there is no list of items without a
+category."** <!-- inventory.categories.everyItem --> Holders of `inv.item.manage` also see **Create
+a new category on the inventory setup page** <!-- inventory.categories.readOnly.create --> .
+
+**Opened from an item page** — the page opens on that item's category, with every category above
+it opened and its items listed. If the address names a category the page does not recognise, it
+opens with nothing chosen and says **"Choose a category in the tree to see its path and its
+items."** <!-- inventory.categories.detail.choose --> If your session had ended on the way here,
+signing in again can bring you back to this page, but with nothing chosen.
+
+**Other things you may see**
+
+- **"No item categories exist yet."** <!-- inventory.categories.none -->
+- **"The category list could not be read, so nothing here describes your categories."** <!-- inventory.categories.unavailable -->
+  — the read failed; **Try again** <!-- state.retry --> .
+- **"The category list is longer than this screen could read, so some categories may be
+  missing."** <!-- inventory.categories.truncated -->
+- **"No category matches this search."** <!-- inventory.categories.search.none -->
+- **"No item is filed directly under this category."** <!-- inventory.categories.items.none -->
+- **"Its parent category is not in the list, so it is shown at the top level."** <!-- inventory.categories.misplaced -->
 
 **Screenshot** — no screenshot available at this version.
 
@@ -253,8 +314,11 @@ Treat that as NOT AVAILABLE, not as a screen you have not found.
 
 **Steps**
 
-1. Choose **Category** (required) <!-- inventory.setup.item.category --> , from **Choose a
-   category** <!-- inventory.setup.item.chooseCategory --> .
+1. Choose **Category** (required) <!-- inventory.setup.item.category --> from the category tree
+   shown beneath the label, which names the categories as the pickers in 5.5.1 do. The tree has no
+   row for "no category": an item must have one. Once a category is chosen, its path is said
+   beneath the tree, for example **"Chosen: Filters (example)."** <!-- inventory.categories.picker.chosen -->
+   .
 2. Enter **SKU** (required) <!-- inventory.setup.item.sku --> . The rule: **"Letters, digits,
    hyphens and underscores; up to 63 characters; unique in the organisation."** <!-- inventory.setup.item.skuHelp -->
    For the example: `OIL-FLT-001`.
@@ -2125,6 +2189,32 @@ security determinations do not exist.
 - **Any screenshot of an inventory screen** is NOT ESTABLISHED: none was captured in the evidence set
   for this version.
 
+<!--
+REVISION 2026-10-24 — sections 5.5 and 5.5.1 (new), and step 1 of 5.6.2, were re-read and
+written on branch feature/owner-directive-inventory-category-link (cut from develop
+4ea2986a7592a1da0a286798396ba38a8216f7b1), for P1-32-PRE-OD-INV2. Every other section of this part
+is carried unchanged from the readings recorded below, and the pin in the front matter stays at
+fe09f1a9, as it does for every part.
+
+Read for this revision:
+- apps/web/src/app/[locale]/(dashboard)/inventory/categories/page.tsx — the inv.item.read gate
+  before any read, and the category the address may name, read after the gate.
+- apps/web/src/features/inventory/components/CategoriesScreen.tsx — the read-only notice, the
+  states, the chosen category's detail and the items filed directly under it.
+- apps/web/src/features/inventory/components/CategoryTree.tsx — the tree, its search, Expand all
+  and Collapse all, and the ancestors opened for the chosen row.
+- apps/web/src/features/inventory/category-tree.ts — every page read, and the stop on a repeated
+  page or after 500 pages.
+- apps/web/src/features/inventory/components/CategoryTreePicker.tsx — the names the category
+  pickers show, and the code added when two categories under one parent share a name.
+- apps/web/src/features/inventory/components/SetupScreen.tsx — the parent picker of the category
+  form, the required category picker of the item form, and the Parent column of the category table.
+- apps/web/src/features/inventory/components/ItemCodesScreen.tsx and
+  VehicleSpecificationsScreen.tsx — the links that open the tree.
+- apps/web/src/i18n/messages/en.json — every key named in 5.5, 5.5.1 and step 1 of 5.6.2.
+
+Nothing in this revision was checked in a browser.
+-->
 <!--
 REVISION 2026-09-21, second — section 5.26.2 was re-read and written at develop
 fe09f1a9a8671930f032a18dda497c64e3107d29, and 5.31 was amended to say that what it describes was
