@@ -8,6 +8,7 @@ import { renderLtr, renderRtl } from './render';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
+import { SEARCH_DEBOUNCE_MS } from '@/lib/use-debounced-value';
 
 /**
  * CRM customer search, in a DOM (`P1-27-FE-001`, `P1-27-FE-002`).
@@ -546,6 +547,31 @@ describe.each([
     expect(criteriaOf(2)).toEqual({ q: 'Nadia' });
     expect(label()).toBe(t('mui.pagination.page').replace('{page}', '1'));
     expect(previous()).toBeDisabled();
+  });
+
+  it('sends nothing when Search is pressed again with nothing changed, and stays on the page', async () => {
+    // The manual's sentence (§4A.2.1 step 4). Pressing Search with the same
+    // criteria is not a new question: it must not ask again, and it must not
+    // throw the operator back to page one.
+    searchCustomers.mockImplementation(async (_request: unknown, cursor: string | null) =>
+      cursor === null
+        ? page({ nextCursor: 'cursor-2', hasMore: true })
+        : page({ rows: [{ ...HIT, id: 'second-page-row', displayName: 'Omar Haddad' }] })
+    );
+    const user = await searchFor('Nadia');
+    const label = () => screen.getByTestId('customer-search-grid-page').textContent;
+    await user.click(screen.getByRole('button', { name: t('table.nextPage') }));
+    expect(await screen.findByRole('gridcell', { name: 'Omar Haddad' })).toBeInTheDocument();
+    expect(label()).toBe(t('mui.pagination.page').replace('{page}', '2'));
+    expect(searchCustomers).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: t('crm.customers.search.submit') }));
+    // Longer than the search's debounce, so a read a submission would schedule
+    // late has had its chance to go out before the count is taken.
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_DEBOUNCE_MS + 50));
+    expect(searchCustomers).toHaveBeenCalledTimes(2);
+    expect(label()).toBe(t('mui.pagination.page').replace('{page}', '2'));
+    expect(screen.getByRole('gridcell', { name: 'Omar Haddad' })).toBeInTheDocument();
   });
 
   it('says the search was refused, with no grid and no retry', async () => {

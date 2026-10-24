@@ -1981,6 +1981,8 @@ as it was then.
 Read for this revision:
 - apps/web/src/features/crm/customers/components/CustomerSearchScreen.tsx
 - apps/web/src/components/data/OperationalGrid.tsx — the pager label and the absent total
+- apps/web/src/lib/api/use-search-request.ts — the request keyed on the criteria, so pressing
+  Search again with nothing changed sends nothing and keeps the page
 
 REVISION 2026-09-21 — sections 4A.2.4, 4A.5.0 (new), 4A.5.5, 4A.5.8, 4A.5.9 and 4A.8 were re-read
 and written at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9. Everything else in this part is

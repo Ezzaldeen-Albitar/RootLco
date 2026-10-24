@@ -8034,7 +8034,7 @@ context's version, an empty form and a one-character box still send nothing, the
 mounted only after a submission and keyed on the submitted criteria, and every typed value is sent
 as typed, with the Western-digit echo beneath three boxes.
 
-Held by `apps/web/tests/crm-customer-search.dom.test.tsx` (21 cases kept, 10 added: five, each run
+Held by `apps/web/tests/crm-customer-search.dom.test.tsx` (21 cases kept, 24 added: twelve, each run
 in English and in Arabic inside `UiFoundationProvider`) and by the five customer cases of
 `search-empty-states.dom.test.tsx`, unchanged:
 
@@ -8047,6 +8047,13 @@ in English and in Arabic inside `UiFoundationProvider`) and by the five customer
 | The grid is named by the caption, in the page's direction and style cache    | "names the grid with the caption…" (en, ar)                |
 | No page-size choice, "Page 1" with no count, no sorting header               | "offers no page-size choice…" (en, ar)                     |
 | The six columns in their order                                               | "keeps the six columns in their order…" (en, ar)           |
+| Type and status are sent when chosen, and dropped when "any" is chosen       | "sends the chosen type and status…" (en, ar)               |
+| While a search runs the results area is busy; Search keeps its label         | "shows the results area loading…" (en, ar)                 |
+| Previous page returns to page one, asked again with no cursor                | "steps back to page one…" (en, ar)                         |
+| A refusal says so, with no grid and no retry                                 | "says the search was refused…" (en, ar)                    |
+| A failure shows the reference, and Try again asks again                      | "says the search failed…" (en, ar)                         |
+| An ended session links to sign in again, with no grid and no retry           | "says the session ended…" (en, ar)                         |
+| Search again with nothing changed sends nothing and keeps the page           | "sends nothing when Search is pressed again…" (en, ar)     |
 | Escape and the clear control empty the box and send nothing                  | "empties the search box on Escape…", "…from its clear…"    |
 | Idle, "no match" and the create offer stay apart; the offer needs permission | `search-empty-states.dom` (five cases), "offers creation…" |
 | An outage reads as unavailable, by its words, not as the idle status         | "reports a rate limit as unavailable…"                     |
