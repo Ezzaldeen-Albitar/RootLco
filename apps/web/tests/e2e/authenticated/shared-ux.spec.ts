@@ -251,21 +251,47 @@ test.describe('scroll ownership', () => {
 
     // Next is CLOSED when there is no further page (`hasMore` false). The read
     // answers in a server action, so its `hasMore` is not visible to the
-    // browser; a page shorter than the page size is the end of the set, so the
-    // case reads the settled page's row count against the page size and holds
-    // Next disabled. Waiting for the grid to stop being busy matters: Next is
-    // also disabled while a page loads, which would pass for the wrong reason.
+    // browser, and the case assumes nothing about how many pairs the world
+    // holds: it walks forward until Next closes and holds it closed there.
+    // Two wrong reasons are ruled out on every page. Next is also disabled
+    // while a page loads, so each page is read only once the grid stops being
+    // busy; and a refused, unavailable or ended read draws its state panel
+    // instead of a page, so no such panel may be showing.
     const queue = page.getByTestId('customer-duplicate-grid');
-    await expect(queue.locator('[aria-busy="true"]')).toHaveCount(0);
-    const pageSize = Number.parseInt(
-      await pager.getByLabel(say('en', 'table.rowsPerPage')).inputValue(),
-      10
-    );
-    const rowsOnPage = await queue.locator('[role="row"][data-id]').count();
-    expect(rowsOnPage, 'the acceptance world holds less than one page of open pairs').toBeLessThan(
-      pageSize
-    );
-    await expect(pager.getByRole('button', { name: say('en', 'table.nextPage') })).toBeDisabled();
+    const pageLabel = page.getByTestId('customer-duplicate-grid-page');
+    const next = pager.getByRole('button', { name: say('en', 'table.nextPage') });
+    const pageSettled = async (): Promise<void> => {
+      await expect(queue.locator('[aria-busy="true"]')).toHaveCount(0);
+      for (const title of [
+        'state.unavailable.title',
+        'state.denied.title',
+        'state.expired.title',
+      ]) {
+        await expect(
+          page.getByText(say('en', title), { exact: true }),
+          `the queue must be read, not answered by "${title}"`
+        ).toHaveCount(0);
+      }
+      await expect(next, 'the pager must still be drawn under a read page').toBeVisible();
+    };
+
+    await pageSettled();
+    const MAX_PAGES = 20;
+    let pagesSeen = 1;
+    while (await next.isEnabled()) {
+      expect(
+        pagesSeen,
+        `Next was still open after ${MAX_PAGES} pages; the queue never reached its last page`
+      ).toBeLessThan(MAX_PAGES);
+      const before = (await pageLabel.textContent()) ?? '';
+      await next.click();
+      // The page label moves in the same render that starts the read, so a
+      // changed label means the next read has begun and "not busy" is its end.
+      await expect(pageLabel).not.toHaveText(before);
+      await pageSettled();
+      pagesSeen += 1;
+    }
+    await expect(next, 'Next must be closed on the last page').toBeDisabled();
 
     const documentMoved = await page.evaluate(() => document.documentElement.scrollTop);
     expect(documentMoved, 'reaching it must not scroll the document').toBeLessThanOrEqual(

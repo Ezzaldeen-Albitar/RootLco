@@ -433,6 +433,18 @@ describe('Arabic', () => {
     await screen.findByText('Nadia Khoury');
     const pager = screen.getByRole('navigation', { name: ar['table.pagination'] });
     expect(pager.closest('[dir]')?.getAttribute('dir')).toBe('rtl');
+    // That `dir` is the harness's, on the document element. Nothing between it
+    // and the grid or the pager sets a direction of its own, so both take the
+    // page's rather than a wrapper's.
+    const grid = screen.getByRole('grid', { name: ar['crm.duplicates.caption'] });
+    expect(grid.closest('[dir]')).toBe(document.documentElement);
+    expect(pager.closest('[dir]')).toBe(document.documentElement);
+    // The pager's two steps, in reading order and in Arabic.
+    expect(
+      within(pager)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    ).toEqual([ar['table.previousPage'], ar['table.nextPage']]);
     expect(within(pager).getByText(ar['mui.pagination.page'].replace('{page}', '1'))).toBeVisible();
     expect(within(pager).getByRole('button', { name: ar['table.previousPage'] })).toBeDisabled();
     expect(within(pager).getByRole('button', { name: ar['table.nextPage'] })).toBeDisabled();

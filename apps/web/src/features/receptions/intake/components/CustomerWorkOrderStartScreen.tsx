@@ -375,7 +375,7 @@ function CurrentVehicleChoice({
         <OperationalGrid<CustomerVehicleEntry>
           messages={messages}
           locale={locale}
-          label={translate(messages, 'vehicles.relationships.caption')}
+          label={translate(messages, 'crm.customers.profile.section.vehicles')}
           columns={columns}
           rowId={(entry) => entry.id}
           table={offeredTable}

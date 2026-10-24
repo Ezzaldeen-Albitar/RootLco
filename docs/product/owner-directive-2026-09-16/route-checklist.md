@@ -7915,8 +7915,9 @@ What moved on `/crm/customers/[customerId]/work-order/new` (`CustomerWorkOrderSt
   "Use this vehicle" row action per row that is a toggle (`pressed`, G12) in place of a radio.
   The question is still a named group: the visible "This customer's vehicles" line labels a
   `role="group"` around the grid (`aria-labelledby`), where the radios had a `fieldset` and
-  `legend`, and the grid is named "Vehicle relationships" (the existing
-  `vehicles.relationships.caption`), so the question's words are heard once. The
+  `legend`, and the grid is named "Vehicles" (Arabic "المركبات", the existing plural
+  `crm.customers.profile.section.vehicles`, since the grid lists the customer's vehicles rather
+  than one vehicle's relationships), so the question's words are heard once. The
   grid is handed the same read with only the offered rows of the fetched page in its response (an
   open relationship to a live vehicle, the filter the screen always ran), because the grid filters
   nothing. The page size stays ten and no rows-per-page choice is offered
@@ -7955,7 +7956,7 @@ Tests, each in an existing file (no web test file added or removed):
   busy state; the single-page case now holds Next and Previous disabled instead of absent; new
   checks that no rows-per-page choice is offered and the first read asks for ten, and a new case
   walks to page two with page size ten and the returned cursor. Review round, each in English and
-  Arabic: the group is named by the question and the grid by "Vehicle relationships", with no grid
+  Arabic: the group is named by the question and the grid by "Vehicles", with no grid
   named by the question; the announced "Loading" while the page loads, emptied once it answers (the
   English single-language case asserts the text again as well as the busy state); and not-found
   (no retry), unavailable (reference, Retry re-reads) and expired (the way back to sign in, no

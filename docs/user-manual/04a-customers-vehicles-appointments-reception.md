@@ -385,7 +385,7 @@ Heading **"Review duplicate customers"** <!-- crm.duplicates.title --> .
    through the queue, and **"Rows per page"** <!-- table.rowsPerPage --> sets how many pairs a page
    shows.
 2. Choose **"Review"** <!-- crm.duplicates.review --> on an open pair; its **"Decision"** column
-   reads **"Awaiting review"** <!-- vehicles.duplicateStatus.open --> . A pair that is already
+   reads **"Awaiting review"** <!-- vehicles.duplicateStatus.open -->. A pair that is already
    settled has no **"Review"**; its **"Decision"** column shows the day it was decided when that day
    is recorded, and a dash when it is not. The panel **"Review this pair"** <!-- crm.duplicates.decideHeading -->
    opens.

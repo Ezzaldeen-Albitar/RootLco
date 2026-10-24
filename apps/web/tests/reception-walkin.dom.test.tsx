@@ -935,7 +935,7 @@ describe('the vehicle step that follows the customer profile', () => {
     const choices = await chooseVehicle();
     expect(choices).toHaveLength(1);
     expect(
-      screen.getByRole('grid', { name: en['vehicles.relationships.caption'] })
+      screen.getByRole('grid', { name: en['crm.customers.profile.section.vehicles'] })
     ).toBeInTheDocument();
     expect(screen.getByText('V-0007')).toBeVisible();
     expect(screen.queryByText('V-0008')).not.toBeInTheDocument();
@@ -962,8 +962,8 @@ describe('the vehicle step that follows the customer profile', () => {
         name: catalogue['receptions.workOrderStart.vehicleLegend'],
       });
       const grid = within(group).getByRole('grid');
-      expect(grid).toHaveAccessibleName(catalogue['vehicles.relationships.caption']);
-      expect(catalogue['vehicles.relationships.caption']).not.toBe(
+      expect(grid).toHaveAccessibleName(catalogue['crm.customers.profile.section.vehicles']);
+      expect(catalogue['crm.customers.profile.section.vehicles']).not.toBe(
         catalogue['receptions.workOrderStart.vehicleLegend']
       );
       // The question's words name the group and nothing else.
