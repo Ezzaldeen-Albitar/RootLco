@@ -17,6 +17,7 @@ import {
 } from '@/components/ui-foundation/mui-locale';
 import { MUI_TEXT_PREFIX, muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
+import { formatDayInZone } from '@/lib/branch-time';
 import { formatCalendarDay, formatDate, intlLocale } from '@/lib/format';
 
 /**
@@ -265,8 +266,24 @@ describe('a value that is not a calendar day', () => {
     // An instant is not a stored day, so the calendar-day path must not claim it:
     // it falls back to the reader's clock, the same as every other date.
     const instant = '2026-09-01T23:30:00Z';
-    for (const locale of ['en', 'ar'] as const) {
-      expect(formatCalendarDay(instant, locale)).toBe(formatDate(instant, locale));
+    const previous = process.env.TZ;
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    process.env.TZ = 'Asia/Tokyo';
+    try {
+      for (const locale of ['en', 'ar'] as const) {
+        // The premise: east of UTC the instant's own day is the day after its UTC
+        // day, so a value wrongly read as a stored day would show a different day.
+        // Without it this case would pass on a UTC machine whatever the guard did.
+        expect(formatDate(instant, locale), locale).not.toBe(
+          formatDayInZone(instant.slice(0, 10), intlLocale(locale), 'UTC')
+        );
+        expect(formatCalendarDay(instant, locale), locale).toBe(formatDate(instant, locale));
+      }
+    } finally {
+      // Assigned, never deleted: deleting TZ does not reset a zone Node has
+      // already resolved, and every later case would run east of UTC.
+      process.env.TZ = previous ?? zone;
     }
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
   });
 });

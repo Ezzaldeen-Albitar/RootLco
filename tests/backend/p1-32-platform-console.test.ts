@@ -231,8 +231,9 @@ const EAST_OF_UTC = 'Asia/Riyadh';
 /**
  * Runs `body` with the process clock east of UTC, then restores.
  *
- * Node re-reads `process.env.TZ` on each `Date` construction, and `pg`'s `date`
- * decoder builds a local-midnight `Date` — so this is what turns the day-fidelity
+ * Node changes the process zone when `process.env.TZ` is ASSIGNED (a delete does
+ * not reset it), and `pg`'s `date` decoder builds a local-midnight `Date` in that
+ * zone — so this is what turns the day-fidelity
  * assertions into real tests instead of ones that pass on a UTC agent whatever
  * the implementation does.
  *
