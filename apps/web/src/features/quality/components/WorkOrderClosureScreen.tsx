@@ -63,6 +63,11 @@ import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import {
+  rosterOptions,
+  useBranchRoster,
+  type BranchRoster,
+} from '@/features/technicians/roster-picker';
 import { readWorkOrderDetail } from '@/features/work-orders/api';
 import {
   WORK_ORDER_REFUSAL_KEYS,
@@ -133,6 +138,8 @@ export interface ClosureCapabilities {
   readonly canRequestAdditionalWork: boolean;
   readonly canApproveAdditionalWork: boolean;
   readonly canViewSensitive: boolean;
+  /** `tech.technician.read`: the rework sign-off offers the branch's roster (`P1-32-PRE-OD-TECH1`). */
+  readonly canReadTechnicians: boolean;
 }
 
 /** What a panel is told to re-read the screen with, awaited by the command that asked. */
@@ -352,6 +359,7 @@ export function WorkOrderClosureScreen({
           locale={locale}
           messages={messages}
           workOrderId={workOrderId}
+          detail={detail}
           capabilities={capabilities}
           terminal={eligibility?.status === 'ok' ? eligibility.data.alreadyTerminal : null}
           onChanged={reload}
@@ -1016,6 +1024,7 @@ function ReworkPanel({
   locale,
   messages,
   workOrderId,
+  detail,
   capabilities,
   terminal,
   onChanged,
@@ -1023,6 +1032,8 @@ function ReworkPanel({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
+  /** The order's detail read; its branch is the branch every link here belongs to. */
+  readonly detail: ReadState<WorkOrderDetail> | null;
   readonly capabilities: ClosureCapabilities;
   /** The gate's `alreadyTerminal`; rework corrects a closed order, so the form waits for it. `null` while unknown. */
   readonly terminal: boolean | null;
@@ -1094,6 +1105,34 @@ function ReworkPanel({
   };
 
   const list = links.value;
+
+  /*
+   * The roster a sign-off chooses from (`P1-32-PRE-OD-TECH1`). The links listed
+   * here are those whose ORIGINAL is this order, and a link's branch is its
+   * original's, so the order's own company and branch name the roster. They are
+   * taken only from an ok detail, and the first pair is held: an order's branch
+   * does not change, so a later failed re-read must not take the choice away.
+   * Adjusted during render, React's shape for state that follows a prop.
+   */
+  const [branch, setBranch] = useState<{
+    readonly companyId: string;
+    readonly branchId: string;
+  } | null>(null);
+  if (branch === null && detail !== null && detail.status === 'ok') {
+    setBranch({
+      companyId: detail.data.workOrder.companyId,
+      branchId: detail.data.workOrder.branchId,
+    });
+  }
+  const unsigned =
+    list !== null &&
+    list.status === 'ok' &&
+    list.data.items.some((link) => link.signOffAt === null);
+  const roster = useBranchRoster(
+    capabilities.canReadTechnicians && capabilities.canSignOffRework && unsigned,
+    branch?.companyId ?? null,
+    branch?.branchId ?? null
+  );
 
   return (
     <Panel id="rework-heading" titleKey="quality.closure.reworkHeading" messages={messages}>
@@ -1191,6 +1230,7 @@ function ReworkPanel({
               messages={messages}
               link={link}
               capabilities={capabilities}
+              roster={roster}
               onChanged={renew}
             />
           ))}
@@ -1205,12 +1245,15 @@ function ReworkRow({
   messages,
   link,
   capabilities,
+  roster,
   onChanged,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly link: ReworkLink;
   readonly capabilities: ClosureCapabilities;
+  /** The branch's roster, read once for the panel (`P1-32-PRE-OD-TECH1`). */
+  readonly roster: BranchRoster;
   readonly onChanged: Renew;
 }) {
   const [signOffBy, setSignOffBy] = useState('');
@@ -1386,25 +1429,65 @@ function ReworkRow({
           }}
           className="mt-2 flex flex-wrap items-start gap-3"
         >
-          <FormTextField
-            name={`signOffBy-${link.id}`}
-            label={translate(messages, 'quality.closure.signOffBy')}
-            description={translate(messages, 'quality.closure.signOffByHint')}
-            value={signOffBy}
-            onChange={setSignOffBy}
-            error={
-              signOffErrors['signOffBy']
-                ? translateDynamic(messages, signOffErrors['signOffBy'])
-                : undefined
-            }
-            dir="ltr"
-            autoComplete="off"
-            required
-          />
+          {/*
+            The roster as a choice when it was read in full (`P1-32-PRE-OD-TECH1`);
+            the typed reference wherever it was not — no permission, a refused or
+            failed read, a roster too long or empty, or no order detail to name
+            its branch. Either way the value sent is the profile id.
+          */}
+          {roster.phase === 'listed' ? (
+            <FormSelectField
+              name={`signOffBy-${link.id}`}
+              label={translate(messages, 'quality.closure.signOffBy')}
+              description={translate(messages, 'quality.closure.signOffByHint')}
+              value={signOffBy}
+              onChange={setSignOffBy}
+              options={rosterOptions(messages, roster.items)}
+              placeholder={translate(messages, 'form.select.placeholder')}
+              error={
+                signOffErrors['signOffBy']
+                  ? translateDynamic(messages, signOffErrors['signOffBy'])
+                  : undefined
+              }
+              required
+            />
+          ) : roster.phase === 'loading' ? (
+            <MuiLoadingState messages={messages} variant="inline" />
+          ) : (
+            <div className="flex flex-col gap-1">
+              <FormTextField
+                name={`signOffBy-${link.id}`}
+                label={translate(messages, 'quality.closure.signOffBy')}
+                description={translate(messages, 'quality.closure.signOffByTypedHint')}
+                value={signOffBy}
+                onChange={setSignOffBy}
+                error={
+                  signOffErrors['signOffBy']
+                    ? translateDynamic(messages, signOffErrors['signOffBy'])
+                    : undefined
+                }
+                dir="ltr"
+                autoComplete="off"
+                required
+              />
+              {roster.phase === 'off' ? null : (
+                <p className="text-caption text-text-muted">
+                  {translateDynamic(
+                    messages,
+                    roster.phase === 'failed'
+                      ? roster.messageKey
+                      : roster.phase === 'truncated'
+                        ? 'technicians.picker.truncated'
+                        : 'technicians.picker.empty'
+                  )}
+                </p>
+              )}
+            </div>
+          )}
           <Submit
             messages={messages}
             pending={pending === 'signOff'}
-            disabled={pending !== null}
+            disabled={pending !== null || roster.phase === 'loading'}
             labelKey="quality.closure.signOff"
             variant="outlined"
           />

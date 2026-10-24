@@ -29,6 +29,7 @@ import { jobStateLabel, workOrderStateMessageKey } from '../work-orders-contract
 import { WorkOrderDeliveryPanel } from '@/features/delivery/components/WorkOrderDeliveryPanel';
 import { JobBlockersPanel } from '@/features/quality/components/JobBlockersPanel';
 import { WorkOrderHistorySection } from '@/features/quality/components/WorkOrderHistorySection';
+import { useBranchRoster } from '@/features/technicians/roster-picker';
 import { JobPanel } from './JobPanel';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
@@ -740,6 +741,16 @@ function JobsSection({
     };
   }, [canReadDepartments, companyId, branchId, departments, departmentsRefused]);
 
+  /*
+   * The roster belongs to the BRANCH as well (`P1-32-PRE-OD-TECH1`): read once,
+   * the first time a job is opened by someone who may both read it and assign
+   * from it, and kept for the life of the screen. A view where no job is opened
+   * asks nothing; a re-read of the order after a write keeps the same two
+   * strings, so it does not read the roster again.
+   */
+  const [jobOpened, setJobOpened] = useState(false);
+  const roster = useBranchRoster(canReadTechnicians && canAssign && jobOpened, companyId, branchId);
+
   const openJob = jobs.find((job) => job.id === openJobId) ?? null;
 
   return (
@@ -802,7 +813,10 @@ function JobsSection({
                     type="button"
                     size="small"
                     variant="text"
-                    onClick={() => setOpenJobId(open ? null : job.id)}
+                    onClick={() => {
+                      setOpenJobId(open ? null : job.id);
+                      if (!open) setJobOpened(true);
+                    }}
                     aria-expanded={open}
                     aria-label={formatMessage(
                       translate(
@@ -831,6 +845,7 @@ function JobsSection({
                     canManageJobs={canManageJobs}
                     canReadTechnicians={canReadTechnicians}
                     canAssign={canAssign}
+                    roster={roster}
                     onDone={onDone}
                   />
                 ) : null}

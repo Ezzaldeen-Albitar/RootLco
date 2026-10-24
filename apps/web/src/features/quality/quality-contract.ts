@@ -115,6 +115,7 @@ export const QUALITY_PERMISSIONS = {
   additionalWorkRequest: 'wo.additional_work.request',
   additionalWorkApprove: 'wo.additional_work.approve',
   laborRecord: 'tech.labor.record',
+  technicianRead: 'tech.technician.read',
   sensitiveView: 'iam.sensitive.view',
 } as const;
 

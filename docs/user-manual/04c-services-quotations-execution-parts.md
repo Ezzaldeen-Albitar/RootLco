@@ -1474,11 +1474,11 @@ assign a technician, `tech.technician.read` to see who is assigned.
    (These two words open and close the _panel_. They do not open or close the job itself.)
 2. **Department routing** <!-- workOrders.detail.routingHeading --> — choose a department and press
    **Apply routing** <!-- workOrders.detail.applyRouting --> .
-3. **Technicians** <!-- workOrders.detail.assignmentHeading --> — give **Technician** <!-- workOrders.detail.technicianProfileId -->
-   , **From** <!-- workOrders.detail.windowFrom --> and **To** <!-- workOrders.detail.windowTo --> ,
+3. **Technicians** <!-- workOrders.detail.assignmentHeading --> — choose **Technician** <!-- workOrders.detail.technicianProfileId -->
+   , give **From** <!-- workOrders.detail.windowFrom --> and **To** <!-- workOrders.detail.windowTo --> ,
    then **Assign technician** <!-- workOrders.detail.assignTechnician --> . The screen warns that
-   qualification is not your decision: "The technician's profile identifier. The platform decides
-   whether they qualify for this job." <!-- workOrders.detail.technicianProfileIdHint -->
+   qualification is not your decision: "Choose the technician from this branch's roster. The
+   platform decides whether they qualify for this job." <!-- workOrders.detail.technicianProfileIdHint -->
 4. **Lifecycle** <!-- workOrders.detail.lifecycleHeading --> — **Move to** <!-- workOrders.detail.toState -->
    a state and press **Move work order** <!-- workOrders.detail.moveWorkOrder --> . Only the states
    your own workshop's graph allows are offered: "The states offered here are the ones your
