@@ -138,7 +138,9 @@ Navigation group **"Customers"** <!-- nav.group.customers --> — in Arabic "ا�
      field is required._
 4. Choose **"Search"** <!-- crm.customers.search.submit --> . Pressing Enter in the form does the
    same. The button keeps its label while the search runs; the results area shows that it is
-   loading. Typing alone does nothing — there is no search-as-you-type.
+   loading. Typing alone does nothing — there is no search-as-you-type. Pressing Search again
+   without changing anything sends nothing and keeps the page you are on; to ask again, change
+   what you typed or a filter.
 5. **"Clear"** <!-- crm.customers.search.clear --> empties the form.
 
 **Result** — a grid that a screen reader names "Customers matching your search, newest first" <!-- crm.customers.search.tableCaption -->
@@ -1972,8 +1974,9 @@ Material UI (P1-32-PRE-OD-CRM1B), on a branch from develop 4ea2986a7592a1da0a286
 Three statements were corrected: the Search button never read "Searching…" (that catalogue key is
 unused), the columns are listed in the screen's order (Name, Reference, Type, Phone, Vehicles,
 Status), and the results are a grid with an accessible name rather than a table with a caption.
-Escape, the clear button and the pager were added. Everything else is carried unchanged, and the
-line citations in the older revisions below refer to the file as it was then.
+Escape, the clear button, the pager and what pressing Search again does were added. Everything
+else is carried unchanged, and the line citations in the older revisions below refer to the file
+as it was then.
 
 Read for this revision:
 - apps/web/src/features/crm/customers/components/CustomerSearchScreen.tsx
