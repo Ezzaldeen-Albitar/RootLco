@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { formatDayInZone } from '@/lib/branch-time';
+import { formatDate, intlLocale } from '@/lib/format';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -610,6 +612,57 @@ describe('the record shows the terms it was issued under', () => {
       <WarrantyRecordScreen locale="en" messages={en as never} warranty={unknown as never} />
     );
     expect(screen.getByText('under_review')).toBeInTheDocument();
+  });
+
+  it('shows each stored day as that day to a reader west of UTC, in both directions', async () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      // The premise: the clock really is west of UTC, so reading a stored day as
+      // an instant names the day before. Without it this case would pass on a UTC
+      // machine whatever the screens did.
+      expect(formatDate('2026-09-01', 'en')).toBe(
+        formatDayInZone('2026-08-31', intlLocale('en'), 'UTC')
+      );
+      const days = [record.startDate, record.expiryDate, record.coverage.effectiveFrom];
+
+      for (const locale of ['en', 'ar'] as const) {
+        const view =
+          locale === 'ar'
+            ? renderRtl(
+                <WarrantyRecordScreen
+                  locale="ar"
+                  messages={ar as never}
+                  warranty={record as never}
+                />
+              )
+            : renderLtr(
+                <WarrantyRecordScreen
+                  locale="en"
+                  messages={en as never}
+                  warranty={record as never}
+                />
+              );
+        for (const stored of days) {
+          expect(
+            screen.getByText(formatDayInZone(stored, intlLocale(locale), 'UTC'))
+          ).toBeInTheDocument();
+          expect(screen.queryByText(formatDate(stored, locale))).not.toBeInTheDocument();
+        }
+        view.unmount();
+      }
+
+      await renderListPage();
+      for (const stored of [row.startDate, row.expiryDate]) {
+        expect(
+          await screen.findByText(formatDayInZone(stored, intlLocale('en'), 'UTC'))
+        ).toBeInTheDocument();
+        expect(screen.queryByText(formatDate(stored, 'en'))).not.toBeInTheDocument();
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
   });
 });
 

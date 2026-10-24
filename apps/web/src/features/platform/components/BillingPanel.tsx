@@ -19,7 +19,7 @@ import { FormDialog } from '@/features/administration/shared/components/FormDial
 import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Locale } from '@/i18n/config';
 import { formatMessage, translate, translateDynamic, type Messages } from '@/i18n/get-messages';
-import { formatDate, formatInteger, intlLocale } from '@/lib/format';
+import { formatCalendarDay, formatInteger, intlLocale } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 import { recordChargeAction, recordReceiptAction, voidChargeAction } from '../actions';
 import {
@@ -117,7 +117,7 @@ function receiptLine(receipt: SubscriptionReceipt, locale: Locale): string {
     { amount: receipt.amount, currency: receipt.currencyCode },
     intlLocale(locale)
   );
-  return `${amount} · ${formatDate(receipt.receivedOn, locale)} · ${receipt.method}${
+  return `${amount} · ${formatCalendarDay(receipt.receivedOn, locale)} · ${receipt.method}${
     receipt.reference ? ` · ${receipt.reference}` : ''
   }`;
 }
@@ -225,11 +225,11 @@ export function BillingPanel({
               {charges.map((charge) => {
                 // Two charges may share a description; the day each falls due
                 // tells them apart, for a screen reader as for the eye.
-                const about = `${charge.description}, ${formatDate(charge.dueOn, locale)}`;
+                const about = `${charge.description}, ${formatCalendarDay(charge.dueOn, locale)}`;
                 return (
                   <TableRow key={charge.id} data-testid="platform-charge" className="align-top">
                     <TableCell className="whitespace-nowrap">
-                      {formatDate(charge.dueOn, locale)}
+                      {formatCalendarDay(charge.dueOn, locale)}
                     </TableCell>
                     <TableCell className="break-words">
                       <bdi>{charge.description}</bdi>

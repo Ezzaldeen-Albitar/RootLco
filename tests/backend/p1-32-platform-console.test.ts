@@ -225,6 +225,28 @@ function day(days: number): string {
     .slice(0, 10);
 }
 
+/** A zone east of UTC, where `pg` decodes a `date` to the previous day's instant. */
+const EAST_OF_UTC = 'Asia/Riyadh';
+
+/**
+ * Runs `body` with the process clock east of UTC, then restores.
+ *
+ * Node re-reads `process.env.TZ` on each `Date` construction, and `pg`'s `date`
+ * decoder builds a local-midnight `Date` — so this is what turns the day-fidelity
+ * assertions into real tests instead of ones that pass on a UTC agent whatever
+ * the implementation does.
+ */
+async function withEasternClock<T>(body: () => Promise<T>): Promise<T> {
+  const previous = process.env.TZ;
+  process.env.TZ = EAST_OF_UTC;
+  try {
+    return await body();
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+}
+
 async function scalar<T>(sql: string, values: readonly unknown[] = []): Promise<T | null> {
   const { rows } = await admin.query(sql, values as unknown[]);
   return rows.length === 0 ? null : (Object.values(rows[0])[0] as T);
@@ -1279,18 +1301,31 @@ describe('platform.charge-record / receipt-record / charge-void / charge-list', 
 
   it('lists charges with nested receipts and outstanding strings, scoped to the organisation', async () => {
     asHolder();
-    const list = await call<{
-      items: { id: string; status: string; outstanding: string; receipts: { amount: string }[] }[];
-    }>(chargeListRoute, {
-      path: `/platform/organizations/${tenantOne}/charges`,
-      method: 'GET',
-      params: { tenantId: tenantOne },
-    });
+    // Read east of UTC: a `date` decoded to a local-midnight `Date` would name
+    // the day before, so the due and received days must arrive as stored.
+    const list = await withEasternClock(() =>
+      call<{
+        items: {
+          id: string;
+          status: string;
+          outstanding: string;
+          dueOn: string;
+          receipts: { amount: string; receivedOn: string }[];
+        }[];
+      }>(chargeListRoute, {
+        path: `/platform/organizations/${tenantOne}/charges`,
+        method: 'GET',
+        params: { tenantId: tenantOne },
+      })
+    );
     expect(list.status).toBe(200);
     const paid = list.body.items.find((c) => c.id === paidCharge)!;
     expect(paid.status).toBe('settled');
     expect(paid.outstanding).toBe('0.0000');
     expect(paid.receipts.map((r) => r.amount)).toEqual(['40.0000', '60.0000', '5.0000']);
+    expect(paid.dueOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(paid.dueOn).toBe(day(15));
+    expect(paid.receipts.map((r) => r.receivedOn)).toEqual([day(0), day(0), day(0)]);
     const voided = list.body.items.find((c) => c.id === voidCharge)!;
     expect(voided).toMatchObject({ status: 'void', outstanding: '0.0000' });
 
