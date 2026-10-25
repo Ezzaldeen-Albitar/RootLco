@@ -5094,6 +5094,74 @@ Known limitations and recorded gaps:
     hosted project. The export-principal sign-in in `tests/e2e/authenticated/reports-p1-31.spec.ts`
     skips as well (no hosted job writes the companion handoff it needs).
 
+### Pinned test clock across a branch-day boundary (`P1-32-PRE-OD-CLOCK1`)
+
+Test-only. No product source, configuration, timeout, script or workflow changed.
+
+Mechanism. Hosted web-quality on PR #611 (head ddd5e745, near 21:00 UTC on 2026-10-24) failed
+`apps/web/tests/inventory-movements.dom.test.tsx` "reads the working branch's last seven days on
+first paint" with two instants one day apart. The screen reads the clock once, when it mounts
+(`useOpeningWindowStart` in `MovementsScreen.tsx`, which memoises `recentWindowStart(zone, new
+Date())` on the branch zone, Asia/Riyadh in the test shell). The case worked out its expectation
+from the real clock later, at the assertion. When the branch's midnight (21:00:00 UTC) fell between
+the two reads, they named different days. The screen was right; the test was wrong.
+
+Fixed sites (line numbers at develop 4ea2986a):
+
+- `inventory-movements.dom.test.tsx:327` (the first-paint case) is pinned with
+  `vi.useFakeTimers({ toFake: ['Date'] })` and `vi.setSystemTime`, so `waitFor` and typing keep
+  real timers, and a file-level `afterEach` restores the real clock. It now runs at midday on the
+  branch (09:00:00 UTC, window from 2026-10-17T21:00:00.000Z) and one second after the branch's
+  midnight (21:00:01 UTC, window from 2026-10-18T21:00:00.000Z). A further case at 21:00:01 UTC
+  asserts that this window differs from the one at 20:59:59 UTC and from a window worked out on UTC.
+- `inventory-movements.dom.test.tsx:1047` (INV1B, Pacific/Kiritimati) is pinned at midday on the
+  branch (22:00:00 UTC) and its expectation is worked out from that pinned moment. The brief named
+  `FAR_ZONE` for this case; the code uses the zone literally.
+- `refunds.dom.test.tsx:1058` (a payout day after the branch's today is refused) now calls the
+  file's own `pinToday()`. The panel works out the branch's today on every render, and its last
+  render before the press comes after the case works out "tomorrow"; across a branch midnight the
+  typed day would become the branch's today and be accepted.
+
+Audit of the other real-clock sites (line numbers at develop 4ea2986a). DEFERRED sites are in
+files that the in-flight SESSEND branch (`feature/owner-directive-session-ended-intended-page`)
+edits, so they were classified and not changed.
+
+| Site                                     | Class    | Reason                                                                                    |
+| ---------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `appointments-calendar.dom.test.tsx:153` | DEFERRED | Racy: `todayWindow()` reads the clock at the assertion, after the screen's read at mount. |
+| `appointments-calendar.dom.test.tsx:183` | DEFERRED | Racy: the same expectation, read again after the first read.                              |
+| `appointments-calendar.dom.test.tsx:215` | DEFERRED | Racy: read after the period press, which the screen worked out first.                     |
+| `reception-queue.dom.test.tsx:199`       | DEFERRED | Racy: `todayWindow()` reads the clock at the assertion, after the screen's read.          |
+| `reception-queue.dom.test.tsx:258`       | DEFERRED | Racy: "yesterday" read after the preset press.                                            |
+| `reception-queue.dom.test.tsx:269`       | DEFERRED | Racy: "today" read after the preset press.                                                |
+| `reception-queue.dom.test.tsx:288`       | DEFERRED | Racy: "yesterday" read after the preset press.                                            |
+| `reception-queue.dom.test.tsx:295`       | DEFERRED | Racy: a second real-clock read in the same case, later again.                             |
+| `reception-queue.dom.test.tsx:453`       | DEFERRED | Racy: "yesterday" read after the button press.                                            |
+| `reception-queue.dom.test.tsx:1307`      | DEFERRED | Racy: read before the render, the screen reads after it.                                  |
+| `reception-queue.dom.test.tsx:1408`      | DEFERRED | Racy: one read, then several screens rendered one after another.                          |
+| `reports.dom.test.tsx:765`               | DEFERRED | Racy: read once when the file is collected and used by every case in the block.           |
+| `reports.dom.test.tsx:1566`              | DEFERRED | Safe: asserts no day is shown at all, so a different day is still absent.                 |
+| `reports-overview.dom.test.tsx:811`      | DEFERRED | Racy: read after the render, the screen reads at mount.                                   |
+| `reports-overview.dom.test.tsx:846`      | DEFERRED | Safe: asserts no day is shown at all, so a different day is still absent.                 |
+| `search-empty-states.dom.test.tsx:424`   | DEFERRED | Racy: read after the view press, which the screen worked out first.                       |
+| `search-empty-states.dom.test.tsx:530`   | DEFERRED | Racy: read after the view press, which the screen worked out first.                       |
+| `refunds.dom.test.tsx:1058`              | RACY     | Fixed above.                                                                              |
+
+Mutation proof. With a temporary local edit, reverted before commit, `recentWindowStart` worked
+out its day on UTC instead of the branch zone. `inventory-movements.dom.test.tsx` then failed four
+cases: the one-second-after-midnight variant of the first-paint case (2026-10-17T21:00:00.000Z
+where 2026-10-18T21:00:00.000Z was expected), the further 21:00:01 UTC case, INV1B, and the
+existing INV1C hydration case. The midday variant passed, as a UTC day and the branch's day agree
+then. The screen source was restored and showed no difference against the branch.
+
+Not claimed: that the hosted flake is gone. The pinned cases cannot cross a midnight; the deferred
+sites still can, and no hosted run near a branch midnight has been observed since this change.
+
+Open, one line each:
+
+- The fifteen racy DEFERRED sites above are for a follow-up slice once the SESSEND branch lands.
+- Other real-clock reads in the web suite were not audited; only the listed sites were.
+
 ### Review follow-ups on the inventory slices (`P1-32-PRE-OD-INVR`)
 
 Closes the review minors left on the merged inventory slices (INV1C, INV2A, INV3, INV4, INV6). One

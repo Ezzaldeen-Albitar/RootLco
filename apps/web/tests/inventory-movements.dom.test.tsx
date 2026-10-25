@@ -233,6 +233,22 @@ function recentStart(offsetHours: number, now: Date = new Date()): number {
 /** `TEST_BRANCH`'s zone, Asia/Riyadh, is UTC+3 all year. */
 const TEST_BRANCH_OFFSET = 3;
 
+/**
+ * Pins "now" for a case that asserts the arrival window (`P1-32-PRE-OD-CLOCK1`).
+ *
+ * The screen reads the clock once, when it mounts; an expectation worked out
+ * from the real clock afterwards read it a moment later, and where the branch's
+ * midnight fell between the two the windows were a day apart (a hosted run near
+ * 21:00 UTC). Only `Date` is replaced, so `waitFor`, typing and the pickers keep
+ * real timers; the file's `afterEach` puts the real clock back.
+ */
+function pinClock(at: string): Date {
+  const now = new Date(at);
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(now);
+  return now;
+}
+
 function renderScreen(over: Record<string, unknown> = {}) {
   return renderLtr(
     <MovementsScreen
@@ -323,24 +339,62 @@ beforeEach(() => {
   );
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('the ledger reads the recent movements on arrival (route sweep B2)', () => {
-  it('reads the working branch\u2019s last seven days on first paint, and says the reading is recorded', async () => {
+  /*
+   * Midday on the branch, and one second after its midnight (21:00 UTC on
+   * Asia/Riyadh): the second names the branch's NEW day, which UTC and the
+   * moment one second earlier do not.
+   */
+  it.each([
+    ['midday on the branch', '2026-10-24T09:00:00Z', '2026-10-17T21:00:00.000Z'],
+    [
+      'one second after the branch\u2019s midnight',
+      '2026-10-24T21:00:01Z',
+      '2026-10-18T21:00:00.000Z',
+    ],
+  ] as const)(
+    'reads the working branch\u2019s last seven days on first paint, and says the reading is recorded (%s)',
+    async (_moment, at, expected) => {
+      const now = pinClock(at);
+      renderScreen();
+      await chooseBranch();
+      await firstRead();
+      // The shell holds the named branches, so no directory is requested.
+      expect(listBranches).not.toHaveBeenCalled();
+      expect(listMovements.mock.calls[0]?.[0]).toEqual({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+      });
+      const criteria = listMovements.mock.calls[0]?.[1] as Record<string, string>;
+      expect(Object.keys(criteria)).toEqual(['occurredFrom']);
+      expect(criteria['occurredFrom']).toBe(expected);
+      expect(Date.parse(criteria['occurredFrom'] as string)).toBe(
+        recentStart(TEST_BRANCH_OFFSET, now)
+      );
+      // The window is stated where it can be changed, not hidden.
+      expect(momentShown(momentGroup(ledger(), 'inventory.movements.from'))).not.toBe('');
+      expect(within(ledger()).getByText(EN['inventory.movements.audited'] as string)).toBeVisible();
+      expect(await within(ledger()).findByRole('grid')).toBeVisible();
+    }
+  );
+
+  it('one second after the branch\u2019s midnight, opens on the branch\u2019s new day, not on the day of a second earlier nor on UTC\u2019s (CLOCK1)', async () => {
+    pinClock('2026-10-24T21:00:01Z');
     renderScreen();
     await chooseBranch();
     await firstRead();
-    // The shell holds the named branches, so no directory is requested.
-    expect(listBranches).not.toHaveBeenCalled();
-    expect(listMovements.mock.calls[0]?.[0]).toEqual({
-      companyId: COMPANY_ID,
-      branchId: BRANCH_ID,
-    });
-    const criteria = listMovements.mock.calls[0]?.[1] as Record<string, string>;
-    expect(Object.keys(criteria)).toEqual(['occurredFrom']);
-    expect(Date.parse(criteria['occurredFrom'] as string)).toBe(recentStart(TEST_BRANCH_OFFSET));
-    // The window is stated where it can be changed, not hidden.
-    expect(momentShown(momentGroup(ledger(), 'inventory.movements.from'))).not.toBe('');
-    expect(within(ledger()).getByText(EN['inventory.movements.audited'] as string)).toBeVisible();
-    expect(await within(ledger()).findByRole('grid')).toBeVisible();
+    const opened = (listMovements.mock.calls[0]?.[1] as Record<string, string>)['occurredFrom'];
+    expect(opened).toBe('2026-10-18T21:00:00.000Z');
+    // One second earlier the branch was still on 24 October: its window opened
+    // a day before. UTC is on 24 October at both moments.
+    expect(Date.parse(opened as string)).not.toBe(
+      recentStart(TEST_BRANCH_OFFSET, new Date('2026-10-24T20:59:59Z'))
+    );
+    expect(Date.parse(opened as string)).not.toBe(recentStart(0, new Date('2026-10-24T21:00:01Z')));
   });
 
   it('asking again with the same filters reads again — each read is the operator’s own act', async () => {
@@ -1049,8 +1103,10 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
      * A branch fourteen hours ahead of UTC (Pacific/Kiritimati, no daylight
      * saving): no browser running this suite keeps that zone, so the branch's
      * midnight and the browser's are different instants, and only the branch's
-     * may open the window; a typed moment is the branch's wall time.
+     * may open the window; a typed moment is the branch's wall time. The clock
+     * is pinned to midday on the branch (`P1-32-PRE-OD-CLOCK1`).
      */
+    const now = pinClock('2026-10-24T22:00:00Z');
     const AHEAD = { ...TEST_BRANCH, timezone: 'Pacific/Kiritimati' };
     const user = userEvent.setup();
     renderInLtr(
@@ -1069,8 +1125,7 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
     const opened = Date.parse(
       (listMovements.mock.calls[0]?.[1] as Record<string, string>)['occurredFrom'] as string
     );
-    expect(opened).toBe(recentStart(14));
-    const now = new Date();
+    expect(opened).toBe(recentStart(14, now));
     const browserMidnight = new Date(
       now.getFullYear(),
       now.getMonth(),
