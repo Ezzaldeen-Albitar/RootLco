@@ -1048,6 +1048,10 @@ describe('the refunds panel — one write per press, unsaved entries and the pay
   });
 
   it('refuses a payout day after the branch today on the field, and sends nothing', async () => {
+    // The panel reads the branch's today on every render, after this case
+    // works out tomorrow; pinned, a branch midnight cannot fall between the two
+    // (`P1-32-PRE-OD-CLOCK1`).
+    pinToday();
     const user = userEvent.setup();
     listRefundRequests.mockResolvedValue(
       page([refundRequest({ state: 'approved', recordVersion: 4 })])
