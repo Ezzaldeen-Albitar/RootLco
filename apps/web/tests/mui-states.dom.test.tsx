@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SearchStates } from '@/components/search/SearchStates';
 import {
   MuiEmptyState,
   MuiErrorState,
@@ -22,6 +23,14 @@ import { getMessages, type Messages } from '@/i18n/get-messages';
 import type { SearchPhase } from '@/lib/api/use-search-request';
 import { renderLtr, renderRtl } from './render';
 
+// The ended-session link carries the page it was offered on; the pathname is
+// set per case, and `null` (no router, as under a bare render) is the default.
+vi.mock('next/navigation', () => ({
+  usePathname: () => mockPathname,
+}));
+
+let mockPathname: string | null = null;
+
 /**
  * The read states on Material UI (ADR-022 PR1): the catalogue's own words, a
  * retry only where retrying can change the answer, the correlation reference as
@@ -40,6 +49,7 @@ function mount(ui: ReactElement, locale: Locale = 'en') {
 
 afterEach(() => {
   for (const style of document.head.querySelectorAll('style')) style.remove();
+  mockPathname = null;
 });
 
 type Case = readonly [
@@ -155,7 +165,7 @@ describe('each state says its own sentence', () => {
     mount(<MuiExpiredState messages={messages} locale="ar" />, 'ar');
     expect(screen.getByRole('link', { name: messages['auth.backToLogin'] })).toHaveAttribute(
       'href',
-      '/ar/login'
+      '/ar/login?reason=expired'
     );
   });
 
@@ -458,4 +468,60 @@ describe('a failed read is drawn as the state it is (MuiReadFailureState)', () =
     expect(state).toHaveTextContent(messages['state.unavailable.title']);
     expect(state).toHaveTextContent(messages['workOrders.history.unavailable']);
   });
+});
+
+/**
+ * P1-32-PRE-OD-SESSEND: the ended-session link opens sign-in with the reason,
+ * and carries the page it was offered on only when that page is a safe
+ * application path — the path, never its query. Both the Material state and
+ * `SearchStates` render the same link.
+ */
+type ExpiredRender = (messages: Messages, locale?: Locale) => ReactElement;
+
+const EXPIRED_RENDERS: readonly (readonly [name: string, render: ExpiredRender])[] = [
+  [
+    'MuiExpiredState',
+    (m, locale) => <MuiExpiredState messages={m} {...(locale ? { locale } : {})} />,
+  ],
+  [
+    'SearchStates',
+    (m, locale) => <SearchStates messages={m} phase="expired" {...(locale ? { locale } : {})} />,
+  ],
+];
+
+describe('the ended-session link returns to the page it was offered on (P1-32-PRE-OD-SESSEND)', () => {
+  for (const [name, render] of EXPIRED_RENDERS) {
+    for (const locale of ['en', 'ar'] as const) {
+      it(`${name} carries a safe current page into sign-in, in ${locale}`, () => {
+        const messages = getMessages(locale);
+        mockPathname = `/${locale}/work-orders`;
+        mount(render(messages, locale), locale);
+        expect(screen.getByRole('link', { name: messages['auth.backToLogin'] })).toHaveAttribute(
+          'href',
+          `/${locale}/login?reason=expired&intended=%2F${locale}%2Fwork-orders`
+        );
+      });
+
+      for (const pathname of [`/${locale}/gallery`, `/${locale}/login`, null]) {
+        it(`${name} opens plain sign-in when the page is ${String(pathname)}, in ${locale}`, () => {
+          const messages = getMessages(locale);
+          mockPathname = pathname;
+          mount(render(messages, locale), locale);
+          expect(screen.getByRole('link', { name: messages['auth.backToLogin'] })).toHaveAttribute(
+            'href',
+            `/${locale}/login?reason=expired`
+          );
+        });
+      }
+    }
+
+    it(`${name} offers no link when the caller gives no locale`, () => {
+      const messages = getMessages('en');
+      mockPathname = '/en/work-orders';
+      const { container } = mount(render(messages));
+      expect(screen.getByText(messages['state.expired.title'])).toBeInTheDocument();
+      expect(screen.queryByRole('link')).toBeNull();
+      expect(container.querySelector('a[href*="/login"]')).toBeNull();
+    });
+  }
 });

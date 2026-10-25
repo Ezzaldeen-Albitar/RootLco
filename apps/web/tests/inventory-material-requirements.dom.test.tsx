@@ -551,7 +551,7 @@ describe('two people', () => {
       })
     );
     const signIn = await screen.findByRole('link', { name: EN['auth.backToLogin'] as string });
-    expect(signIn).toHaveAttribute('href', '/en/login');
+    expect(signIn).toHaveAttribute('href', '/en/login?reason=expired');
   });
 });
 

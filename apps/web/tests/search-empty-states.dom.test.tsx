@@ -119,7 +119,7 @@ const CATALOGUE_STATES = [
 ];
 
 const push = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }), usePathname: () => null }));
 
 /**
  * The session the work-order ROUTE resolves, so the address cases below can
@@ -1241,7 +1241,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(screen.queryByRole('button', { name: en['state.retry'] })).toBeNull();
     expect(screen.getByRole('link', { name: en['auth.backToLogin'] })).toHaveAttribute(
       'href',
-      '/en/login'
+      '/en/login?reason=expired'
     );
   });
 });

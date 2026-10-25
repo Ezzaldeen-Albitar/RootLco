@@ -83,6 +83,7 @@ vi.mock('@/features/authentication/api/session', () => ({
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => null,
   notFound: () => {
     throw new Error('notFound() was called');
   },

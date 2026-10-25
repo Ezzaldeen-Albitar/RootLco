@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
+import { ExpiredSignInLink } from '@/components/states/MuiStates';
 import {
   BackendUnavailableState,
   ErrorState,
@@ -12,7 +12,6 @@ import {
 } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
 import type { SearchPhase } from '@/lib/api/use-search-request';
 
 /**
@@ -110,12 +109,11 @@ export function SearchStates({
             ? {}
             : {
                 action: (
-                  <Link
-                    href={`/${locale}/login`}
+                  <ExpiredSignInLink
+                    locale={locale}
+                    messages={messages}
                     className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-                  >
-                    {translate(messages, 'auth.backToLogin')}
-                  </Link>
+                  />
                 ),
               })}
         />
