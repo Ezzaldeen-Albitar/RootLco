@@ -62,7 +62,7 @@ vi.mock('@/features/appointments/api', () => ({
 
 const push = vi.fn();
 const refresh = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }), usePathname: vi.fn() }));
 
 const { AppointmentCalendarScreen } =
   await import('@/features/appointments/components/AppointmentCalendarScreen');

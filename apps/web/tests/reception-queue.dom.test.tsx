@@ -590,7 +590,7 @@ describe('every non-answer reads as itself', () => {
     expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
     expect(screen.getByRole('link', { name: EN['auth.backToLogin'] as string })).toHaveAttribute(
       'href',
-      '/en/login'
+      '/en/login?reason=expired'
     );
   });
 

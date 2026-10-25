@@ -437,6 +437,9 @@ environment the sign-in is configured to last one hour.
 the sign-in page with **Your session ended. Sign in again to continue.** If a screen reports it in
 place rather than redirecting, it reads **Your session has ended** <!-- state.expired.title -->
 (Arabic: انتهت جلستك) with **Sign in again to continue. Unsaved changes on this page will be lost.** <!-- state.expired.description -->
+Where such a screen offers **Back to sign in** <!-- auth.backToLogin -->, it opens the sign-in page
+with the session-ended notice. After you sign in, you are taken back to the page you were on, if this
+account may open it; otherwise you land where signing in normally takes you.
 
 **What to do.** Sign in again. Signing in again is the whole remedy — there is nothing to renew and
 nothing to repair.

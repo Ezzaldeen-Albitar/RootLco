@@ -409,7 +409,7 @@ describe('every state reads as itself', () => {
     expect(within(ended).queryByRole('button', { name: en['state.retry'] })).toBeNull();
     expect(within(ended).getByRole('link', { name: en['auth.backToLogin'] })).toHaveAttribute(
       'href',
-      '/en/login'
+      '/en/login?reason=expired'
     );
   });
 

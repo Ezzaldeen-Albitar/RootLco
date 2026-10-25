@@ -937,7 +937,7 @@ describe('the states a search can be in', () => {
     expect(screen.getByText(en['state.expired.title'] as string)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: en['auth.backToLogin'] as string })).toHaveAttribute(
       'href',
-      '/en/login'
+      '/en/login?reason=expired'
     );
     expect(screen.queryByRole('button')).toBeNull();
     expired.unmount();

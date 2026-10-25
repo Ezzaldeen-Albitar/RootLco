@@ -2,11 +2,13 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import Alert, { type AlertColor } from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Skeleton from '@mui/material/Skeleton';
+import { signInPath } from '@/features/authentication/api/intended-path';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -304,7 +306,9 @@ export function MuiRefusedState({
 
 /**
  * The session ended while the screen was open. No retry; the way forward is
- * signing in again, offered as a link when the caller knows the locale.
+ * signing in again, offered as a link when the caller knows the locale. The
+ * link carries the current page when it is a safe application path, so that
+ * signing in can return there; the path only, never its query.
  */
 export function MuiExpiredState({
   messages,
@@ -323,16 +327,37 @@ export function MuiExpiredState({
       descriptionKey="state.expired.description"
       action={
         locale === undefined ? undefined : (
-          <Link
-            href={`/${locale}/login`}
+          <ExpiredSignInLink
+            locale={locale}
+            messages={messages}
             className="text-primary underline-offset-2 hover:underline"
-          >
-            {translate(messages, 'auth.backToLogin')}
-          </Link>
+          />
         )
       }
       testId={testId ?? 'state-expired'}
     />
+  );
+}
+
+/**
+ * The ended-session sign-in link. Rendered only when the caller knows the
+ * locale, so the pathname hook never runs on a screen that offers no link.
+ * `signInPath` re-checks the path and drops it unless it is safe.
+ */
+export function ExpiredSignInLink({
+  locale,
+  messages,
+  className,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly className: string;
+}) {
+  const pathname = usePathname();
+  return (
+    <Link href={signInPath(locale, 'expired', pathname)} className={className}>
+      {translate(messages, 'auth.backToLogin')}
+    </Link>
   );
 }
 

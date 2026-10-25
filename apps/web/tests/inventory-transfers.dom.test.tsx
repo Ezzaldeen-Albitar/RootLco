@@ -122,6 +122,7 @@ vi.mock('@/features/inventory/api', () => ({
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => null,
   notFound: () => {
     throw new Error('notFound() was called');
   },
@@ -359,7 +360,7 @@ describe('the branch list as the shared states, in both languages (P1-32-PRE-OD-
       expect(await within(list).findByText(T['state.expired.title'] as string)).toBeVisible();
       expect(
         within(list).getByRole('link', { name: T['auth.backToLogin'] as string })
-      ).toHaveAttribute('href', `/${locale}/login`);
+      ).toHaveAttribute('href', `/${locale}/login?reason=expired`);
       expect(within(list).queryByRole('button', { name: T['state.retry'] as string })).toBeNull();
     }
   );

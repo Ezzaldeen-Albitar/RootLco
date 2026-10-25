@@ -8052,8 +8052,12 @@ Known limitations, one line each:
 - This slice did not move `/login` onto Material UI. The AUTHA slice did (see its section above),
   and since develop was merged after it the hidden intended-page field sits in that Material form;
   the two notices are still page markup.
-- The "sign in again" link in a read's ended-session state (`MuiStates`, `SearchStates`) still opens
-  plain `/login`. A session that ends during a client-side read does not carry the page yet.
+- Closed by `P1-32-PRE-OD-SESSEND`: the **Back to sign in** link in a read's ended-session state
+  (`MuiStates`, `SearchStates`) now opens `/{locale}/login?reason=expired`, with `&intended=` when
+  the current path is a safe application path. It carries the path only, never the query. It still
+  goes straight to sign-in, not through the session-ended handler, so the rejected cookie is not
+  cleared, as before. Console screens still show no link (B3 unchanged), and callers that pass no
+  locale (the warranty shared state, the delivery panel) still show no link.
 - The page cannot say which account was locked or archived: the backend answers every ended session
   and every refused sign-in identically on purpose. The sentences name the causes for everyone.
 - The one-press hold on the sign-in form is now the AUTHA slice's `useSubmitOnce`, which the
